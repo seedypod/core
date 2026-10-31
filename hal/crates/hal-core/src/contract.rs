@@ -112,6 +112,20 @@ pub struct SystemInfo {
     pub limits: Limits,
 }
 
+/// Physical button gesture, published on `event/button` as `{"press": "single"}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonPress {
+    Single,
+    Double,
+    Long,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ButtonEvent {
+    pub press: ButtonPress,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Alert {
     pub kind: AlertKind,
@@ -176,6 +190,15 @@ mod tests {
             serde_json::to_string(&AlertKind::PumpFault).unwrap(),
             "\"pump_fault\""
         );
+    }
+
+    #[test]
+    fn button_event_matches_adr_0007() {
+        let e = ButtonEvent {
+            press: ButtonPress::Double,
+        };
+        assert_eq!(serde_json::to_string(&e).unwrap(), r#"{"press":"double"}"#);
+        assert_eq!(topics::button("u1"), "leafypod/u1/event/button");
     }
 
     #[test]

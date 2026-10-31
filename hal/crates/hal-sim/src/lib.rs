@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use hal_core::device::now_rfc3339;
-use hal_core::{Actuator, ActuatorId, DeviceError, Reading, Sensor, SensorId};
+use hal_core::{Actuator, ActuatorId, Camera, DeviceError, Reading, Sensor, SensorId};
 
 #[derive(Debug)]
 pub struct SimWorld {
@@ -14,6 +14,8 @@ pub struct SimWorld {
     pub pcb_temp_c: f64,
     pub light_level: f64,
     pub pump_level: f64,
+    /// Dosing pumps 1–3 (on/off).
+    pub dose_level: [f64; 3],
 }
 
 impl Default for SimWorld {
@@ -25,6 +27,7 @@ impl Default for SimWorld {
             pcb_temp_c: 31.0,
             light_level: 0.0,
             pump_level: 0.0,
+            dose_level: [0.0; 3],
         }
     }
 }
@@ -132,17 +135,48 @@ impl Actuator for SimActuator {
         match self.id {
             ActuatorId::Light => w.light_level = level,
             ActuatorId::Pump => w.pump_level = level,
-            _ => {}
+            ActuatorId::Dose1 => w.dose_level[0] = level,
+            ActuatorId::Dose2 => w.dose_level[1] = level,
+            ActuatorId::Dose3 => w.dose_level[2] = level,
         }
         Ok(())
     }
     fn level(&self) -> f64 {
-        let w = self.world.lock().unwrap();
+        let w = self.world.lock().unwrap_or_else(|e| e.into_inner());
         match self.id {
             ActuatorId::Light => w.light_level,
             ActuatorId::Pump => w.pump_level,
-            _ => 0.0,
+            ActuatorId::Dose1 => w.dose_level[0],
+            ActuatorId::Dose2 => w.dose_level[1],
+            ActuatorId::Dose3 => w.dose_level[2],
         }
+    }
+}
+
+/// Serves a fixture JPEG so `/camera/<name>.jpg` works without a USB camera.
+pub struct SimCamera {
+    name: String,
+}
+
+impl SimCamera {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+        }
+    }
+}
+
+impl Camera for SimCamera {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
+        let bytes: &[u8] = if self.name == "lower" {
+            include_bytes!("../fixtures/lower.jpg")
+        } else {
+            include_bytes!("../fixtures/upper.jpg")
+        };
+        Ok(bytes.to_vec())
     }
 }
 
@@ -160,6 +194,29 @@ mod tests {
         pump.set_level(30.0).unwrap();
         w.lock().unwrap().step(600.0);
         assert!(w.lock().unwrap().water_distance_cm > before);
+    }
+
+    #[test]
+    fn dosing_actuators_have_their_own_levels() {
+        let w = world();
+        let mut d2 = SimActuator::new(ActuatorId::Dose2, w.clone());
+        d2.set_level(100.0).unwrap();
+        assert_eq!(d2.level(), 100.0);
+        assert_eq!(SimActuator::new(ActuatorId::Dose1, w.clone()).level(), 0.0);
+        assert_eq!(d2.id(), ActuatorId::Dose2);
+        assert!(d2.probe().is_ok());
+    }
+
+    #[test]
+    fn sim_cameras_serve_distinct_jpegs() {
+        let mut up = SimCamera::new("upper");
+        let mut lo = SimCamera::new("lower");
+        let a = up.capture().unwrap();
+        let b = lo.capture().unwrap();
+        assert_eq!(&a[..2], &[0xFF, 0xD8]);
+        assert_eq!(&b[..2], &[0xFF, 0xD8]);
+        assert_ne!(a, b);
+        assert_eq!(up.name(), "upper");
     }
 
     #[test]

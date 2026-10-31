@@ -17,9 +17,12 @@
 //!    deliberately not offered: a pump that tripped is a hardware signal, not
 //!    something to retry at 3 a.m. (sleepypod ADR-0022).
 
+mod dosing;
+
 use std::time::{Duration, Instant};
 
 use crate::contract::ActuatorCommand;
+pub use dosing::{DoseGuard, DoseLedger, DoseLimits, DoseRefusal};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PumpLimits {
