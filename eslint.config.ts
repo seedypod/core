@@ -3,6 +3,7 @@ import stylistic from '@stylistic/eslint-plugin'
 import pluginReact from 'eslint-plugin-react'
 import pluginReactHooks from 'eslint-plugin-react-hooks'
 import { defineConfig, globalIgnores } from 'eslint/config'
+import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default defineConfig([
@@ -22,7 +23,7 @@ export default defineConfig([
   pluginReactHooks.configs.flat.recommended,
   {
     files: ['**/*.js', '**/*.mjs', '**/*.cjs', '**/*.mts', '**/*.cts'],
-    languageOptions: { parser: tseslint.parser },
+    languageOptions: { parser: tseslint.parser, globals: { ...globals.node } },
   },
 
   globalIgnores([

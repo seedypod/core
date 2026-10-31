@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "leafypod core \u2014 local, cloud-free control for Gardyn hydroponic towers: Hono + tRPC + MCP server, React web UI, and the Rust hardware daemon (hal/)",
+  "description": "leafypod core — local, cloud-free control for Gardyn hydroponic towers: Hono + tRPC + MCP server, React web UI, and the Rust hardware daemon (hal/)",
   "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
@@ -79,6 +79,7 @@
     "eslint": "^9.39.0",
     "eslint-plugin-react": "^7.37.0",
     "eslint-plugin-react-hooks": "^7.0.0",
+    "globals": "^16.5.0",
     "jsdom": "^29.0.0",
     "lint-staged": "^16.4.0",
     "shadcn": "^3.0.0",
