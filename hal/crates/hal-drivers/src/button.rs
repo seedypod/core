@@ -284,7 +284,7 @@ mod tests {
     fn run_exits_when_the_receiver_is_dropped() {
         // Script a full single press so an event is produced and send() fails.
         let mut levels = vec![true, true, false, false, false];
-        levels.extend(std::iter::repeat_n(true, 40));
+        levels.extend(std::iter::repeat(true).take(40));
         let (tx, rx) = std::sync::mpsc::channel::<ButtonPress>();
         drop(rx);
         let p = ButtonPoller::new(
