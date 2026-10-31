@@ -25,6 +25,13 @@ export function mirrorConfig(s: DeviceSettings): MirrorConfig | null {
   return { endpoint: s.mirrorEndpoint, bucket: s.mirrorBucket, region: s.mirrorRegion || 'auto', prefix: s.mirrorPrefix, accessKeyId: s.mirrorAccessKeyId, secretAccessKey: s.mirrorSecretAccessKey }
 }
 
+export interface BucketObject {
+  /** Relative to the configured prefix. */
+  key: string
+  size: number
+  lastModified: string
+}
+
 /** Path-style S3 client over SigV4: `PUT {endpoint}/{bucket}/{prefix}{key}`. */
 export class S3Sink implements BlobSink {
   private readonly aws: AwsClient
@@ -60,11 +67,35 @@ export class S3Sink implements BlobSink {
     const r = await this.send('DELETE', key)
     if (!r.ok && r.status !== 404) throw new Error(`mirror DELETE ${key}: ${r.status}`)
   }
+
+  /** ListObjectsV2 under `{prefix}{under}`, following continuation tokens. */
+  async list(under: string): Promise<BucketObject[]> {
+    const out: BucketObject[] = []
+    let token: string | null = null
+    do {
+      const q = new URLSearchParams({ 'list-type': '2', 'prefix': `${this.cfg.prefix}${under}` })
+      if (token) q.set('continuation-token', token)
+      const url = `${this.cfg.endpoint.replace(/\/+$/, '')}/${encodeURIComponent(this.cfg.bucket)}?${q}`
+      const r = await this.fetchImpl(await this.aws.sign(url, { method: 'GET' }))
+      if (!r.ok) throw new Error(`mirror LIST ${under}: ${r.status} ${await r.text().catch(() => '')}`.trim())
+      const xml = await r.text()
+      for (const [, body] of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+        const tag = (name: string) => unxml(body?.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1] ?? '')
+        const key = tag('Key')
+        if (key.startsWith(this.cfg.prefix)) out.push({ key: key.slice(this.cfg.prefix.length), size: Number(tag('Size')) || 0, lastModified: tag('LastModified') })
+      }
+      token = /<IsTruncated>true<\/IsTruncated>/.test(xml) ? unxml(xml.match(/<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/)?.[1] ?? '') || null : null
+    } while (token)
+    return out
+  }
 }
+
+const unxml = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, '\'').replace(/&amp;/g, '&')
 
 function contentType(key: string): string {
   if (key.endsWith('.jpg')) return 'image/jpeg'
   if (key.endsWith('.pbm')) return 'image/x-portable-bitmap'
+  if (key.endsWith('.tar.gz')) return 'application/gzip'
   return 'application/octet-stream'
 }
 
@@ -171,11 +202,27 @@ export class MirroredSink implements BlobSink {
     return this.chain
   }
 
+  /**
+   * Upload through the same queue and retries as the stills (ADR-0021 backups).
+   * Resolves once the object is in the bucket; rejects with the last error after the retries.
+   */
+  upload(key: string, bytes: Uint8Array): Promise<void> {
+    const remote = this.remote()
+    if (!remote) return Promise.reject(new Error('the mirror is not configured'))
+    return this.enqueue(remote, key, bytes).then((err) => {
+      if (err) throw new Error(err)
+    })
+  }
+
   private mirror(key: string, bytes: Uint8Array): void {
     const remote = this.remote()
-    if (!remote) return
+    if (remote) void this.enqueue(remote, key, bytes)
+  }
+
+  /** Resolves with null once uploaded, or with the last error after `attempts`. */
+  private enqueue(remote: BlobSink, key: string, bytes: Uint8Array): Promise<string | null> {
     this.pending++
-    this.chain = this.chain.then(async () => {
+    const done = this.chain.then(async () => {
       const attempts = this.o.attempts ?? 3
       for (let i = 1; i <= attempts; i++) {
         try {
@@ -184,7 +231,7 @@ export class MirroredSink implements BlobSink {
           this.lastUploadAt = (this.o.now?.() ?? new Date()).toISOString()
           this.lastError = null
           this.o.store.alerts.clear('mirror_failed', this.lastUploadAt)
-          return
+          return null
         }
         catch (e) {
           this.lastError = (e as Error).message
@@ -195,8 +242,11 @@ export class MirroredSink implements BlobSink {
       const ts = (this.o.now?.() ?? new Date()).toISOString()
       this.o.store.alerts.raise('mirror_failed', `couldn't copy ${key} to the mirror: ${this.lastError ?? 'unknown error'}`, ts)
       this.o.events?.emit({ kind: 'mutation', path: 'alerts' })
+      return this.lastError ?? 'unknown error'
     }).finally(() => {
       this.pending--
     })
+    this.chain = done.then(() => undefined)
+    return done
   }
 }

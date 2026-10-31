@@ -24,10 +24,16 @@ under **Settings → Off-device storage and analysis** (ADR 0019):
   The bucket is yours: seedypod talks to no other service, and the keys stay
   on the unit (they are never returned by the API). Clear the endpoint to stop
   copying; objects already in the bucket stay until you delete them there.
+  With the mirror on, a **backup** of the unit goes to `backups/` in the same
+  bucket every night (ADR 0021). It holds the database and settings,
+  including the bucket keys and the MQTT password, so it is as private as
+  the bucket.
 - **Result ingest.** With an ingest token set, a worker you run elsewhere can
   post analysis results to `POST /api/analyses/results`. Nothing leaves the
   unit for this: the worker reads stills through the same REST API (and API
   key, if you set one) as any other LAN client.
 
-A dataset export (`GET /api/datasets/export`) is a download you start; it goes
-only to the browser or script that asked for it.
+A dataset export (`GET /api/datasets/export`) and a backup download
+(`GET /api/backup/download`) are downloads you start; they go only to the
+browser or script that asked for them. A backup file holds the unit's secrets
+(bucket keys, MQTT password), so keep it somewhere private.

@@ -27,7 +27,7 @@ advice are mixed here:
 | Monthly | Recalibrate a pH probe (mid point at least). Check EC against a 1.413 mS/cm standard. | The calibration wizard on the **Sensors** screen ([Adding a probe](SENSORS.md)). |
 | Monthly | Wipe the camera lenses. Check both cameras still frame their pods. | **Analysis → Latest photo** shows what each camera sees. A sudden drop in every pod's green area usually means a dirty or knocked lens, not dying plants. |
 | Between grow cycles | Clean the pods and the grow column. Check the light bars for dead LEDs. | **Grow → End cycle / Start cycle** resets reminders. |
-| Every few months | Back up the unit (below). | — |
+| Weekly, or nightly with a mirror | Back up the unit (below). | Nightly uploads to the mirror's bucket. The **Backup overdue** alert after 7 days without one. |
 
 Store pH probes wet, in their storage solution, never in distilled water.
 A probe that drifts after a fresh calibration, or responds slowly, is near
@@ -44,6 +44,7 @@ the end of its life.
 | **Camera missing** (`camera_missing`) | A still came back empty or implausible. Usually unplugged, or a stale device name. | Reseat the USB cable. `hald --list-cameras` should show both. If they swapped ports, regenerate the rules ([Camera names](hardware/hal.md#camera-names)). |
 | **Hardware daemon offline** (`hal_offline`) | Core lost `hald`: it crashed, the Pi rebooted, or the MQTT broker went away. | `journalctl -u hald -n 100`. `systemctl status mosquitto`. `hald` restarts itself (`Restart=always`). |
 | **Light fault** (`light_fault`) | The light didn't take a command. | Check the light-bar connector, then `journalctl -u hald`. |
+| **Backup overdue** (`backup_stale`) | No off-card backup has succeeded for 7 days. On a unit that never had one it reads "No off-card backup yet", 7 days after core first started. Also a problem sensor in Home Assistant. | **Settings → Backup → Download backup**, or set up the mirror for nightly backups. If the nightly upload is failing, Settings → Backup says why. It clears on the next backup. |
 | **Thin seedlings / Check roots / Harvest window / Add nutrients** | Grow-cycle reminders from Settings → Grow reminders. | Do the task and dismiss the alert. |
 
 ## Health checks
@@ -75,24 +76,44 @@ answer at boot marked **not found** and the reason.
 
 ## Backups
 
-Everything worth keeping lives in three places:
+A backup is one file, `seedypod-backup-<unit>-<date>.tar.gz`, that holds
+everything needed to rebuild the unit on a new card:
 
-| Path | Contents |
+| In the bundle | From |
 |---|---|
-| `/opt/seedypod/data/seedypod.db` (plus `-wal`) | Settings, schedules, grow cycles, pods, alerts, telemetry, analysis results |
-| `/opt/seedypod/data/captures/` | Camera stills (the last 30 days) and any analysis masks |
-| `/etc/seedypod/hal.toml`, `/var/lib/seedypod/` | Pin map and limits; the daemon's state, dosing ledger and app-added probes (`sensors.json`) |
+| `seedypod.db` | The database: settings, schedules, grow cycles, pods, Autopilot rules, alerts, telemetry, analysis results. Copied with SQLite's online backup, so core keeps running. |
+| `etc/seedypod/hal.toml` | Pin map, limits and unit id. |
+| `etc/mosquitto/seedypod.passwd` | The Home Assistant broker password, if `--mqtt-lan` made one. |
+| `var/lib/seedypod/*.json` | `hald`'s state: light level, dosing ledgers, probes added in the app (`sensors.json`). |
+| `captures/` | Photos, only when you ask for them. |
+| `manifest.json` | Unit, core and `hald` versions, database schema, creation time and a checksum per file. |
 
-To back up, stop core so the database is consistent, then copy:
+There are two ways to get one off the card. A copy on the same card would die
+with it, so there is no local one.
 
-```sh
-sudo systemctl stop seedypod-core
-sudo tar czf seedypod-backup-$(date +%F).tgz /opt/seedypod/data /etc/seedypod /var/lib/seedypod
-sudo systemctl start seedypod-core
-```
+- **Download.** **Settings → Backup → Download backup**, any time. **Include
+  photos** adds the stills (without a mirror, that's the only copy of them;
+  it makes the file much larger). The file holds the bucket secret and the
+  MQTT password, so keep it somewhere private.
+- **Nightly to the mirror's bucket.** With the off-device mirror set up
+  ([Capture analysis](ANALYSIS.md#mirror-photos-off-the-unit-opt-in)), a
+  bundle without photos (the mirror already has them) goes to `backups/`
+  under the mirror's prefix every night after 03:00 unit time. It keeps the
+  newest 14 for this unit and leaves other units' backups alone. **Back up
+  now** runs it early. Failed uploads retry hourly.
 
-To keep more than 30 days of photos, turn on the off-device mirror
-([Capture analysis](ANALYSIS.md#mirror-photos-off-the-unit-opt-in)). For
+If no backup has succeeded for 7 days, the **Backup overdue** alert comes up
+on Home, in **Alerts** and in Home Assistant.
+
+If **Settings → Backup** says a file was left out with "permission denied",
+rerun `install-hal`. It adds core's user to the `seedypod` group, which can
+read `hald`'s files.
+
+From a script: `curl -OJ http://seedypod.local:3000/api/backup/download`
+(`?photos=1` for photos). `GET /api/backup` shows the last backup, and
+`POST /api/backup/run` runs a bucket backup.
+
+To keep more than 30 days of photos, turn on the off-device mirror. For
 analysis on another machine, use **Analysis → Export a dataset**.
 
 ## Updates

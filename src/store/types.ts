@@ -110,6 +110,16 @@ export interface AnalysisPoint { ts: string, value: number, captureId: string }
 /** What the table holds per analyser@version. */
 export interface AnalyzerStats { analyzer: string, version: number, source: 'device' | 'remote', rows: number, captures: number, firstTs: string, lastTs: string }
 export interface TelemetryPoint { ts: string, sensor: SensorId, value: number }
+/** One off-card backup attempt (ADR-0021). A finished download counts as a success. */
+export interface BackupRecord {
+  id: number
+  ts: string
+  destination: 'download' | 'bucket'
+  name: string
+  bytes: number
+  ok: boolean
+  detail: string
+}
 /** One sample of the SD card's sectors-written counter; `bytes` were written since the previous sample. */
 export interface FlashSample { ts: string, sectors: number, bytes: number }
 
@@ -160,6 +170,12 @@ export interface Store {
   counters: {
     add(key: string, delta: number, ts: string): number
     get(key: string): number
+  }
+  backups: {
+    add(r: Omit<BackupRecord, 'id'>): BackupRecord
+    /** Newest first. */
+    list(limit?: number): BackupRecord[]
+    lastSuccess(destination?: BackupRecord['destination']): BackupRecord | null
   }
   flash: {
     add(sample: FlashSample): void

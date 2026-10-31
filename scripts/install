@@ -72,6 +72,11 @@ User=$USER
 [Install]
 WantedBy=multi-user.target
 UNIT
+# Backups read hal.toml, hald's state and the broker password through the seedypod
+# group that install-hal creates (ADR-0021); install-hal adds us too if it runs later.
+if getent group seedypod >/dev/null 2>&1; then sudo usermod -aG seedypod "$USER"; fi
+
 sudo systemctl daemon-reload
-sudo systemctl enable --now seedypod-core.service
+sudo systemctl enable seedypod-core.service >/dev/null
+sudo systemctl restart seedypod-core.service
 echo "✓ seedypod core running on http://$(hostname -I | awk '{print $1}'):3000"

@@ -294,6 +294,12 @@ reapplies them:
 
 `--no-wear` leaves all three alone.
 
+For core's backups, the user core runs as (the one who ran the installer, or
+the owner of `/opt/seedypod`; `SEEDYPOD_CORE_USER` overrides) joins the
+`seedypod` group, which can read `/etc/seedypod`, `/var/lib/seedypod` and the
+Mosquitto password file (`mosquitto:seedypod`, mode 0640). A running core is
+restarted so it picks up the group.
+
 Operations: `journalctl -u hald -f`, `hald --config /etc/seedypod/hal.toml --check`,
 `mosquitto_sub -v -t 'seedypod/#'`. See [Debugging](../DEBUGGING.md).
 

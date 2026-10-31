@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS } from './types'
 
@@ -17,6 +17,7 @@ export class MemoryStore implements Store {
   private readonly points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
   private flashRows: FlashSample[] = []
+  private readonly backupRows: BackupRecord[] = []
   private readonly analysisRows: AnalysisRow[] = []
   private automationRows: Automation[] = []
   private runRows: AutomationRun[] = []
@@ -168,6 +169,17 @@ export class MemoryStore implements Store {
       return v
     },
     get: (key: string): number => this.counterRows.get(key) ?? 0,
+  }
+
+  backups = {
+    add: (r: Omit<BackupRecord, 'id'>): BackupRecord => {
+      const row = { ...r, id: this.backupRows.length + 1 }
+      this.backupRows.push(row)
+      return row
+    },
+    list: (limit = 50): BackupRecord[] => [...this.backupRows].sort((a, b) => b.ts.localeCompare(a.ts) || b.id - a.id).slice(0, limit),
+    lastSuccess: (destination?: BackupRecord['destination']): BackupRecord | null =>
+      this.backups.list(Number.MAX_SAFE_INTEGER).find(r => r.ok && (!destination || r.destination === destination)) ?? null,
   }
 
   flash = {

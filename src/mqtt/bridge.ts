@@ -83,6 +83,7 @@ export class HaBridge {
     pub('sensor', 'grow_day', { name: 'Grow day', icon: 'mdi:calendar-today', state_topic: t.state, value_template: '{{ value_json.grow.day if value_json.grow.day is not none else "unknown" }}', unit_of_measurement: 'd', state_class: 'measurement' })
     pub('sensor', 'grow_stage', { name: 'Grow stage', icon: 'mdi:sprout', state_topic: t.state, value_template: '{{ value_json.grow.stage or "none" }}' })
     pub('sensor', 'light_hours', { name: 'Grow light hours', icon: 'mdi:lightbulb-on', state_topic: t.state, value_template: '{{ value_json.lightHours }}', unit_of_measurement: 'h', state_class: 'total_increasing' })
+    pub('binary_sensor', 'backup_stale', { name: 'Backup overdue', icon: 'mdi:backup-restore', state_topic: t.state, value_template: '{{ \'ON\' if value_json.backupStale else \'OFF\' }}', device_class: 'problem', entity_category: 'diagnostic' })
     pub('button', 'water_now', { name: 'Water now (5 min)', icon: 'mdi:watering-can', command_topic: t.waterNow, payload_press: '300' })
     this.publishState()
   }
@@ -93,6 +94,7 @@ export class HaBridge {
     const state = {
       grow: { day: cycle ? cycleDay(cycle, this.now()) : null, stage: cycle?.stage ?? null },
       reminders: Object.fromEntries(REMINDERS.map(([k]) => [k, active.has(k)])),
+      backupStale: active.has('backup_stale'),
       lightHours: Math.round(this.o.store.counters.get(LIGHT_HOURS_KEY) * 10) / 10,
       ts: this.now().toISOString(),
     }
