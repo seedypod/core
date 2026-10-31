@@ -8,7 +8,7 @@ export function Sidebar({ status }: { status: string }) {
     <aside className="hidden min-[900px]:flex w-[220px] shrink-0 flex-col border-r border-line bg-surface">
       <div className="flex items-center gap-2 px-5 py-5">
         <img src="/favicon.svg" alt="" width={28} height={28} />
-        <span className="font-semibold tracking-tight">leafypod</span>
+        <span className="font-semibold tracking-tight">seedypod</span>
       </div>
       <nav className="flex flex-col gap-0.5 px-3">
         {navItems.map(({ to, label, icon: Icon }) => {

@@ -1,4 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Placeholder } from '@/src/components/Placeholder'
+import { AlertsPage } from '@/src/components/Alerts/AlertsPage'
 
-export const Route = createFileRoute('/alerts')({ component: () => <Placeholder title="Alerts" /> })
+export const Route = createFileRoute('/alerts')({ component: AlertsPage })

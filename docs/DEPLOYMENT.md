@@ -22,5 +22,18 @@ How code gets from `dev` to a unit (mirrors sleepypod/core).
 - **Local** → `scripts/deploy user@host` builds here and ships over SSH.
 
 The unit runs two systemd services: `hald` (Rust, owns hardware) and
-`leafypod-core` (Node, `:3000`). Both restart on failure. Core is LAN-only;
+`seedypod-core` (Node, `:3000`). Both restart on failure. Core is LAN-only;
 no outbound connections are made by either service.
+
+## Repository secrets and variables
+
+| Name | Kind | Used by | How to get it |
+|---|---|---|---|
+| `CODECOV_TOKEN` | secret | `test.yml`, `rust.yml` | sign in to codecov.io with GitHub, install the Codecov app on `seedypod`, then app.codecov.io/gh/seedypod/core → Configuration → General → Repository upload token |
+| `VERCEL_TOKEN` | secret | `vercel.yml` | vercel.com/account/settings/tokens → Create, scoped to *therealng's projects* |
+| `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | secrets | `vercel.yml` | set: team `therealngs-projects`, project `seedypod-demo` (`vercel project inspect seedypod-demo`) |
+| `VERCEL_ENABLED` | variable = `true` | `vercel.yml` | Settings → Variables; the workflow is skipped until set |
+| `BACKMERGE_TOKEN` | secret | `back-merge.yml` | fine-grained PAT owned by a `seedypod` org admin (admins bypass the `Dev` ruleset), resource owner `seedypod`, repo `core`, `Contents: read and write` |
+| Renovate | GitHub App | `renovate.json` | install the Renovate app on the repo; it opens an onboarding PR |
+
+Renovate: minor/patch automerge after 3 days, Mondays; majors and the core stack (react, router, hono, vite, rppal, tokio…) stay manual; cargo is enabled; vulnerability alerts get the `security` label.

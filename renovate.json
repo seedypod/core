@@ -2,7 +2,8 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
-    "group:monorepos"
+    "group:monorepos",
+    ":semanticCommits"
   ],
   "automerge": true,
   "automergeType": "branch",
@@ -71,9 +72,12 @@
     },
     {
       "matchPackageNames": [
-        "next",
         "react",
-        "react-dom"
+        "react-dom",
+        "@tanstack/react-router",
+        "@tanstack/router-plugin",
+        "hono",
+        "vite"
       ],
       "matchUpdateTypes": [
         "major"
@@ -81,8 +85,7 @@
       "automerge": false,
       "labels": [
         "dependencies",
-        "nextjs",
-        "react",
+        "core-stack",
         "manual"
       ]
     },
@@ -147,5 +150,22 @@
         "manual"
       ]
     }
-  ]
+  ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "hal/target/**"
+  ],
+  "cargo": {
+    "enabled": true
+  },
+  "postUpdateOptions": [
+    "pnpmDedupe"
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "security"
+    ],
+    "automerge": false
+  }
 }

@@ -22,7 +22,7 @@ fi
 
 if git diff --name-only @{push}.. -- 'hal/' 2>/dev/null | grep -q . ; then
   echo "→ Rust (fmt + clippy + test)..."
-  cargo fmt --manifest-path hal/Cargo.toml --check
+  cargo fmt --manifest-path hal/Cargo.toml --all -- --check
   cargo clippy --manifest-path hal/Cargo.toml --all-targets -- -D warnings
   cargo test --manifest-path hal/Cargo.toml
 fi

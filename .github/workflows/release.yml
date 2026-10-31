@@ -79,7 +79,7 @@ jobs:
 
       - name: Create deploy tarball
         run: |
-          tar czf /tmp/leafypod-core.tar.gz \
+          tar czf /tmp/seedypod-core.tar.gz \
             --exclude='node_modules' \
             --exclude='.git' \
             --exclude='.env*' \
@@ -89,7 +89,7 @@ jobs:
             --exclude='hal/target' \
             --exclude='.claude' \
             .
-          mv /tmp/leafypod-core.tar.gz .
+          mv /tmp/seedypod-core.tar.gz .
 
       - name: Download hald binaries
         uses: actions/download-artifact@v8

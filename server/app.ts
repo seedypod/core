@@ -9,6 +9,7 @@ import { createMcpServer } from '../src/mcp/server'
 import type { Context } from '../src/server/context'
 import { openApiDocument } from '../src/server/openapi'
 import { appRouter } from '../src/server/routers/app'
+import { apiKeyGuard } from './auth'
 
 export interface CreateAppOptions {
   ctx: Context
@@ -25,8 +26,18 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
   app.use('/api/*', cors({ origin: origin => origin ?? '*' }))
+  app.use('/api/*', apiKeyGuard(ctx.store))
 
   app.use('/api/trpc/*', trpcServer({ endpoint: '/api/trpc', router: appRouter, createContext: () => ({ ...ctx }) }))
+
+  app.get('/api/captures/:file', async (c) => {
+    const id = c.req.param('file').replace(/\.jpg$/, '')
+    const got = await ctx.captures.bytes(id)
+    if (!got) return c.text('not found', 404)
+    if (got.capture.path.startsWith('data:')) return c.redirect(got.capture.path)
+    const body = new Uint8Array(got.bytes).buffer as ArrayBuffer
+    return c.body(body, 200, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' })
+  })
 
   app.get('/api/openapi.json', c => c.json(openApiDocument(new URL('/api', c.req.url).toString())))
 

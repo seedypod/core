@@ -1,4 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Placeholder } from '@/src/components/Placeholder'
+import { GrowPage } from '@/src/components/Grow/GrowPage'
 
-export const Route = createFileRoute('/grow')({ component: () => <Placeholder title="Grow" /> })
+export const Route = createFileRoute('/grow')({ component: GrowPage })

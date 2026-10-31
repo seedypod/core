@@ -1,0 +1,115 @@
+/**
+ * seedypod.db — configuration and state. Telemetry is downsampled into the
+ * same file (one unit, modest volume); split into a second DB like sleepypod's
+ * biometrics.db only if it grows.
+ */
+import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+
+export const deviceSettings = sqliteTable('device_settings', {
+  id: integer().primaryKey().default(1),
+  unitName: text().notNull().default('Gardyn'),
+  timezone: text().notNull().default('UTC'),
+  temperatureUnit: text({ enum: ['C', 'F'] }).notNull().default('C'),
+  /** Tank calibration: sensor→surface distance when full / empty (cm). */
+  waterFullCm: real().notNull().default(5),
+  waterEmptyCm: real().notNull().default(20),
+  tankCapacityL: real().notNull().default(19),
+  /** Reminders (days after cycle start; 0 disables). */
+  thinningReminderDays: integer().notNull().default(14),
+  rootCheckReminderDays: integer().notNull().default(21),
+  harvestReminderDays: integer().notNull().default(35),
+  nutrientReminderDays: integer().notNull().default(7),
+  /** Optional API key for non-localhost REST/MCP (empty = off). */
+  apiKey: text().notNull().default(''),
+  /** Core-level MQTT bridge (ADR-0013); unset = dormant. */
+  mqttUrl: text(),
+  mqttUsername: text(),
+  mqttPassword: text(),
+  mqttTlsEnabled: integer({ mode: 'boolean' }).notNull().default(false),
+  mqttTlsInsecure: integer({ mode: 'boolean' }).notNull().default(false),
+  captureIntervalMin: integer().notNull().default(60),
+  updatedAt: text().notNull(),
+})
+
+export const schedules = sqliteTable('schedules', {
+  id: text().primaryKey(),
+  kind: text({ enum: ['light', 'pump'] }).notNull(),
+  name: text().notNull(),
+  enabled: integer({ mode: 'boolean' }).notNull().default(true),
+  /** Bitmask Mon=1 … Sun=64; 127 = every day. */
+  days: integer().notNull().default(127),
+  /** JSON: light → {setpoints:[{minute, level}]}; pump → {minute, durationS, level?} */
+  spec: text().notNull(),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+})
+
+export const scheduleRuns = sqliteTable('schedule_runs', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  scheduleId: text().notNull(),
+  /** Idempotency key: `${scheduleId}:${localDate}:${minute}` */
+  key: text().notNull().unique(),
+  firedAt: text().notNull(),
+  result: text().notNull(),
+})
+
+export const alerts = sqliteTable('alerts', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  /** HAL kinds (water_low, pump_fault, …) or core kinds (reminder_thinning, hal_offline, …). */
+  kind: text().notNull(),
+  active: integer({ mode: 'boolean' }).notNull().default(true),
+  detail: text().notNull().default(''),
+  raisedAt: text().notNull(),
+  clearedAt: text(),
+  acknowledgedAt: text(),
+  dismissedAt: text(),
+}, t => [index('alerts_kind_active').on(t.kind, t.active)])
+
+export const growCycles = sqliteTable('grow_cycles', {
+  id: text().primaryKey(),
+  startedAt: text().notNull(),
+  endedAt: text(),
+  stage: text({ enum: ['germination', 'seedling', 'vegetative', 'harvest', 'ended'] }).notNull().default('germination'),
+  notes: text().notNull().default(''),
+  /** Reminders already issued for this cycle, JSON string[]. */
+  issued: text().notNull().default('[]'),
+})
+
+export const pods = sqliteTable('pods', {
+  slot: integer().primaryKey(),
+  plant: text(),
+  plantedAt: text(),
+  status: text({ enum: ['empty', 'seeded', 'growing', 'harvest', 'attention'] }).notNull().default('empty'),
+  notes: text().notNull().default(''),
+  updatedAt: text().notNull(),
+})
+
+export const captures = sqliteTable('captures', {
+  id: text().primaryKey(),
+  camera: text({ enum: ['upper', 'lower'] }).notNull(),
+  ts: text().notNull(),
+  path: text().notNull(),
+  bytes: integer().notNull(),
+}, t => [index('captures_camera_ts').on(t.camera, t.ts)])
+
+export const telemetry = sqliteTable('telemetry', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  ts: text().notNull(),
+  sensor: text().notNull(),
+  value: real().notNull(),
+}, t => [index('telemetry_sensor_ts').on(t.sensor, t.ts)])
+
+export const counters = sqliteTable('counters', {
+  key: text().primaryKey(),
+  value: real().notNull().default(0),
+  updatedAt: text().notNull(),
+})
+
+export const podGrowth = sqliteTable('pod_growth', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  ts: text().notNull(),
+  slot: integer().notNull(),
+  /** Fraction of green pixels in the pod crop, 0–1. */
+  green: real().notNull(),
+  captureId: text().notNull(),
+}, t => [index('pod_growth_slot_ts').on(t.slot, t.ts)])

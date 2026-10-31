@@ -1,17 +1,18 @@
 [workspace]
 resolver = "2"
-members = ["crates/hal-core", "crates/hal-sim", "crates/hald"]
+members = ["crates/hal-core", "crates/hal-sim", "crates/hal-drivers", "crates/hald"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-only"
-repository = "https://github.com/leafypod/core"
+repository = "https://github.com/seedypod/core"
 rust-version = "1.80"
 
 [workspace.dependencies]
 hal-core = { path = "crates/hal-core" }
 hal-sim = { path = "crates/hal-sim" }
+hal-drivers = { path = "crates/hal-drivers" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

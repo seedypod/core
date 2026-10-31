@@ -1,6 +1,6 @@
 [package]
 name = "hald"
-description = "leafypod hardware daemon: owns the Gardyn's pins and buses, publishes over MQTT, serves stills over HTTP"
+description = "seedypod hardware daemon: owns the Gardyn's pins and buses, publishes over MQTT, serves stills over HTTP"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 hal-core.workspace = true
 hal-sim.workspace = true
+hal-drivers.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
@@ -22,8 +23,14 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 toml = "0.8"
+rumqttc = { version = "0.25", default-features = false }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
+mdns-sd = { version = "0.21", default-features = false, features = ["async"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 
 [features]
 default = []
-# Real drivers (rppal etc.) land in Phase 2.5; gated so laptops build without them.
-hardware = []
+# Real drivers (rppal). Default builds and CI exercise the simulator path.
+hardware = ["hal-drivers/hardware"]

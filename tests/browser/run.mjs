@@ -1,11 +1,16 @@
-// Boots the built server (simulator HAL) on a scratch port and runs Playwright.
-// Phase 4.3 fills in real specs; until then this is a smoke that the server
-// serves the SPA and the API answers, so the CI lane is wired end to end.
+// Boots the built server (simulator HAL, scratch SQLite) on :3218 and runs the
+// Playwright e2e specs against it. Mirrors sleepypod's tests/browser/run.mjs.
 import { spawn } from 'node:child_process'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const PORT = 3218
-const server = spawn('node', ['server/dist/index.js'], { env: { ...process.env, PORT: String(PORT), CI: '1' }, stdio: 'inherit' })
+const dataDir = mkdtempSync(join(tmpdir(), 'seedypod-e2e-'))
+const env = { ...process.env, PORT: String(PORT), CI: '1', DATA_DIR: dataDir, DATABASE_URL: join(dataDir, 'e2e.db') }
+const server = spawn('node', ['server/dist/index.js'], { env, stdio: 'inherit' })
+let code = 1
 try {
   let ok = false
   for (let i = 0; i < 60 && !ok; i++) {
@@ -13,12 +18,12 @@ try {
     ok = await fetch(`http://127.0.0.1:${PORT}/api/healthcheck`).then(r => r.ok).catch(() => false)
   }
   if (!ok) throw new Error('server did not become healthy')
-  const html = await fetch(`http://127.0.0.1:${PORT}/`).then(r => r.text())
-  if (!html.includes('<div id="root">')) throw new Error('SPA shell not served')
-  const spec = await fetch(`http://127.0.0.1:${PORT}/api/openapi.json`).then(r => r.json())
-  if (!spec.paths?.['/system']) throw new Error('OpenAPI spec missing /system')
-  console.log('✓ browser smoke: server serves SPA + API')
+  code = await new Promise((resolve) => {
+    const pw = spawn('pnpm', ['exec', 'playwright', 'test', '--config', 'tests/browser/playwright.config.ts'], { env: { ...env, SEEDYPOD_E2E: '1' }, stdio: 'inherit' })
+    pw.on('exit', c => resolve(c ?? 1))
+  })
 }
 finally {
   server.kill('SIGTERM')
 }
+process.exit(code)

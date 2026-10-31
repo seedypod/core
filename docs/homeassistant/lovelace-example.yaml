@@ -1,0 +1,47 @@
+# Example Lovelace view for a seedypod-controlled Gardyn.
+# Entities come from two discovery sources: hald (light, pump, sensors, button)
+# and core (grow day/stage, reminders, light hours, "water now").
+title: Gardyn
+cards:
+  - type: light
+    entity: light.gardyn_light
+    name: Grow light
+  - type: entities
+    title: Water
+    entities:
+      - entity: fan.gardyn_pump
+        name: Pump
+      - entity: sensor.gardyn_water_level
+        name: Tank
+      - entity: binary_sensor.gardyn_water_low
+        name: Water low
+      - entity: button.gardyn_water_now_5_min
+        name: Water now
+  - type: glance
+    title: Environment
+    entities:
+      - sensor.gardyn_air_temperature
+      - sensor.gardyn_humidity
+      - sensor.gardyn_pcb_temperature
+      - sensor.gardyn_pump_power
+  - type: entities
+    title: Grow
+    entities:
+      - sensor.gardyn_grow_day
+      - sensor.gardyn_grow_stage
+      - sensor.gardyn_grow_light_hours
+      - entity: binary_sensor.gardyn_thin_seedlings
+        name: Thin seedlings
+      - button.gardyn_thin_seedlings_done
+      - entity: binary_sensor.gardyn_add_nutrients
+        name: Add nutrients
+      - button.gardyn_add_nutrients_done
+  - type: conditional
+    conditions:
+      - entity: binary_sensor.gardyn_pump_fault
+        state: "on"
+    card:
+      type: markdown
+      content: >
+        **Pump fault latched.** Refill the tank or let the board cool, then press
+        *Acknowledge pump fault* to re-enable.

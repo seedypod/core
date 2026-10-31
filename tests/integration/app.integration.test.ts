@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../../server/app'
 import { SimHal } from '../../src/hardware/sim'
 import { createEventBus } from '../../src/lib/eventBus'
+import { createCore } from '../../src/server/bootstrap'
+import { MemoryStore } from '../../src/store/memory'
 
 let base = ''
 let close: () => void = () => undefined
@@ -12,8 +14,8 @@ let hal: SimHal
 beforeAll(async () => {
   hal = new SimHal({ tickMs: 0 })
   const events = createEventBus()
-  hal.subscribe(event => events.emit({ kind: 'hal', event }))
-  const { app, injectWebSocket } = createApp({ ctx: { hal, events, version: 'test' } })
+  const core = createCore({ hal, store: new MemoryStore(), events, version: 'test' })
+  const { app, injectWebSocket } = createApp({ ctx: core.ctx })
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' })
   injectWebSocket(server)
   await new Promise<void>(r => server.once('listening', () => r()))

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub const CONTRACT_VERSION: u8 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SensorId {
     AirTemp,
@@ -21,7 +21,7 @@ pub enum SensorId {
     WaterTemp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActuatorId {
     Light,
@@ -34,11 +34,14 @@ pub enum ActuatorId {
     Dose3,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertKind {
     WaterLow,
     PumpFault,
+    /// A dosing pump hit its daily cap or lockout (ADR-0014). Separate from
+    /// `PumpFault` so acknowledging one never re-arms the other.
+    DoseFault,
     OverTemp,
     CameraMissing,
     HalOffline,
@@ -112,6 +115,55 @@ pub struct SystemInfo {
     pub limits: Limits,
 }
 
+/// Which calibration point a probe should store. Atlas EZO naming: pH uses
+/// `mid` (first, required), `low`, `high`; EC uses `dry` then `single` or
+/// `low` + `high`; RTD uses `single`. `clear` wipes stored points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CalibrationPoint {
+    Mid,
+    Low,
+    High,
+    Dry,
+    Single,
+    Clear,
+}
+
+/// `sensor/<id>/calibrate` payload. `value` is the reference solution in the
+/// sensor's reported unit (pH, mS/cm, °C); `dry` and `clear` take none.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CalibrationCommand {
+    pub point: CalibrationPoint,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
+}
+
+/// `sensor/<id>/calibration` (retained): outcome of the last calibrate command.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalibrationResult {
+    pub ts: String,
+    pub point: CalibrationPoint,
+    pub ok: bool,
+    /// Points the probe reports as stored after the command, when it says.
+    pub points: Option<u8>,
+    pub detail: String,
+}
+
+/// Physical button gesture, published on `event/button` as `{"press": "single"}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonPress {
+    Single,
+    Double,
+    Long,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ButtonEvent {
+    pub press: ButtonPress,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Alert {
     pub kind: AlertKind,
@@ -121,7 +173,7 @@ pub struct Alert {
     pub detail: String,
 }
 
-/// MQTT topic layout under `leafypod/<unit-id>/`.
+/// MQTT topic layout under `seedypod/<unit-id>/`.
 pub mod topics {
     use super::{ActuatorId, AlertKind, SensorId};
 
@@ -133,7 +185,7 @@ pub mod topics {
     }
 
     pub fn prefix(unit: &str) -> String {
-        format!("leafypod/{unit}")
+        format!("seedypod/{unit}")
     }
     pub fn availability(unit: &str) -> String {
         format!("{}/availability", prefix(unit))
@@ -149,6 +201,12 @@ pub mod topics {
     }
     pub fn actuator_set(unit: &str, id: ActuatorId) -> String {
         format!("{}/actuator/{}/set", prefix(unit), snake(&id))
+    }
+    pub fn sensor_calibrate(unit: &str, id: SensorId) -> String {
+        format!("{}/sensor/{}/calibrate", prefix(unit), snake(&id))
+    }
+    pub fn sensor_calibration(unit: &str, id: SensorId) -> String {
+        format!("{}/sensor/{}/calibration", prefix(unit), snake(&id))
     }
     pub fn button(unit: &str) -> String {
         format!("{}/event/button", prefix(unit))
@@ -176,18 +234,39 @@ mod tests {
             serde_json::to_string(&AlertKind::PumpFault).unwrap(),
             "\"pump_fault\""
         );
+        assert_eq!(
+            serde_json::to_string(&AlertKind::DoseFault).unwrap(),
+            "\"dose_fault\""
+        );
+    }
+
+    #[test]
+    fn button_event_matches_adr_0007() {
+        let e = ButtonEvent {
+            press: ButtonPress::Double,
+        };
+        assert_eq!(serde_json::to_string(&e).unwrap(), r#"{"press":"double"}"#);
+        assert_eq!(topics::button("u1"), "seedypod/u1/event/button");
     }
 
     #[test]
     fn topics_match_the_ts_helpers() {
-        assert_eq!(topics::sensor("u1", SensorId::Ph), "leafypod/u1/sensor/ph");
+        assert_eq!(topics::sensor("u1", SensorId::Ph), "seedypod/u1/sensor/ph");
         assert_eq!(
             topics::actuator_set("u1", ActuatorId::Pump),
-            "leafypod/u1/actuator/pump/set"
+            "seedypod/u1/actuator/pump/set"
         );
         assert_eq!(
             topics::alert_ack("u1", AlertKind::WaterLow),
-            "leafypod/u1/alert/water_low/ack"
+            "seedypod/u1/alert/water_low/ack"
+        );
+        assert_eq!(
+            topics::sensor_calibrate("u1", SensorId::Ph),
+            "seedypod/u1/sensor/ph/calibrate"
+        );
+        assert_eq!(
+            topics::sensor_calibration("u1", SensorId::Ec),
+            "seedypod/u1/sensor/ec/calibration"
         );
     }
 
@@ -224,7 +303,15 @@ mod fixture_tests {
         assert_eq!(r.unit, "cm");
         let al: Alert = serde_json::from_str(&fixture("alert")).unwrap();
         assert_eq!(al.kind, AlertKind::PumpFault);
+        let dl: Alert = serde_json::from_str(&fixture("alert_dose_fault")).unwrap();
+        assert_eq!(dl.kind, AlertKind::DoseFault);
         let c: ActuatorCommand = serde_json::from_str(&fixture("command")).unwrap();
         assert_eq!(c.duration_s, Some(300));
+        let cc: CalibrationCommand = serde_json::from_str(&fixture("calibration_command")).unwrap();
+        assert_eq!(cc.point, CalibrationPoint::Mid);
+        assert_eq!(cc.value, Some(7.0));
+        let cr: CalibrationResult = serde_json::from_str(&fixture("calibration_result")).unwrap();
+        assert!(cr.ok);
+        assert_eq!(cr.points, Some(1));
     }
 }

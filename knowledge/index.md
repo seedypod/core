@@ -2,7 +2,7 @@
 okf_version: "0.2"
 ---
 
-# leafypod knowledge
+# seedypod knowledge
 
 Evidence and decisions that are not code: hardware facts, horticulture targets,
 calibration protocols, and later computer-vision evaluation. All initial

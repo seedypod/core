@@ -2,12 +2,13 @@
 okf_version: "0.2"
 ---
 
-# leafypod docs
+# seedypod docs
 
 Developer and operator documentation, authored as an OKF v0.2 bundle (same
 profile as `knowledge/`). Concepts carry frontmatter with `status`,
 `generated` and `sources`; `index.md` files are plain tables of contents.
 
+- [Handoff](HANDOFF.md) — State at the pause point, transfer steps, what remains.
 - [Architecture decision records](adr/index.md) — Why things are the way they are.
 - [Implementation plan](implementation-plan.md) — Phase 0 → 1.0 with parallelism markers.
 - [Installation](INSTALLATION.md) · [Deployment](DEPLOYMENT.md) · [Debugging](DEBUGGING.md) · [Privacy](PRIVACY.md)

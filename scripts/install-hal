@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# seedypod HAL (hald) installer for a Raspberry Pi running Raspberry Pi OS.
+# Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
+#        scripts/install-hal [--version vX.Y.Z] [--binary ./hald] [--no-enable]
+#
+# Downloads the hald binary for this CPU from the latest GitHub Release of
+# seedypod/core, installs it to /usr/local/bin, writes a commented
+# /etc/seedypod/hal.toml if absent, creates the `seedypod` service user in the
+# gpio/i2c/video groups, enables I²C and the PWM overlay, installs and enables
+# hald.service. Re-running upgrades the binary and leaves hal.toml alone.
+set -euo pipefail
+
+REPO="${SEEDYPOD_REPO:-seedypod/core}"
+VERSION="${SEEDYPOD_HAL_VERSION:-latest}"
+BINARY=""
+ENABLE=1
+PREFIX=/usr/local/bin
+CONF_DIR=/etc/seedypod
+STATE_DIR=/var/lib/seedypod
+SERVICE_USER=seedypod
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --version) VERSION="$2"; shift 2 ;;
+    --binary) BINARY="$2"; shift 2 ;;
+    --no-enable) ENABLE=0; shift ;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; else SUDO=; fi
+
+# ---- target detection -------------------------------------------------------
+arch="$(uname -m)"
+case "$arch" in
+  aarch64|arm64) TARGET=aarch64-unknown-linux-gnu ;;
+  armv6l|armv7l|armhf) TARGET=arm-unknown-linux-gnueabihf ;;
+  *) echo "unsupported architecture: $arch (hald ships for aarch64 and armv6/7)" >&2; exit 1 ;;
+esac
+if [ "$arch" = "aarch64" ] && [ "$(getconf LONG_BIT 2>/dev/null || echo 64)" = "32" ]; then
+  TARGET=arm-unknown-linux-gnueabihf  # 64-bit CPU on a 32-bit OS
+fi
+
+# ---- download ---------------------------------------------------------------
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+if [ -n "$BINARY" ]; then
+  cp "$BINARY" "$TMP/hald"
+else
+  if [ "$VERSION" = "latest" ]; then
+    URL="https://github.com/$REPO/releases/latest/download/hald-$TARGET"
+  else
+    URL="https://github.com/$REPO/releases/download/$VERSION/hald-$TARGET"
+  fi
+  echo "→ downloading $URL"
+  curl -fsSL --retry 3 -o "$TMP/hald" "$URL"
+fi
+chmod 0755 "$TMP/hald"
+if ! "$TMP/hald" --version >/dev/null 2>&1; then
+  echo "downloaded binary does not run on this system" >&2; exit 1
+fi
+echo "→ $("$TMP/hald" --version) for $TARGET"
+
+# ---- user, groups, directories ---------------------------------------------
+if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
+  echo "→ creating user $SERVICE_USER"
+  $SUDO useradd --system --home-dir "$STATE_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
+fi
+for g in gpio i2c video; do
+  if getent group "$g" >/dev/null; then $SUDO usermod -aG "$g" "$SERVICE_USER"; fi
+done
+$SUDO mkdir -p "$CONF_DIR" "$STATE_DIR"
+$SUDO chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
+
+# ---- binary and config --------------------------------------------------------
+$SUDO install -m 0755 "$TMP/hald" "$PREFIX/hald"
+if [ ! -f "$CONF_DIR/hal.toml" ]; then
+  echo "→ writing $CONF_DIR/hal.toml (commented defaults)"
+  "$PREFIX/hald" --print-default-config | $SUDO tee "$CONF_DIR/hal.toml" >/dev/null
+  $SUDO chmod 0644 "$CONF_DIR/hal.toml"
+fi
+"$PREFIX/hald" --config "$CONF_DIR/hal.toml" --check >/dev/null
+
+# ---- interfaces: I²C and the hardware PWM overlay ----------------------------
+if command -v raspi-config >/dev/null 2>&1; then
+  echo "→ enabling I²C"
+  $SUDO raspi-config nonint do_i2c 0 || true
+fi
+BOOT_CONF=""
+for c in /boot/firmware/config.txt /boot/config.txt; do
+  if [ -f "$c" ]; then BOOT_CONF="$c"; break; fi
+done
+if [ -n "$BOOT_CONF" ] && ! grep -q '^dtoverlay=pwm' "$BOOT_CONF"; then
+  echo "→ enabling hardware PWM on GPIO18 in $BOOT_CONF (reboot required)"
+  echo "dtoverlay=pwm,pin=18,func=2" | $SUDO tee -a "$BOOT_CONF" >/dev/null
+fi
+if ! command -v fswebcam >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  echo "→ installing fswebcam (camera stills)"
+  $SUDO apt-get install -y -q fswebcam >/dev/null || echo "   (fswebcam install failed; cameras will report missing)"
+fi
+
+# ---- systemd ---------------------------------------------------------------
+$SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT
+[Unit]
+Description=seedypod hardware daemon (hald)
+Documentation=https://github.com/$REPO/blob/main/docs/hardware/hal.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=$PREFIX/hald --config $CONF_DIR/hal.toml
+Environment=RUST_LOG=info
+User=$SERVICE_USER
+Group=$SERVICE_USER
+SupplementaryGroups=gpio i2c video
+StateDirectory=seedypod
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$STATE_DIR /tmp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+$SUDO systemctl daemon-reload
+if [ "$ENABLE" -eq 1 ]; then
+  $SUDO systemctl enable hald.service >/dev/null
+  $SUDO systemctl restart hald.service
+  sleep 1
+  $SUDO systemctl --no-pager --lines=5 status hald.service || true
+fi
+
+echo "✓ hald installed. Config: $CONF_DIR/hal.toml · logs: journalctl -u hald -f · check: hald --config $CONF_DIR/hal.toml --check"

@@ -20,7 +20,7 @@ usable by Home Assistant with no core present.
 
 ## Decision
 
-Prefix `leafypod/<unit-id>/`. Payloads JSON, SI units, RFC 3339 timestamps.
+Prefix `seedypod/<unit-id>/`. Payloads JSON, SI units, RFC 3339 timestamps.
 `unit-id` is derived from the Pi serial (never a shared default).
 
 | Topic | Dir | Retained | Payload |
@@ -28,6 +28,8 @@ Prefix `leafypod/<unit-id>/`. Payloads JSON, SI units, RFC 3339 timestamps.
 | `availability` | hald→ | yes | `online` / `offline` (LWT) |
 | `system` | hald→ | yes | `SystemInfo` — model, version, `caps`, `limits` |
 | `sensor/<id>` | hald→ | no | `Reading {ts, value, unit, quality}` |
+| `sensor/<id>/calibrate` | →hald | — | `CalibrationCommand {point, value?}` (added 2026-10-31; EZO probes) |
+| `sensor/<id>/calibration` | hald→ | yes | `CalibrationResult {ts, point, ok, points, detail}` |
 | `actuator/<id>/state` | hald→ | yes | `ActuatorState {on, level, since, fault, remainingS}` |
 | `actuator/<id>/set` | →hald | — | `ActuatorCommand {on?, level?, durationS?}`; hald clamps or refuses |
 | `event/button` | hald→ | no | `{press: single∣double∣long}` |

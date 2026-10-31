@@ -29,7 +29,7 @@ are credited in `docs/hardware/pin-map.md`.
 
 - Contributors must not paste upstream code; reimplement from the documented
   behaviour.
-- Anyone running a modified leafypod as a network service must publish their
+- Anyone running a modified seedypod as a network service must publish their
   changes — appropriate for a project whose whole point is owning your device.
 
 **Authors**: @ng

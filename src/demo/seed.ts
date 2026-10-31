@@ -1,0 +1,80 @@
+/**
+ * Demo seed — a believable Gardyn mid-cycle: a light curve, two pump cycles,
+ * a 19-day-old grow with 24 planted pods, a week of telemetry, and a few
+ * camera frames (SVGs standing in for JPEGs). Deterministic so the demo looks
+ * the same every load.
+ */
+import type { SimHal } from '../hardware/sim'
+import type { Store, TelemetryPoint } from '../store/types'
+
+const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian Kale', 'Cherry Tomato', 'Thai Basil', 'Mint', 'Swiss Chard', 'Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
+
+export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
+  const day = 86_400_000
+  const started = new Date(now.getTime() - 19 * day)
+  store.settings.update({ unitName: 'Kitchen Gardyn', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', captureIntervalMin: 60 })
+
+  store.schedules.upsert({ id: 'daylight', kind: 'light', name: 'Daylight curve', enabled: true, days: 127, spec: { setpoints: [{ minute: 360, level: 0 }, { minute: 450, level: 85 }, { minute: 1140, level: 85 }, { minute: 1260, level: 0 }] } })
+  store.schedules.upsert({ id: 'morning-water', kind: 'pump', name: 'Morning watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })
+  store.schedules.upsert({ id: 'evening-water', kind: 'pump', name: 'Evening watering', enabled: true, days: 127, spec: { minute: 1200, durationS: 300 } })
+  store.schedules.upsert({ id: 'weekend-boost', kind: 'light', name: 'Weekend boost', enabled: false, days: 0b1100000, spec: { setpoints: [{ minute: 600, level: 100 }, { minute: 900, level: 100 }, { minute: 960, level: 0 }] } })
+
+  const cycle = store.grow.start(started.toISOString(), 'Autumn greens + herbs')
+  store.grow.setStage('vegetative', now.toISOString())
+  store.grow.markIssued('reminder_thinning')
+  store.grow.markIssued('reminder_nutrients:1')
+  store.grow.markIssued('reminder_nutrients:2')
+  void cycle
+
+  for (let slot = 1; slot <= 30; slot++) {
+    if (slot > 24) continue
+    const plant = PLANTS[(slot * 7) % PLANTS.length] ?? 'Lettuce'
+    const status = slot === 9 ? 'attention' : slot <= 6 ? 'harvest' : 'growing'
+    store.pods.update(slot, { plant, plantedAt: started.toISOString().slice(0, 10), status, notes: slot === 9 ? 'Yellowing lower leaves — check nutrients' : '' }, now.toISOString())
+  }
+
+  // A week of telemetry at 15-min resolution with a daily rhythm.
+  const pts: TelemetryPoint[] = []
+  for (let m = 7 * 1440; m >= 0; m -= 15) {
+    const ts = new Date(now.getTime() - m * 60_000)
+    const h = ts.getHours() + ts.getMinutes() / 60
+    const lightOn = h >= 7 && h < 21
+    const phase = Math.sin(((h - 6) / 24) * Math.PI * 2)
+    pts.push({ ts: ts.toISOString(), sensor: 'air_temp', value: round(22 + 2.2 * phase + (lightOn ? 0.8 : -0.4)) })
+    pts.push({ ts: ts.toISOString(), sensor: 'humidity', value: round(50 - 6 * phase + (lightOn ? 3 : 0)) })
+    pts.push({ ts: ts.toISOString(), sensor: 'pcb_temp', value: round(29 + (lightOn ? 4 : 0) + 0.5 * phase) })
+    const refillDay = Math.floor(m / 1440)
+    pts.push({ ts: ts.toISOString(), sensor: 'water_level_pct', value: round(92 - ((7 * 1440 - m) % (3 * 1440)) / (3 * 1440) * 45 + refillDay * 0) })
+    pts.push({ ts: ts.toISOString(), sensor: 'pump_w', value: (ts.getHours() === 8 || ts.getHours() === 20) && ts.getMinutes() < 5 ? 3.1 : 0 })
+  }
+  store.telemetry.add(pts)
+  store.counters.add('light_hours', 19 * 14 + 2130, now.toISOString())
+
+  store.alerts.raise('reminder_nutrients', 'Add nutrients (every 7 days)', new Date(now.getTime() - 2 * 3_600_000).toISOString())
+
+  // Camera frames: generated SVG "stills" so the gallery has something to show.
+  for (const cam of ['upper', 'lower'] as const) {
+    for (let i = 5; i >= 0; i--) {
+      const ts = new Date(now.getTime() - i * 6 * 3_600_000)
+      const id = `${cam}-${ts.toISOString().replace(/[:.]/g, '-')}`
+      store.captures.add({ id, camera: cam, ts: ts.toISOString(), path: `data:image/svg+xml;utf8,${encodeURIComponent(frameSvg(cam, 19 - i / 4))}`, bytes: 4096 })
+    }
+  }
+
+  // Put the sim in a state that matches the story.
+  void hal.setActuator('light', { on: true, level: 85 })
+}
+
+function frameSvg(camera: 'upper' | 'lower', dayAge: number): string {
+  const g = Math.min(1, dayAge / 30)
+  const leaves = Array.from({ length: 6 }, (_, i) => {
+    const x = 60 + i * 110
+    const r = 18 + g * 28 + ((i * 7) % 5)
+    return `<ellipse cx="${x}" cy="${camera === 'upper' ? 150 : 190}" rx="${r}" ry="${r * 0.7}" fill="#50c878" opacity="0.9"/><ellipse cx="${x + 10}" cy="${camera === 'upper' ? 135 : 175}" rx="${r * 0.8}" ry="${r * 0.5}" fill="#6fd68f" opacity="0.8"/>`
+  }).join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300"><rect width="720" height="300" fill="#141414"/><rect y="220" width="720" height="80" fill="#1d1d1f"/>${leaves}<text x="12" y="290" font-family="monospace" font-size="14" fill="#8b8b92">${camera} · demo frame</text></svg>`
+}
+
+function round(n: number): number {
+  return Math.round(n * 10) / 10
+}

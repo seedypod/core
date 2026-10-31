@@ -1,9 +1,9 @@
 {
-  "name": "@leafypod/core",
+  "name": "@seedypod/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "leafypod core — local, cloud-free control for Gardyn hydroponic towers: Hono + tRPC + MCP server, React web UI, and the Rust hardware daemon (hal/)",
+  "description": "seedypod core — local, cloud-free control for Gardyn hydroponic towers: Hono + tRPC + MCP server, React web UI, and the Rust hardware daemon (hal/)",
   "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
@@ -53,6 +53,7 @@
     "cron-parser": "^4.9.0",
     "drizzle-orm": "^0.45.0",
     "hono": "^4.9.0",
+    "jpeg-js": "^0.4.4",
     "lucide-react": "^1.0.0",
     "mqtt": "^5.15.0",
     "react": "^19.2.0",
@@ -64,6 +65,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
+    "@playwright/test": "1.64.1",
     "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/github": "^12.0.10",
     "@semantic-release/release-notes-generator": "^14.1.1",
