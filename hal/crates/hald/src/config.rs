@@ -38,6 +38,9 @@ pub struct Config {
     pub camera: Vec<CameraEntry>,
     pub sensor: Vec<SensorEntry>,
     pub actuator: Vec<ActuatorEntry>,
+    /// Sensors added from the app (the state-dir overlay), appended to `sensors()`.
+    #[serde(skip)]
+    pub extra_sensors: Vec<SensorEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +153,8 @@ pub const SENSOR_KINDS: &[&str] = &[
     "ezo_rtd",
 ];
 pub const ACTUATOR_KINDS: &[&str] = &["pwm_light", "pwm_pump", "dosing"];
+/// Usable 7-bit I²C addresses (0x00–0x07 and 0x78–0x7F are reserved).
+pub const I2C_ADDR_RANGE: std::ops::RangeInclusive<u16> = 0x08..=0x77;
 const I2C_KINDS: &[&str] = &[
     "pct2075", "ina219", "dht20", "am2320", "ezo_ph", "ezo_ec", "ezo_rtd",
 ];
@@ -221,6 +226,7 @@ impl Default for Config {
             ],
             sensor: Vec::new(),
             actuator: Vec::new(),
+            extra_sensors: Vec::new(),
         }
     }
 }
@@ -374,8 +380,16 @@ impl Config {
         }
     }
 
-    /// The sensor list: explicit `[[sensor]]` tables, else the stock Gardyn set.
+    /// The sensor list: explicit `[[sensor]]` tables, else the stock Gardyn set;
+    /// then any sensors added from the app.
     pub fn sensors(&self) -> Vec<SensorEntry> {
+        let mut v = self.configured_sensors();
+        v.extend(self.extra_sensors.iter().cloned());
+        v
+    }
+
+    /// `hal.toml` only: explicit `[[sensor]]` tables, else the stock Gardyn set.
+    pub fn configured_sensors(&self) -> Vec<SensorEntry> {
         if !self.sensor.is_empty() {
             return self.sensor.clone();
         }
@@ -466,6 +480,7 @@ impl Config {
                 errs.push(format!("camera {:?} listed twice", c.name));
             }
         }
+        let mut addrs = std::collections::BTreeMap::new();
         for (i, s) in self.sensors().iter().enumerate() {
             let k = s.kind.as_str();
             if !SENSOR_KINDS.contains(&k) {
@@ -474,6 +489,15 @@ impl Config {
             }
             if I2C_KINDS.contains(&k) && s.addr.is_none() {
                 errs.push(format!("sensor[{i}] ({k}): addr required"));
+            }
+            if let (true, Some(a)) = (I2C_KINDS.contains(&k), s.addr) {
+                if !I2C_ADDR_RANGE.contains(&a) {
+                    errs.push(format!("sensor[{i}] ({k}): addr 0x{a:02X} is outside 0x08–0x77"));
+                } else if let Some(other) = addrs.insert(a, k) {
+                    errs.push(format!(
+                        "sensor[{i}] ({k}): addr 0x{a:02X} already used by {other}"
+                    ));
+                }
             }
             if k == "dyp_a01" && (s.trigger.is_none() || s.echo.is_none()) {
                 errs.push(format!("sensor[{i}] (dyp_a01): trigger and echo required"));
@@ -672,6 +696,35 @@ pin = 5
         assert_eq!(c.sensors().len(), 1);
         assert_eq!(c.actuators().len(), 1);
         assert!(c.validate().is_empty());
+    }
+
+    #[test]
+    fn app_sensors_append_to_the_stock_set_and_share_its_validation() {
+        let ph = |addr| SensorEntry {
+            kind: "ezo_ph".into(),
+            addr: Some(addr),
+            pin: None,
+            trigger: None,
+            echo: None,
+            optional: false,
+            active_low: None,
+        };
+        let mut c = Config::default();
+        let stock = c.sensors().len();
+        c.extra_sensors = vec![ph(0x63)];
+        assert_eq!(c.sensors().len(), stock + 1);
+        assert_eq!(c.configured_sensors().len(), stock);
+        assert!(c.validate().is_empty());
+        c.extra_sensors = vec![ph(0x40)];
+        assert!(
+            c.validate()
+                .iter()
+                .any(|e| e.contains("0x40 already used by ina219")),
+            "{:?}",
+            c.validate()
+        );
+        c.extra_sensors = vec![ph(0x7A)];
+        assert!(c.validate().iter().any(|e| e.contains("outside 0x08–0x77")));
     }
 
     #[test]

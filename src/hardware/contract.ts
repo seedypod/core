@@ -110,6 +110,65 @@ export const CalibrationResult = z.object({
 })
 export type CalibrationResult = z.infer<typeof CalibrationResult>
 
+/** One step of a probe's calibration procedure, rendered by the app's wizard. */
+export const CalibrationStep = z.object({
+  point: CalibrationPoint,
+  label: z.string(),
+  instruction: z.string(),
+  /** Reference value to suggest (pH, mS/cm, °C); null for `dry`/`clear`. */
+  defaultValue: z.number().nullable(),
+  optional: z.boolean(),
+})
+export type CalibrationStep = z.infer<typeof CalibrationStep>
+
+/** A sensor kind hald can add at runtime — the serialised `SensorKind` descriptor. */
+export const DeviceKindInfo = z.object({
+  kind: z.string(),
+  label: z.string(),
+  description: z.string(),
+  ids: z.array(SensorId),
+  bus: z.string(),
+  defaultAddr: z.number().int().nullable(),
+  calibration: z.array(CalibrationStep),
+})
+export type DeviceKindInfo = z.infer<typeof DeviceKindInfo>
+
+export const DeviceEntry = z.object({
+  kind: z.string(),
+  label: z.string(),
+  addr: z.number().int().nullable(),
+  ids: z.array(SensorId),
+  /** `config` = hal.toml (not removable from the app); `user` = added from the app. */
+  source: z.enum(['config', 'user']),
+  status: z.enum(['ready', 'absent']),
+  detail: z.string(),
+})
+export type DeviceEntry = z.infer<typeof DeviceEntry>
+
+/** `devices` (retained): configured sensor devices and what can be added. */
+export const DeviceInventory = z.object({
+  sensors: z.array(DeviceEntry),
+  addable: z.array(DeviceKindInfo),
+})
+export type DeviceInventory = z.infer<typeof DeviceInventory>
+
+/** `devices/set`. */
+export const DeviceCommand = z.object({
+  requestId: z.string(),
+  op: z.enum(['add', 'remove']),
+  kind: z.string(),
+  addr: z.number().int().min(0).max(0x7f),
+})
+export type DeviceCommand = z.infer<typeof DeviceCommand>
+
+/** `devices/result`, matched by `requestId`. */
+export const DeviceResult = z.object({
+  requestId: z.string(),
+  ok: z.boolean(),
+  detail: z.string(),
+})
+export type DeviceResult = z.infer<typeof DeviceResult>
+
 export const ButtonPress = z.enum(['single', 'double', 'long'])
 export type ButtonPress = z.infer<typeof ButtonPress>
 
@@ -121,6 +180,9 @@ export const topics = {
   sensor: (u: string, id: SensorId) => `${topics.prefix(u)}/sensor/${id}`,
   sensorCalibrate: (u: string, id: SensorId) => `${topics.prefix(u)}/sensor/${id}/calibrate`,
   sensorCalibration: (u: string, id: SensorId) => `${topics.prefix(u)}/sensor/${id}/calibration`,
+  devices: (u: string) => `${topics.prefix(u)}/devices`,
+  devicesSet: (u: string) => `${topics.prefix(u)}/devices/set`,
+  devicesResult: (u: string) => `${topics.prefix(u)}/devices/result`,
   actuatorState: (u: string, id: ActuatorId) => `${topics.prefix(u)}/actuator/${id}/state`,
   actuatorSet: (u: string, id: ActuatorId) => `${topics.prefix(u)}/actuator/${id}/set`,
   button: (u: string) => `${topics.prefix(u)}/event/button`,

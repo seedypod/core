@@ -9,7 +9,7 @@
  * without a broker; production passes an `mqtt.js` client.
  */
 import type { AlertKind, CalibrationCommand } from './contract'
-import { ActuatorCommand, ActuatorId, ActuatorState, Alert, ButtonPress, CalibrationCommand as CalibrationCommandSchema, CalibrationResult, Reading, SensorId, SystemInfo, topics } from './contract'
+import { ActuatorCommand, ActuatorId, ActuatorState, Alert, ButtonPress, CalibrationCommand as CalibrationCommandSchema, CalibrationResult, DeviceInventory, DeviceResult, Reading, SensorId, SystemInfo, topics } from './contract'
 import type { HalClient, HalEvent, HalSnapshot, Unsubscribe } from './types'
 import { HalRefused } from './sim'
 
@@ -32,14 +32,17 @@ export interface MqttHalClientOptions {
   commandTimeoutMs?: number
   /** How long to wait for a calibration result (EZO commands take ~1–2 s). */
   calibrationTimeoutMs?: number
+  /** How long to wait for hald to add/remove a sensor (includes probing it). */
+  devicesTimeoutMs?: number
   fetchImpl?: typeof fetch
   now?: () => Date
 }
 
 export class MqttHalClient implements HalClient {
   private readonly listeners = new Set<(e: HalEvent) => void>()
-  private readonly snap: HalSnapshot = { system: null, online: false, sensors: {}, actuators: {}, alerts: {} }
+  private readonly snap: HalSnapshot = { system: null, online: false, sensors: {}, actuators: {}, alerts: {}, devices: null }
   private readonly pending = new Map<ActuatorId, { resolve: (s: ActuatorState) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
+  private readonly pendingDevices = new Map<string, { resolve: (r: DeviceResult) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
   private readonly pendingCal = new Map<SensorId, { point: CalibrationCommand['point'], resolve: (r: CalibrationResult) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
   private readonly u: string
   private readonly timeoutMs: number
@@ -50,7 +53,7 @@ export class MqttHalClient implements HalClient {
     this.timeoutMs = o.commandTimeoutMs ?? 5000
     this.fetchImpl = o.fetchImpl ?? fetch
     const p = topics.prefix(this.u)
-    const subscribe = () => o.mqtt.subscribe([`${p}/availability`, `${p}/system`, `${p}/sensor/+`, `${p}/sensor/+/calibration`, `${p}/actuator/+/state`, `${p}/alert/+`, `${p}/event/button`])
+    const subscribe = () => o.mqtt.subscribe([`${p}/availability`, `${p}/system`, `${p}/sensor/+`, `${p}/sensor/+/calibration`, `${p}/actuator/+/state`, `${p}/alert/+`, `${p}/event/button`, `${p}/devices`, `${p}/devices/result`])
     // Re-subscribe on every reconnect, and now if the caller handed us a client that is already connected.
     o.mqtt.on('connect', subscribe)
     if (o.mqtt.connected) subscribe()
@@ -98,6 +101,27 @@ export class MqttHalClient implements HalClient {
     })
   }
 
+  addSensor(kind: string, addr: number): Promise<DeviceResult> {
+    return this.devicesCommand('add', kind, addr)
+  }
+
+  removeSensor(kind: string, addr: number): Promise<DeviceResult> {
+    return this.devicesCommand('remove', kind, addr)
+  }
+
+  private devicesCommand(op: 'add' | 'remove', kind: string, addr: number): Promise<DeviceResult> {
+    const requestId = `${op}-${kind}-${addr}-${Math.random().toString(36).slice(2, 8)}`
+    const timeoutMs = this.o.devicesTimeoutMs ?? 10_000
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingDevices.delete(requestId)
+        reject(new Error(`hald did not answer the ${op} ${kind} request within ${timeoutMs} ms`))
+      }, timeoutMs)
+      this.pendingDevices.set(requestId, { resolve, reject, timer })
+      this.o.mqtt.publish(topics.devicesSet(this.u), JSON.stringify({ requestId, op, kind, addr }), { qos: 1 })
+    })
+  }
+
   async acknowledgeAlert(kind: AlertKind): Promise<void> {
     this.o.mqtt.publish(topics.alertAck(this.u, kind), '{}', { qos: 1 })
   }
@@ -114,12 +138,13 @@ export class MqttHalClient implements HalClient {
   }
 
   async close(): Promise<void> {
-    for (const p of [...this.pending.values(), ...this.pendingCal.values()]) {
+    for (const p of [...this.pending.values(), ...this.pendingCal.values(), ...this.pendingDevices.values()]) {
       clearTimeout(p.timer)
       p.reject(new Error('client closed'))
     }
     this.pending.clear()
     this.pendingCal.clear()
+    this.pendingDevices.clear()
     this.o.mqtt.end()
     this.listeners.clear()
   }
@@ -172,6 +197,21 @@ export class MqttHalClient implements HalClient {
         const alert = Alert.parse(JSON.parse(payload))
         this.snap.alerts[alert.kind] = alert
         return this.emit({ type: 'alert', alert })
+      }
+      if (rel === 'devices') {
+        const devices = DeviceInventory.parse(JSON.parse(payload))
+        this.snap.devices = devices
+        return this.emit({ type: 'devices', devices })
+      }
+      if (rel === 'devices/result') {
+        const result = DeviceResult.parse(JSON.parse(payload))
+        const p = this.pendingDevices.get(result.requestId)
+        if (p) {
+          clearTimeout(p.timer)
+          this.pendingDevices.delete(result.requestId)
+          p.resolve(result)
+        }
+        return
       }
       if (rel === 'event/button') {
         const press = ButtonPress.parse(JSON.parse(payload).press)

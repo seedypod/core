@@ -92,6 +92,24 @@ describe('MqttHalClient', () => {
     await expect(slow.calibrate('ec', { point: 'dry' })).rejects.toThrow(/did not report ec calibration/)
   })
 
+  it('round-trips devices/set by requestId and tracks the retained inventory', async () => {
+    const { mqtt, client } = make()
+    mqtt.fire('connect')
+    expect(mqtt.subscribed).toEqual(expect.arrayContaining([`seedypod/${U}/devices`, `seedypod/${U}/devices/result`]))
+    const inv = { sensors: [], addable: [] }
+    mqtt.msg(`seedypod/${U}/devices`, inv)
+    expect(client.snapshot().devices).toEqual(inv)
+    const p = client.addSensor('ezo_ph', 0x63)
+    const sent = JSON.parse(mqtt.published.at(-1)?.payload ?? '{}')
+    expect(mqtt.published.at(-1)?.topic).toBe(`seedypod/${U}/devices/set`)
+    expect(sent).toMatchObject({ op: 'add', kind: 'ezo_ph', addr: 0x63 })
+    mqtt.msg(`seedypod/${U}/devices/result`, { requestId: 'someone-else', ok: true, detail: '' })
+    mqtt.msg(`seedypod/${U}/devices/result`, { requestId: sent.requestId, ok: false, detail: 'probe failed' })
+    await expect(p).resolves.toEqual({ requestId: sent.requestId, ok: false, detail: 'probe failed' })
+    const slow = new MqttHalClient({ unitId: U, mqtt, httpBase: '', devicesTimeoutMs: 10 })
+    await expect(slow.removeSensor('ezo_ph', 0x63)).rejects.toThrow(/did not answer the remove ezo_ph request/)
+  })
+
   it('acknowledges alerts, fetches stills over HTTP, forwards button events, and drops garbage', async () => {
     const { mqtt, client } = make()
     const events: string[] = []

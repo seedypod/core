@@ -59,3 +59,50 @@ describe('SimHal safety invariants (mirror of hal-core::safety)', () => {
     expect(h.snapshot().actuators.light).toMatchObject({ on: true, level: 60 })
   })
 })
+
+describe('SimHal sensor inventory (mirror of hald devices/set)', () => {
+  it('adds a pH probe live: caps, inventory, readings, calibration', async () => {
+    const h = sim()
+    const events: string[] = []
+    h.subscribe(e => events.push(e.type))
+    expect(h.snapshot().devices?.addable.map(k => k.kind)).toEqual(['ezo_ph', 'ezo_ec', 'ezo_rtd'])
+    expect(await h.addSensor('ezo_ph', 0x63)).toMatchObject({ ok: true })
+    const snap = h.snapshot()
+    expect(snap.system?.caps.sensors).toContain('ph')
+    expect(snap.sensors.ph).toMatchObject({ value: 6.1, unit: 'pH' })
+    expect(snap.devices?.sensors.find(d => d.kind === 'ezo_ph')).toMatchObject({ source: 'user', status: 'ready', addr: 0x63 })
+    expect(events).toEqual(expect.arrayContaining(['system', 'devices', 'sensor']))
+    expect(await h.calibrate('ph', { point: 'mid', value: 7 })).toMatchObject({ ok: true, points: 1 })
+    expect(await h.calibrate('ph', { point: 'low' })).toMatchObject({ ok: false })
+  })
+
+  it('refuses what hald refuses, with the same messages', async () => {
+    const h = sim()
+    await h.addSensor('ezo_ph', 0x63)
+    const cases: [Promise<{ ok: boolean, detail: string }>, string][] = [
+      [h.addSensor('ezo_ph', 0x65), 'a ph sensor is already installed'],
+      [h.addSensor('ezo_ec', 0x63), '0x63 is already used by pH probe'],
+      [h.addSensor('ezo_ec', 0x40), 'already used by Pump power monitor'],
+      [h.addSensor('ezo_ec', 0x05), 'outside 0x08–0x77'],
+      [h.addSensor('pct2075', 0x48), 'can\'t be added from the app'],
+      [h.removeSensor('ina219', 0x40), 'built-in sensors come from hal.toml'],
+      [h.removeSensor('ezo_ec', 0x64), 'no ezo_ec sensor at 0x64'],
+    ]
+    for (const [p, why] of cases) {
+      const r = await p
+      expect(r.ok, why).toBe(false)
+      expect(r.detail).toContain(why)
+    }
+  })
+
+  it('removing a probe drops its quantity and calibration', async () => {
+    const h = sim()
+    await h.addSensor('ezo_ec', 0x64)
+    await h.calibrate('ec', { point: 'dry' })
+    expect(await h.removeSensor('ezo_ec', 0x64)).toMatchObject({ ok: true })
+    expect(h.snapshot().system?.caps.sensors).not.toContain('ec')
+    expect(h.snapshot().sensors.ec).toBeUndefined()
+    expect(await h.calibrate('ec', { point: 'dry' })).toMatchObject({ ok: false, detail: 'no ec sensor configured' })
+  })
+})
+

@@ -1,0 +1,66 @@
+{
+  "sensors": [
+    {
+      "kind": "dyp_a01",
+      "label": "Water level (ultrasonic)",
+      "addr": null,
+      "ids": [
+        "water_distance",
+        "water_level_pct"
+      ],
+      "source": "config",
+      "status": "ready",
+      "detail": ""
+    },
+    {
+      "kind": "ezo_ph",
+      "label": "pH probe",
+      "addr": 99,
+      "ids": [
+        "ph"
+      ],
+      "source": "user",
+      "status": "ready",
+      "detail": ""
+    },
+    {
+      "kind": "ezo_ec",
+      "label": "Conductivity (EC) probe",
+      "addr": 100,
+      "ids": [
+        "ec"
+      ],
+      "source": "config",
+      "status": "absent",
+      "detail": "probe ezo_ec at Some(100): device not present"
+    }
+  ],
+  "addable": [
+    {
+      "kind": "ezo_ph",
+      "label": "pH probe",
+      "description": "Atlas Scientific EZO-pH circuit on the I²C bus.",
+      "ids": [
+        "ph"
+      ],
+      "bus": "i2c",
+      "defaultAddr": 99,
+      "calibration": [
+        {
+          "point": "mid",
+          "label": "Midpoint",
+          "instruction": "Rinse the probe, place it in pH 7.00 buffer and wait for the reading to settle.",
+          "defaultValue": 7.0,
+          "optional": false
+        },
+        {
+          "point": "low",
+          "label": "Low point",
+          "instruction": "Rinse, place in pH 4.00 buffer and wait.",
+          "defaultValue": 4.0,
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

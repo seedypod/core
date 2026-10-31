@@ -10,7 +10,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
 
-use hal_core::{topics, ActuatorCommand, AlertKind, CalibrationCommand, SensorId};
+use hal_core::{topics, ActuatorCommand, AlertKind, CalibrationCommand, DeviceCommand, SensorId};
 use rumqttc::{AsyncClient, Event, LastWill, MqttOptions, Packet, QoS};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{info, warn};
@@ -70,6 +70,7 @@ pub fn subscriptions(unit: &str) -> Vec<String> {
         format!("{}/actuator/+/set", topics::prefix(unit)),
         format!("{}/alert/+/ack", topics::prefix(unit)),
         format!("{}/sensor/+/calibrate", topics::prefix(unit)),
+        topics::devices_set(unit),
     ];
     v.extend(crate::ha::command_topics(unit));
     v
@@ -107,6 +108,9 @@ pub fn parse_inbound(unit: &str, topic: &str, payload: &[u8]) -> Result<Inbound,
                 serde_json::from_str(text).map_err(|e| format!("bad CalibrationCommand {text:?}: {e}"))?;
             Ok(Inbound::Calibrate(id, cmd))
         }
+        ["devices", "set"] => serde_json::from_str::<DeviceCommand>(text)
+            .map(Inbound::Devices)
+            .map_err(|e| format!("bad DeviceCommand {text:?}: {e}")),
         ["ha", ..] => crate::ha::translate_command(unit, topic, text)
             .map(|(id, cmd)| Inbound::ActuatorSet(id, cmd))
             .ok_or_else(|| format!("unrecognised HA command {topic:?} = {text:?}")),
@@ -276,7 +280,8 @@ mod tests {
         assert!(s.contains(&"seedypod/u1/alert/+/ack".to_owned()));
         assert!(s.contains(&"seedypod/u1/ha/light/brightness/set".to_owned()));
         assert!(s.contains(&"seedypod/u1/sensor/+/calibrate".to_owned()));
-        assert_eq!(s.len(), 7);
+        assert!(s.contains(&"seedypod/u1/devices/set".to_owned()));
+        assert_eq!(s.len(), 8);
     }
 
     #[test]
@@ -321,6 +326,10 @@ mod tests {
                 }
             )
         );
+        assert!(matches!(
+            parse_inbound("u1", "seedypod/u1/devices/set", br#"{"requestId":"r","op":"remove","kind":"ezo_ph","addr":99}"#),
+            Ok(Inbound::Devices(c)) if c.op == hal_core::DeviceOp::Remove && c.addr == 0x63
+        ));
         assert_eq!(
             parse_inbound("u1", "seedypod/u1/ha/light/set", b"ON").unwrap(),
             Inbound::ActuatorSet(
@@ -342,6 +351,7 @@ mod tests {
             ("seedypod/u1/sensor/nope/calibrate", br#"{"point":"clear"}"#),
             ("seedypod/u1/sensor/ph/calibrate", br#"{"point":"middle"}"#),
             ("seedypod/u1/sensor/ph/calibrate", b""),
+            ("seedypod/u1/devices/set", br#"{"op":"add"}"#),
         ] {
             assert!(parse_inbound("u1", topic, payload).is_err(), "{topic}");
         }

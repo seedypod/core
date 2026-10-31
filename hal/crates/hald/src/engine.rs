@@ -17,11 +17,15 @@ use hal_core::registry::Registry;
 use hal_core::safety::{Decision, DoseGuard, DoseLimits, Env, PumpGuard, PumpLimits};
 use hal_core::{
     topics, ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, BinarySensor, ButtonEvent,
-    ButtonPress, CalibrationCommand, CalibrationResult, Reading, SensorId, SystemInfo,
+    ButtonPress, CalibrationCommand, CalibrationResult, DeviceCommand, DeviceEntry, DeviceInventory,
+    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Reading, SensorId, SystemInfo,
 };
 use serde::Serialize;
 use tracing::{info, warn};
 
+use crate::config::{SensorEntry, I2C_ADDR_RANGE};
+use crate::kinds::SensorFactory;
+use crate::overlay::Overlay;
 use crate::state::{Persisted, StateFile};
 
 /// One MQTT publish (or one JSON line in `--stdout` mode).
@@ -55,6 +59,8 @@ pub enum Inbound {
     AlertAck(AlertKind),
     /// Store a calibration point on a probe (EZO); the result is published retained.
     Calibrate(SensorId, CalibrationCommand),
+    /// Add or remove a sensor at runtime (`devices/set`).
+    Devices(DeviceCommand),
     Button(ButtonPress),
     /// Outcome of a camera capture (from the HTTP server) → `camera_missing`.
     CameraResult {
@@ -100,6 +106,9 @@ pub struct Snapshot {
     pub actuators: BTreeMap<String, ActuatorState>,
     pub alerts: BTreeMap<String, Alert>,
     pub light_hours_total: f64,
+    /// Current capabilities, for HTTP `/system` (they change when sensors are added).
+    #[serde(skip)]
+    pub system: Option<SystemInfo>,
 }
 
 pub type SharedSnapshot = Arc<RwLock<Snapshot>>;
@@ -146,6 +155,44 @@ pub struct Engine {
     last_hours_persist: Option<Instant>,
     alerts: BTreeMap<AlertKind, Alert>,
     snapshot: SharedSnapshot,
+    devices: Devices,
+}
+
+/// Runtime sensor inventory: what is configured, what was added from the app,
+/// and how to build more. Without a factory, `devices/set` is refused.
+#[derive(Default)]
+pub struct Devices {
+    pub entries: Vec<DeviceEntry>,
+    /// The app-added entries, as persisted in the overlay.
+    pub user: Vec<SensorEntry>,
+    pub factory: Option<Box<dyn SensorFactory>>,
+    pub overlay: Option<Overlay>,
+}
+
+impl Devices {
+    /// Inventory entries for every configured sensor, from the boot outcome.
+    pub fn from_boot(status: &[(SensorEntry, Option<String>)], user: &[SensorEntry]) -> Vec<DeviceEntry> {
+        status
+            .iter()
+            .map(|(s, err)| DeviceEntry {
+                kind: s.kind.clone(),
+                label: crate::kinds::label(&s.kind),
+                addr: s.addr,
+                ids: crate::kinds::ids_for(&s.kind),
+                source: if user.contains(s) {
+                    DeviceSource::User
+                } else {
+                    DeviceSource::Config
+                },
+                status: if err.is_some() {
+                    DeviceStatus::Absent
+                } else {
+                    DeviceStatus::Ready
+                },
+                detail: err.clone().unwrap_or_default(),
+            })
+            .collect()
+    }
 }
 
 impl Engine {
@@ -191,6 +238,23 @@ impl Engine {
             last_hours_persist: None,
             alerts: BTreeMap::new(),
             snapshot,
+            devices: Devices::default(),
+        }
+    }
+
+    pub fn with_devices(mut self, devices: Devices) -> Self {
+        self.devices = devices;
+        self
+    }
+
+    fn inventory(&self) -> DeviceInventory {
+        DeviceInventory {
+            sensors: self.devices.entries.clone(),
+            addable: if self.devices.factory.is_some() {
+                crate::kinds::addable().iter().map(|k| k.info()).collect()
+            } else {
+                Vec::new()
+            },
         }
     }
 
@@ -244,6 +308,11 @@ impl Engine {
             out.extend(self.publish_actuator(id, now));
         }
         self.refresh_alerts(now, true, &mut out);
+        out.push(Outbound::json(
+            topics::devices(&self.unit),
+            &self.inventory(),
+            true,
+        ));
         out
     }
 
@@ -361,6 +430,7 @@ impl Engine {
                     true,
                 ));
             }
+            Inbound::Devices(cmd) => out.extend(self.devices_cmd(cmd, now)),
             Inbound::Resync => out.extend(self.resync(now)),
             Inbound::Shutdown => out.extend(self.shutdown(now)),
         }
@@ -734,8 +804,150 @@ impl Engine {
         self.update_snapshot(now);
     }
 
+    // ---- runtime sensors ----------------------------------------------------
+
+    /// `devices/set`: apply, then publish the result and the new inventory.
+    fn devices_cmd(&mut self, cmd: DeviceCommand, now: Now) -> Vec<Outbound> {
+        let res = match cmd.op {
+            DeviceOp::Add => self.add_sensor(&cmd.kind, cmd.addr),
+            DeviceOp::Remove => self.remove_sensor(&cmd.kind, cmd.addr),
+        };
+        let (mut out, ok, detail) = match res {
+            Ok(out) => {
+                info!(op = ?cmd.op, kind = %cmd.kind, addr = cmd.addr, "sensor inventory changed");
+                (out, true, String::new())
+            }
+            Err(e) => {
+                warn!(op = ?cmd.op, kind = %cmd.kind, addr = cmd.addr, %e, "sensor change refused");
+                (Vec::new(), false, e)
+            }
+        };
+        self.update_snapshot(now);
+        out.push(Outbound::json(
+            topics::devices(&self.unit),
+            &self.inventory(),
+            true,
+        ));
+        out.push(Outbound::json(
+            topics::devices_result(&self.unit),
+            &DeviceResult {
+                request_id: cmd.request_id,
+                ok,
+                detail,
+            },
+            false,
+        ));
+        out
+    }
+
+    fn add_sensor(&mut self, kind: &str, addr: u16) -> Result<Vec<Outbound>, String> {
+        let spec = crate::kinds::find(kind).ok_or_else(|| format!("{kind} can't be added from the app"))?;
+        if self.devices.factory.is_none() {
+            return Err("this daemon can't add sensors at runtime".into());
+        }
+        if !I2C_ADDR_RANGE.contains(&addr) {
+            return Err(format!("address 0x{addr:02X} is outside 0x08–0x77"));
+        }
+        if let Some(d) = self.devices.entries.iter().find(|d| d.addr == Some(addr)) {
+            return Err(format!("0x{addr:02X} is already used by {}", d.label));
+        }
+        let info = spec.info();
+        if let Some(id) = info.ids.iter().find(|id| {
+            self.system.caps.sensors.contains(id) || self.devices.entries.iter().any(|d| d.ids.contains(id))
+        }) {
+            return Err(format!("a {} sensor is already installed", key(id)));
+        }
+        let drivers = self
+            .devices
+            .factory
+            .as_mut()
+            .expect("checked above")
+            .build(spec.as_ref(), addr)
+            .map_err(|e| e.to_string())?;
+        let entry = SensorEntry {
+            kind: kind.into(),
+            addr: Some(addr),
+            pin: None,
+            trigger: None,
+            echo: None,
+            optional: false,
+            active_low: None,
+        };
+        let mut user = self.devices.user.clone();
+        user.push(entry);
+        if let Some(o) = &self.devices.overlay {
+            o.save(&user)
+                .map_err(|e| format!("could not save the sensor list: {e}"))?;
+        }
+        self.devices.user = user;
+        for d in drivers {
+            self.registry.add_sensor(d);
+        }
+        self.system.caps.sensors.extend(info.ids.iter().copied());
+        self.devices.entries.push(DeviceEntry {
+            kind: kind.into(),
+            label: info.label,
+            addr: Some(addr),
+            ids: info.ids,
+            source: DeviceSource::User,
+            status: DeviceStatus::Ready,
+            detail: String::new(),
+        });
+        Ok(self.publish_caps(&[]))
+    }
+
+    fn remove_sensor(&mut self, kind: &str, addr: u16) -> Result<Vec<Outbound>, String> {
+        let idx = self
+            .devices
+            .entries
+            .iter()
+            .position(|d| d.kind == kind && d.addr == Some(addr))
+            .ok_or_else(|| format!("no {kind} sensor at 0x{addr:02X}"))?;
+        if self.devices.entries[idx].source == DeviceSource::Config {
+            return Err("built-in sensors come from hal.toml and can't be removed from the app".into());
+        }
+        let user: Vec<SensorEntry> = self
+            .devices
+            .user
+            .iter()
+            .filter(|s| !(s.kind == kind && s.addr == Some(addr)))
+            .cloned()
+            .collect();
+        if let Some(o) = &self.devices.overlay {
+            o.save(&user)
+                .map_err(|e| format!("could not save the sensor list: {e}"))?;
+        }
+        self.devices.user = user;
+        let entry = self.devices.entries.remove(idx);
+        for id in &entry.ids {
+            self.registry.remove_sensor(*id);
+            self.last_published.remove(id);
+            if let Ok(mut snap) = self.snapshot.write() {
+                snap.sensors.remove(&key(id));
+            }
+        }
+        self.system.caps.sensors.retain(|id| !entry.ids.contains(id));
+        Ok(self.publish_caps(&entry.ids))
+    }
+
+    /// Retained `system` + HA discovery after the capability set changed;
+    /// `removed` sensors get their discovery entity deleted.
+    fn publish_caps(&self, removed: &[SensorId]) -> Vec<Outbound> {
+        let mut out = vec![Outbound::json(topics::system(&self.unit), &self.system, true)];
+        if let Some(prefix) = &self.cfg.ha_prefix {
+            out.extend(crate::ha::discovery(prefix, &self.system));
+            out.extend(
+                removed
+                    .iter()
+                    .map(|id| crate::ha::remove_sensor(prefix, &self.unit, *id)),
+            );
+        }
+        out
+    }
+
     fn update_snapshot(&self, now: Now) {
         if let Ok(mut snap) = self.snapshot.write() {
+            snap.system = Some(self.system.clone());
             snap.unit_id = self.unit.clone();
             snap.ts = now.ts();
             snap.alerts = self.alerts.iter().map(|(k, a)| (key(k), a.clone())).collect();
@@ -1202,6 +1414,177 @@ mod tests {
         let out = r.engine.handle(Inbound::AlertAck(AlertKind::DoseFault), r.now);
         assert!(payload(&out, "seedypod/u1/actuator/dose_1/state")["fault"].is_null());
         assert_eq!(payload(&out, "seedypod/u1/alert/dose_fault")["active"], false);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    fn devices_rig(tag: &str) -> Rig {
+        let r = rig(vec![], true, tag);
+        let world = r.world.clone();
+        let stock = SensorEntry {
+            kind: "ina219".into(),
+            addr: Some(0x40),
+            pin: None,
+            trigger: None,
+            echo: None,
+            optional: false,
+            active_low: None,
+        };
+        let Rig {
+            engine,
+            world: w,
+            now,
+            snapshot,
+            dir,
+        } = r;
+        let engine = engine.with_devices(Devices {
+            entries: Devices::from_boot(&[(stock, None)], &[]),
+            user: Vec::new(),
+            factory: Some(Box::new(crate::kinds::SimFactory(world))),
+            overlay: Some(Overlay::new(&dir)),
+        });
+        Rig {
+            engine,
+            world: w,
+            now,
+            snapshot,
+            dir,
+        }
+    }
+
+    fn dev(op: DeviceOp, kind: &str, addr: u16) -> Inbound {
+        Inbound::Devices(DeviceCommand {
+            request_id: format!("{op:?}-{kind}-{addr}"),
+            op,
+            kind: kind.into(),
+            addr,
+        })
+    }
+
+    #[test]
+    fn a_probe_added_from_the_app_goes_live_and_persists() {
+        let mut r = devices_rig("dev-add");
+        r.engine.boot(r.now);
+        let out = r.engine.handle(dev(DeviceOp::Add, "ezo_ph", 0x63), r.now);
+        let res = payload(&out, "seedypod/u1/devices/result");
+        assert_eq!(
+            (res["ok"].as_bool(), res["requestId"].as_str()),
+            (Some(true), Some("Add-ezo_ph-99"))
+        );
+        assert!(payload(&out, "seedypod/u1/system")["caps"]["sensors"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("ph")));
+        assert!(topics_of(&out).contains(&"homeassistant/sensor/u1_ph/config"));
+        let inv = payload(&out, "seedypod/u1/devices");
+        let added = inv["sensors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["kind"] == "ezo_ph")
+            .unwrap();
+        assert_eq!(
+            (
+                added["source"].as_str(),
+                added["status"].as_str(),
+                added["addr"].as_u64()
+            ),
+            (Some("user"), Some("ready"), Some(0x63))
+        );
+        assert_eq!(inv["addable"].as_array().unwrap().len(), 3);
+        // Persisted for the next boot, and readings flow on the next tick.
+        assert_eq!(Overlay::new(&r.dir).load().len(), 1);
+        r.now.advance(Duration::from_secs(11));
+        assert!(topics_of(&r.engine.tick(r.now)).contains(&"seedypod/u1/sensor/ph"));
+        assert!(r
+            .snapshot
+            .read()
+            .unwrap()
+            .system
+            .as_ref()
+            .is_some_and(|s| s.caps.sensors.contains(&SensorId::Ph)));
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn unsafe_or_conflicting_changes_are_refused_and_change_nothing() {
+        let mut r = devices_rig("dev-refuse");
+        r.engine.boot(r.now);
+        r.engine.handle(dev(DeviceOp::Add, "ezo_ph", 0x63), r.now);
+        for (cmd, why) in [
+            (
+                dev(DeviceOp::Add, "ezo_ph", 0x65),
+                "a ph sensor is already installed",
+            ),
+            (
+                dev(DeviceOp::Add, "ezo_ec", 0x63),
+                "0x63 is already used by pH probe",
+            ),
+            (
+                dev(DeviceOp::Add, "ezo_ec", 0x40),
+                "already used by Pump power monitor",
+            ),
+            (dev(DeviceOp::Add, "ezo_ec", 0x05), "outside 0x08–0x77"),
+            (dev(DeviceOp::Add, "pct2075", 0x48), "can't be added from the app"),
+            (
+                dev(DeviceOp::Remove, "ina219", 0x40),
+                "built-in sensors come from hal.toml",
+            ),
+            (dev(DeviceOp::Remove, "ezo_ec", 0x64), "no ezo_ec sensor at 0x64"),
+        ] {
+            let out = r.engine.handle(cmd, r.now);
+            let res = payload(&out, "seedypod/u1/devices/result");
+            assert_eq!(res["ok"], false);
+            assert!(res["detail"].as_str().unwrap().contains(why), "{why}: {res}");
+            assert!(!topics_of(&out).contains(&"seedypod/u1/system"), "{why}");
+        }
+        assert_eq!(Overlay::new(&r.dir).load().len(), 1);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn removing_a_probe_retires_its_entity_and_calibration() {
+        let mut r = devices_rig("dev-remove");
+        r.engine.boot(r.now);
+        r.engine.handle(dev(DeviceOp::Add, "ezo_ec", 0x64), r.now);
+        let out = r.engine.handle(dev(DeviceOp::Remove, "ezo_ec", 0x64), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/devices/result")["ok"], true);
+        let ha = out
+            .iter()
+            .find(|o| o.topic == "homeassistant/sensor/u1_ec/config" && o.payload.is_empty())
+            .expect("empty retained config deletes the HA entity");
+        assert!(ha.retain);
+        assert!(!payload(&out, "seedypod/u1/system")["caps"]["sensors"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("ec")));
+        assert!(Overlay::new(&r.dir).load().is_empty());
+        let out = r.engine.handle(
+            Inbound::Calibrate(
+                SensorId::Ec,
+                CalibrationCommand {
+                    point: hal_core::CalibrationPoint::Dry,
+                    value: None,
+                },
+            ),
+            r.now,
+        );
+        assert_eq!(payload(&out, "seedypod/u1/sensor/ec/calibration")["ok"], false);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn without_a_factory_runtime_changes_are_refused_and_nothing_is_addable() {
+        let mut r = rig(vec![], false, "dev-nofactory");
+        let boot = r.engine.boot(r.now);
+        assert!(payload(&boot, "seedypod/u1/devices")["addable"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let out = r.engine.handle(dev(DeviceOp::Add, "ezo_ph", 0x63), r.now);
+        assert!(payload(&out, "seedypod/u1/devices/result")["detail"]
+            .as_str()
+            .unwrap()
+            .contains("can't add sensors at runtime"));
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

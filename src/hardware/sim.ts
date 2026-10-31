@@ -7,8 +7,9 @@
  * the Rust HAL enforces (bounded pump runs, dry-run interlock, latched faults)
  * apply here so the demo never shows behaviour the real unit would refuse.
  */
-import { CONTRACT_VERSION } from './contract'
-import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, CalibrationCommand, CalibrationResult, Reading, SensorId, SystemInfo } from './contract'
+import kindsFixture from '../../hal/contract/fixtures/device_kinds.json'
+import { CONTRACT_VERSION, DeviceKindInfo } from './contract'
+import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, CalibrationCommand, CalibrationResult, DeviceEntry, DeviceInventory, DeviceResult, Reading, SensorId, SystemInfo } from './contract'
 import type { HalClient, HalEvent, HalSnapshot, Unsubscribe } from './types'
 
 export interface SimHalOptions {
@@ -23,6 +24,20 @@ export interface SimHalOptions {
 }
 
 const DEFAULT_LIMITS: SystemInfo['limits'] = { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16 }
+
+/** What hald can add at runtime: the same descriptors hald publishes (the fixture is checked against hald's `SensorKind`s). */
+const ADDABLE = DeviceKindInfo.array().parse(kindsFixture)
+const CALIBRATABLE: SensorId[] = ['ph', 'ec', 'water_temp']
+
+/** The stock Gardyn parts behind the default sensor set, as hald reports them. */
+const STOCK: DeviceEntry[] = [
+  { kind: 'pct2075', label: 'Board temperature (PCT2075)', addr: 0x48, ids: ['pcb_temp'], source: 'config', status: 'ready', detail: '' },
+  { kind: 'ina219', label: 'Pump power monitor (INA219)', addr: 0x40, ids: ['pump_v', 'pump_a', 'pump_w'], source: 'config', status: 'ready', detail: '' },
+  { kind: 'dht20', label: 'Air temperature & humidity (DHT20)', addr: 0x38, ids: ['humidity', 'air_temp'], source: 'config', status: 'ready', detail: '' },
+  { kind: 'dyp_a01', label: 'Water level (ultrasonic)', addr: null, ids: ['water_distance', 'water_level_pct'], source: 'config', status: 'ready', detail: '' },
+]
+
+const hex = (a: number) => `0x${a.toString(16).toUpperCase().padStart(2, '0')}`
 
 export class SimHal implements HalClient {
   private readonly listeners = new Set<(e: HalEvent) => void>()
@@ -46,6 +61,8 @@ export class SimHal implements HalClient {
   private lightSince: Date
   private pumpSince: Date
   private readonly alerts = new Map<AlertKind, Alert>()
+  private readonly devices: DeviceEntry[] = STOCK.map(d => ({ ...d, ids: [...d.ids] }))
+  private readonly calPoints = new Map<SensorId, number>()
 
   constructor(opts: SimHalOptions = {}) {
     this.now = opts.now ?? (() => new Date())
@@ -80,6 +97,7 @@ export class SimHal implements HalClient {
       sensors,
       actuators: { light: this.lightState(), pump: this.pumpState() },
       alerts: Object.fromEntries(this.alerts) as Partial<Record<AlertKind, Alert>>,
+      devices: this.inventory(),
     }
   }
 
@@ -116,9 +134,54 @@ export class SimHal implements HalClient {
     throw new HalRefused(`unknown actuator: ${id}`)
   }
 
-  /** The simulated unit has no in-circuit probes (pH/EC/RTD), so every calibration is refused like hald would. */
+  /** Mirrors hald + hal-sim: only configured pH/EC/RTD probes calibrate; each point stored counts up to 3, `clear` resets. */
   async calibrate(id: SensorId, cmd: CalibrationCommand): Promise<CalibrationResult> {
-    return { ts: this.now().toISOString(), point: cmd.point, ok: false, points: null, detail: `no ${id} sensor configured` }
+    const result = (ok: boolean, detail = ''): CalibrationResult =>
+      ({ ts: this.now().toISOString(), point: cmd.point, ok, points: ok ? (this.calPoints.get(id) ?? 0) : null, detail })
+    if (!this.system.caps.sensors.includes(id)) return result(false, `no ${id} sensor configured`)
+    if (!CALIBRATABLE.includes(id)) return result(false, `${id} does not support calibration`)
+    if (cmd.point !== 'dry' && cmd.point !== 'clear' && cmd.value === undefined) return result(false, `${cmd.point} calibration needs a reference value`)
+    this.calPoints.set(id, cmd.point === 'clear' ? 0 : Math.min((this.calPoints.get(id) ?? 0) + 1, 3))
+    return result(true)
+  }
+
+  /** Same rules and messages as hald's `devices/set`. */
+  async addSensor(kind: string, addr: number): Promise<DeviceResult> {
+    const requestId = `add-${kind}-${addr}`
+    const refuse = (detail: string): DeviceResult => ({ requestId, ok: false, detail })
+    const spec = ADDABLE.find(k => k.kind === kind)
+    if (!spec) return refuse(`${kind} can't be added from the app`)
+    if (addr < 0x08 || addr > 0x77) return refuse(`address ${hex(addr)} is outside 0x08–0x77`)
+    const used = this.devices.find(d => d.addr === addr)
+    if (used) return refuse(`${hex(addr)} is already used by ${used.label}`)
+    const dup = spec.ids.find(id => this.system.caps.sensors.includes(id) || this.devices.some(d => d.ids.includes(id)))
+    if (dup) return refuse(`a ${dup} sensor is already installed`)
+    this.devices.push({ kind, label: spec.label, addr, ids: [...spec.ids], source: 'user', status: 'ready', detail: '' })
+    this.system.caps.sensors.push(...spec.ids)
+    this.publishCaps()
+    for (const id of spec.ids) this.emit({ type: 'sensor', id, reading: this.read(id) })
+    return { requestId, ok: true, detail: '' }
+  }
+
+  async removeSensor(kind: string, addr: number): Promise<DeviceResult> {
+    const requestId = `remove-${kind}-${addr}`
+    const entry = this.devices.find(d => d.kind === kind && d.addr === addr)
+    if (!entry) return { requestId, ok: false, detail: `no ${kind} sensor at ${hex(addr)}` }
+    if (entry.source === 'config') return { requestId, ok: false, detail: 'built-in sensors come from hal.toml and can\'t be removed from the app' }
+    this.devices.splice(this.devices.indexOf(entry), 1)
+    this.system.caps.sensors = this.system.caps.sensors.filter(id => !entry.ids.includes(id))
+    for (const id of entry.ids) this.calPoints.delete(id)
+    this.publishCaps()
+    return { requestId, ok: true, detail: '' }
+  }
+
+  private inventory(): DeviceInventory {
+    return { sensors: this.devices.map(d => ({ ...d, ids: [...d.ids] })), addable: ADDABLE }
+  }
+
+  private publishCaps(): void {
+    this.emit({ type: 'system', system: { ...this.system, caps: { ...this.system.caps, sensors: [...this.system.caps.sensors] } } })
+    this.emit({ type: 'devices', devices: this.inventory() })
   }
 
   async acknowledgeAlert(kind: AlertKind): Promise<void> {
@@ -241,6 +304,9 @@ export class SimHal implements HalClient {
       pump_v: [this.pumpOn ? 12.1 : 12.3, 'V'],
       pump_a: [round(pumpW / 12.1, 2), 'A'],
       pump_w: [round(pumpW, 1), 'W'],
+      ph: [6.1, 'pH'],
+      ec: [1.4, 'mS/cm'],
+      water_temp: [round(this.airTempC - 1, 1), '°C'],
     }
     const [value, unit] = table[id] ?? [0, '']
     return { ts, value, unit, quality: 'good' }

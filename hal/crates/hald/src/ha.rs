@@ -72,6 +72,15 @@ fn entity(prefix: &str, component: &str, system: &SystemInfo, object: &str, mut 
     }
 }
 
+/// Empty retained config: tells Home Assistant to delete a sensor entity.
+pub fn remove_sensor(prefix: &str, unit: &str, id: SensorId) -> Outbound {
+    Outbound {
+        topic: format!("{prefix}/sensor/{unit}_{}/config", id_str(&id)),
+        payload: String::new(),
+        retain: true,
+    }
+}
+
 /// Every discovery message for this unit's capabilities.
 pub fn discovery(prefix: &str, system: &SystemInfo) -> Vec<Outbound> {
     let unit = &system.unit_id;

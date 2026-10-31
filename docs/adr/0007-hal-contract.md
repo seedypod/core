@@ -30,6 +30,9 @@ Prefix `seedypod/<unit-id>/`. Payloads JSON, SI units, RFC 3339 timestamps.
 | `sensor/<id>` | hald→ | no | `Reading {ts, value, unit, quality}` |
 | `sensor/<id>/calibrate` | →hald | — | `CalibrationCommand {point, value?}` (added 2026-10-31; EZO probes) |
 | `sensor/<id>/calibration` | hald→ | yes | `CalibrationResult {ts, point, ok, points, detail}` |
+| `devices` | hald→ | yes | `DeviceInventory {sensors, addable}` — configured devices with status, and `SensorKind` descriptors (label, ids, bus, default address, calibration steps) for what can be added (added 2026-10-31) |
+| `devices/set` | →hald | — | `DeviceCommand {requestId, op: add∣remove, kind, addr}`; only app-added sensors can be removed |
+| `devices/result` | hald→ | no | `DeviceResult {requestId, ok, detail}` |
 | `actuator/<id>/state` | hald→ | yes | `ActuatorState {on, level, since, fault, remainingS}` |
 | `actuator/<id>/set` | →hald | — | `ActuatorCommand {on?, level?, durationS?}`; hald clamps or refuses |
 | `event/button` | hald→ | no | `{press: single∣double∣long}` |
