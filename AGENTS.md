@@ -40,10 +40,10 @@ Two tiers, one contract (ADR-0004, ADR-0007):
 Every PR to `main` is a release promotion. Its title must start with `feat:`,
 `fix:`, `perf:`, or `revert:` (optional scope and `!`). The PR title gate
 enforces this. `main`'s merge queue squashes, so `back-merge.yml` pushes a real
-`--no-ff` merge of `main` into `dev` after each release; it needs the
-`BACKMERGE_TOKEN` secret (org-admin fine-grained PAT, or a GitHub App token on
-the Dev ruleset bypass list). Without it, it skips; on conflict it opens an
-issue with the manual steps.
+`--no-ff` merge of `main` into `dev` after each release. It pushes over SSH
+with the `BACKMERGE_DEPLOY_KEY` secret, a write deploy key on this repo; deploy
+keys are on the Dev ruleset bypass list. Without the secret it skips; on
+conflict it opens an issue with the manual steps.
 
 ## Hardware debugging
 
