@@ -226,6 +226,7 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                     debounce: Duration::from_millis(cfg.button.debounce_ms),
                     double_window: Duration::from_millis(cfg.button.double_window_ms),
                     long_press: Duration::from_millis(cfg.button.long_press_ms),
+                    setup_hold: Duration::from_millis(cfg.button.setup_hold_ms),
                     active_low: cfg.button.active_low,
                 },
                 Duration::from_millis(5),

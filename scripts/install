@@ -43,6 +43,17 @@ fi
 corepack enable >/dev/null 2>&1 || true
 pnpm install --prod --frozen-lockfile
 
+# Wi-Fi setup (button held 10 s) drives NetworkManager through nmcli. A system
+# service has no desktop session, so polkit would refuse it; allow this user only.
+if command -v nmcli >/dev/null 2>&1 && [ -d /etc/polkit-1/rules.d ]; then
+  sudo tee /etc/polkit-1/rules.d/50-seedypod-network.rules >/dev/null <<RULES
+// seedypod core may manage Wi-Fi (setup hotspot, joining a network). Written by scripts/install.
+polkit.addRule(function (action, subject) {
+  if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 && subject.user === "$USER") return polkit.Result.YES;
+});
+RULES
+fi
+
 sudo tee /etc/systemd/system/seedypod-core.service >/dev/null <<UNIT
 [Unit]
 Description=seedypod core (tRPC/MCP/web)

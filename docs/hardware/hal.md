@@ -69,7 +69,7 @@ prints every key with its default; the important ones:
 | `[limits]` | `water_low_cm`, `over_temp_c` | 16, 36 | Comment out to disable an interlock. |
 | `[limits]` | `distance_samples`, `distance_timeout_ms` | 5, 60 | Median of N pings. |
 | `[tank]` | `full_cm`, `empty_cm` | 5, 20 | Geometry for `water_level_pct`. |
-| `[button]` | `debounce_ms`, `double_window_ms`, `long_press_ms`, `active_low`, `pump_run_s` | 30, 400, 1000, true, 300 | |
+| `[button]` | `debounce_ms`, `double_window_ms`, `long_press_ms`, `setup_hold_ms`, `active_low`, `pump_run_s` | 30, 400, 1000, 10000, true, 300 | |
 | `[dosing]` | `enabled` | **false** | Phase 6.3, ADR-0014: off until you turn it on. |
 | `[dosing]` | `ml_per_s`, `default_dose_ml`, `max_single_ml`, `max_daily_ml`, `max_doses_per_day` | 1, 5, 10, 30, 4 | Hard daily cap; lockout after N doses until acknowledged. |
 | `[ha]` | `discovery`, `prefix` | true, `homeassistant` | |
@@ -119,7 +119,7 @@ QoS 1 throughout. Client id `hald-<unit-id>`.
 | `sensor/<id>/calibration` | → | yes | `CalibrationResult {ts, point, ok, points, detail}` for the last calibrate command |
 | `actuator/<id>/state` | → | yes | `ActuatorState {on, level, since, fault, remainingS}`; a refused command republishes the state with its `fault` |
 | `actuator/<id>/set` | ← | — | `ActuatorCommand {on?, level?, durationS?}` (empty payload = `{}`) |
-| `event/button` | → | no | `{"press": "single" \| "double" \| "long"}` |
+| `event/button` | → | no | `{"press": "single" \| "double" \| "long" \| "setup"}` |
 | `alert/<kind>` | → | yes | `Alert {kind, active, ts, detail}` for `water_low`, `pump_fault`, `dose_fault` (only with a doser configured), `over_temp`, `camera_missing` |
 | `alert/pump_fault/ack` | ← | — | any payload; clears the latched pump fault |
 | `alert/dose_fault/ack` | ← | — | any payload; clears every doser's lockout or fault |
@@ -154,8 +154,11 @@ Semantics worth knowing:
   have are refused before anything reaches the bus; the result says why. Core
   exposes it as `POST /api/sensors/{id}/calibrate`.
 - **Button** (GPIO13): single toggles the light, double starts/stops a
-  `button.pump_run_s` bounded pump run, long acknowledges the pump fault and any dosing lockout. All
-  three are also published on `event/button`.
+  `button.pump_run_s` bounded pump run, long acknowledges the pump fault and any dosing lockout.
+  Keep holding to `button.setup_hold_ms` (10 s) and a `setup` press follows: `hald`
+  does nothing else with it, and core opens its Wi-Fi setup hotspot
+  ([Installation → Change Wi-Fi](../INSTALLATION.md#change-wi-fi)). All four are
+  published on `event/button` and on the Home Assistant button event entity.
 - **Reconnect**: on broker loss `hald` backs off 1 → 30 s and keeps running;
   after reconnecting it republishes every retained topic and discovery.
 
@@ -182,7 +185,7 @@ and `availability_topic = seedypod/<unit>/availability`.
 | `button` | `ack_pump_fault` | `alert/pump_fault/ack` | "Acknowledge pump fault" |
 | `binary_sensor`, `button` | `dose_fault`, `ack_dose_fault` | `alert/dose_fault`, `alert/dose_fault/ack` | "Dosing lockout" / "Acknowledge dosing lockout" (only when a doser is configured) |
 | `button` | `dose_1..3` | `actuator/dose_N/set` | fires the default dose (only when a doser is configured) |
-| `event` | `button` | `event/button` | `event_types: [single, double, long]` |
+| `event` | `button` | `event/button` | `event_types: [single, double, long, setup]` |
 
 All sensors carry `state_class: measurement` and `value_template: {{ value_json.value }}`;
 the full JSON is attached as attributes.

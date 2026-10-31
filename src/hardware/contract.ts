@@ -169,7 +169,8 @@ export const DeviceResult = z.object({
 })
 export type DeviceResult = z.infer<typeof DeviceResult>
 
-export const ButtonPress = z.enum(['single', 'double', 'long'])
+export const ButtonPress = z.enum(['single', 'double', 'long', 'setup'])
+export const ButtonEvent = z.object({ press: ButtonPress })
 export type ButtonPress = z.infer<typeof ButtonPress>
 
 /** MQTT topic helpers. */

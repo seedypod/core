@@ -7,6 +7,7 @@ import { CaptureService, MemorySink, type BlobSink } from '../camera/captures'
 import { GrowEngine } from '../grow/grow'
 import type { HalClient } from '../hardware/types'
 import { createEventBus, type EventBus } from '../lib/eventBus'
+import { SimWifi, type Wifi } from '../network/wifi'
 import { Scheduler } from '../scheduler/scheduler'
 import type { Store } from '../store/types'
 import { Recorder } from '../telemetry/recorder'
@@ -22,6 +23,8 @@ export interface CoreOptions {
   /** Start timers (scheduler minute tick, grow tick, periodic captures). Off in tests. */
   startServices?: boolean
   captureMinBytes?: number
+  /** NetworkManager on a unit; an in-memory stand-in for tests and the demo. */
+  wifi?: Wifi
 }
 
 export interface Core {
@@ -35,9 +38,16 @@ export interface Core {
 export function createCore(o: CoreOptions): Core {
   const events = o.events ?? createEventBus()
   // Every HAL event becomes a CoreEvent: the recorder, SSE/WS clients and the UI all hang off this bus.
-  const unsubHal = o.hal.subscribe(event => events.emit({ kind: 'hal', event }))
+  const wifi = o.wifi ?? new SimWifi()
+  const unsubHal = o.hal.subscribe((event) => {
+    events.emit({ kind: 'hal', event })
+    // Holding the button for 10 s opens the Wi-Fi setup hotspot.
+    if (event.type === 'button' && event.press === 'setup') {
+      void wifi.startSetup().then(() => events.emit({ kind: 'mutation', path: 'network' })).catch((e: Error) => console.warn(`wifi setup: ${e.message}`))
+    }
+  })
   const captures = new CaptureService({ hal: o.hal, store: o.store, sink: o.sink ?? new MemorySink(), now: o.now, minBytes: o.captureMinBytes })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, version: o.version, now: o.now }
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, wifi, version: o.version, now: o.now }
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, now: o.now })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })

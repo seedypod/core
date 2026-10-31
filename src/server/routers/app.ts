@@ -5,6 +5,7 @@ import { cameraRouter } from './camera'
 import { devicesRouter } from './devices'
 import { eventsRouter } from './events'
 import { growRouter } from './grow'
+import { networkRouter } from './network'
 import { schedulesRouter } from './schedules'
 import { sensorsRouter } from './sensors'
 import { settingsRouter } from './settings'
@@ -15,6 +16,7 @@ import { visionRouter } from './vision'
 export const appRouter = router({
   system: systemRouter,
   settings: settingsRouter,
+  network: networkRouter,
   sensors: sensorsRouter,
   devices: devicesRouter,
   telemetry: telemetryRouter,

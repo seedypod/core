@@ -1,4 +1,5 @@
 import { Settings } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button, Card, CardHeader, KeyValue, SectionLabel } from '@/src/components/ds/core'
 import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
@@ -80,6 +81,11 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
       <Card>
         <CardHeader title="API access" subtitle="Optional key for non-localhost REST/MCP clients" />
         <SettingRow label="API key" sub={s.hasApiKey ? 'set' : 'not set — LAN-only trust'} divider={false}><TextField type="password" value={str('apiKey')} onChange={v => setD({ ...d, apiKey: v })} placeholder="leave empty to disable" /></SettingRow>
+      </Card>
+
+      <Card>
+        <CardHeader title="Wi-Fi" subtitle="Change networks, or hold the unit's button for 10 s to open a setup hotspot" />
+        <SettingRow label="Network" divider={false}><Link to="/wifi" className="text-sm text-fg underline-offset-2 hover:underline">Open Wi-Fi settings</Link></SettingRow>
       </Card>
 
       <SectionLabel>About</SectionLabel>
