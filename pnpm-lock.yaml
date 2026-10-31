@@ -56,6 +56,9 @@ importers:
       hono:
         specifier: ^4.9.0
         version: 4.13.14
+      jpeg-js:
+        specifier: ^0.4.4
+        version: 0.4.4
       lucide-react:
         specifier: ^1.0.0
         version: 1.65.0(@types/react@19.3.0)(react@19.3.1)
@@ -3345,6 +3348,9 @@ packages:
 
   jose@6.2.14:
     resolution: {integrity: sha512-3JasLuki1NRLQvY4wCoC37KZk4qxoBx2k2aFqLxT84IezqW0bkJKnNtxnZj/Fu1xsQivoc/lytxaRHJoGLjJ1A==}
+
+  jpeg-js@0.4.4:
+    resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
 
   js-tokens@10.0.0:
     resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
@@ -8444,6 +8450,8 @@ snapshots:
   jiti@2.7.0: {}
 
   jose@6.2.14: {}
+
+  jpeg-js@0.4.4: {}
 
   js-tokens@10.0.0: {}
 

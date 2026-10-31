@@ -94,6 +94,17 @@ for (const [name, make] of impls) {
       expect(r.every(p => p.sensor === 'air_temp')).toBe(true)
     })
 
+    it('pod growth series and latest per slot', () => {
+      store = make()
+      store.podGrowth.add([
+        { ts: '2026-01-01T00:00:00Z', slot: 1, green: 0.1, captureId: 'a' },
+        { ts: '2026-01-02T00:00:00Z', slot: 1, green: 0.2, captureId: 'b' },
+        { ts: '2026-01-01T00:00:00Z', slot: 2, green: 0.5, captureId: 'a' },
+      ])
+      expect(store.podGrowth.series(1).map(p => p.green)).toEqual([0.1, 0.2])
+      expect(store.podGrowth.latest().map(p => [p.slot, p.green])).toEqual([[1, 0.2], [2, 0.5]])
+    })
+
     it('counters accumulate', () => {
       store = make()
       store.counters.add('light_hours', 1.5, 't')

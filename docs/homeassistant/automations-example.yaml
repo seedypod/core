@@ -1,0 +1,21 @@
+# Example automations (import into automations.yaml).
+- alias: Gardyn — notify on water low
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.gardyn_water_low
+      to: "on"
+  action:
+    - service: notify.mobile_app_phone
+      data:
+        title: Gardyn needs water
+        message: Tank is low; the pump will refuse to run until refilled.
+
+- alias: Gardyn — nutrients reminder
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.gardyn_add_nutrients
+      to: "on"
+  action:
+    - service: notify.mobile_app_phone
+      data:
+        message: Time to add nutrients to the Gardyn. Press "Add nutrients: done" when finished.

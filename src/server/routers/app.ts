@@ -9,6 +9,7 @@ import { sensorsRouter } from './sensors'
 import { settingsRouter } from './settings'
 import { systemRouter } from './system'
 import { telemetryRouter } from './telemetry'
+import { visionRouter } from './vision'
 
 export const appRouter = router({
   system: systemRouter,
@@ -20,6 +21,7 @@ export const appRouter = router({
   schedules: schedulesRouter,
   grow: growRouter,
   camera: cameraRouter,
+  vision: visionRouter,
   alerts: alertsRouter,
   events: eventsRouter,
 })

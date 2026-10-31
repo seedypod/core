@@ -4,6 +4,7 @@
  */
 import type { HalClient } from '../hardware/types'
 import type { Capture, Store } from '../store/types'
+import { analyzeCapture } from '../vision/analyze'
 
 export interface BlobSink {
   put(key: string, bytes: Uint8Array): Promise<string>
@@ -63,6 +64,12 @@ export class CaptureService {
     const path = await this.o.sink.put(`${id}.jpg`, bytes)
     const row: Capture = { id, camera, ts, path, bytes: bytes.byteLength }
     this.o.store.captures.add(row)
+    try {
+      analyzeCapture(this.o.store, row, bytes)
+    }
+    catch {
+      // vision is best-effort; a bad frame never fails the capture
+    }
     for (const dropped of this.o.store.captures.prune(camera, this.keep)) await this.o.sink.remove(dropped.path)
     return row
   }

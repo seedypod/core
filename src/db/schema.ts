@@ -104,3 +104,12 @@ export const counters = sqliteTable('counters', {
   value: real().notNull().default(0),
   updatedAt: text().notNull(),
 })
+
+export const podGrowth = sqliteTable('pod_growth', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  ts: text().notNull(),
+  slot: integer().notNull(),
+  /** Fraction of green pixels in the pod crop, 0–1. */
+  green: real().notNull(),
+  captureId: text().notNull(),
+}, t => [index('pod_growth_slot_ts').on(t.slot, t.ts)])

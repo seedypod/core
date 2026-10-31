@@ -53,6 +53,7 @@
     "cron-parser": "^4.9.0",
     "drizzle-orm": "^0.45.0",
     "hono": "^4.9.0",
+    "jpeg-js": "^0.4.4",
     "lucide-react": "^1.0.0",
     "mqtt": "^5.15.0",
     "react": "^19.2.0",

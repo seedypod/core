@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Capture, DeviceSettings, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Capture, DeviceSettings, GrowCycle, GrowStage, Pod, PodGrowthPoint, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
 /** In-memory Store for tests and the browser demo. Same semantics as SqliteStore. */
@@ -15,6 +15,7 @@ export class MemoryStore implements Store {
   private readonly captureRows: Capture[] = []
   private readonly points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
+  private readonly growthRows: PodGrowthPoint[] = []
 
   constructor(podCount = 30) {
     const ts = new Date(0).toISOString()
@@ -161,6 +162,18 @@ export class MemoryStore implements Store {
       return v
     },
     get: (key: string): number => this.counterRows.get(key) ?? 0,
+  }
+
+  podGrowth = {
+    add: (pts: PodGrowthPoint[]): void => {
+      this.growthRows.push(...pts)
+    },
+    series: (slot: number, limit = 200): PodGrowthPoint[] => this.growthRows.filter(p => p.slot === slot).sort((a, b) => a.ts.localeCompare(b.ts)).slice(-limit),
+    latest: (): PodGrowthPoint[] => {
+      const m = new Map<number, PodGrowthPoint>()
+      for (const p of [...this.growthRows].sort((a, b) => a.ts.localeCompare(b.ts))) m.set(p.slot, p)
+      return [...m.values()].sort((a, b) => a.slot - b.slot)
+    },
   }
 
   close(): void {

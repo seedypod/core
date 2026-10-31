@@ -81,6 +81,7 @@ export interface Pod {
 }
 
 export interface Capture { id: string, camera: 'upper' | 'lower', ts: string, path: string, bytes: number }
+export interface PodGrowthPoint { ts: string, slot: number, green: number, captureId: string }
 export interface TelemetryPoint { ts: string, sensor: SensorId, value: number }
 
 export interface Store {
@@ -130,6 +131,13 @@ export interface Store {
   counters: {
     add(key: string, delta: number, ts: string): number
     get(key: string): number
+  }
+  podGrowth: {
+    add(points: PodGrowthPoint[]): void
+    /** Oldest → newest for one slot. */
+    series(slot: number, limit?: number): PodGrowthPoint[]
+    /** Latest point per slot. */
+    latest(): PodGrowthPoint[]
   }
   close(): void
 }

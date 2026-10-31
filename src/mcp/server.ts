@@ -47,6 +47,11 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: { camera: z.enum(['upper', 'lower']).optional(), limit: z.number().int().min(1).max(50).optional() },
   }, async i => text(await caller.camera.list({ camera: i.camera, limit: i.limit ?? 10 })))
 
+  server.registerTool('pod_health', {
+    description: 'Per-pod growth verdicts from camera stills: green-area fraction and trend (growing / stalled / declining / unknown). Use with `pods` to decide which slots need attention.',
+    inputSchema: {},
+  }, async () => text(await caller.vision.podTrends()))
+
   // ── Write (all go through the HAL guard) ─────────────────────────────────
   server.registerTool('set_light', {
     description: 'Set the grow light. level is brightness 0–100 (%). Omit on to infer from level. Note a light schedule will override this at its next setpoint change.',

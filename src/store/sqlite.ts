@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import type { SensorId } from '../hardware/contract'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Capture, DeviceSettings, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Capture, DeviceSettings, GrowCycle, GrowStage, LightSpec, Pod, PodGrowthPoint, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
 export interface SqliteStoreOptions {
@@ -192,6 +192,17 @@ export class SqliteStore implements Store {
       return this.counters.get(key)
     },
     get: (key: string): number => this.db.select().from(t.counters).where(eq(t.counters.key, key)).get()?.value ?? 0,
+  }
+
+  podGrowth = {
+    add: (pts: PodGrowthPoint[]): void => {
+      if (pts.length) this.db.insert(t.podGrowth).values(pts).run()
+    },
+    series: (slot: number, limit = 200): PodGrowthPoint[] =>
+      this.db.select({ ts: t.podGrowth.ts, slot: t.podGrowth.slot, green: t.podGrowth.green, captureId: t.podGrowth.captureId }).from(t.podGrowth)
+        .where(eq(t.podGrowth.slot, slot)).orderBy(desc(t.podGrowth.ts)).limit(limit).all().reverse(),
+    latest: (): PodGrowthPoint[] =>
+      this.db.all<PodGrowthPoint>(sql`SELECT ts, slot, green, captureId FROM pod_growth p WHERE ts = (SELECT MAX(ts) FROM pod_growth q WHERE q.slot = p.slot) ORDER BY slot`),
   }
 
   close(): void {
