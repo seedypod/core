@@ -77,6 +77,18 @@ app reads from it when the local copy is gone. If uploads keep failing, an
 Nothing is sent anywhere until these fields are filled in. See
 [Privacy](PRIVACY.md).
 
+The mirror is checked against a real S3 server (MinIO) by
+`src/camera/tests/mirror.s3.test.ts`. That test runs only when you point it at
+a server:
+
+```sh
+MIRROR_TEST_ENDPOINT=http://127.0.0.1:9000 MIRROR_TEST_ACCESS_KEY=… MIRROR_TEST_SECRET=… \
+  pnpm exec vitest run src/camera/tests/mirror.s3.test.ts
+```
+
+It creates its own bucket, removes it afterwards, and leaves nothing else in
+the account.
+
 ## Plug in an off-device analyser
 
 A heavier model can run on a laptop or GPU box and post its results back
