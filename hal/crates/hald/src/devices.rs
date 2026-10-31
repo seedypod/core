@@ -290,6 +290,7 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
         .iter()
         .map(|c| {
             let mut ucfg = hal_drivers::uvc::UvcConfig::new(c.device.clone());
+            ucfg.fallback = c.fallback.clone();
             ucfg.resolution = c.resolution.clone();
             ucfg.skip_frames = c.skip_frames;
             let cam: SharedCamera = Arc::new(Mutex::new(Box::new(hal_drivers::uvc::UvcCamera::new(
