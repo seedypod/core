@@ -7,8 +7,10 @@ pnpm tsc
 echo "→ ESLint..."
 pnpm lint
 
-echo "→ Drizzle schema validation..."
-pnpm drizzle-kit check
+if [ -f drizzle.config.ts ]; then
+  echo "→ Drizzle schema validation..."
+  pnpm drizzle-kit check
+fi
 
 CHANGED=$(git diff --name-only @{push}.. -- '*.ts' '*.tsx' 2>/dev/null || git diff --name-only origin/dev...HEAD -- '*.ts' '*.tsx' 2>/dev/null || true)
 if [ -n "$CHANGED" ]; then
