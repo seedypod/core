@@ -100,6 +100,21 @@ if ! command -v fswebcam >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; 
   $SUDO apt-get install -y -q fswebcam >/dev/null || echo "   (fswebcam install failed; cameras will report missing)"
 fi
 
+# ---- cameras: stable names by USB port ----------------------------------------
+# /dev/videoN can swap across reboots; hald prefers /dev/seedypod/camera-<name>.
+RULES=/etc/udev/rules.d/70-seedypod-cameras.rules
+if [ ! -f "$RULES" ]; then
+  if "$PREFIX/hald" --camera-rules > "$TMP/cameras.rules" 2>/dev/null; then
+    $SUDO install -m 0644 "$TMP/cameras.rules" "$RULES"
+    $SUDO udevadm control --reload && $SUDO udevadm trigger --subsystem-match=video4linux || true
+    echo "→ camera names pinned to USB ports ($RULES):"
+    grep '^SUBSYSTEM' "$RULES" | sed -E 's/.*KERNELS=="([^"]+)".*camera-([a-z0-9_-]+).*/   \2 = port \1/'
+    echo "   If upper and lower are swapped: sudo $PREFIX/hald --camera-rules upper=<port> lower=<port> | sudo tee $RULES && sudo udevadm trigger"
+  else
+    echo "→ no USB cameras found; run 'sudo $PREFIX/hald --camera-rules | sudo tee $RULES' once they're plugged in"
+  fi
+fi
+
 # ---- systemd ---------------------------------------------------------------
 $SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT
 [Unit]
