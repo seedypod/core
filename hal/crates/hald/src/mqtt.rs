@@ -10,7 +10,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
 
-use hal_core::{topics, ActuatorCommand, AlertKind};
+use hal_core::{topics, ActuatorCommand, AlertKind, CalibrationCommand, SensorId};
 use rumqttc::{AsyncClient, Event, LastWill, MqttOptions, Packet, QoS};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{info, warn};
@@ -69,6 +69,7 @@ pub fn subscriptions(unit: &str) -> Vec<String> {
     let mut v = vec![
         format!("{}/actuator/+/set", topics::prefix(unit)),
         format!("{}/alert/+/ack", topics::prefix(unit)),
+        format!("{}/sensor/+/calibrate", topics::prefix(unit)),
     ];
     v.extend(crate::ha::command_topics(unit));
     v
@@ -98,6 +99,13 @@ pub fn parse_inbound(unit: &str, topic: &str, payload: &[u8]) -> Result<Inbound,
             let kind: AlertKind = serde_json::from_value(serde_json::Value::String((*kind).to_owned()))
                 .map_err(|_| format!("unknown alert kind {kind:?}"))?;
             Ok(Inbound::AlertAck(kind))
+        }
+        ["sensor", id, "calibrate"] => {
+            let id: SensorId = serde_json::from_value(serde_json::Value::String((*id).to_owned()))
+                .map_err(|_| format!("unknown sensor {id:?}"))?;
+            let cmd: CalibrationCommand =
+                serde_json::from_str(text).map_err(|e| format!("bad CalibrationCommand {text:?}: {e}"))?;
+            Ok(Inbound::Calibrate(id, cmd))
         }
         ["ha", ..] => crate::ha::translate_command(unit, topic, text)
             .map(|(id, cmd)| Inbound::ActuatorSet(id, cmd))
@@ -267,7 +275,8 @@ mod tests {
         assert!(s.contains(&"seedypod/u1/actuator/+/set".to_owned()));
         assert!(s.contains(&"seedypod/u1/alert/+/ack".to_owned()));
         assert!(s.contains(&"seedypod/u1/ha/light/brightness/set".to_owned()));
-        assert_eq!(s.len(), 6);
+        assert!(s.contains(&"seedypod/u1/sensor/+/calibrate".to_owned()));
+        assert_eq!(s.len(), 7);
     }
 
     #[test]
@@ -298,6 +307,21 @@ mod tests {
             Inbound::AlertAck(AlertKind::PumpFault)
         );
         assert_eq!(
+            parse_inbound(
+                "u1",
+                "seedypod/u1/sensor/ph/calibrate",
+                br#"{"point":"mid","value":7}"#
+            )
+            .unwrap(),
+            Inbound::Calibrate(
+                hal_core::SensorId::Ph,
+                CalibrationCommand {
+                    point: hal_core::CalibrationPoint::Mid,
+                    value: Some(7.0)
+                }
+            )
+        );
+        assert_eq!(
             parse_inbound("u1", "seedypod/u1/ha/light/set", b"ON").unwrap(),
             Inbound::ActuatorSet(
                 ActuatorId::Light,
@@ -315,6 +339,9 @@ mod tests {
             ("seedypod/u1/something/else", b"{}"),
             ("seedypod/u2/actuator/pump/set", b"{}"),
             ("seedypod/u1/actuator/pump/set", &[0xFF, 0xFE]),
+            ("seedypod/u1/sensor/nope/calibrate", br#"{"point":"clear"}"#),
+            ("seedypod/u1/sensor/ph/calibrate", br#"{"point":"middle"}"#),
+            ("seedypod/u1/sensor/ph/calibrate", b""),
         ] {
             assert!(parse_inbound("u1", topic, payload).is_err(), "{topic}");
         }

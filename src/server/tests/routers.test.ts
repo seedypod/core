@@ -22,6 +22,11 @@ describe('routers', () => {
     expect(s.ph).toBeUndefined()
   })
 
+  it('sensors.calibrate surfaces the HAL refusal as a precondition failure', async () => {
+    const { c } = caller()
+    await expect(c.sensors.calibrate({ id: 'ph', point: 'mid', value: 7 })).rejects.toThrow(/no ph sensor configured/)
+  })
+
   it('system.info reports the HAL identity and limits', async () => {
     const { c } = caller()
     const info = await c.system.info()

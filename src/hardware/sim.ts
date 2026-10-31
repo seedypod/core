@@ -8,7 +8,7 @@
  * apply here so the demo never shows behaviour the real unit would refuse.
  */
 import { CONTRACT_VERSION } from './contract'
-import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, Reading, SensorId, SystemInfo } from './contract'
+import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, CalibrationCommand, CalibrationResult, Reading, SensorId, SystemInfo } from './contract'
 import type { HalClient, HalEvent, HalSnapshot, Unsubscribe } from './types'
 
 export interface SimHalOptions {
@@ -114,6 +114,11 @@ export class SimHal implements HalClient {
       return state
     }
     throw new HalRefused(`unknown actuator: ${id}`)
+  }
+
+  /** The simulated unit has no in-circuit probes (pH/EC/RTD), so every calibration is refused like hald would. */
+  async calibrate(id: SensorId, cmd: CalibrationCommand): Promise<CalibrationResult> {
+    return { ts: this.now().toISOString(), point: cmd.point, ok: false, points: null, detail: `no ${id} sensor configured` }
   }
 
   async acknowledgeAlert(kind: AlertKind): Promise<void> {

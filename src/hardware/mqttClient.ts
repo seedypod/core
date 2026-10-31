@@ -8,8 +8,8 @@
  * The MQTT connection is injected behind a tiny interface so tests drive it
  * without a broker; production passes an `mqtt.js` client.
  */
-import type { AlertKind } from './contract'
-import { ActuatorCommand, ActuatorId, ActuatorState, Alert, ButtonPress, Reading, SensorId, SystemInfo, topics } from './contract'
+import type { AlertKind, CalibrationCommand } from './contract'
+import { ActuatorCommand, ActuatorId, ActuatorState, Alert, ButtonPress, CalibrationCommand as CalibrationCommandSchema, CalibrationResult, Reading, SensorId, SystemInfo, topics } from './contract'
 import type { HalClient, HalEvent, HalSnapshot, Unsubscribe } from './types'
 import { HalRefused } from './sim'
 
@@ -28,6 +28,8 @@ export interface MqttHalClientOptions {
   httpBase: string
   /** How long to wait for the daemon to echo a new actuator state. */
   commandTimeoutMs?: number
+  /** How long to wait for a calibration result (EZO commands take ~1–2 s). */
+  calibrationTimeoutMs?: number
   fetchImpl?: typeof fetch
   now?: () => Date
 }
@@ -36,6 +38,7 @@ export class MqttHalClient implements HalClient {
   private readonly listeners = new Set<(e: HalEvent) => void>()
   private readonly snap: HalSnapshot = { system: null, online: false, sensors: {}, actuators: {}, alerts: {} }
   private readonly pending = new Map<ActuatorId, { resolve: (s: ActuatorState) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
+  private readonly pendingCal = new Map<SensorId, { point: CalibrationCommand['point'], resolve: (r: CalibrationResult) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
   private readonly u: string
   private readonly timeoutMs: number
   private readonly fetchImpl: typeof fetch
@@ -46,7 +49,7 @@ export class MqttHalClient implements HalClient {
     this.fetchImpl = o.fetchImpl ?? fetch
     const p = topics.prefix(this.u)
     o.mqtt.on('connect', () => {
-      o.mqtt.subscribe([`${p}/availability`, `${p}/system`, `${p}/sensor/+`, `${p}/actuator/+/state`, `${p}/alert/+`, `${p}/event/button`])
+      o.mqtt.subscribe([`${p}/availability`, `${p}/system`, `${p}/sensor/+`, `${p}/sensor/+/calibration`, `${p}/actuator/+/state`, `${p}/alert/+`, `${p}/event/button`])
     })
     o.mqtt.on('offline', () => this.setOnline(false))
     o.mqtt.on('close', () => this.setOnline(false))
@@ -74,6 +77,24 @@ export class MqttHalClient implements HalClient {
     })
   }
 
+  calibrate(id: SensorId, cmd: CalibrationCommand): Promise<CalibrationResult> {
+    const parsed = CalibrationCommandSchema.parse(cmd)
+    const timeoutMs = this.o.calibrationTimeoutMs ?? 10_000
+    return new Promise((resolve, reject) => {
+      const prev = this.pendingCal.get(id)
+      if (prev) {
+        clearTimeout(prev.timer)
+        prev.reject(new Error('superseded by a newer calibration'))
+      }
+      const timer = setTimeout(() => {
+        this.pendingCal.delete(id)
+        reject(new Error(`hald did not report ${id} calibration within ${timeoutMs} ms`))
+      }, timeoutMs)
+      this.pendingCal.set(id, { point: parsed.point, resolve, reject, timer })
+      this.o.mqtt.publish(topics.sensorCalibrate(this.u, id), JSON.stringify(parsed), { qos: 1 })
+    })
+  }
+
   async acknowledgeAlert(kind: AlertKind): Promise<void> {
     this.o.mqtt.publish(topics.alertAck(this.u, kind), '{}', { qos: 1 })
   }
@@ -90,11 +111,12 @@ export class MqttHalClient implements HalClient {
   }
 
   async close(): Promise<void> {
-    for (const p of this.pending.values()) {
+    for (const p of [...this.pending.values(), ...this.pendingCal.values()]) {
       clearTimeout(p.timer)
       p.reject(new Error('client closed'))
     }
     this.pending.clear()
+    this.pendingCal.clear()
     this.o.mqtt.end()
     this.listeners.clear()
   }
@@ -111,7 +133,19 @@ export class MqttHalClient implements HalClient {
         this.snap.system = system
         return this.emit({ type: 'system', system })
       }
-      if (parts[0] === 'sensor' && parts[1]) {
+      if (parts[0] === 'sensor' && parts[1] && parts[2] === 'calibration') {
+        const id = SensorId.parse(parts[1])
+        const result = CalibrationResult.parse(JSON.parse(payload))
+        const p = this.pendingCal.get(id)
+        // Retained results from earlier sessions arrive on connect; only a pending request consumes one.
+        if (p && result.point === p.point) {
+          clearTimeout(p.timer)
+          this.pendingCal.delete(id)
+          p.resolve(result)
+        }
+        return
+      }
+      if (parts[0] === 'sensor' && parts[1] && parts.length === 2) {
         const id = SensorId.parse(parts[1])
         const reading = Reading.parse(JSON.parse(payload))
         this.snap.sensors[id] = reading

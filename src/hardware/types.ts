@@ -1,4 +1,4 @@
-import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, Reading, SensorId, SystemInfo } from './contract'
+import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, CalibrationCommand, CalibrationResult, Reading, SensorId, SystemInfo } from './contract'
 
 export interface HalSnapshot {
   system: SystemInfo | null
@@ -27,6 +27,8 @@ export interface HalClient {
   snapshot(): HalSnapshot
   setActuator(id: ActuatorId, cmd: ActuatorCommand): Promise<ActuatorState>
   acknowledgeAlert(kind: AlertKind): Promise<void>
+  /** Store a probe calibration point; resolves with the daemon's result (ok or the refusal). */
+  calibrate(id: SensorId, cmd: CalibrationCommand): Promise<CalibrationResult>
   captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array>
   subscribe(listener: (event: HalEvent) => void): Unsubscribe
   close(): Promise<void>

@@ -115,6 +115,8 @@ QoS 1 throughout. Client id `hald-<unit-id>`.
 | `availability` | → | yes | `online` on connect; `offline` on shutdown and as the LWT |
 | `system` | → | yes | `SystemInfo` |
 | `sensor/<id>` | → | no | `Reading {ts, value, unit, quality}` — on change, and at least every `telemetry_interval_s` |
+| `sensor/<id>/calibrate` | ← | — | `CalibrationCommand {point, value?}` — see *Calibration* below |
+| `sensor/<id>/calibration` | → | yes | `CalibrationResult {ts, point, ok, points, detail}` for the last calibrate command |
 | `actuator/<id>/state` | → | yes | `ActuatorState {on, level, since, fault, remainingS}`; a refused command republishes the state with its `fault` |
 | `actuator/<id>/set` | ← | — | `ActuatorCommand {on?, level?, durationS?}` (empty payload = `{}`) |
 | `event/button` | → | no | `{"press": "single" \| "double" \| "long"}` |
@@ -142,6 +144,15 @@ Semantics worth knowing:
   Refused when disabled, when the dose would cross `max_daily_ml` (UTC day),
   while a dose runs, or after `max_doses_per_day` until `alert/dose_fault/ack`.
   The ledger survives restarts.
+- **Calibration** (`ph`, `ec`, `water_temp` on EZO circuits): put the probe in
+  the reference solution and wait for the reading to settle, then send
+  `{"point": …, "value": …}`. `value` uses the reported unit (pH, mS/cm, °C;
+  EC goes to the circuit in µS/cm). pH: `mid` first (it clears the others),
+  then optionally `low` and `high`. EC: `dry` in air, then `single`, or `low`
+  and `high`. RTD: `single`. `clear` wipes stored points. Implausible values
+  (pH outside 0–14, EC ≤ 0 or > 500 mS/cm) and points the circuit doesn't
+  have are refused before anything reaches the bus; the result says why. Core
+  exposes it as `POST /api/sensors/{id}/calibrate`.
 - **Button** (GPIO13): single toggles the light, double starts/stops a
   `button.pump_run_s` bounded pump run, long acknowledges the pump fault and any dosing lockout. All
   three are also published on `event/button`.
