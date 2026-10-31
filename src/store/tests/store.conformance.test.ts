@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MemoryStore } from '../memory'
 import { SqliteStore } from '../sqlite'
@@ -113,3 +116,19 @@ for (const [name, make] of impls) {
     })
   })
 }
+
+describe('SqliteStore on disk', () => {
+  it('creates a missing data directory on first boot', () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    const url = join(root, 'data', 'nested', 'core.db')
+    try {
+      const store = new SqliteStore({ url })
+      expect(existsSync(url)).toBe(true)
+      expect(store.settings.get().thinningReminderDays).toBe(14)
+      store.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
