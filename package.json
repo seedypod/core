@@ -27,6 +27,7 @@
     "test:mutation": "stryker run",
     "test:mutation:incremental": "stryker run --incremental",
     "test:browser": "node tests/browser/run.mjs",
+    "test:sim-bringup": "node tests/sim/bringup.mjs",
     "hal:build": "cargo build --manifest-path hal/Cargo.toml",
     "hal:test": "cargo test --manifest-path hal/Cargo.toml",
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
@@ -79,6 +80,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
     "@vitest/coverage-v8": "^4.0.0",
+    "aedes": "^1.2.0",
     "concurrently": "^9.2.0",
     "conventional-changelog-conventionalcommits": "^9.3.1",
     "drizzle-kit": "^0.31.0",

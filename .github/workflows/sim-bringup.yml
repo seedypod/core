@@ -1,0 +1,41 @@
+name: Sim Bring-up
+
+# Phase 1 against a simulated unit: hald --sim + an in-process MQTT broker +
+# core over the real MqttHalClient, checked through core's REST API and the
+# HAL contract topics (tests/sim/bringup.mjs). Catches breaks in the
+# hald ↔ MQTT ↔ core chain that per-side unit tests can't see.
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    paths: ['hal/**', 'src/**', 'server/**', 'tests/sim/**', 'package.json', 'pnpm-lock.yaml', '.github/workflows/sim-bringup.yml']
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bringup:
+    name: Simulated bring-up
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hal
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build --manifest-path hal/Cargo.toml -p hald
+      - run: pnpm build
+      - run: pnpm test:sim-bringup

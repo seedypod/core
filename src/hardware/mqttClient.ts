@@ -14,6 +14,8 @@ import type { HalClient, HalEvent, HalSnapshot, Unsubscribe } from './types'
 import { HalRefused } from './sim'
 
 export interface MqttLike {
+  /** True when the client is already connected (mqtt.js `connectAsync` resolves after `connect` fired). */
+  readonly connected?: boolean
   publish(topic: string, payload: string, opts?: { retain?: boolean, qos?: 0 | 1 | 2 }): void
   subscribe(topic: string | string[]): void
   on(event: 'message', cb: (topic: string, payload: Uint8Array) => void): void
@@ -48,9 +50,10 @@ export class MqttHalClient implements HalClient {
     this.timeoutMs = o.commandTimeoutMs ?? 5000
     this.fetchImpl = o.fetchImpl ?? fetch
     const p = topics.prefix(this.u)
-    o.mqtt.on('connect', () => {
-      o.mqtt.subscribe([`${p}/availability`, `${p}/system`, `${p}/sensor/+`, `${p}/sensor/+/calibration`, `${p}/actuator/+/state`, `${p}/alert/+`, `${p}/event/button`])
-    })
+    const subscribe = () => o.mqtt.subscribe([`${p}/availability`, `${p}/system`, `${p}/sensor/+`, `${p}/sensor/+/calibration`, `${p}/actuator/+/state`, `${p}/alert/+`, `${p}/event/button`])
+    // Re-subscribe on every reconnect, and now if the caller handed us a client that is already connected.
+    o.mqtt.on('connect', subscribe)
+    if (o.mqtt.connected) subscribe()
     o.mqtt.on('offline', () => this.setOnline(false))
     o.mqtt.on('close', () => this.setOnline(false))
     o.mqtt.on('message', (topic, payload) => this.onMessage(topic, new TextDecoder().decode(payload)))

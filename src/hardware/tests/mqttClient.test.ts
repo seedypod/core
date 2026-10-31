@@ -3,6 +3,7 @@ import { MqttHalClient, type MqttLike } from '../mqttClient'
 import { HalRefused } from '../sim'
 
 class FakeMqtt implements MqttLike {
+  connected = false
   published: { topic: string, payload: string, opts?: unknown }[] = []
   subscribed: string[] = []
   private handlers = new Map<string, ((...a: never[]) => void)[]>()
@@ -65,6 +66,15 @@ describe('MqttHalClient', () => {
     mqtt.msg(`seedypod/${U}/actuator/pump/state`, { on: false, level: 0, since: '2026-10-31T00:00:00Z', fault: 'dry-run', remainingS: null })
     await expect(p).rejects.toBeInstanceOf(HalRefused)
     await expect(client.setActuator('pump', { on: false })).rejects.toThrow(/did not acknowledge/)
+  })
+
+  it('subscribes immediately when handed an already-connected client (connectAsync)', () => {
+    const mqtt = new FakeMqtt()
+    mqtt.connected = true
+    void new MqttHalClient({ unitId: U, mqtt, httpBase: '' })
+    expect(mqtt.subscribed).toContain(`seedypod/${U}/system`)
+    mqtt.fire('connect')
+    expect(mqtt.subscribed.filter(t => t === `seedypod/${U}/system`)).toHaveLength(2)
   })
 
   it('round-trips a calibration and ignores retained results nobody asked for', async () => {
