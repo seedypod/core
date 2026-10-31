@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 
 # Gardyn Liberation — Implementation Plan (Phase 0 → Done)
 
-**Status:** Draft v2 (lightweight stack + DS port) · **Date:** 2026-10-29 · **Author:** @ng (drafted with Claude)
+**Status:** v3 — Phases 0, 3, 4, 5 and the software half of 7/8 built (2026-10-31); Phase 1 (hardware recon) and the Rust driver validation in Phase 2 need a real unit · **Date:** 2026-10-29 · **Author:** @ng (drafted with Claude)
 **Name:** leafypod (ADR-0001). Repo at `ng/leafypod` until the `leafypod` org is released, then `leafypod/core`.
 
 Sibling project to [sleepypod](https://github.com/sleepypod): a sealed consumer appliance (Gardyn hydroponic tower) whose embedded Linux controller (a Raspberry Pi) is re-flashed to run a local, cloud-free control stack. This plan mirrors sleepypod's conventions exactly (branching, CI, Codecov, Stryker, semantic-release, Renovate, Vercel demo, Nextra docs on Pages, ADRs, OKF knowledge bundle) so tooling and muscle memory carry over.
