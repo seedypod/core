@@ -9,6 +9,7 @@ import { createMcpServer } from '../src/mcp/server'
 import type { Context } from '../src/server/context'
 import { openApiDocument } from '../src/server/openapi'
 import { appRouter } from '../src/server/routers/app'
+import { apiKeyGuard } from './auth'
 
 export interface CreateAppOptions {
   ctx: Context
@@ -25,6 +26,7 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
   app.use('/api/*', cors({ origin: origin => origin ?? '*' }))
+  app.use('/api/*', apiKeyGuard(ctx.store))
 
   app.use('/api/trpc/*', trpcServer({ endpoint: '/api/trpc', router: appRouter, createContext: () => ({ ...ctx }) }))
 
