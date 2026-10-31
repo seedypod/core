@@ -222,6 +222,21 @@ try {
     return `"${alert.detail}" → acknowledged`
   })
 
+  await check('a probe added from the app goes live without restarting hald', async () => {
+    const r = await post('/devices/sensors', { kind: 'ezo_ec', addr: 0x64 })
+    assert(r.status === 200 && r.body.ok, `${r.status} ${JSON.stringify(r.body)}`)
+    await until('EC readings', async () => (await get('/sensors')).ec)
+    const inv = await get('/devices')
+    assert(inv.sensors.some(d => d.kind === 'ezo_ec' && d.source === 'user' && d.status === 'ready'), 'not in inventory')
+    assert(seen.has('homeassistant/sensor/sim-bringup_ec/config'), 'no HA entity')
+    const stock = await fetch(`${api}/devices/sensors/ezo_ph/${0x63}`, { method: 'DELETE' })
+    assert(stock.status === 412, `removing a hal.toml probe → ${stock.status}`)
+    const del = await fetch(`${api}/devices/sensors/ezo_ec/${0x64}`, { method: 'DELETE' })
+    assert(del.status === 200, `remove → ${del.status}`)
+    await until('HA entity deleted', () => seen.get('homeassistant/sensor/sim-bringup_ec/config') === '')
+    return 'added EC at 0x64 → readings + HA entity → removed; hal.toml probe refused'
+  })
+
   await check('daemon loss is noticed (LWT → hal_offline)', async () => {
     daemon.kill('SIGKILL')
     // Without a clean disconnect the broker fires the will after the keep-alive lapses.

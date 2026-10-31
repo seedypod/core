@@ -41,7 +41,8 @@ CI runs it as **Sim Bring-up** on `dev` and on PRs touching `hal/`, `src/`,
 | 7 | A still is fetched over `hald`'s HTTP server and stored | `POST /api/camera/upper/capture` |
 | 8 | EZO calibration reaches the probe; an unconfigured probe returns 412 | `POST /api/sensors/{id}/calibrate` |
 | 9 | Exhausting the doser raises `dose_fault` (not `pump_fault`); acknowledging it clears the latch in `hald` | MQTT `actuator/dose_1/set`, `POST /api/alerts/{id}/acknowledge` |
-| 10 | Killing `hald` is noticed through the broker's last will | `hal_offline` alert |
+| 10 | A probe added from the app goes live (readings, inventory, HA entity) and is removed again; removing a `hal.toml` probe is refused | `POST`/`DELETE /api/devices/sensors` |
+| 11 | Killing `hald` is noticed through the broker's last will | `hal_offline` alert |
 
 ## What it found
 
