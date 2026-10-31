@@ -8,9 +8,10 @@ name: Back-merge main into dev
 #
 # Pushes directly to dev (not through dev's merge queue, which would squash
 # the merge and defeat the purpose). The Dev ruleset only lets bypass actors
-# do that, so BACKMERGE_TOKEN must be an org-admin fine-grained PAT, or a
-# GitHub App installation token whose app is on the Dev ruleset bypass list,
-# with contents:write on this repo. Without the secret the job skips.
+# do that, so it pushes over SSH with BACKMERGE_DEPLOY_KEY: a write deploy key
+# on this repo only, and deploy keys are on the Dev ruleset's bypass list.
+# GITHUB_TOKEN can't be used: GitHub doesn't allow the Actions identity as a
+# ruleset bypass actor. Without the secret the job skips.
 
 on:
   workflow_run:
@@ -34,13 +35,13 @@ jobs:
       contents: read
       issues: write # to open an issue when the merge conflicts
     steps:
-      - name: Check for BACKMERGE_TOKEN
+      - name: Check for BACKMERGE_DEPLOY_KEY
         id: token
         env:
-          BACKMERGE_TOKEN: ${{ secrets.BACKMERGE_TOKEN }}
+          BACKMERGE_DEPLOY_KEY: ${{ secrets.BACKMERGE_DEPLOY_KEY }}
         run: |
-          if [ -z "$BACKMERGE_TOKEN" ]; then
-            echo "::notice::BACKMERGE_TOKEN is not set; skipping back-merge of main into dev."
+          if [ -z "$BACKMERGE_DEPLOY_KEY" ]; then
+            echo "::notice::BACKMERGE_DEPLOY_KEY is not set; skipping back-merge of main into dev."
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
@@ -52,7 +53,7 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
-          token: ${{ secrets.BACKMERGE_TOKEN }}
+          ssh-key: ${{ secrets.BACKMERGE_DEPLOY_KEY }}
 
       - name: Merge main into dev and push
         id: merge
