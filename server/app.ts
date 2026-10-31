@@ -5,6 +5,8 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createOpenApiFetchHandler } from 'trpc-to-openapi'
+import { datasetEntries, datasetName, resolveWindow } from '../src/datasets/export'
+import { tarStream } from '../src/datasets/tar'
 import { createMcpServer } from '../src/mcp/server'
 import type { Context } from '../src/server/context'
 import { openApiDocument } from '../src/server/openapi'
@@ -37,6 +39,19 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     if (got.capture.path.startsWith('data:')) return c.redirect(got.capture.path)
     const body = new Uint8Array(got.bytes).buffer as ArrayBuffer
     return c.body(body, 200, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' })
+  })
+
+  // Dataset export (ADR-0019): a tar streamed entry by entry, so a month of stills never sits in memory.
+  app.get('/api/datasets/export', (c) => {
+    let w
+    try {
+      w = resolveWindow(ctx.now?.() ?? new Date(), { from: c.req.query('from'), to: c.req.query('to'), images: c.req.query('images') !== '0' })
+    }
+    catch (e) {
+      return c.json({ error: (e as Error).message }, 400)
+    }
+    const name = datasetName(ctx.store.settings.get().unitName, w)
+    return c.body(tarStream(datasetEntries(ctx, w)), 200, { 'content-type': 'application/x-tar', 'content-disposition': `attachment; filename="${name}.tar"` })
   })
 
   app.get('/api/openapi.json', c => c.json(openApiDocument(new URL('/api', c.req.url).toString())))
