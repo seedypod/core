@@ -67,7 +67,7 @@ jobs:
         if: matrix.task.name == 'Unit Tests' && !cancelled()
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           use_pypi: true
           fail_ci_if_error: false
           flags: javascript
@@ -77,7 +77,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           report_type: test_results
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           use_pypi: true
           fail_ci_if_error: false
           files: test-results/junit.xml

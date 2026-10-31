@@ -42,7 +42,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           use_pypi: true
           fail_ci_if_error: false
           files: hal/lcov.info

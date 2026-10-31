@@ -36,7 +36,7 @@ The repo moved from `ng/leafypod` to `seedypod/core` (GitHub redirects the old U
 
 - Default branch **`dev`**. Rulesets `Dev` (default branch, merge queue **merge**) and `Main` (`main`, merge queue **squash**, linear history); org admins bypass. Auto-merge on, branches deleted on merge.
 - Required checks on both: `Lint`, `Typecheck`, `Unit Tests`, `Browser Tests`. Left optional on purpose: `fmt + clippy + test` (path-filtered to `hal/**`, so it never reports on TS-only PRs and would block them) and `check-title` (only runs on `pull_request`, never on `merge_group`, so requiring it would stall the queue). Add `codecov/patch` once Codecov reports.
-- Secrets: `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` are real (Vercel project `seedypod-demo` in *therealng's projects*, aliased to `seedypod.vercel.app`). `CODECOV_TOKEN` and `VERCEL_TOKEN` hold placeholders; back-merge uses a deploy key (`BACKMERGE_DEPLOY_KEY`, set) — see [Deployment](DEPLOYMENT.md#repository-secrets-and-variables) for where each comes from. Variable `VERCEL_ENABLED=true`, so the demo deploy fails until `VERCEL_TOKEN` is real.
+- Secrets: `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` are real (Vercel project `seedypod-demo` in *therealng's projects*, aliased to `seedypod.vercel.app`). `VERCEL_TOKEN` holds a placeholder; back-merge uses a deploy key (`BACKMERGE_DEPLOY_KEY`, set) — see [Deployment](DEPLOYMENT.md#repository-secrets-and-variables) for where each comes from. Variable `VERCEL_ENABLED=true`, so the demo deploy fails until `VERCEL_TOKEN` is real. Codecov needs no token: coverage uploads authenticate with GitHub OIDC.
 - Labels: `mutation-test`, `dependencies`, `hardware`, `safety`, `security`.
 - Still manual (UI only): install the Codecov and Renovate apps on the org, and upload the org avatar.
 
@@ -56,7 +56,7 @@ On a unit: `scripts/install-hal` then `scripts/install`; set `HAL_MQTT_URL`, `HA
 ## 5. Next steps, in order
 
 1. **Phase 1 on a real unit** (the simulated run is done) — teardown, `dd` the stock card, flash, `hald --check` + `--features hardware` on the unit, confirm the pin map; file ADR-0008 with the real model/controller; mark `knowledge/hardware/*` and `docs/hardware/pin-map.md` as verified. With EZO probes fitted, run the calibration procedure in `docs/hardware/hal.md`.
-2. Replace the placeholder secrets (`VERCEL_TOKEN`, optionally `CODECOV_TOKEN`, and the `MIRROR_TEST_*` R2 set) — tracked in seedypod/core#6 — and install the Mend Renovate app on the org (github.com/apps/renovate); it reads `renovate.json`, no token. The demo at seedypod.vercel.app was first deployed by hand with the Vercel CLI.
+2. Replace the placeholder secrets (`VERCEL_TOKEN` and the `MIRROR_TEST_*` R2 set) — tracked in seedypod/core#6 — and install the Mend Renovate app on the org (github.com/apps/renovate); it reads `renovate.json`, no token. The demo at seedypod.vercel.app was first deployed by hand with the Vercel CLI.
 3. iOS: evaluated in [ADR-0017](adr/0017-ios-client.md) — new `seedypod/ios` app reusing sleepypod's tRPC transport, discovery and stream patterns; first add a `_seedypod._tcp` mDNS advertisement to core.
 4. New probe types (dissolved oxygen, ORP, other vendors): one `SensorKind` impl each (ADR-0018); the Sensors screen and calibration wizard pick them up from the descriptor.
 

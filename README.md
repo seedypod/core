@@ -2,6 +2,15 @@
   <img src="web/public/favicon.svg" width="72" alt="" />
 </p>
 <h1 align="center">seedypod</h1>
+<p align="center">
+  <a href="https://github.com/seedypod/core/actions/workflows/test.yml"><img src="https://github.com/seedypod/core/actions/workflows/test.yml/badge.svg?branch=dev" alt="CI" /></a>
+  <a href="https://github.com/seedypod/core/actions/workflows/rust.yml"><img src="https://github.com/seedypod/core/actions/workflows/rust.yml/badge.svg?branch=dev" alt="HAL (Rust)" /></a>
+  <a href="https://codecov.io/gh/seedypod/core"><img src="https://codecov.io/gh/seedypod/core/branch/dev/graph/badge.svg" alt="codecov" /></a>
+  <a href="https://github.com/seedypod/core/releases/latest"><img src="https://img.shields.io/github/v/release/seedypod/core?sort=semver" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3" /></a>
+  <a href="https://seedypod.github.io"><img src="https://img.shields.io/badge/docs-seedypod.github.io-blue" alt="Docs" /></a>
+  <a href="https://seedypod.vercel.app"><img src="https://img.shields.io/badge/live_demo-seedypod.vercel.app-brightgreen" alt="Live demo" /></a>
+</p>
 <p align="center"><strong>Truly own your Gardyn.</strong> Local, cloud-free control for Gardyn hydroponic towers — a sibling of <a href="https://github.com/sleepypod">sleepypod</a>.</p>
 
 <p align="center">
