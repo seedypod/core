@@ -1,0 +1,619 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* ─── Leafypod design tokens (ported from sleepypod) ─────────────────────── */
+  --color-app: var(--surface-app);
+  --color-surface: var(--surface-card);
+  --color-active: var(--surface-active);
+  --color-field: var(--surface-field);
+  --color-code: var(--surface-code);
+  --color-line: var(--border-1);
+  --color-line-2: var(--border-2);
+  --color-grid: var(--border-grid);
+  --color-fg: var(--text-1);
+  --color-fg-2: var(--text-2);
+  --color-fg-3: var(--text-3);
+  --color-icon: var(--text-icon);
+  --color-inverse: var(--text-inverse);
+  --color-water: var(--accent-water);
+  --color-light: var(--accent-light);
+  --color-hold: var(--accent-neutral);
+  --color-track: var(--dial-track);
+  --color-status: var(--text-status);
+  --color-pod-ok: var(--pod-ok);
+  --color-pod-attention: var(--pod-attention);
+  --color-ok: var(--status-ok);
+  --color-warn: var(--status-warn);
+  --color-danger: var(--status-danger);
+  --color-ok-line: var(--status-ok-border);
+  --color-warn-line: var(--status-warn-border);
+  --color-warn-bg: var(--status-warn-bg);
+  --color-danger-line: var(--status-danger-border);
+  --color-growth-seed: var(--growth-seed);
+  --color-growth-sprout: var(--growth-sprout);
+  --color-growth-veg: var(--growth-veg);
+  --color-growth-harvest: var(--growth-harvest);
+  --color-chart-temp: var(--chart-temp);
+  --color-humidity: var(--chart-humidity);
+  --color-link: var(--accent-link);
+  --color-chart-ph: var(--chart-ph);
+  --color-chart-ec: var(--chart-ec);
+  --color-chart-water: var(--chart-water);
+  --color-calib-prev: var(--calib-prev);
+  --color-calib-saved: var(--calib-saved);
+  --color-calib-none: var(--calib-none);
+  --color-calib-better: var(--calib-better);
+  --color-actor-agent: var(--actor-agent);
+  --color-actor-agent-bg: var(--actor-agent-bg);
+  --color-actor-you: var(--actor-you);
+  --color-actor-you-bg: var(--actor-you-bg);
+  --color-actor-pod: var(--actor-pod);
+  --color-actor-pod-bg: var(--actor-pod-bg);
+  --radius-tag: 3px;
+  --radius-thumb: 6px;
+  --radius-ctl: 8px;
+  --radius-seg: 9px;
+  --radius-card: 12px;
+  --radius-dialog: 16px;
+  --radius-sheet: 24px;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+/* ─── Leafypod color tokens ────────────────────────────────────────────
+   Dark is the default. Light applies via [data-theme="light"] on <html>,
+   or via prefers-color-scheme when the theme preference is "auto". */
+:root {
+  --lp-ink-0: #0b0b0c;
+  --lp-ink-1: #0f0f11;
+  --lp-ink-2: #17171a;
+  --lp-ink-code: #08080a;
+  --lp-line-1: #1f1f22;
+  --lp-line-2: #26262a;
+  --lp-line-grid: #16161a;
+  --lp-fg-1: #ececec;
+  --lp-fg-2: #8b8b92;
+  --lp-fg-3: #5d5d63;
+  --lp-fg-icon: #b0b0b6;
+  --lp-cool: #7ab5e0;
+  --lp-warm: #e0976a;
+  --lp-neutral: #9ab3c9;
+  --lp-green: #50c878;
+  --lp-amber: #e0b45a;
+  --lp-red: #e06a6a;
+  --lp-violet: #a58be0;
+  --lp-indigo: #4f73c9;
+  --lp-humidity: #4a90d9;
+
+  --surface-app: var(--lp-ink-0);
+  --surface-card: var(--lp-ink-1);
+  --surface-active: var(--lp-ink-2);
+  --surface-field: var(--lp-ink-0);
+  --surface-code: var(--lp-ink-code);
+  --border-1: var(--lp-line-1);
+  --border-2: var(--lp-line-2);
+  --border-grid: var(--lp-line-grid);
+  --text-1: var(--lp-fg-1);
+  --text-2: var(--lp-fg-2);
+  --text-3: var(--lp-fg-3);
+  --text-icon: var(--lp-fg-icon);
+  --text-inverse: var(--lp-ink-0);
+
+  --accent-water: var(--lp-cool);
+  --accent-light: var(--lp-warm);
+  --accent-neutral: var(--lp-neutral);
+  --dial-track: #1f1f23;
+  --pod-ok: #a99cf2;
+  --pod-attention: #f08cc4;
+  --text-status: #c4c4d0;
+  --temp-off-bg: linear-gradient(180deg, #17181d, #121216);
+
+  --status-ok: var(--lp-green);
+  --status-warn: var(--lp-amber);
+  --status-danger: var(--lp-red);
+  --status-ok-border: #1f3a2a;
+  --status-warn-border: #3a3222;
+  --status-warn-bg: #2a2414;
+  --status-danger-border: #3a2020;
+
+  --growth-seed: var(--lp-warm);
+  --growth-sprout: var(--lp-violet);
+  --growth-veg: var(--lp-cool);
+  --growth-harvest: var(--lp-indigo);
+  --chart-temp: var(--lp-red);
+  --chart-humidity: var(--lp-humidity);
+  --heat-rgb: 122, 181, 224;
+  --accent-link: #8fc3ec;
+  --chart-ph: #e8877a;
+  --chart-phv: #b294e6;
+  --chart-water: #6db3e3;
+
+  /* Biometric calibration: previous vs saved profile, and who acted. */
+  --calib-prev: #3a3a40;
+  --calib-saved: #7fc0ea;
+  --calib-none: #2a2a2f;
+  --calib-better: #5fc27a;
+  --actor-agent: #b89cf0;
+  --actor-agent-bg: #231c33;
+  --actor-you: #7fc0ea;
+  --actor-you-bg: #12202c;
+  --actor-pod: #5fc27a;
+  --actor-pod-bg: #12261a;
+
+  --toggle-off-track: var(--lp-line-2);
+  --toggle-off-knob: #6a6a70;
+  --toggle-on-knob: var(--lp-ink-0);
+  --overlay: rgba(0, 0, 0, 0.62);
+  --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="light"] {
+  --lp-ink-0: #f6f6f5;
+  --lp-ink-1: #ffffff;
+  --lp-ink-2: #ececea;
+  --lp-ink-code: #f1f1ee;
+  --lp-line-1: #e2e2df;
+  --lp-line-2: #d6d6d2;
+  --lp-line-grid: #efefec;
+  --lp-fg-1: #111113;
+  --lp-fg-2: #6b6b70;
+  --lp-fg-3: #9a9aa0;
+  --lp-fg-icon: #44444a;
+  --lp-cool: #2f6fb5;
+  --lp-warm: #c8643a;
+  --lp-neutral: #5f7f9c;
+  --lp-green: #2e9d5b;
+  --lp-amber: #b07d1a;
+  --lp-red: #c94444;
+  --lp-violet: #7a5cc4;
+  --lp-indigo: #34509e;
+  --lp-humidity: #2f6fb5;
+  --dial-track: #e8e8e5;
+  --pod-ok: #6a58d6;
+  --pod-attention: #c2438c;
+  --text-status: #4a4a55;
+  --temp-off-bg: linear-gradient(180deg, #f3f3f5, #ececef);
+  --status-ok-border: #bfe0cb;
+  --status-warn-border: #ead9b0;
+  --status-warn-bg: #fbf1dc;
+  --status-danger-border: #f0c8c8;
+  --heat-rgb: 47, 111, 181;
+  --accent-link: #2f6fb5;
+  --chart-ph: #c94f40;
+  --chart-phv: #7a5cc4;
+  --chart-water: #2f7fb8;
+  --calib-prev: #c4c4c0;
+  --calib-saved: #2f7fb8;
+  --calib-none: #e2e2df;
+  --calib-better: #2e9d5b;
+  --actor-agent: #6a4fb8;
+  --actor-agent-bg: #ece6f8;
+  --actor-you: #2f6fb5;
+  --actor-you-bg: #e3eef9;
+  --actor-pod: #2e8a52;
+  --actor-pod-bg: #e2f3e8;
+  --toggle-off-track: #dcdcd8;
+  --toggle-off-knob: #ffffff;
+  --toggle-on-knob: #ffffff;
+  --overlay: rgba(20, 20, 24, 0.32);
+  color-scheme: light;
+}
+
+:root {
+  /* shadcn semantic vars mapped onto the sleepypod tokens so base-ui/shadcn
+     primitives follow the active theme. */
+  --background: var(--surface-app);
+  --foreground: var(--text-1);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-1);
+  --popover: var(--surface-card);
+  --popover-foreground: var(--text-1);
+  --primary: var(--text-1);
+  --primary-foreground: var(--text-inverse);
+  --secondary: var(--surface-active);
+  --secondary-foreground: var(--text-1);
+  --muted: var(--surface-active);
+  --muted-foreground: var(--text-2);
+  --accent: var(--surface-active);
+  --accent-foreground: var(--text-1);
+  --destructive: var(--status-danger);
+  --border: var(--border-1);
+  --input: var(--border-2);
+  --ring: var(--text-3);
+  --chart-1: var(--accent-water);
+  --chart-2: var(--accent-light);
+  --chart-3: var(--growth-sprout);
+  --chart-4: var(--growth-harvest);
+  --chart-5: var(--accent-neutral);
+  --radius: 0.75rem;
+  --sidebar: var(--surface-app);
+  --sidebar-foreground: var(--text-1);
+  --sidebar-primary: var(--text-1);
+  --sidebar-primary-foreground: var(--text-inverse);
+  --sidebar-accent: var(--surface-active);
+  --sidebar-accent-foreground: var(--text-1);
+  --sidebar-border: var(--border-1);
+  --sidebar-ring: var(--text-3);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-app text-fg font-sans antialiased;
+    font-size: 14px;
+  }
+
+  /* Prevent 300ms tap delay on touch devices */
+  a, button, input, select, textarea, [role="button"], [role="switch"] {
+    touch-action: manipulation;
+  }
+
+  /* Ensure range sliders have minimum touch height (44px per WCAG 2.5.5) */
+  input[type="range"] {
+    min-height: 44px;
+  }
+}
+
+/* Hide scrollbar for horizontal scroll navigation */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Safe area bottom padding for notched devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent text size adjustment on orientation change */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Touch target utility — apply where needed */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Prevent iOS Safari bounce/overscroll */
+body {
+  overscroll-behavior-y: none;
+  overflow-x: hidden;
+}
+
+/* ─── Dark theme form element styles ──────────────────────────────────── */
+
+/* Ensure <select> <option> elements render with dark background */
+select,
+option {
+  background-color: var(--surface-card);
+  color: var(--text-1);
+}
+
+/* Dark scrollbar for WebKit browsers */
+.dark ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 3px;
+}
+
+/* Autofill dark styling — prevent white flash on autocomplete */
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px var(--surface-field) inset !important;
+  -webkit-text-fill-color: var(--text-1) !important;
+  caret-color: var(--text-1);
+}
+
+/* Ensure color-scheme is dark for all form controls */
+html.dark {
+  color-scheme: dark;
+}
+
+/* ─── Sleepypod helpers ──────────────────────────────────────────────── */
+
+/* Mono uppercase eyebrow label (11px, +0.06em). */
+.lp-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+/* Status word (COOLING / WARMING / HOLDING). */
+.lp-status {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* TempBackdrop / stepper ink: --h (hue) is set inline per temperature or time
+   of day. Colors fill a masked layer so a hue change can transition. */
+.lp-temp-sky {
+  background-color: hsl(var(--h, 235) 45% 32% / 0.4);
+  mask-image: linear-gradient(to bottom, #000, transparent 65%);
+}
+
+.lp-temp-glow {
+  background-color: hsl(var(--h, 268) 55% 56% / 0.5);
+  mask-image: radial-gradient(ellipse 90% 65% at 50% 80%, #000, transparent);
+}
+
+.lp-temp-off {
+  background: var(--temp-off-bg);
+}
+
+.lp-temp-ink {
+  color: hsl(var(--h, 268) 62% 74%);
+}
+
+[data-theme="light"] .lp-temp-sky {
+  background-color: hsl(var(--h, 235) 70% 86% / 0.55);
+}
+
+[data-theme="light"] .lp-temp-glow {
+  background-color: hsl(var(--h, 268) 70% 72% / 0.45);
+}
+
+[data-theme="light"] .lp-temp-ink {
+  color: hsl(var(--h, 268) 50% 42%);
+}
+
+/* Room behind the 3D bed, as in the showroom renders: a wall meeting a floor just under
+   the horizon, a soft window-light patch on the wall, a brighter pool where the bed stands.
+   Dark is a dim lounge in the card's own inks; light is warm plaster over a stone floor. */
+/* The room while three.js loads; the colours match NIGHT_ROOM / DAY_ROOM in bedLook.ts so the
+   rendered room fades in over the same wall and floor. */
+.bed-backdrop {
+  background:
+    radial-gradient(60% 40% at 38% 70%, rgba(159, 182, 224, 0.1) 0%, transparent 70%),
+    linear-gradient(180deg, #1b1c25 0%, #292a35 22%, #20212a 28%, #20212a 100%);
+}
+
+[data-theme="light"] .bed-backdrop {
+  background:
+    radial-gradient(60% 40% at 38% 70%, rgba(255, 241, 207, 0.6) 0%, transparent 70%),
+    linear-gradient(180deg, #ece5d9 0%, #e3dacc 22%, #d5c9b6 28%, #d5c9b6 100%);
+}
+
+/* Per-side status pill on the thermal bed: the surface reading, the setpoint and a ring
+   that spins while the pod is warming or cooling that side. */
+.thermal-pill {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(16, 16, 20, 0.6);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  color: #f4f4f6;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: opacity 300ms var(--ease-standard);
+}
+
+[data-theme="light"] .thermal-pill {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 6px 18px rgba(70, 55, 30, 0.18);
+  color: #1a1a1c;
+}
+
+.thermal-pill[data-compact="true"] {
+  gap: 6px;
+  padding: 4px 9px 4px 7px;
+  font-size: 12px;
+}
+
+.thermal-pill-target {
+  opacity: 0.6;
+}
+
+.thermal-pill-target[hidden] {
+  display: none;
+}
+
+.thermal-ring {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  opacity: 0.45;
+}
+
+.thermal-pill[data-mode="off"] .thermal-ring {
+  border-style: dashed;
+}
+
+.thermal-pill[data-mode="paused"] .thermal-ring {
+  color: var(--status-warn);
+  opacity: 1;
+}
+
+.thermal-pill[data-mode="holding"] .thermal-ring {
+  opacity: 0.9;
+}
+
+.thermal-pill[data-mode="heating"] .thermal-ring,
+.thermal-pill[data-mode="cooling"] .thermal-ring {
+  border-top-color: transparent;
+  opacity: 1;
+  animation: sp-ring-spin 1.1s linear infinite;
+}
+
+.thermal-pill[data-mode="heating"] .thermal-ring {
+  color: var(--accent-light);
+}
+
+.thermal-pill[data-mode="cooling"] .thermal-ring {
+  color: var(--accent-water);
+}
+
+@keyframes sp-ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Activity ring in the stage's side label: spins while that side is warming or cooling. */
+.stage-ring {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: sp-ring-spin 1.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thermal-ring,
+  .stage-ring {
+    animation: none !important;
+    border-top-color: currentColor !important;
+  }
+}
+
+/* Thermal legend; the stops match THERMAL_RAMP in thermalData.ts for each theme. */
+:root {
+  --thermal-ramp: linear-gradient(to right, #6ea9de, #7a9ab8, #75777b, #b98c78, #e0956f);
+}
+
+[data-theme="light"] {
+  --thermal-ramp: linear-gradient(to right, #8fc0ea, #a2bcd4, #b7b8ba, #d2a898, #eaa98e);
+}
+
+.lp-fade-in {
+  animation: sp-fade-in 150ms var(--ease-standard);
+}
+
+/* Vibration preview progress: grows across its track over animation-duration. */
+.lp-sweep {
+  animation: sp-sweep linear forwards;
+}
+
+@keyframes sp-sweep {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes sp-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Toasts: rise 12px and fade in over 250ms, leave the same way; the countdown bar
+   shrinks over animation-duration. Reduced motion fades only. */
+.lp-toast-in {
+  animation: sp-toast-in 250ms var(--ease-standard) both;
+}
+
+.lp-toast-out {
+  animation: sp-toast-in 250ms var(--ease-standard) reverse both;
+}
+
+.lp-toast-countdown {
+  animation: sp-toast-countdown linear forwards;
+}
+
+@keyframes sp-toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sp-toast-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sp-toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-toast-in,
+  .lp-toast-out {
+    animation-name: sp-toast-fade;
+  }
+}
+
+/* ─── Minimal controls used by the Phase 0 dashboard ─────────────────── */
+.lp-btn {
+  border: 1px solid var(--border-2);
+  background: var(--surface-active);
+  color: var(--text-1);
+  border-radius: var(--radius-ctl);
+  padding: 8px 14px;
+  font-size: 14px;
+}
+.lp-btn:disabled { opacity: 0.5; }
