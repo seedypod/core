@@ -62,6 +62,14 @@ export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
     }
   }
 
+  // Autopilot (ADR-0020): one armed notify, one armed light policy, one dose rule still in dry-run.
+  const ts = now.toISOString()
+  const lit = (value: number) => ({ kind: 'literal' as const, value })
+  const sensor = (id: string) => ({ kind: 'signal' as const, signal: `sensor.${id}` })
+  store.automations.create({ name: 'Tank getting low', enabled: true, dryRun: false, priority: 50, cooldownMin: 240, trigger: { kind: 'tick', everyMin: 15 }, conditions: { kind: 'and', conditions: [{ kind: 'compare', op: '<', left: sensor('water_level_pct'), right: lit(30) }] }, actions: [{ kind: 'notify', message: 'top up the tank' }] }, ts)
+  store.automations.create({ name: 'Dim when hot', enabled: true, dryRun: false, priority: 60, cooldownMin: null, trigger: { kind: 'tick', everyMin: 5 }, conditions: { kind: 'sustained', forMin: 10, condition: { kind: 'and', conditions: [{ kind: 'compare', op: '>', left: { kind: 'window', fn: 'avg', signal: 'sensor.air_temp', lastMin: 15 }, right: lit(29) }] } }, actions: [{ kind: 'setLight', level: lit(60) }] }, ts)
+  store.automations.create({ name: 'pH drifting up', enabled: true, dryRun: true, priority: 50, cooldownMin: 360, trigger: { kind: 'tick', everyMin: 10 }, conditions: { kind: 'and', conditions: [{ kind: 'compare', op: '>', left: { kind: 'window', fn: 'avg', signal: 'sensor.ph', lastMin: 60 }, right: lit(6.5) }] }, actions: [{ kind: 'dose', doser: 'dose_1', durationS: lit(5) }] }, ts)
+
   // Put the sim in a state that matches the story.
   void hal.setActuator('light', { on: true, level: 85 })
 }
