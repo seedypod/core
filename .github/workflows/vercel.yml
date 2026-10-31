@@ -1,7 +1,7 @@
 name: Vercel Demo
 
 # Deploys the browser demo (VITE_DEMO=1, simulated hardware) to Vercel.
-# dev → production deployment at leafypod.vercel.app; PRs → preview URL in a comment.
+# dev → production deployment at seedypod.vercel.app; PRs → preview URL in a comment.
 # Needs secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
 
 on:

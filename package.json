@@ -1,9 +1,9 @@
 {
-  "name": "@leafypod/core",
+  "name": "@seedypod/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "leafypod core — local, cloud-free control for Gardyn hydroponic towers: Hono + tRPC + MCP server, React web UI, and the Rust hardware daemon (hal/)",
+  "description": "seedypod core — local, cloud-free control for Gardyn hydroponic towers: Hono + tRPC + MCP server, React web UI, and the Rust hardware daemon (hal/)",
   "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"

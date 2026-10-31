@@ -23,7 +23,7 @@
       "@semantic-release/github",
       {
         "assets": [
-          { "path": "leafypod-core.tar.gz", "label": "leafypod-core (source + built web/server)" },
+          { "path": "seedypod-core.tar.gz", "label": "seedypod-core (source + built web/server)" },
           { "path": "release-assets/hald-arm-unknown-linux-gnueabihf", "label": "hald (Pi Zero W, armv6)" },
           { "path": "release-assets/hald-aarch64-unknown-linux-gnu", "label": "hald (Pi Zero 2 W / Pi 4 / Pi 5, aarch64)" }
         ]

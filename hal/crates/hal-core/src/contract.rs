@@ -135,7 +135,7 @@ pub struct Alert {
     pub detail: String,
 }
 
-/// MQTT topic layout under `leafypod/<unit-id>/`.
+/// MQTT topic layout under `seedypod/<unit-id>/`.
 pub mod topics {
     use super::{ActuatorId, AlertKind, SensorId};
 
@@ -147,7 +147,7 @@ pub mod topics {
     }
 
     pub fn prefix(unit: &str) -> String {
-        format!("leafypod/{unit}")
+        format!("seedypod/{unit}")
     }
     pub fn availability(unit: &str) -> String {
         format!("{}/availability", prefix(unit))
@@ -198,19 +198,19 @@ mod tests {
             press: ButtonPress::Double,
         };
         assert_eq!(serde_json::to_string(&e).unwrap(), r#"{"press":"double"}"#);
-        assert_eq!(topics::button("u1"), "leafypod/u1/event/button");
+        assert_eq!(topics::button("u1"), "seedypod/u1/event/button");
     }
 
     #[test]
     fn topics_match_the_ts_helpers() {
-        assert_eq!(topics::sensor("u1", SensorId::Ph), "leafypod/u1/sensor/ph");
+        assert_eq!(topics::sensor("u1", SensorId::Ph), "seedypod/u1/sensor/ph");
         assert_eq!(
             topics::actuator_set("u1", ActuatorId::Pump),
-            "leafypod/u1/actuator/pump/set"
+            "seedypod/u1/actuator/pump/set"
         );
         assert_eq!(
             topics::alert_ack("u1", AlertKind::WaterLow),
-            "leafypod/u1/alert/water_low/ack"
+            "seedypod/u1/alert/water_low/ack"
         );
     }
 

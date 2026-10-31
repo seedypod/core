@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Build locally and push to a unit over SSH (sleepypod scripts/deploy pattern).
-# Usage: scripts/deploy pi@leafypod.local [/opt/leafypod]
+# Usage: scripts/deploy pi@seedypod.local [/opt/seedypod]
 set -euo pipefail
 HOST="${1:?usage: scripts/deploy user@host [prefix]}"
-PREFIX="${2:-/opt/leafypod}"
+PREFIX="${2:-/opt/seedypod}"
 pnpm build
-tar czf /tmp/leafypod-core.tar.gz --exclude=node_modules --exclude=.git --exclude='*.db*' --exclude=hal/target --exclude=.claude .
-scp -q /tmp/leafypod-core.tar.gz "$HOST:/tmp/"
-ssh "$HOST" "set -e; mkdir -p $PREFIX && tar xzf /tmp/leafypod-core.tar.gz -C $PREFIX && cd $PREFIX && pnpm install --prod --frozen-lockfile && sudo systemctl restart leafypod-core && systemctl is-active leafypod-core"
+tar czf /tmp/seedypod-core.tar.gz --exclude=node_modules --exclude=.git --exclude='*.db*' --exclude=hal/target --exclude=.claude .
+scp -q /tmp/seedypod-core.tar.gz "$HOST:/tmp/"
+ssh "$HOST" "set -e; mkdir -p $PREFIX && tar xzf /tmp/seedypod-core.tar.gz -C $PREFIX && cd $PREFIX && pnpm install --prod --frozen-lockfile && sudo systemctl restart seedypod-core && systemctl is-active seedypod-core"
 echo "✓ deployed to $HOST:$PREFIX"

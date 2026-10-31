@@ -235,7 +235,7 @@ mod tests {
         assert_eq!(o.client_id(), "hald-u1");
         assert_eq!(o.broker_address(), ("h".to_owned(), 1883));
         let will = o.last_will().unwrap();
-        assert_eq!(will.topic, "leafypod/u1/availability");
+        assert_eq!(will.topic, "seedypod/u1/availability");
         assert_eq!(&will.message[..], b"offline");
         assert!(will.retain);
         let login = o.credentials().expect("credentials set");
@@ -264,9 +264,9 @@ mod tests {
     #[test]
     fn subscriptions_cover_commands_acks_and_ha_mirrors() {
         let s = subscriptions("u1");
-        assert!(s.contains(&"leafypod/u1/actuator/+/set".to_owned()));
-        assert!(s.contains(&"leafypod/u1/alert/+/ack".to_owned()));
-        assert!(s.contains(&"leafypod/u1/ha/light/brightness/set".to_owned()));
+        assert!(s.contains(&"seedypod/u1/actuator/+/set".to_owned()));
+        assert!(s.contains(&"seedypod/u1/alert/+/ack".to_owned()));
+        assert!(s.contains(&"seedypod/u1/ha/light/brightness/set".to_owned()));
         assert_eq!(s.len(), 6);
     }
 
@@ -274,7 +274,7 @@ mod tests {
     fn inbound_parsing_covers_every_command_shape() {
         let cmd = parse_inbound(
             "u1",
-            "leafypod/u1/actuator/pump/set",
+            "seedypod/u1/actuator/pump/set",
             br#"{"on":true,"level":100,"durationS":300}"#,
         )
         .unwrap();
@@ -290,15 +290,15 @@ mod tests {
             )
         );
         assert_eq!(
-            parse_inbound("u1", "leafypod/u1/actuator/light/set", b"").unwrap(),
+            parse_inbound("u1", "seedypod/u1/actuator/light/set", b"").unwrap(),
             Inbound::ActuatorSet(ActuatorId::Light, ActuatorCommand::default())
         );
         assert_eq!(
-            parse_inbound("u1", "leafypod/u1/alert/pump_fault/ack", b"{}").unwrap(),
+            parse_inbound("u1", "seedypod/u1/alert/pump_fault/ack", b"{}").unwrap(),
             Inbound::AlertAck(AlertKind::PumpFault)
         );
         assert_eq!(
-            parse_inbound("u1", "leafypod/u1/ha/light/set", b"ON").unwrap(),
+            parse_inbound("u1", "seedypod/u1/ha/light/set", b"ON").unwrap(),
             Inbound::ActuatorSet(
                 ActuatorId::Light,
                 ActuatorCommand {
@@ -308,13 +308,13 @@ mod tests {
             )
         );
         for (topic, payload) in [
-            ("leafypod/u1/actuator/fan/set", b"{}".as_slice()),
-            ("leafypod/u1/actuator/pump/set", b"{\"on\":\"yes\"}"),
-            ("leafypod/u1/alert/nope/ack", b"{}"),
-            ("leafypod/u1/ha/light/set", b"maybe"),
-            ("leafypod/u1/something/else", b"{}"),
-            ("leafypod/u2/actuator/pump/set", b"{}"),
-            ("leafypod/u1/actuator/pump/set", &[0xFF, 0xFE]),
+            ("seedypod/u1/actuator/fan/set", b"{}".as_slice()),
+            ("seedypod/u1/actuator/pump/set", b"{\"on\":\"yes\"}"),
+            ("seedypod/u1/alert/nope/ack", b"{}"),
+            ("seedypod/u1/ha/light/set", b"maybe"),
+            ("seedypod/u1/something/else", b"{}"),
+            ("seedypod/u2/actuator/pump/set", b"{}"),
+            ("seedypod/u1/actuator/pump/set", &[0xFF, 0xFE]),
         ] {
             assert!(parse_inbound("u1", topic, payload).is_err(), "{topic}");
         }
@@ -359,7 +359,7 @@ mod tests {
             connected.clone(),
         ));
         tokio::time::sleep(Duration::from_millis(300)).await;
-        tx.send(Outbound::retained("leafypod/u1/x", "dropped while offline"))
+        tx.send(Outbound::retained("seedypod/u1/x", "dropped while offline"))
             .unwrap();
         drop(tx);
         tokio::time::timeout(Duration::from_secs(5), task)

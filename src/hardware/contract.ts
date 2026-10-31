@@ -91,7 +91,7 @@ export type ButtonPress = z.infer<typeof ButtonPress>
 
 /** MQTT topic helpers. */
 export const topics = {
-  prefix: (unitId: string) => `leafypod/${unitId}`,
+  prefix: (unitId: string) => `seedypod/${unitId}`,
   availability: (u: string) => `${topics.prefix(u)}/availability`,
   system: (u: string) => `${topics.prefix(u)}/system`,
   sensor: (u: string, id: SensorId) => `${topics.prefix(u)}/sensor/${id}`,

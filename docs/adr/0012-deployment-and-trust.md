@@ -14,7 +14,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 
 ## Decision
 
-- `main` releases via semantic-release with `leafypod-core.tar.gz` and the
+- `main` releases via semantic-release with `seedypod-core.tar.gz` and the
   cross-built `hald` binaries attached; `dev` keeps a rolling `dev-latest`.
 - `scripts/install` (core) and `scripts/install-hal` (daemon) set up systemd
   units; `scripts/deploy` ships a local build over SSH.

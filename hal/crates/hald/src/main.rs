@@ -29,7 +29,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
-#[command(name = "hald", version, about = "leafypod hardware daemon")]
+#[command(name = "hald", version, about = "seedypod hardware daemon")]
 struct Cli {
     /// Path to hal.toml (defaults are the documented Gardyn pin map).
     #[arg(short, long, env = "HAL_CONFIG")]
@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
     info!(unit = %unit_id, model = %system.model, sensors = ?system.caps.sensors, actuators = ?system.caps.actuators, "hald starting");
 
     let state_dir = if cli.sim && cfg.state_dir == config::Config::default().state_dir {
-        std::env::temp_dir().join("leafypod-sim")
+        std::env::temp_dir().join("seedypod-sim")
     } else {
         cfg.state_dir.clone()
     };

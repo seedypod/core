@@ -1,4 +1,4 @@
-# Example Lovelace view for a leafypod-controlled Gardyn.
+# Example Lovelace view for a seedypod-controlled Gardyn.
 # Entities come from two discovery sources: hald (light, pump, sensors, button)
 # and core (grow day/stage, reminders, light hours, "water now").
 title: Gardyn

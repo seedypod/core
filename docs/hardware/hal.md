@@ -23,7 +23,7 @@ daemon).
 ## Running
 
 ```
-hald [--config /etc/leafypod/hal.toml] [--sim] [--stdout] [--mqtt-url mqtt://host:1883]
+hald [--config /etc/seedypod/hal.toml] [--sim] [--stdout] [--mqtt-url mqtt://host:1883]
 hald --check                   # validate the config, print the planned capability set, exit 1 on errors
 hald --print-default-config    # the commented hal.toml the installer writes
 hald --sim --stdout --ticks 3  # smoke test: simulated hardware, publishes as JSON lines
@@ -56,8 +56,8 @@ prints every key with its default; the important ones:
 | top | `mqtt_url`, `mqtt_username`, `mqtt_password` | `mqtt://127.0.0.1:1883`, none | |
 | top | `http_bind` | `0.0.0.0:3001` | |
 | top | `telemetry_interval_s` | 10 | Sensors publish on change *and* at least this often. |
-| top | `state_dir` | `/var/lib/leafypod` | `state.json` lives here (`--sim` uses a temp dir). |
-| top | `mdns` | true | Advertise `_leafypod-hal._tcp`. |
+| top | `state_dir` | `/var/lib/seedypod` | `state.json` lives here (`--sim` uses a temp dir). |
+| top | `mdns` | true | Advertise `_seedypod-hal._tcp`. |
 | `[pins]` | `light_pwm`/`light_pwm_channel`/`light_hz` | 18 / 0 / 8000 | Hardware PWM. GPIO18 is channel 2 on a Pi 5. |
 | `[pins]` | `pump_pwm`/`pump_hz` | 24 / 50 | Software PWM on a dedicated thread. |
 | `[pins]` | `distance_trigger`/`distance_echo` | 26 / 19 | DYP-A01. |
@@ -107,7 +107,7 @@ a laptop first.
 
 ## MQTT
 
-Prefix `leafypod/<unit-id>/`; the topic table in ADR-0007 is authoritative.
+Prefix `seedypod/<unit-id>/`; the topic table in ADR-0007 is authoritative.
 QoS 1 throughout. Client id `hald-<unit-id>`.
 
 | Topic | Dir | Retained | Payload |
@@ -151,8 +151,8 @@ Semantics worth knowing:
 
 Published retained under `<prefix>/<component>/<unit>_<object>/config` at boot
 and on every reconnect. Every entity shares
-`device = {identifiers: [<unit>], name: "Gardyn <unit>", manufacturer: "leafypod", model, sw_version}`
-and `availability_topic = leafypod/<unit>/availability`.
+`device = {identifiers: [<unit>], name: "Gardyn <unit>", manufacturer: "seedypod", model, sw_version}`
+and `availability_topic = seedypod/<unit>/availability`.
 
 | Component | Object | Binds to | Notes |
 |---|---|---|---|
@@ -196,28 +196,28 @@ state is saved and `availability` goes `offline`.
 
 ## mDNS
 
-`_leafypod-hal._tcp` instance `<unit-id>` on the HTTP port with TXT
+`_seedypod-hal._tcp` instance `<unit-id>` on the HTTP port with TXT
 `id=<unit-id>`, `model=<model>`, `v=<hal version>`. Core discovers units from
 this rather than from configuration.
 
 ## Install
 
 ```
-curl -fsSL https://raw.githubusercontent.com/ng/leafypod/main/scripts/install-hal | bash
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 ```
 
 `scripts/install-hal` detects the CPU (`aarch64` → Zero 2 W / Pi 4 / Pi 5;
 `armv6l`/`armv7l` → Zero W), downloads `hald-<target>` from the latest GitHub
-Release, installs it to `/usr/local/bin/hald`, writes `/etc/leafypod/hal.toml`
-if absent (the commented defaults), creates the `leafypod` system user in
+Release, installs it to `/usr/local/bin/hald`, writes `/etc/seedypod/hal.toml`
+if absent (the commented defaults), creates the `seedypod` system user in
 `gpio`, `i2c`, `video`, enables I²C (`raspi-config nonint do_i2c 0`) and the
 PWM overlay (`dtoverlay=pwm,pin=18,func=2`, reboot required once), installs
 `fswebcam`, and installs/enables `hald.service` (`Restart=always`,
 `After=network-online.target`, hardened). `--binary ./hald` installs a local
 build; `--version vX.Y.Z` pins a release; `--no-enable` skips starting it.
 
-Operations: `journalctl -u hald -f`, `hald --config /etc/leafypod/hal.toml --check`,
-`mosquitto_sub -v -t 'leafypod/#'`. See [Debugging](../DEBUGGING.md).
+Operations: `journalctl -u hald -f`, `hald --config /etc/seedypod/hal.toml --check`,
+`mosquitto_sub -v -t 'seedypod/#'`. See [Debugging](../DEBUGGING.md).
 
 ## Verification status
 

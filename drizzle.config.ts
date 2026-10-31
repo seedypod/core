@@ -4,6 +4,6 @@ export default defineConfig({
   dialect: 'sqlite',
   schema: './src/db/schema.ts',
   out: './src/db/migrations',
-  dbCredentials: { url: process.env.DATABASE_URL ?? 'file:./leafypod.dev.db' },
+  dbCredentials: { url: process.env.DATABASE_URL ?? 'file:./seedypod.dev.db' },
   strict: true,
 })

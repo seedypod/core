@@ -14,7 +14,7 @@ const DATA_DIR = process.env.DATA_DIR ?? './data'
 
 const events = createEventBus()
 const hal = await createHal({ events })
-const store = new SqliteStore({ url: process.env.DATABASE_URL ?? `${DATA_DIR}/leafypod.db` })
+const store = new SqliteStore({ url: process.env.DATABASE_URL ?? `${DATA_DIR}/seedypod.db` })
 const core = createCore({ hal, store, events, version: readVersion(), sink: new FsSink(`${DATA_DIR}/captures`), startServices: process.env.CI !== '1' })
 
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
@@ -32,7 +32,7 @@ events.subscribe((e) => {
 const { app, injectWebSocket } = createApp({ ctx: core.ctx, staticRoot: './web/dist' })
 
 const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
-  console.log(`leafypod core ${core.ctx.version} listening on http://${info.address}:${info.port}`)
+  console.log(`seedypod core ${core.ctx.version} listening on http://${info.address}:${info.port}`)
 })
 injectWebSocket(server)
 

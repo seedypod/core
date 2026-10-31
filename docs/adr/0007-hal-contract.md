@@ -20,7 +20,7 @@ usable by Home Assistant with no core present.
 
 ## Decision
 
-Prefix `leafypod/<unit-id>/`. Payloads JSON, SI units, RFC 3339 timestamps.
+Prefix `seedypod/<unit-id>/`. Payloads JSON, SI units, RFC 3339 timestamps.
 `unit-id` is derived from the Pi serial (never a shared default).
 
 | Topic | Dir | Retained | Payload |

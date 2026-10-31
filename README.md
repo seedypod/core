@@ -1,22 +1,22 @@
 <p align="center">
   <img src="web/public/favicon.svg" width="72" alt="" />
 </p>
-<h1 align="center">leafypod</h1>
+<h1 align="center">seedypod</h1>
 <p align="center"><strong>Truly own your Gardyn.</strong> Local, cloud-free control for Gardyn hydroponic towers — a sibling of <a href="https://github.com/sleepypod">sleepypod</a>.</p>
 
 <p align="center">
-  <a href="https://leafypod.vercel.app">Live demo</a> ·
-  <a href="https://leafypod.github.io/getting-started/">Get started</a> ·
-  <a href="https://leafypod.github.io/core/">User guide</a> ·
-  <a href="https://leafypod.github.io/developers/">Developer docs</a> ·
-  <a href="https://github.com/leafypod/core/issues">Issues</a>
+  <a href="https://seedypod.vercel.app">Live demo</a> ·
+  <a href="https://seedypod.github.io/getting-started/">Get started</a> ·
+  <a href="https://seedypod.github.io/core/">User guide</a> ·
+  <a href="https://seedypod.github.io/developers/">Developer docs</a> ·
+  <a href="https://github.com/seedypod/core/issues">Issues</a>
 </p>
 
-**No Gardyn? [Try the live demo](https://leafypod.vercel.app).** It runs the real web UI against a simulated tower in your browser.
+**No Gardyn? [Try the live demo](https://seedypod.vercel.app).** It runs the real web UI against a simulated tower in your browser.
 
 ## What it is
 
-A Gardyn is a nice piece of hardware with a Raspberry Pi inside and a cloud subscription in front of it. leafypod replaces the cloud with software you run on the Pi that's already there:
+A Gardyn is a nice piece of hardware with a Raspberry Pi inside and a cloud subscription in front of it. seedypod replaces the cloud with software you run on the Pi that's already there:
 
 - **`hald`** — a small Rust daemon that owns the pins and buses (grow light, pump, water level, temperature/humidity, power monitor, cameras, button). Every pump command passes through a safety guard: bounded runs, dry-run interlock, over-temperature cutoff, latched faults. Publishes over MQTT with Home Assistant discovery, so HA works with nothing else installed.
 - **core** — a Hono + tRPC server with an OpenAPI REST facade, an [MCP](https://modelcontextprotocol.io) endpoint for AI agents, scheduling, grow-cycle reminders, alerts, and a React web UI. Runs on the Zero 2 W inside the unit, or on any box on your LAN.
@@ -47,7 +47,7 @@ cargo run --manifest-path hal/Cargo.toml -p hald -- --sim --ticks 3
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) — back up the stock microSD first, flash Raspberry Pi OS, then:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ng/leafypod/main/scripts/install | bash
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
 ```
 
 ## Contributing

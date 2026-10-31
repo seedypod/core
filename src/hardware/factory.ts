@@ -30,7 +30,7 @@ export async function createHal(opts: HalFactoryOptions): Promise<HalClient> {
     password: process.env.HAL_MQTT_PASSWORD,
     reconnectPeriod: 5000,
     keepalive: 30,
-    clientId: `leafypod-core-${Math.random().toString(36).slice(2, 8)}`,
+    clientId: `seedypod-core-${Math.random().toString(36).slice(2, 8)}`,
   })
   return new MqttHalClient({ unitId, mqtt, httpBase })
 }

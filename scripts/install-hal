@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# leafypod HAL (hald) installer for a Raspberry Pi running Raspberry Pi OS.
-# Usage: curl -fsSL https://raw.githubusercontent.com/ng/leafypod/main/scripts/install-hal | bash
+# seedypod HAL (hald) installer for a Raspberry Pi running Raspberry Pi OS.
+# Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 #        scripts/install-hal [--version vX.Y.Z] [--binary ./hald] [--no-enable]
 #
 # Downloads the hald binary for this CPU from the latest GitHub Release of
-# ng/leafypod, installs it to /usr/local/bin, writes a commented
-# /etc/leafypod/hal.toml if absent, creates the `leafypod` service user in the
+# seedypod/core, installs it to /usr/local/bin, writes a commented
+# /etc/seedypod/hal.toml if absent, creates the `seedypod` service user in the
 # gpio/i2c/video groups, enables I²C and the PWM overlay, installs and enables
 # hald.service. Re-running upgrades the binary and leaves hal.toml alone.
 set -euo pipefail
 
-REPO="${LEAFYPOD_REPO:-ng/leafypod}"
-VERSION="${LEAFYPOD_HAL_VERSION:-latest}"
+REPO="${SEEDYPOD_REPO:-seedypod/core}"
+VERSION="${SEEDYPOD_HAL_VERSION:-latest}"
 BINARY=""
 ENABLE=1
 PREFIX=/usr/local/bin
-CONF_DIR=/etc/leafypod
-STATE_DIR=/var/lib/leafypod
-SERVICE_USER=leafypod
+CONF_DIR=/etc/seedypod
+STATE_DIR=/var/lib/seedypod
+SERVICE_USER=seedypod
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -103,7 +103,7 @@ fi
 # ---- systemd ---------------------------------------------------------------
 $SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT
 [Unit]
-Description=leafypod hardware daemon (hald)
+Description=seedypod hardware daemon (hald)
 Documentation=https://github.com/$REPO/blob/main/docs/hardware/hal.md
 After=network-online.target
 Wants=network-online.target
@@ -114,7 +114,7 @@ Environment=RUST_LOG=info
 User=$SERVICE_USER
 Group=$SERVICE_USER
 SupplementaryGroups=gpio i2c video
-StateDirectory=leafypod
+StateDirectory=seedypod
 Restart=always
 RestartSec=3
 KillSignal=SIGTERM

@@ -6,7 +6,7 @@ members = ["crates/hal-core", "crates/hal-sim", "crates/hal-drivers", "crates/ha
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-only"
-repository = "https://github.com/leafypod/core"
+repository = "https://github.com/seedypod/core"
 rust-version = "1.80"
 
 [workspace.dependencies]

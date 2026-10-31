@@ -22,7 +22,7 @@ only core knows: the grow cycle, reminders, light hours.
 
 `src/mqtt/bridge.ts` is an in-process MQTT client on the operator's broker
 (sleepypod ADR 0019 shape): dormant until `settings.mqttUrl`, LWT on
-`leafypod/<unit>/core/availability`, TLS opt-in with a separate
+`seedypod/<unit>/core/availability`, TLS opt-in with a separate
 `mqttTlsInsecure` flag, reconnects on settings change. It publishes retained
 discovery for reminder `binary_sensor`s with `button`s to mark them done,
 grow day/stage and light-hour `sensor`s, and a "water now" `button` whose

@@ -24,7 +24,7 @@ controlled through MCP, a CLI, or code files. The preview is not public yet.
 `src/mcp/server.ts` exposes tools that map onto that shape now:
 
 - Reads: `status`, `history`, `list_schedules`, `pods`, `captures`, `pod_health`;
-  resources `leafypod://sensors` and `leafypod://limits`.
+  resources `seedypod://sensors` and `seedypod://limits`.
 - Writes: `set_light`, `run_pump`, `stop_pump`, `acknowledge_alert`,
   `upsert_schedule`, `delete_schedule`, `update_pod`, `grow_cycle`,
   `capture_still`.
