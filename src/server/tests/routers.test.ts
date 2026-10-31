@@ -27,6 +27,20 @@ describe('routers', () => {
     await expect(c.sensors.calibrate({ id: 'ph', point: 'mid', value: 7 })).rejects.toThrow(/no ph sensor configured/)
   })
 
+  it('devices: list, add (412 on refusal), remove', async () => {
+    const { c, events } = caller()
+    const seen: string[] = []
+    events.subscribe(e => seen.push(e.kind === 'mutation' ? e.path : e.kind))
+    expect((await c.devices.list()).addable.map(k => k.kind)).toContain('ezo_ph')
+    expect(await c.devices.addSensor({ kind: 'ezo_ph', addr: 0x63 })).toMatchObject({ ok: true })
+    expect(seen).toContain('devices')
+    await expect(c.devices.addSensor({ kind: 'ezo_ph', addr: 0x63 })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+    expect((await c.sensors.calibrate({ id: 'ph', point: 'mid', value: 7 })).points).toBe(1)
+    await expect(c.devices.removeSensor({ kind: 'ina219', addr: 0x40 })).rejects.toThrow(/hal.toml/)
+    expect(await c.devices.removeSensor({ kind: 'ezo_ph', addr: 0x63 })).toMatchObject({ ok: true })
+    expect((await c.devices.list()).sensors.some(d => d.kind === 'ezo_ph')).toBe(false)
+  })
+
   it('system.info reports the HAL identity and limits', async () => {
     const { c } = caller()
     const info = await c.system.info()

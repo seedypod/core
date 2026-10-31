@@ -40,6 +40,25 @@ curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install 
 Core listens on `:3000`; set `HAL_MQTT_URL` in `/etc/systemd/system/seedypod-core.service`
 if `hald` is elsewhere. Open `http://seedypod.local:3000/`.
 
+## Change Wi-Fi
+
+No keyboard needed. Hold the unit's button for **10 seconds** (at 1 s it
+acknowledges any latched fault; keep holding). Core opens an open hotspot named
+`seedypod-setup-xxxx` for 15 minutes:
+
+1. Join `seedypod-setup-xxxx` from a phone.
+2. Open `http://10.42.0.1:3000/wifi`, pick your network, enter its password,
+   **Join**.
+3. The unit leaves the hotspot and joins your network. Rejoin your network
+   on the phone and open `http://seedypod.local:3000/`.
+
+If the password was wrong, the hotspot comes back and the Wi-Fi screen says
+why. On your LAN, **Settings → Wi-Fi** does the same without the button.
+The installer lets the core service user manage NetworkManager
+(`/etc/polkit-1/rules.d/50-seedypod-network.rules`). The hotspot is open
+because pressing the button already proves someone is at the unit; it closes
+itself after 15 minutes.
+
 ## 4. Home Assistant
 
 Point HA's MQTT integration at the same broker; the device appears via discovery

@@ -8,6 +8,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { SensorId } from '../hardware/contract'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
 import { createCallerFactory } from '../server/trpc'
@@ -35,8 +36,13 @@ export function createMcpServer(ctx: Context): McpServer {
 
   server.registerTool('history', {
     description: 'Downsampled sensor history. sensor is one of air_temp, humidity, pcb_temp, water_distance, water_level_pct, pump_w, ph, ec, water_temp. hours defaults to 24.',
-    inputSchema: { sensor: z.enum(['air_temp', 'humidity', 'pcb_temp', 'water_distance', 'water_level_pct', 'pump_v', 'pump_a', 'pump_w', 'ph', 'ec', 'water_temp']), hours: z.number().min(1).max(2160).optional(), max_points: z.number().int().min(10).max(500).optional() },
+    inputSchema: { sensor: SensorId, hours: z.number().min(1).max(2160).optional(), max_points: z.number().int().min(10).max(500).optional() },
   }, async i => text(await caller.telemetry.history({ sensor: i.sensor, hours: i.hours ?? 24, maxPoints: i.max_points ?? 100 })))
+
+  server.registerTool('list_devices', {
+    description: 'Sensor hardware on the unit: every configured device (kind, label, I²C address, the quantities it reports, source config|user, status ready|absent with the probe error) and the kinds that can be added, each with its calibration procedure (ordered steps: point, instruction, suggested reference value, optional). Adding, removing and calibrating probes need a person at the unit, so they are done in the app, not by agents.',
+    inputSchema: {},
+  }, async () => text(await caller.devices.list()))
 
   server.registerTool('list_schedules', { description: 'Light curves (interpolated setpoints by minute-of-day) and pump cycles, with day masks (Mon=1 … Sun=64).', inputSchema: {} }, async () => text(await caller.schedules.list()))
 
@@ -47,8 +53,18 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: { camera: z.enum(['upper', 'lower']).optional(), limit: z.number().int().min(1).max(50).optional() },
   }, async i => text(await caller.camera.list({ camera: i.camera, limit: i.limit ?? 10 })))
 
+  server.registerTool('list_analyses', {
+    description: 'Camera analysers and what they have produced: every on-device analyser (id, version, metrics it emits, which one is primary for pod_health) plus any off-device worker that posted results, with row and capture counts and time span, and the analysis queue status. Pass slot to also get that pod\'s series from every analyser@version side by side, to see which ones agree. Read-only: choosing the primary analyser and re-running analysers are done in the app.',
+    inputSchema: { slot: z.number().int().min(1).max(30).optional(), metric: z.string().optional() },
+  }, async (i) => {
+    const analyzers = await caller.vision.analyzers()
+    const status = await caller.vision.status()
+    const compare = i.slot ? await caller.vision.compare({ slot: i.slot, metric: i.metric ?? 'green_fraction', limit: 48 }) : undefined
+    return text({ analyzers, status, compare })
+  })
+
   server.registerTool('pod_health', {
-    description: 'Per-pod growth verdicts from camera stills: green-area fraction and trend (growing / stalled / declining / unknown). Use with `pods` to decide which slots need attention.',
+    description: 'Per-pod growth verdicts from camera stills: green-area fraction and trend (growing / stalled / declining / unknown), from the primary analyser (see list_analyses). Use with `pods` to decide which slots need attention.',
     inputSchema: {},
   }, async () => text(await caller.vision.podTrends()))
 
@@ -102,6 +118,9 @@ export function createMcpServer(ctx: Context): McpServer {
   // ── Resources ────────────────────────────────────────────────────────────
   server.registerResource('sensors', 'seedypod://sensors', { description: 'Latest sensor readings', mimeType: 'application/json' }, async uri => ({
     contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(ctx.hal.snapshot().sensors) }],
+  }))
+  server.registerResource('devices', 'seedypod://devices', { description: 'Sensor devices (with probe status) and addable kinds with their calibration steps', mimeType: 'application/json' }, async uri => ({
+    contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(ctx.hal.snapshot().devices) }],
   }))
   server.registerResource('limits', 'seedypod://limits', { description: 'Hardware limits the HAL enforces (pump max run, max duty, dry-run threshold)', mimeType: 'application/json' }, async uri => ({
     contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(ctx.hal.snapshot().system?.limits ?? null) }],

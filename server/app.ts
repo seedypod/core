@@ -5,11 +5,14 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createOpenApiFetchHandler } from 'trpc-to-openapi'
+import { datasetEntries, datasetName, resolveWindow } from '../src/datasets/export'
+import { tarStream } from '../src/datasets/tar'
 import { createMcpServer } from '../src/mcp/server'
 import type { Context } from '../src/server/context'
 import { openApiDocument } from '../src/server/openapi'
 import { appRouter } from '../src/server/routers/app'
-import { apiKeyGuard } from './auth'
+import { IngestBatch, IngestRefused, ingestResults } from '../src/vision/ingest'
+import { apiKeyGuard, timingSafeEqual } from './auth'
 
 export interface CreateAppOptions {
   ctx: Context
@@ -25,6 +28,26 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
+  // Off-device results (ADR-0019) authenticate with their own token, so this route sits before the API-key guard.
+  app.post('/api/analyses/results', async (c) => {
+    const token = ctx.store.settings.get().analysisIngestToken
+    if (!token) return c.json({ error: 'result ingest is off; set an ingest token in Settings' }, 404)
+    const given = c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
+    if (!given || !timingSafeEqual(given, token)) return c.json({ error: 'unauthorized' }, 401)
+    if (Number(c.req.header('content-length') ?? 0) > 5_000_000) return c.json({ error: 'batch over 5 MB; post fewer results per request' }, 413)
+    const parsed = IngestBatch.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ error: 'invalid batch', issues: parsed.error.issues }, 400)
+    try {
+      const out = ingestResults(ctx.store, parsed.data)
+      ctx.events.emit({ kind: 'mutation', path: 'analyses' })
+      return c.json(out)
+    }
+    catch (e) {
+      if (e instanceof IngestRefused) return c.json({ error: e.message }, 409)
+      throw e
+    }
+  })
+
   app.use('/api/*', cors({ origin: origin => origin ?? '*' }))
   app.use('/api/*', apiKeyGuard(ctx.store))
 
@@ -37,6 +60,19 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     if (got.capture.path.startsWith('data:')) return c.redirect(got.capture.path)
     const body = new Uint8Array(got.bytes).buffer as ArrayBuffer
     return c.body(body, 200, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' })
+  })
+
+  // Dataset export (ADR-0019): a tar streamed entry by entry, so a month of stills never sits in memory.
+  app.get('/api/datasets/export', (c) => {
+    let w
+    try {
+      w = resolveWindow(ctx.now?.() ?? new Date(), { from: c.req.query('from'), to: c.req.query('to'), images: c.req.query('images') !== '0' })
+    }
+    catch (e) {
+      return c.json({ error: (e as Error).message }, 400)
+    }
+    const name = datasetName(ctx.store.settings.get().unitName, w)
+    return c.body(tarStream(datasetEntries(ctx, w)), 200, { 'content-type': 'application/x-tar', 'content-disposition': `attachment; filename="${name}.tar"` })
   })
 
   app.get('/api/openapi.json', c => c.json(openApiDocument(new URL('/api', c.req.url).toString())))

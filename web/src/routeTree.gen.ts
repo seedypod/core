@@ -11,13 +11,16 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlertsRouteImport } from './routes/alerts'
+import { Route as AnalysisRouteImport } from './routes/analysis'
 import { Route as CamerasRouteImport } from './routes/cameras'
 import { Route as GrowRouteImport } from './routes/grow'
 import { Route as KioskRouteImport } from './routes/kiosk'
 import { Route as LightRouteImport } from './routes/light'
 import { Route as ScheduleRouteImport } from './routes/schedule'
+import { Route as SensorsRouteImport } from './routes/sensors'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as WaterRouteImport } from './routes/water'
+import { Route as WifiRouteImport } from './routes/wifi'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -27,6 +30,11 @@ const IndexRoute = IndexRouteImport.update({
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnalysisRoute = AnalysisRouteImport.update({
+  id: '/analysis',
+  path: '/analysis',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CamerasRoute = CamerasRouteImport.update({
@@ -54,6 +62,11 @@ const ScheduleRoute = ScheduleRouteImport.update({
   path: '/schedule',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SensorsRoute = SensorsRouteImport.update({
+  id: '/sensors',
+  path: '/sensors',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -64,87 +77,113 @@ const WaterRoute = WaterRouteImport.update({
   path: '/water',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WifiRoute = WifiRouteImport.update({
+  id: '/wifi',
+  path: '/wifi',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/analysis': typeof AnalysisRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
   '/schedule': typeof ScheduleRoute
+  '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
   '/water': typeof WaterRoute
+  '/wifi': typeof WifiRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/analysis': typeof AnalysisRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
   '/schedule': typeof ScheduleRoute
+  '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
   '/water': typeof WaterRoute
+  '/wifi': typeof WifiRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/analysis': typeof AnalysisRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
   '/schedule': typeof ScheduleRoute
+  '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
   '/water': typeof WaterRoute
+  '/wifi': typeof WifiRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/alerts'
+    | '/analysis'
     | '/cameras'
     | '/grow'
     | '/kiosk'
     | '/light'
     | '/schedule'
+    | '/sensors'
     | '/settings'
     | '/water'
+    | '/wifi'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/alerts'
+    | '/analysis'
     | '/cameras'
     | '/grow'
     | '/kiosk'
     | '/light'
     | '/schedule'
+    | '/sensors'
     | '/settings'
     | '/water'
+    | '/wifi'
   id:
     | '__root__'
     | '/'
     | '/alerts'
+    | '/analysis'
     | '/cameras'
     | '/grow'
     | '/kiosk'
     | '/light'
     | '/schedule'
+    | '/sensors'
     | '/settings'
     | '/water'
+    | '/wifi'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
+  AnalysisRoute: typeof AnalysisRoute
   CamerasRoute: typeof CamerasRoute
   GrowRoute: typeof GrowRoute
   KioskRoute: typeof KioskRoute
   LightRoute: typeof LightRoute
   ScheduleRoute: typeof ScheduleRoute
+  SensorsRoute: typeof SensorsRoute
   SettingsRoute: typeof SettingsRoute
   WaterRoute: typeof WaterRoute
+  WifiRoute: typeof WifiRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -161,6 +200,13 @@ declare module '@tanstack/react-router' {
       path: '/alerts'
       fullPath: '/alerts'
       preLoaderRoute: typeof AlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/analysis': {
+      id: '/analysis'
+      path: '/analysis'
+      fullPath: '/analysis'
+      preLoaderRoute: typeof AnalysisRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cameras': {
@@ -198,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScheduleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sensors': {
+      id: '/sensors'
+      path: '/sensors'
+      fullPath: '/sensors'
+      preLoaderRoute: typeof SensorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -212,19 +265,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WaterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/wifi': {
+      id: '/wifi'
+      path: '/wifi'
+      fullPath: '/wifi'
+      preLoaderRoute: typeof WifiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
+  AnalysisRoute: AnalysisRoute,
   CamerasRoute: CamerasRoute,
   GrowRoute: GrowRoute,
   KioskRoute: KioskRoute,
   LightRoute: LightRoute,
   ScheduleRoute: ScheduleRoute,
+  SensorsRoute: SensorsRoute,
   SettingsRoute: SettingsRoute,
   WaterRoute: WaterRoute,
+  WifiRoute: WifiRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

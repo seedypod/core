@@ -1,4 +1,5 @@
 import type { Reading, SensorId } from '@/src/hardware/contract'
+import { formatReading, SENSOR_META } from '@/src/lib/sensorMeta'
 import { trpc } from '@/src/utils/trpc'
 
 /** Wall-display mode: big numbers, dark, no shell. Route: /kiosk */
@@ -7,6 +8,7 @@ export function KioskPage() {
   const light = trpc.light.get.useQuery(undefined, { refetchInterval: 10_000 })
   const pump = trpc.pump.get.useQuery(undefined, { refetchInterval: 5_000 })
   const alerts = trpc.alerts.list.useQuery({ activeOnly: true }, { refetchInterval: 10_000 })
+  const system = trpc.system.info.useQuery(undefined, { refetchInterval: 60_000 })
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const tiles: [string, string][] = [
     ['Tank', s.water_level_pct ? `${s.water_level_pct.value}%` : '—'],
@@ -14,6 +16,9 @@ export function KioskPage() {
     ['Humidity', s.humidity ? `${s.humidity.value}%` : '—'],
     ['Light', light.data?.on ? `${light.data.level}%` : 'off'],
     ['Pump', pump.data?.on ? `${pump.data.remainingS ?? ''}s` : pump.data?.fault ? 'FAULT' : 'idle'],
+    ...(system.data?.system?.caps.sensors ?? [])
+      .filter(id => SENSOR_META[id].group === 'water-quality')
+      .map((id): [string, string] => [SENSOR_META[id].label, formatReading(s[id])]),
   ]
   return (
     <div className="min-h-dvh bg-app p-8 text-fg">

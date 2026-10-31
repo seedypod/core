@@ -6,17 +6,20 @@
 //!   MQTT with JSON lines for smoke tests and CI.
 //! * `--sim` swaps every driver for `hal-sim` and runs on virtual time.
 
+mod cameras;
 mod config;
 mod devices;
 mod engine;
 mod ha;
 mod http;
 mod identity;
+mod kinds;
 mod mdns;
 mod mqtt;
+mod overlay;
 mod state;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::Arc;
@@ -55,6 +58,13 @@ struct Cli {
     /// Exit after this many telemetry ticks (for smoke tests).
     #[arg(long)]
     ticks: Option<u64>,
+    /// List the USB cameras (capture nodes) with their ports as JSON and exit.
+    #[arg(long)]
+    list_cameras: bool,
+    /// Print udev rules giving cameras stable names and exit. With no NAME=PORT
+    /// pairs, the first two cameras by port become upper and lower.
+    #[arg(long, num_args = 0.., value_name = "NAME=PORT")]
+    camera_rules: Option<Vec<String>>,
 }
 
 const DEFAULT_MQTT_URL: &str = "mqtt://127.0.0.1:1883";
@@ -70,10 +80,51 @@ async fn main() -> anyhow::Result<()> {
         print!("{}", config::DEFAULT_CONFIG_TOML);
         return Ok(());
     }
+    if cli.list_cameras {
+        let found = cameras::discover(Path::new("/sys"), Path::new("/dev"));
+        let assigned = cameras::default_assignment(&found);
+        let rows: Vec<_> = found
+            .iter()
+            .map(|d| {
+                let name = assigned.iter().find(|(_, p)| *p == d.port).map(|(n, _)| n.clone());
+                serde_json::json!({ "device": d.device, "port": d.port, "name": d.name, "default_assignment": name,
+                                    "stable": name.as_deref().map(cameras::stable_path) })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+    if let Some(pairs) = &cli.camera_rules {
+        let assign = if pairs.is_empty() {
+            cameras::default_assignment(&cameras::discover(Path::new("/sys"), Path::new("/dev")))
+        } else {
+            cameras::parse_assignment(pairs).map_err(anyhow::Error::msg)?
+        };
+        if assign.is_empty() {
+            anyhow::bail!("no USB cameras found; plug them in or pass NAME=PORT pairs (see --list-cameras)");
+        }
+        print!("{}", cameras::rules(&assign));
+        return Ok(());
+    }
 
     let mut cfg = config::Config::load(cli.config.as_deref())?;
     if let Some(u) = &cli.mqtt_url {
         cfg.mqtt_url = Some(u.clone());
+    }
+    let state_dir = if cli.sim && cfg.state_dir == config::Config::default().state_dir {
+        std::env::temp_dir().join("seedypod-sim")
+    } else {
+        cfg.state_dir.clone()
+    };
+    // Sensors added from the app. A bad overlay must never keep hald from starting.
+    let overlay = overlay::Overlay::new(&state_dir);
+    cfg.extra_sensors = overlay.load();
+    if !cfg.extra_sensors.is_empty() && !cfg.validate().is_empty() {
+        let bad = cfg.validate();
+        cfg.extra_sensors.clear();
+        if cfg.validate().is_empty() {
+            warn!(errors = ?bad, "ignoring the app-added sensor list; it no longer validates");
+        }
     }
     let errors = cfg.validate();
     let unit_id = identity::unit_id(cfg.unit_id.as_deref());
@@ -134,11 +185,6 @@ async fn main() -> anyhow::Result<()> {
     };
     info!(unit = %unit_id, model = %system.model, sensors = ?system.caps.sensors, actuators = ?system.caps.actuators, "hald starting");
 
-    let state_dir = if cli.sim && cfg.state_dir == config::Config::default().state_dir {
-        std::env::temp_dir().join("seedypod-sim")
-    } else {
-        cfg.state_dir.clone()
-    };
     let snapshot: SharedSnapshot = Arc::default();
     let engine = Engine::new(
         system.clone(),
@@ -153,7 +199,13 @@ async fn main() -> anyhow::Result<()> {
         built.over_temp,
         Some(state::StateFile::new(&state_dir)),
         snapshot.clone(),
-    );
+    )
+    .with_devices(engine::Devices {
+        entries: engine::Devices::from_boot(&built.status, &cfg.extra_sensors),
+        user: cfg.extra_sensors.clone(),
+        factory: Some(built.factory),
+        overlay: Some(overlay),
+    });
 
     let (inbound_tx, inbound_rx) = std::sync::mpsc::channel::<Inbound>();
     let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Outbound>();

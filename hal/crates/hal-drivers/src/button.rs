@@ -19,6 +19,8 @@ pub struct ButtonConfig {
     pub double_window: Duration,
     /// Held at least this long → long press (fires while still held).
     pub long_press: Duration,
+    /// Kept holding this long → setup (fires while still held, after the long press).
+    pub setup_hold: Duration,
     /// Pressed reads low (pull-up wiring).
     pub active_low: bool,
 }
@@ -29,6 +31,7 @@ impl Default for ButtonConfig {
             debounce: Duration::from_millis(30),
             double_window: Duration::from_millis(400),
             long_press: Duration::from_millis(1000),
+            setup_hold: Duration::from_millis(10_000),
             active_low: true,
         }
     }
@@ -42,6 +45,7 @@ pub struct Classifier {
     last_change: Option<Instant>,
     pressed_at: Option<Instant>,
     long_fired: bool,
+    setup_fired: bool,
     pending_single_at: Option<Instant>,
 }
 
@@ -54,6 +58,7 @@ impl Classifier {
             last_change: None,
             pressed_at: None,
             long_fired: false,
+            setup_fired: false,
             pending_single_at: None,
         }
     }
@@ -73,6 +78,7 @@ impl Classifier {
             if self.stable {
                 self.pressed_at = Some(now);
                 self.long_fired = false;
+                self.setup_fired = false;
             } else if !self.long_fired {
                 if self.pending_single_at.take().is_some() {
                     event = Some(ButtonPress::Double);
@@ -87,6 +93,14 @@ impl Classifier {
                     self.long_fired = true;
                     self.pending_single_at = None;
                     event = Some(ButtonPress::Long);
+                }
+            }
+        }
+        if self.stable && self.long_fired && !self.setup_fired {
+            if let Some(t) = self.pressed_at {
+                if now.duration_since(t) >= self.cfg.setup_hold {
+                    self.setup_fired = true;
+                    event = Some(ButtonPress::Setup);
                 }
             }
         }
@@ -156,6 +170,7 @@ mod tests {
             debounce: Duration::from_millis(30),
             double_window: Duration::from_millis(400),
             long_press: Duration::from_millis(1000),
+            setup_hold: Duration::from_millis(10_000),
             active_low: true,
         }
     }
@@ -214,6 +229,33 @@ mod tests {
             (false, 1300), // single
         ]);
         assert_eq!(ev, vec![ButtonPress::Single, ButtonPress::Single]);
+    }
+
+    #[test]
+    fn holding_on_past_the_setup_time_adds_one_setup_event() {
+        let ev = replay(&[
+            (true, 0),
+            (true, 40),
+            (true, 1040), // long
+            (true, 5000),
+            (true, 10_040), // ≥ 10 s since the debounced press → setup
+            (true, 12_000),
+            (false, 12_100),
+            (false, 12_200),
+            (false, 13_000),
+        ]);
+        assert_eq!(ev, vec![ButtonPress::Long, ButtonPress::Setup]);
+        // Letting go before 10 s is only a long press.
+        let ev = replay(&[
+            (true, 0),
+            (true, 40),
+            (true, 1040),
+            (true, 9000),
+            (false, 9100),
+            (false, 9200),
+            (false, 10_500),
+        ]);
+        assert_eq!(ev, vec![ButtonPress::Long]);
     }
 
     #[test]

@@ -198,6 +198,47 @@ try {
     return `${caps.length} capture(s)`
   })
 
+  await check('capture analysis runs every analyser on the worker thread', async () => {
+    const [latest] = await get('/captures?limit=1')
+    const rows = await until('analysis rows', async () => {
+      const r = await get(`/vision/captures/${latest.id}`)
+      return r.length > 0 ? r : null
+    })
+    const analyzers = [...new Set(rows.map(r => r.analyzer))].sort()
+    assert(analyzers.join() === 'exg-otsu,green-threshold', `analysers ${analyzers}`)
+    const status = await get('/vision/status')
+    assert(status.failed === 0, `failed ${status.failed}`)
+    return `${rows.length} rows from ${analyzers.join(' + ')}`
+  })
+
+  await check('dataset export streams a tar with the stills and results', async () => {
+    const r = await fetch(`${api}/datasets/export`)
+    assert(r.status === 200 && r.headers.get('content-type') === 'application/x-tar', `${r.status} ${r.headers.get('content-type')}`)
+    const tar = join(work, 'dataset.tar')
+    writeFileSync(tar, new Uint8Array(await r.arrayBuffer()))
+    const list = spawnSync('tar', ['-tf', tar], { encoding: 'utf8' })
+    assert(list.status === 0, list.stderr)
+    const files = list.stdout.trim().split('\n')
+    for (const want of ['manifest.json', 'captures.jsonl', 'analyses.jsonl', 'telemetry.jsonl', 'pods.json'])
+      assert(files.some(f => f.endsWith(`/${want}`)), `no ${want}`)
+    assert(files.some(f => /\/images\/upper-.*\.jpg$/.test(f)), 'no still')
+    return `${files.length} files`
+  })
+
+  await check('an off-device worker posts results that sit beside the on-device ones', async () => {
+    const off = await fetch(`${api}/analyses/results`, { method: 'POST', headers: { 'content-type': 'application/json', 'authorization': 'Bearer x' }, body: '{}' })
+    assert(off.status === 404, `ingest without a token → ${off.status}`)
+    const r = await fetch(`${api}/settings`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ analysisIngestToken: 'bringup-token' }) })
+    assert(r.status === 200, `settings → ${r.status}`)
+    const run = spawnSync(process.execPath, [join(root, 'scripts/analysis-worker.mjs'), '--id', 'exg-strict', '--limit', '5'], { encoding: 'utf8', env: { ...process.env, SEEDYPOD_URL: `http://127.0.0.1:${corePort}`, SEEDYPOD_INGEST_TOKEN: 'bringup-token' } })
+    assert(run.status === 0, `worker exited ${run.status}: ${run.stderr || run.stdout}`)
+    const remote = (await get('/vision/analyzers')).find(a => a.id === 'exg-strict')
+    assert(remote?.source === 'remote' && remote.rows > 0, `analyzers ${JSON.stringify(remote)}`)
+    const cmp = await get('/vision/compare/1')
+    assert(cmp.some(s => s.analyzer === 'exg-strict') && cmp.some(s => s.analyzer === 'green-threshold'), 'not comparable on pod 1')
+    return run.stdout.trim()
+  })
+
   await check('EZO calibration reaches the probe; unknown probe refused', async () => {
     const ok = await post('/sensors/ph/calibrate', { point: 'mid', value: 7 })
     assert(ok.status === 200 && ok.body.ok && ok.body.points === 1, `${ok.status} ${JSON.stringify(ok.body)}`)
@@ -220,6 +261,21 @@ try {
     assert(ack.status === 200, `ack ${ack.status}`)
     await until('doser latch cleared in hald', () => JSON.parse(seen.get(`seedypod/${unit}/actuator/dose_1/state`) ?? '{}').fault === null)
     return `"${alert.detail}" → acknowledged`
+  })
+
+  await check('a probe added from the app goes live without restarting hald', async () => {
+    const r = await post('/devices/sensors', { kind: 'ezo_ec', addr: 0x64 })
+    assert(r.status === 200 && r.body.ok, `${r.status} ${JSON.stringify(r.body)}`)
+    await until('EC readings', async () => (await get('/sensors')).ec)
+    const inv = await get('/devices')
+    assert(inv.sensors.some(d => d.kind === 'ezo_ec' && d.source === 'user' && d.status === 'ready'), 'not in inventory')
+    assert(seen.has('homeassistant/sensor/sim-bringup_ec/config'), 'no HA entity')
+    const stock = await fetch(`${api}/devices/sensors/ezo_ph/${0x63}`, { method: 'DELETE' })
+    assert(stock.status === 412, `removing a hal.toml probe → ${stock.status}`)
+    const del = await fetch(`${api}/devices/sensors/ezo_ec/${0x64}`, { method: 'DELETE' })
+    assert(del.status === 200, `remove → ${del.status}`)
+    await until('HA entity deleted', () => seen.get('homeassistant/sensor/sim-bringup_ec/config') === '')
+    return 'added EC at 0x64 → readings + HA entity → removed; hal.toml probe refused'
   })
 
   await check('daemon loss is noticed (LWT → hal_offline)', async () => {

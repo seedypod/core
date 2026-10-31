@@ -150,6 +150,98 @@ pub struct CalibrationResult {
     pub detail: String,
 }
 
+/// One step of a probe's calibration procedure, shown by the app's wizard.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalibrationStep {
+    pub point: CalibrationPoint,
+    pub label: String,
+    pub instruction: String,
+    /// Reference value to suggest (pH, mS/cm, °C); `None` for `dry`/`clear`.
+    pub default_value: Option<f64>,
+    /// Steps the wizard may skip (pH low/high after mid).
+    pub optional: bool,
+}
+
+/// A kind of sensor the daemon can add at runtime: the serialised form of a
+/// `SensorKind` implementation, so clients (UI, MCP) need no per-kind code.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceKindInfo {
+    pub kind: String,
+    pub label: String,
+    pub description: String,
+    pub ids: Vec<SensorId>,
+    /// Bus the device sits on; `i2c` today.
+    pub bus: String,
+    pub default_addr: Option<u16>,
+    pub calibration: Vec<CalibrationStep>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceSource {
+    /// From `hal.toml` (stock or explicit `[[sensor]]`); not removable from the app.
+    Config,
+    /// Added at runtime; persisted in the state-dir overlay.
+    User,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceStatus {
+    Ready,
+    /// Configured but did not probe; `detail` says why.
+    Absent,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceEntry {
+    pub kind: String,
+    /// Human name for the part ("pH probe", "Water level (ultrasonic)").
+    pub label: String,
+    pub addr: Option<u16>,
+    pub ids: Vec<SensorId>,
+    pub source: DeviceSource,
+    pub status: DeviceStatus,
+    pub detail: String,
+}
+
+/// `devices` (retained): every configured sensor device and what can be added.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceInventory {
+    pub sensors: Vec<DeviceEntry>,
+    pub addable: Vec<DeviceKindInfo>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceOp {
+    Add,
+    Remove,
+}
+
+/// `devices/set`: add or remove a user sensor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCommand {
+    pub request_id: String,
+    pub op: DeviceOp,
+    pub kind: String,
+    pub addr: u16,
+}
+
+/// `devices/result`: outcome of a `devices/set`, matched by `requestId`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceResult {
+    pub request_id: String,
+    pub ok: bool,
+    pub detail: String,
+}
+
 /// Physical button gesture, published on `event/button` as `{"press": "single"}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -157,6 +249,8 @@ pub enum ButtonPress {
     Single,
     Double,
     Long,
+    /// Held for `setup_hold_ms` (10 s): core opens its Wi-Fi setup hotspot.
+    Setup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,6 +301,15 @@ pub mod topics {
     }
     pub fn sensor_calibration(unit: &str, id: SensorId) -> String {
         format!("{}/sensor/{}/calibration", prefix(unit), snake(&id))
+    }
+    pub fn devices(unit: &str) -> String {
+        format!("{}/devices", prefix(unit))
+    }
+    pub fn devices_set(unit: &str) -> String {
+        format!("{}/devices/set", prefix(unit))
+    }
+    pub fn devices_result(unit: &str) -> String {
+        format!("{}/devices/result", prefix(unit))
     }
     pub fn button(unit: &str) -> String {
         format!("{}/event/button", prefix(unit))
@@ -310,6 +413,17 @@ mod fixture_tests {
         let cc: CalibrationCommand = serde_json::from_str(&fixture("calibration_command")).unwrap();
         assert_eq!(cc.point, CalibrationPoint::Mid);
         assert_eq!(cc.value, Some(7.0));
+        let inv: DeviceInventory = serde_json::from_str(&fixture("device_inventory")).unwrap();
+        assert_eq!(inv.sensors[1].source, DeviceSource::User);
+        assert_eq!(inv.sensors[2].status, DeviceStatus::Absent);
+        assert_eq!(inv.addable[0].default_addr, Some(0x63));
+        assert!(inv.addable[0].calibration[1].optional);
+        let dc: DeviceCommand = serde_json::from_str(&fixture("device_command")).unwrap();
+        assert_eq!(dc.op, DeviceOp::Add);
+        let be: ButtonEvent = serde_json::from_str(&fixture("button_event")).unwrap();
+        assert_eq!(be.press, ButtonPress::Setup);
+        let dr: DeviceResult = serde_json::from_str(&fixture("device_result")).unwrap();
+        assert!(!dr.ok);
         let cr: CalibrationResult = serde_json::from_str(&fixture("calibration_result")).unwrap();
         assert!(cr.ok);
         assert_eq!(cr.points, Some(1));

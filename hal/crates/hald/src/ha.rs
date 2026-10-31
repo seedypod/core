@@ -72,6 +72,15 @@ fn entity(prefix: &str, component: &str, system: &SystemInfo, object: &str, mut 
     }
 }
 
+/// Empty retained config: tells Home Assistant to delete a sensor entity.
+pub fn remove_sensor(prefix: &str, unit: &str, id: SensorId) -> Outbound {
+    Outbound {
+        topic: format!("{prefix}/sensor/{unit}_{}/config", id_str(&id)),
+        payload: String::new(),
+        retain: true,
+    }
+}
+
 /// Every discovery message for this unit's capabilities.
 pub fn discovery(prefix: &str, system: &SystemInfo) -> Vec<Outbound> {
     let unit = &system.unit_id;
@@ -223,7 +232,7 @@ pub fn discovery(prefix: &str, system: &SystemInfo) -> Vec<Outbound> {
             "name": "Button",
             "device_class": "button",
             "state_topic": topics::button(unit),
-            "event_types": ["single", "double", "long"],
+            "event_types": ["single", "double", "long", "setup"],
             "value_template": "{{ {\"event_type\": value_json.press} | to_json }}",
         }),
     ));
@@ -431,7 +440,7 @@ mod tests {
         assert_eq!(dack["command_topic"], "seedypod/u1/alert/dose_fault/ack");
         let ev = find(&out, "homeassistant/event/u1_button/config");
         assert_eq!(ev["state_topic"], "seedypod/u1/event/button");
-        assert_eq!(ev["event_types"], json!(["single", "double", "long"]));
+        assert_eq!(ev["event_types"], json!(["single", "double", "long", "setup"]));
     }
 
     #[test]

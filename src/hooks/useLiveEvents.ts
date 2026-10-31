@@ -13,6 +13,10 @@ export function useLiveEvents() {
         if (e.event.type === 'sensor') void utils.sensors.invalidate()
         else if (e.event.type === 'actuator') void (e.event.id === 'light' ? utils.light.invalidate() : utils.pump.invalidate())
         else if (e.event.type === 'alert') void utils.alerts.invalidate()
+        else if (e.event.type === 'devices') {
+          void utils.devices.invalidate()
+          void utils.sensors.invalidate()
+        }
         else void utils.system.invalidate()
       }
       else if (e.kind === 'mutation') {

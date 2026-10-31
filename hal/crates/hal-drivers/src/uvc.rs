@@ -21,7 +21,10 @@ pub fn jpeg_is_plausible(bytes: &[u8], min_len: usize) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UvcConfig {
+    /// Preferred node, normally the stable udev name (`/dev/seedypod/camera-upper`).
     pub device: PathBuf,
+    /// Used when `device` doesn't exist, e.g. before the udev rules are installed.
+    pub fallback: Option<PathBuf>,
     pub resolution: String,
     pub skip_frames: u32,
     pub jpeg_quality: u8,
@@ -32,6 +35,7 @@ impl UvcConfig {
     pub fn new(device: impl Into<PathBuf>) -> Self {
         Self {
             device: device.into(),
+            fallback: None,
             resolution: "1280x720".into(),
             skip_frames: 15,
             jpeg_quality: 85,
@@ -40,12 +44,22 @@ impl UvcConfig {
     }
 }
 
-/// The `fswebcam` argument vector for one capture into `out`.
-pub fn fswebcam_args(cfg: &UvcConfig, out: &Path) -> Vec<String> {
+impl UvcConfig {
+    /// The node to capture from: `device` if present, else `fallback` if present.
+    pub fn resolve(&self) -> Option<&Path> {
+        if self.device.exists() {
+            return Some(&self.device);
+        }
+        self.fallback.as_deref().filter(|f| f.exists())
+    }
+}
+
+/// The `fswebcam` argument vector for one capture from `device` into `out`.
+pub fn fswebcam_args(cfg: &UvcConfig, device: &Path, out: &Path) -> Vec<String> {
     vec![
         "-q".into(),
         "-d".into(),
-        cfg.device.display().to_string(),
+        device.display().to_string(),
         "-r".into(),
         cfg.resolution.clone(),
         "-S".into(),
@@ -113,18 +127,19 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
         &self.name
     }
     fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
-        if !self.cfg.device.exists() {
+        let Some(device) = self.cfg.resolve().map(Path::to_path_buf) else {
             return Err(DeviceError::NotPresent);
-        }
+        };
         let out = self.out_path();
         let _ = std::fs::remove_file(&out);
-        self.runner.run("fswebcam", &fswebcam_args(&self.cfg, &out))?;
+        self.runner
+            .run("fswebcam", &fswebcam_args(&self.cfg, &device, &out))?;
         let bytes = std::fs::read(&out).map_err(|e| DeviceError::Other(format!("read capture: {e}")))?;
         let _ = std::fs::remove_file(&out);
         if !jpeg_is_plausible(&bytes, self.cfg.min_bytes) {
             return Err(DeviceError::Other(format!(
                 "capture from {} is not a plausible JPEG ({} bytes)",
-                self.cfg.device.display(),
+                device.display(),
                 bytes.len()
             )));
         }
@@ -160,8 +175,8 @@ mod tests {
 
     #[test]
     fn args_follow_the_upstream_lessons() {
-        let cfg = UvcConfig::new("/dev/video0");
-        let a = fswebcam_args(&cfg, Path::new("/tmp/x.jpg"));
+        let cfg = UvcConfig::new("/dev/seedypod/camera-upper");
+        let a = fswebcam_args(&cfg, Path::new("/dev/video0"), Path::new("/tmp/x.jpg"));
         assert!(a.windows(2).any(|w| w == ["-S", "15"]));
         assert!(a.contains(&"--no-banner".to_string()));
         assert!(a.windows(2).any(|w| w == ["-d", "/dev/video0"]));
@@ -256,6 +271,31 @@ mod tests {
         );
         assert!(matches!(cam.capture(), Err(DeviceError::NotPresent)));
         assert_eq!(cam.runner.calls, 0);
+    }
+
+    #[test]
+    fn falls_back_when_the_stable_name_is_missing() {
+        let dir = scratch("fallback");
+        let mut cfg = UvcConfig::new("/dev/seedypod/camera-does-not-exist");
+        assert_eq!(cfg.resolve(), None);
+        cfg.fallback = Some("/dev/video-does-not-exist".into());
+        assert_eq!(cfg.resolve(), None);
+        cfg.fallback = Some(dir.clone());
+        assert_eq!(cfg.resolve(), Some(dir.as_path()));
+        let mut cam = UvcCamera::new(
+            "upper",
+            cfg.clone(),
+            ScriptedRunner {
+                bytes: Some(fake_jpeg(5000)),
+                calls: 0,
+            },
+            dir.clone(),
+        );
+        assert_eq!(cam.capture().unwrap().len(), 5000);
+        // The stable name wins as soon as it exists.
+        cfg.device = std::env::temp_dir();
+        assert_eq!(cfg.resolve(), Some(std::env::temp_dir().as_path()));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

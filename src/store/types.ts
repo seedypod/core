@@ -23,6 +23,15 @@ export interface DeviceSettings {
   mqttTlsEnabled: boolean
   mqttTlsInsecure: boolean
   captureIntervalMin: number
+  primaryAnalyzer: string
+  analysisArtifacts: boolean
+  analysisIngestToken: string
+  mirrorEndpoint: string | null
+  mirrorBucket: string | null
+  mirrorRegion: string
+  mirrorPrefix: string
+  mirrorAccessKeyId: string | null
+  mirrorSecretAccessKey: string | null
   updatedAt: string
 }
 
@@ -81,7 +90,23 @@ export interface Pod {
 }
 
 export interface Capture { id: string, camera: 'upper' | 'lower', ts: string, path: string, bytes: number }
-export interface PodGrowthPoint { ts: string, slot: number, green: number, captureId: string }
+/** One measurement of one pod in one capture by one analyser (ADR-0019). */
+export interface AnalysisRow {
+  captureId: string
+  ts: string
+  camera: 'upper' | 'lower'
+  analyzer: string
+  version: number
+  source: 'device' | 'remote'
+  slot: number
+  metric: string
+  value: number
+  detail: Record<string, unknown> | null
+  artifact: string | null
+}
+export interface AnalysisPoint { ts: string, value: number, captureId: string }
+/** What the table holds per analyser@version. */
+export interface AnalyzerStats { analyzer: string, version: number, source: 'device' | 'remote', rows: number, captures: number, firstTs: string, lastTs: string }
 export interface TelemetryPoint { ts: string, sensor: SensorId, value: number }
 
 export interface Store {
@@ -132,12 +157,15 @@ export interface Store {
     add(key: string, delta: number, ts: string): number
     get(key: string): number
   }
-  podGrowth: {
-    add(points: PodGrowthPoint[]): void
-    /** Oldest → newest for one slot. */
-    series(slot: number, limit?: number): PodGrowthPoint[]
-    /** Latest point per slot. */
-    latest(): PodGrowthPoint[]
+  analyses: {
+    /** Upsert on (capture, analyser, version, slot, metric): re-running is idempotent. */
+    add(rows: AnalysisRow[]): void
+    /** Oldest → newest for one pod; `version` defaults to the newest version that has rows. */
+    series(q: { analyzer: string, version?: number, slot: number, metric: string, limit?: number }): AnalysisPoint[]
+    forCapture(captureId: string): AnalysisRow[]
+    /** Rows whose capture time falls in [fromTs, toTs], oldest first. */
+    range(fromTs: string, toTs: string): AnalysisRow[]
+    stats(): AnalyzerStats[]
   }
   close(): void
 }
@@ -160,4 +188,13 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   mqttTlsEnabled: false,
   mqttTlsInsecure: false,
   captureIntervalMin: 60,
+  primaryAnalyzer: 'green-threshold',
+  analysisArtifacts: false,
+  analysisIngestToken: '',
+  mirrorEndpoint: null,
+  mirrorBucket: null,
+  mirrorRegion: 'auto',
+  mirrorPrefix: '',
+  mirrorAccessKeyId: null,
+  mirrorSecretAccessKey: null,
 }

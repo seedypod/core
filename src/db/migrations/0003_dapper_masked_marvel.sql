@@ -1,0 +1,1 @@
+DROP TABLE `pod_growth`;

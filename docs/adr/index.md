@@ -19,3 +19,5 @@ Format follows sleepypod/core (`# ADR NNNN: Title`, Status/Date, Context, Decisi
 - [0015 Event bus and mutation broadcast](0015-event-bus.md)
 - [0016 Shared design language with sleepypod](0016-shared-design-language.md)
 - [0017 iOS client — reuse sleepypod's transport, not its app](0017-ios-client.md) — proposed
+- [0018 Runtime sensor inventory](0018-runtime-sensor-inventory.md)
+- [0019 Pluggable capture analysis](0019-pluggable-capture-analysis.md)

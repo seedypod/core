@@ -109,3 +109,25 @@ fn invalid_config_is_refused_before_starting() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("telemetry_interval_s"));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn camera_rules_are_printed_for_explicit_ports_and_bad_input_is_refused() {
+    let out = hald()
+        .args(["--camera-rules", "upper=1-1.3:1.0", "lower=1-1.2:1.0"])
+        .output()
+        .expect("hald runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let rules = String::from_utf8(out.stdout).unwrap();
+    assert!(rules.contains("KERNELS==\"1-1.3:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-upper\""));
+    assert!(rules.contains("SYMLINK+=\"seedypod/camera-lower\""));
+    let bad = hald()
+        .args(["--camera-rules", "upper"])
+        .output()
+        .expect("hald runs");
+    assert!(!bad.status.success());
+    let listed = hald().arg("--list-cameras").output().expect("hald runs");
+    assert!(listed.status.success());
+    assert!(serde_json::from_slice::<serde_json::Value>(&listed.stdout)
+        .unwrap()
+        .is_array());
+}
