@@ -228,7 +228,12 @@ Each phase ships on its own and is useful alone.
   tarball release that the installers use.
 - **Root helper.** The core user can run one root helper. It only accepts a
   bundle whose manifest and checksums validate, and it writes only to fixed
-  paths.
+  paths. Its path overrides (for tests and the simulated bring-up) are
+  ignored when it runs as root.
+- **Restore is a LAN route.** Like every other route (ADR-0012), restore is
+  open to the LAN unless an API key is set. A restored `hal.toml` brings its
+  `[limits]` with it, so a restore can change the pump limits within what
+  `hald` accepts. Every pump run stays bounded and goes through `PumpGuard`.
 
 ## Recommended card
 

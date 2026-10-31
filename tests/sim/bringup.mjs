@@ -8,10 +8,12 @@
 // Usage: pnpm build && cargo build -p hald, then `pnpm test:sim-bringup`
 // (HALD_BIN=<path> to use another binary).
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer as createHttpServer } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import { Aedes } from 'aedes'
 import mqtt from 'mqtt'
 
@@ -55,7 +57,7 @@ const assert = (cond, msg) => {
   if (!cond) throw new Error(msg)
 }
 
-const [brokerPort, halHttpPort, corePort] = [await freePort(), await freePort(), await freePort()]
+const [brokerPort, halHttpPort, corePort, s3Port, controlPort] = [await freePort(), await freePort(), await freePort(), await freePort(), await freePort()]
 const api = `http://127.0.0.1:${corePort}/api`
 const get = async path => (await fetch(`${api}${path}`)).json()
 const post = async (path, body) => {
@@ -110,6 +112,41 @@ kind = "dosing"
 pin = 5
 `)
 
+// What a backup carries besides the database: the LAN broker's password file and its config.
+const mosquittoDir = join(work, 'mosquitto')
+mkdirSync(mosquittoDir)
+writeFileSync(join(mosquittoDir, 'seedypod.passwd'), 'homeassistant:$7$101$bringup\n')
+writeFileSync(join(mosquittoDir, 'seedypod.conf'), 'per_listener_settings true\nlistener 1883 127.0.0.1\nallow_anonymous true\n')
+
+// A path-style S3 bucket in memory (no auth check): the mirror and nightly backups talk to it over HTTP.
+const bucket = new Map()
+const s3 = createHttpServer(async (req, res) => {
+  const url = new URL(req.url, 'http://s3')
+  const [, , ...rest] = url.pathname.split('/')
+  const key = rest.map(decodeURIComponent).join('/')
+  const body = []
+  for await (const c of req) body.push(c)
+  if (req.method === 'PUT') bucket.set(key, Buffer.concat(body))
+  else if (req.method === 'DELETE') bucket.delete(key)
+  else if (req.method === 'GET' && url.searchParams.get('list-type') === '2') {
+    const prefix = url.searchParams.get('prefix') ?? ''
+    const items = [...bucket].filter(([k]) => k.startsWith(prefix)).map(([k, v]) => `<Contents><Key>${k}</Key><LastModified>2026-10-31T03:00:00.000Z</LastModified><Size>${v.length}</Size></Contents>`)
+    res.setHeader('content-type', 'application/xml')
+    return res.end(`<ListBucketResult><IsTruncated>false</IsTruncated>${items.join('')}</ListBucketResult>`)
+  }
+  else if (req.method === 'GET') {
+    if (!bucket.has(key)) {
+      res.statusCode = 404
+      return res.end('NoSuchKey')
+    }
+    return res.end(bucket.get(key))
+  }
+  res.statusCode = req.method === 'DELETE' ? 204 : 200
+  res.end()
+})
+await new Promise(r => s3.listen(s3Port, '127.0.0.1', r))
+const s3Config = { endpoint: `http://127.0.0.1:${s3Port}`, bucket: 'pods', region: 'auto', prefix: 'bringup/', accessKeyId: 'AK', secretAccessKey: 'SK' }
+
 const broker = await Aedes.createBroker()
 const brokerServer = createServer(broker.handle)
 await new Promise(r => brokerServer.listen(brokerPort, '127.0.0.1', r))
@@ -122,6 +159,96 @@ function start(cmd, args, env, tag) {
   p.stderr.on('data', d => log.push(String(d)))
   children.push({ p, log, tag })
   return p
+}
+
+const coreEnv = {
+  PORT: String(corePort), HOST: '127.0.0.1', DATA_DIR: join(work, 'core'), CI: '',
+  HAL_MQTT_URL: brokerUrl, HAL_UNIT_ID: unit, HAL_HTTP_URL: `http://127.0.0.1:${halHttpPort}`,
+  // Backups and the real restore helper, pointed at this scratch unit; the helper's service
+  // commands come back to this harness through tests/sim/fake-systemctl.mjs.
+  SEEDYPOD_ETC_DIR: work, SEEDYPOD_STATE_DIR: join(work, 'hal-state'),
+  SEEDYPOD_MOSQUITTO_PASSWD: join(mosquittoDir, 'seedypod.passwd'), SEEDYPOD_MOSQUITTO_CONF: join(mosquittoDir, 'seedypod.conf'),
+  SEEDYPOD_RESTORE_CMD: JSON.stringify([process.execPath, join(root, 'scripts/seedypod-restore.cjs')]),
+  SEEDYPOD_RESTORE_DB: join(work, 'core/seedypod.db'), SEEDYPOD_RESTORE_CAPTURES: join(work, 'core/captures'),
+  SEEDYPOD_RESTORE_WORK: join(work, 'restore'), SEEDYPOD_RESTORE_DETACH: 'fork',
+  SEEDYPOD_SYSTEMCTL: JSON.stringify([process.execPath, join(root, 'tests/sim/fake-systemctl.mjs')]),
+  SIM_CONTROL_URL: `http://127.0.0.1:${controlPort}/`,
+}
+let daemon = null
+let coreProc = null
+const startHald = () => (daemon = start(hald, ['--sim', '--config', config, '--mqtt-url', brokerUrl], { RUST_LOG: 'info' }, 'hald'))
+const startCore = () => (coreProc = start(process.execPath, [join(root, 'server/dist/index.js')], coreEnv, 'core'))
+async function stop(p) {
+  if (!p || p.exitCode !== null || p.signalCode) return
+  const gone = new Promise(r => p.once('exit', r))
+  p.kill('SIGTERM')
+  await Promise.race([gone, sleep(10_000).then(() => p.kill('SIGKILL'))])
+  await gone
+}
+const services = { 'seedypod-core': { start: startCore, stop: () => stop(coreProc) }, 'hald': { start: startHald, stop: () => stop(daemon) } }
+const systemctlCalls = []
+const control = createHttpServer(async (req, res) => {
+  let body = ''
+  for await (const c of req) body += c
+  const [verb, name] = JSON.parse(body)
+  systemctlCalls.push(`${verb} ${name}`)
+  const svc = services[name]
+  if (svc && verb === 'stop') await svc.stop()
+  if (svc && verb === 'start') svc.start()
+  res.end('ok')
+})
+await new Promise(r => control.listen(controlPort, '127.0.0.1', r))
+
+// Minimal gzip'd ustar, to tamper with a downloaded bundle.
+function untar(gz) {
+  const t = gunzipSync(gz)
+  const out = []
+  for (let at = 0; at + 512 <= t.length;) {
+    const h = t.subarray(at, at + 512)
+    if (h.every(b => b === 0)) break
+    const name = h.subarray(0, 100).toString().replace(/\0.*$/s, '')
+    const size = parseInt(h.subarray(124, 136).toString().replace(/\0.*$/s, '').trim(), 8)
+    out.push({ name, bytes: Buffer.from(t.subarray(at + 512, at + 512 + size)) })
+    at += 512 + Math.ceil(size / 512) * 512
+  }
+  return out
+}
+function tar(entries) {
+  const blocks = []
+  for (const { name, bytes } of entries) {
+    const h = Buffer.alloc(512)
+    h.write(name, 0)
+    h.write('0000644\0', 100)
+    h.write('0000000\0', 108)
+    h.write('0000000\0', 116)
+    h.write(`${bytes.length.toString(8).padStart(11, '0')}\0`, 124)
+    h.write('00000000000\0', 136)
+    h.write('        ', 148)
+    h.write('0', 156)
+    h.write('ustar\0', 257)
+    h.write('00', 263)
+    h.write(`${h.reduce((n, b) => n + b, 0).toString(8).padStart(6, '0')}\0 `, 148)
+    blocks.push(h, bytes, Buffer.alloc((512 - (bytes.length % 512)) % 512))
+  }
+  return gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)]))
+}
+const restoreStatus = () => {
+  try {
+    return JSON.parse(readFileSync(join(work, 'restore/status.json'), 'utf8'))
+  }
+  catch {
+    return null
+  }
+}
+/** Waits out a restore or undo: the helper restarts both services through the harness. */
+async function afterRestart(op, since) {
+  await until(`${op} to finish`, () => {
+    const st = restoreStatus()
+    if (st?.state === 'failed') throw new Error(`${op} failed: ${st.error}`)
+    return st?.op === op && st.state === 'done' && st.at >= since
+  }, 60_000)
+  await until('core back', () => get('/healthcheck').then(h => h.ok), 30_000)
+  await until('hald back', async () => (await get('/system')).halOnline, 30_000)
 }
 
 let exitCode = 1
@@ -138,11 +265,8 @@ try {
   watcher.on('message', (t, p) => seen.set(t, String(p)))
   await watcher.subscribeAsync(['homeassistant/#', `seedypod/${unit}/#`])
 
-  const daemon = start(hald, ['--sim', '--config', config, '--mqtt-url', brokerUrl], { RUST_LOG: 'info' }, 'hald')
-  start(process.execPath, [join(root, 'server/dist/index.js')], {
-    PORT: String(corePort), HOST: '127.0.0.1', DATA_DIR: join(work, 'core'), CI: '',
-    HAL_MQTT_URL: brokerUrl, HAL_UNIT_ID: unit, HAL_HTTP_URL: `http://127.0.0.1:${halHttpPort}`,
-  }, 'core')
+  startHald()
+  startCore()
   await until('core to listen', () => get('/healthcheck').then(h => h.ok), 30_000)
 
   await check('core sees hald online with the unit\'s capabilities', async () => {
@@ -302,6 +426,102 @@ try {
     return `rule ${created.body.id} fired → light 35 in hald → kill switch released it`
   })
 
+  let download = null
+  await check('backup: nightly upload to the bucket, and a download with hald\'s files', async () => {
+    const set = await fetch(`${api}/settings`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      unitName: 'Bring-up tower', mirrorEndpoint: s3Config.endpoint, mirrorBucket: s3Config.bucket, mirrorPrefix: s3Config.prefix,
+      mirrorAccessKeyId: s3Config.accessKeyId, mirrorSecretAccessKey: s3Config.secretAccessKey, setupComplete: true,
+    }) })
+    assert(set.status === 200, `settings → ${set.status}`)
+    const sched = await fetch(`${api}/schedules/bringup-water`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'bringup-water', kind: 'pump', name: 'Bring-up watering', enabled: true, days: 127, spec: { minute: 480, durationS: 60 } }) })
+    assert(sched.status === 200, `schedule → ${sched.status}`)
+    assert((await post('/grow/start', { notes: 'bring-up basil' })).status === 200, 'grow start')
+    const probe = await post('/devices/sensors', { kind: 'ezo_ec', addr: 0x64 })
+    assert(probe.status === 200 && probe.body.ok, `probe → ${JSON.stringify(probe.body)}`)
+    await until('sensors.json', () => existsSync(join(work, 'hal-state/sensors.json')))
+    const run = await post('/backup/run', {})
+    assert(run.status === 200 && run.body.ok, `backup → ${run.status} ${JSON.stringify(run.body)}`)
+    const listed = await get('/backup/bucket')
+    assert(listed.length === 1 && listed[0].key.startsWith('backups/seedypod-backup-sim-bringup-'), `bucket ${JSON.stringify(listed)}`)
+    assert(bucket.has(`bringup/${listed[0].key}`), 'not under the mirror prefix')
+    const d = await fetch(`${api}/backup/download`)
+    assert(d.status === 200, `download → ${d.status}`)
+    download = Buffer.from(await d.arrayBuffer())
+    const names = untar(download).map(e => e.name)
+    for (const want of ['seedypod.db', 'etc/seedypod/hal.toml', 'etc/mosquitto/seedypod.passwd', 'var/lib/seedypod/sensors.json', 'manifest.json'])
+      assert(names.includes(want), `bundle has no ${want}: ${names}`)
+    return `${listed[0].name} (${run.body.bytes} B) in the bucket; download has ${names.length} files`
+  })
+
+  await check('restore: wipe the card, Welcome offers Restore, the bucket backup brings the unit back', async () => {
+    // A new card: no database, no hald state, no broker password, a stock hal.toml.
+    await services['seedypod-core'].stop()
+    await services.hald.stop()
+    for (const d of ['core', 'hal-state', 'restore']) rmSync(join(work, d), { recursive: true, force: true })
+    rmSync(join(mosquittoDir, 'seedypod.passwd'), { force: true })
+    writeFileSync(join(mosquittoDir, 'seedypod.conf'), 'per_listener_settings true\nlistener 1883 127.0.0.1\nallow_anonymous true\n')
+    const halToml = readFileSync(config, 'utf8')
+    writeFileSync(config, `# fresh card\n${halToml}`)
+    startHald()
+    startCore()
+    await until('fresh core', () => get('/healthcheck').then(h => h.ok), 30_000)
+    const fresh = await get('/settings')
+    assert(fresh.setupComplete === false && fresh.unitName === 'Gardyn', `fresh unit ${JSON.stringify({ setupComplete: fresh.setupComplete, unitName: fresh.unitName })}`)
+    assert((await get('/backup/restore')).available, 'restore not available')
+
+    const browse = await post('/backup/browse', { config: s3Config })
+    assert(browse.status === 200 && browse.body.length === 1, `browse → ${browse.status} ${JSON.stringify(browse.body)}`)
+    systemctlCalls.length = 0
+    const since = new Date().toISOString()
+    const r = await post('/backup/restore-from-bucket', { key: browse.body[0].key, config: s3Config })
+    assert(r.status === 200 && r.body.restarting, `restore → ${r.status} ${JSON.stringify(r.body)}`)
+    await afterRestart('restore', since)
+    assert(systemctlCalls.join(',') === 'stop seedypod-core,stop hald,try-restart mosquitto,start hald,start seedypod-core', `services ${systemctlCalls}`)
+
+    const s = await get('/settings')
+    assert(s.unitName === 'Bring-up tower' && s.setupComplete === true && s.mirrorBucket === 'pods', `settings ${JSON.stringify({ unitName: s.unitName, setupComplete: s.setupComplete })}`)
+    assert((await get('/schedules')).some(x => x.id === 'bringup-water'), 'schedule missing')
+    assert((await get('/grow')).cycle?.notes === 'bring-up basil', 'grow cycle missing')
+    assert((await get('/automations')).some(a => a.name === 'bring-up: light follows pH'), 'Autopilot rule missing')
+    await until('the app-added EC probe back in hald', async () => (await get('/devices')).sensors.some(d => d.kind === 'ezo_ec' && d.source === 'user'), 20_000)
+    assert(!readFileSync(config, 'utf8').startsWith('# fresh card'), 'hal.toml not restored')
+    assert(readFileSync(join(mosquittoDir, 'seedypod.passwd'), 'utf8').startsWith('homeassistant:'), 'broker password not restored')
+    assert(/^listener 1884$/m.test(readFileSync(join(mosquittoDir, 'seedypod.conf'), 'utf8')), 'LAN listener not written')
+    return 'settings, schedule, grow cycle, Autopilot rule, EC probe, hal.toml and broker password are back'
+  })
+
+  await check('restore refuses a backup from newer software and leaves the unit alone', async () => {
+    const tampered = untar(download).map((e) => {
+      if (e.name !== 'manifest.json') return e
+      const m = JSON.parse(e.bytes)
+      return { name: e.name, bytes: Buffer.from(JSON.stringify({ ...m, schema: { ...m.schema, migrations: m.schema.migrations + 1 }, core: { version: 'main@future1' } })) }
+    })
+    const r = await fetch(`${api}/backup/restore`, { method: 'POST', headers: { 'content-type': 'application/gzip' }, body: tar(tampered) })
+    const body = await r.json()
+    assert(r.status === 409 && body.code === 'newer-schema', `→ ${r.status} ${JSON.stringify(body)}`)
+    assert(/made by seedypod core main@future1 .*Install that version of core or newer first/.test(body.error), body.error)
+    assert((await get('/settings')).unitName === 'Bring-up tower', 'unit changed')
+    return body.error
+  })
+
+  await check('a wrong restore can be undone, and redone', async () => {
+    let since = new Date().toISOString()
+    const u = await post('/backup/undo', {})
+    assert(u.status === 200, `undo → ${u.status} ${JSON.stringify(u.body)}`)
+    await afterRestart('undo', since)
+    const back = await get('/settings')
+    assert(back.unitName === 'Gardyn' && back.setupComplete === false, `after undo ${back.unitName}`)
+    assert(readFileSync(config, 'utf8').startsWith('# fresh card'), 'hal.toml not put back')
+    assert(!existsSync(join(mosquittoDir, 'seedypod.passwd')), 'password file not put back')
+    since = new Date().toISOString()
+    assert((await post('/backup/undo', {})).status === 200, 'redo')
+    await afterRestart('undo', since)
+    assert((await get('/settings')).unitName === 'Bring-up tower', 'redo did not bring the restore back')
+    const info = await get('/backup/restore')
+    assert(info.undo?.undoneAt === null && info.status?.state === 'done', `info ${JSON.stringify(info)}`)
+    return 'undo → fresh card again; undo again → restored'
+  })
+
   await check('daemon loss is noticed (LWT → hal_offline)', async () => {
     daemon.kill('SIGKILL')
     // Without a clean disconnect the broker fires the will after the keep-alive lapses.
@@ -318,6 +538,8 @@ catch (e) {
 finally {
   for (const { p } of children) p.kill('SIGKILL')
   await new Promise(r => brokerServer.close(r))
+  s3.close()
+  control.close()
   broker.close()
   const w = Math.max(...results.map(r => r.name.length))
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name.padEnd(w)}  ${r.detail}`)

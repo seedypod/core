@@ -2,6 +2,7 @@ import { Droplets, Sun, Thermometer, Waves, Zap } from 'lucide-react'
 import { Card, CardHeader, GrowBackdrop, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META } from '@/src/lib/sensorMeta'
+import { Welcome } from '@/src/components/Welcome/Welcome'
 import { trpc } from '@/src/utils/trpc'
 
 function minutesNow(): number {
@@ -10,6 +11,13 @@ function minutesNow(): number {
 }
 
 export function Dashboard() {
+  const settings = trpc.settings.get.useQuery()
+  // A fresh database opens on Welcome (ADR-0021) until the owner starts a garden or restores one.
+  if (settings.data && !settings.data.setupComplete) return <Welcome />
+  return <Home />
+}
+
+function Home() {
   const sensors = trpc.sensors.latest.useQuery()
   const lightState = trpc.light.get.useQuery()
   const pumpState = trpc.pump.get.useQuery()

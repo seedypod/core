@@ -70,6 +70,17 @@ describe('routers', () => {
     expect((await c.pump.get())?.fault).toBeNull()
   })
 
+  it('backup: without backups or restore (demo, tests) every procedure says so', async () => {
+    const { c } = caller()
+    expect(await c.backup.status()).toMatchObject({ available: false, lastSuccess: null, nightly: { enabled: false } })
+    expect(await c.backup.list()).toEqual([])
+    expect(await c.backup.restoreInfo()).toEqual({ available: false, status: null, undo: null })
+    await expect(c.backup.runNow()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+    await expect(c.backup.browse({})).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+    await expect(c.backup.restoreFromBucket({ key: 'backups/a.tar.gz' })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: /no restore/ })
+    await expect(c.backup.undo()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: /no restore/ })
+  })
+
   it('storage.flash reports unavailable without an SD card, and the since-boot rate with one', async () => {
     expect(await caller().c.storage.flash()).toMatchObject({ available: false, bytesPerDay: null })
     const dir = mkdtempSync(join(tmpdir(), 'flash-'))

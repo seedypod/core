@@ -1,7 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import { Archive, CloudUpload, Download, HardDrive, Settings } from 'lucide-react'
 import { useState } from 'react'
+import { RestorePanel, RestoreProgress } from '@/src/components/Backup/RestorePanel'
 import { Button, Card, CardHeader, KeyValue, SectionLabel } from '@/src/components/ds/core'
+import { Alert } from '@/src/components/ds/feedback'
 import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
 import { PageHeader, SettingRow } from '@/src/components/ds/layout'
 import type { inferRouterOutputs } from '@trpc/server'
@@ -185,8 +187,14 @@ const when = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'sh
 function BackupCard() {
   const status = trpc.backup.status.useQuery(undefined, { refetchInterval: 30_000 })
   const run = trpc.backup.runNow.useMutation({ onSuccess: () => void status.refetch() })
+  const info = trpc.backup.restoreInfo.useQuery()
+  const [restoring, setRestoring] = useState<'restore' | 'undo' | null>(null)
+  const undo = trpc.backup.undo.useMutation({ onSuccess: () => setRestoring('undo') })
   const [photos, setPhotos] = useState(false)
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  const [confirmUndo, setConfirmUndo] = useState(false)
   const st = status.data
+  const undoInfo = info.data?.undo
   if (!st?.available) return null
   const last = st.lastSuccess
   const tried = st.lastBucketAttempt
@@ -207,9 +215,53 @@ function BackupCard() {
         </div>
       </SettingRow>
       <SettingRow label="Include photos" sub="For downloads; the mirror already keeps them. Makes the file far larger."><Toggle label="Include photos in the download" on={photos} onChange={setPhotos} /></SettingRow>
-      <SettingRow label="Download" sub="The file holds your bucket secret and MQTT password. Keep it somewhere private." divider={false}>
+      <SettingRow label="Download" sub="The file holds your bucket secret and MQTT password. Keep it somewhere private.">
         <a href={`${apiBase()}/api/backup/download${photos ? '?photos=1' : ''}`} download className="inline-flex"><Button size="sm" icon={Download} tabIndex={-1}>Download backup</Button></a>
       </SettingRow>
+      <SettingRow label="Restore" sub={info.data?.available === false ? 'Not installed on this core: run scripts/install on the unit' : 'Replace this unit with a backup, from a file or the bucket'} divider={!!undoInfo || restoreOpen}>
+        <Button size="sm" disabled={!info.data?.available || restoreOpen} onClick={() => setRestoreOpen(true)}>Restore from a backup…</Button>
+      </SettingRow>
+      {restoreOpen && !restoring && (
+        <div className="py-3">
+          <RestorePanel savedMirror={st.nightly.enabled} confirm onStarted={() => setRestoring('restore')} />
+          <div className="mt-2"><Button size="sm" onClick={() => setRestoreOpen(false)}>Close</Button></div>
+        </div>
+      )}
+      {undoInfo && (
+        <SettingRow
+          label={undoInfo.undoneAt ? 'Redo restore' : 'Undo restore'}
+          sub={undoInfo.undoneAt
+            ? `You undid the restore of the backup from ${when(undoInfo.bundle.createdAt ?? undoInfo.restoredAt)}. This puts it back.`
+            : `Restored the backup from ${when(undoInfo.bundle.createdAt ?? undoInfo.restoredAt)} on ${when(undoInfo.restoredAt)}. Undo puts back what it replaced.`}
+          divider={false}
+        >
+          <Button size="sm" disabled={undo.isPending || !!restoring} onClick={() => setConfirmUndo(true)}>{undoInfo.undoneAt ? 'Redo restore' : 'Undo restore'}</Button>
+        </SettingRow>
+      )}
+      {confirmUndo && !restoring && (
+        <Alert
+          tone="warn"
+          action={(
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  undo.mutate()
+                  setConfirmUndo(false)
+                }}
+              >
+                {undoInfo?.undoneAt ? 'Redo' : 'Undo'}
+              </Button>
+              <Button size="sm" onClick={() => setConfirmUndo(false)}>Cancel</Button>
+            </div>
+          )}
+        >
+          The unit restarts on the files it had before. Anything changed since is swapped out too, and comes back with another undo.
+        </Alert>
+      )}
+      {undo.error && <span className="text-xs text-danger">{undo.error.message}</span>}
+      {restoring && <div className="pt-3"><RestoreProgress undo={restoring === 'undo'} /></div>}
     </Card>
   )
 }

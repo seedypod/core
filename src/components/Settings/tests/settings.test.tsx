@@ -5,14 +5,14 @@ import { SettingsPage } from '../SettingsPage'
 
 const { data, calls } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { update: vi.fn(), test: vi.fn(), sync: vi.fn(), run: vi.fn() },
+  calls: { update: vi.fn(), test: vi.fn(), sync: vi.fn(), run: vi.fn(), undo: vi.fn(), browse: vi.fn(), fromBucket: vi.fn() },
 }))
 
 vi.mock('@tanstack/react-router', () => ({ Link: ({ to, children, className }: { to: string, children: unknown, className?: string }) => <a href={to} className={className}>{children as string}</a> }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name), refetch: vi.fn() }) })
-  const mutation = (name: 'update' | 'test' | 'sync' | 'run') => ({ useMutation: () => ({
+  const mutation = (name: 'update' | 'test' | 'sync' | 'run' | 'undo' | 'browse' | 'fromBucket') => ({ useMutation: () => ({
     isPending: false,
     data: data.get(`${name}Result`),
     error: data.get(`${name}Error`) ?? null,
@@ -24,7 +24,7 @@ vi.mock('@/src/utils/trpc', () => {
       useUtils: () => ({ settings: { invalidate: vi.fn() } }),
       settings: { get: query('settings'), update: mutation('update') },
       system: { info: query('info') },
-      backup: { status: query('backup'), runNow: mutation('run') },
+      backup: { status: query('backup'), runNow: mutation('run'), restoreInfo: query('restoreInfo'), undo: mutation('undo'), list: query('bucketList'), browse: mutation('browse'), restoreFromBucket: mutation('fromBucket') },
       storage: { flash: query('flash'), mirror: query('mirror'), testMirror: mutation('test'), syncMirror: mutation('sync') },
     },
   }
@@ -104,6 +104,43 @@ describe('Settings: backup', () => {
     data.set('backup', backup({ stale: true }))
     render(<SettingsPage />)
     expect(screen.getByText('None for 7 days or more')).toBeTruthy()
+  })
+
+  it('opens the restore panel on the saved bucket and asks before replacing the unit', () => {
+    data.set('backup', backup({ nightly: { enabled: true, hour: 3, keep: 14 } }))
+    data.set('restoreInfo', { available: true, status: null, undo: null })
+    data.set('bucketList', [{ key: 'backups/seedypod-backup-kitchen-20261030-030000.tar.gz', name: 'seedypod-backup-kitchen-20261030-030000.tar.gz', unit: 'kitchen', createdAt: '2026-10-30T03:00:00Z', size: 2_400_000 }])
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Restore from a backup…' }))
+    // The saved mirror is used: no bucket form.
+    expect(screen.queryByText('List backups')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    expect(calls.fromBucket).not.toHaveBeenCalled()
+    expect(screen.getByText(/It replaces this unit's settings, schedules, rules and history, then restarts\. You can undo it afterwards\./)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Replace this unit' }))
+    expect(calls.fromBucket).toHaveBeenCalledWith({ key: 'backups/seedypod-backup-kitchen-20261030-030000.tar.gz', config: undefined })
+  })
+
+  it('offers undo after a restore, then redo after an undo', () => {
+    data.set('backup', backup())
+    data.set('restoreInfo', { available: true, status: null, undo: { restoredAt: '2026-10-31T08:00:00Z', bundle: { createdAt: '2026-10-30T03:00:00Z', unit: null, core: null, schema: 7, photos: false }, undoneAt: null } })
+    const { unmount } = render(<SettingsPage />)
+    expect(screen.getByText(/^Restored the backup from .* Undo puts back what it replaced\.$/)).toBeTruthy()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Undo restore' })[0] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(calls.undo).toHaveBeenCalled()
+    unmount()
+    data.set('restoreInfo', { available: true, status: null, undo: { restoredAt: '2026-10-31T08:00:00Z', bundle: { createdAt: '2026-10-30T03:00:00Z', unit: null, core: null, schema: 7, photos: false }, undoneAt: '2026-10-31T09:00:00Z' } })
+    render(<SettingsPage />)
+    expect(screen.getAllByRole('button', { name: 'Redo restore' })).toHaveLength(1)
+  })
+
+  it('says where restore is not installed', () => {
+    data.set('backup', backup())
+    data.set('restoreInfo', { available: false, status: null, undo: null })
+    render(<SettingsPage />)
+    expect(screen.getByText('Not installed on this core: run scripts/install on the unit')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Restore from a backup…' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('is hidden where there are no backups (demo)', () => {

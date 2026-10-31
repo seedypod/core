@@ -50,6 +50,13 @@
       "when": 1793487619180,
       "tag": "0006_black_silver_sable",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793488462579,
+      "tag": "0007_flawless_doctor_doom",
+      "breakpoints": true
     }
   ]
 }

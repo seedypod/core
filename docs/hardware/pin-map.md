@@ -55,4 +55,5 @@ Studio tank ≈ 4 gal, Home ≈ 5 gal / 30 pods.
    - **Wi-Fi setup hotspot:** holding the button for 10 s opens `seedypod-setup-xxxx`, and joining a network from `http://10.42.0.1:3000/wifi` works (NetworkManager, polkit rule).
    - **Mosquitto:** `systemctl status mosquitto` is active with `/etc/mosquitto/conf.d/seedypod.conf`; `--mqtt-lan` opens 1884 with the printed password.
    - **SD card wear settings (ADR-0021):** after `install-hal`, `ls /etc/systemd/journald.conf.d/` shows `50-seedypod-volatile.conf` and `journalctl --header | grep -i 'file path'` points under `/run/log/journal`; `swapon --show` lists `/dev/zram0` and no `/var/swap`; `findmnt -no OPTIONS /` includes `noatime`. Reboot, then check all three again, and that `hald` and core come back. **Settings → Storage** shows a writes-per-day figure.
+   - **Restore on a real card:** download a backup, reflash, run both installers, restore from **Welcome**. The helper runs through `sudo -n` and `systemd-run`, and the unit comes back with the same Home Assistant device. Then **Undo restore** and **Redo restore**.
 6. Update this table with verified values and the model; file ADR-0008.

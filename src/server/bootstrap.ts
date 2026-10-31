@@ -5,6 +5,7 @@
  */
 import type { AutopilotEngine } from '../autopilot/engine'
 import type { BackupService } from '../backup/service'
+import type { RestoreClient } from '../backup/restore'
 import { createAutopilot } from '../autopilot/instance'
 import { CaptureService, MemorySink, type BlobSink } from '../camera/captures'
 import type { MirroredSink } from '../camera/mirrorSink'
@@ -39,6 +40,8 @@ export interface CoreOptions {
   wifi?: Wifi
   /** Downloads, nightly bucket uploads and the staleness alert (ADR-0021); node hosts only. */
   backup?: BackupService
+  /** Restores a backup through the root helper (ADR-0021); node hosts only. */
+  restore?: RestoreClient
   /** The SD card's write counter (ADR-0021); omitted off a Pi. */
   flashSource?: FlashSource | null
 }
@@ -70,7 +73,7 @@ export function createCore(o: CoreOptions): Core {
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, flash, wifi, light, autopilot, version: o.version, now: o.now }
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, flash, wifi, light, autopilot, version: o.version, now: o.now }
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })

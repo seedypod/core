@@ -219,6 +219,48 @@ describe('SqliteStore on disk', () => {
     }
   })
 
+  it('starts a new database on Welcome, but migrates an existing one as set up', () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    try {
+      const fresh = new SqliteStore({ url: join(root, 'fresh.db') })
+      expect(fresh.settings.get().setupComplete).toBe(false)
+      fresh.close()
+      // A database from before migration 0007, with its settings row.
+      const url = join(root, 'old.db')
+      const journal = JSON.parse(readFileSync(join(defaultMigrationsFolder(), 'meta/_journal.json'), 'utf8')) as { entries: { tag: string }[] }
+      const old = join(root, 'migrations-0006')
+      cpSync(defaultMigrationsFolder(), old, { recursive: true })
+      writeFileSync(join(old, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.filter(e => !e.tag.startsWith('0007')) }))
+      const db = new Database(url)
+      migrate(drizzle(db), { migrationsFolder: old })
+      db.prepare('INSERT INTO device_settings (id, updatedAt) VALUES (1, ?)').run('2026-10-01T00:00:00Z')
+      db.close()
+      const after = new SqliteStore({ url })
+      expect(after.settings.get().setupComplete).toBe(true)
+      after.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('backs up to a single-file copy that counts as set up', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    try {
+      const store = new SqliteStore({ url: join(root, 'live.db') })
+      store.settings.update({ unitName: 'Kitchen' })
+      await store.backupTo(join(root, 'copy.db'))
+      store.close()
+      expect(existsSync(join(root, 'copy.db-wal'))).toBe(false)
+      const copy = new SqliteStore({ url: join(root, 'copy.db') })
+      expect(copy.settings.get()).toMatchObject({ unitName: 'Kitchen', setupComplete: true })
+      copy.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('creates a missing data directory on first boot', () => {
     const root = mkdtempSync(join(tmpdir(), 'store-'))
     const url = join(root, 'data', 'nested', 'core.db')

@@ -9,6 +9,7 @@ import type { MirroredSink } from '../camera/mirrorSink'
 import type { AnalysisService } from '../vision/service'
 import type { FlashMeter } from '../telemetry/flash'
 import type { BackupService } from '../backup/service'
+import type { RestoreClient } from '../backup/restore'
 
 export interface Context {
   hal: HalClient
@@ -25,6 +26,8 @@ export interface Context {
   mirror?: MirroredSink
   /** Off-card backups (ADR-0021); on the unit only, like the mirror. */
   backup?: BackupService
+  /** Runs the root restore helper; on the unit only. */
+  restore?: RestoreClient
   /** Build info pinned at release time (.git-info) or 'dev'. */
   version: string
   now?: () => Date

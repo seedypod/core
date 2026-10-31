@@ -39,6 +39,7 @@ A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seed
 - **Probes:** add pH, EC and water-temperature probes from the app, with guided calibration.
 - **Integrations:** Home Assistant over MQTT, MCP for agents, optional capture mirroring to S3-compatible storage, and dataset export.
 - **Wi-Fi setup:** hold the button for 10 seconds to start a setup hotspot.
+- **SD card care:** logs and swap stay in RAM, a meter shows the card's writes per day, and nightly backups go to your bucket. A dead card is a reflash plus **Welcome → Restore from a backup**.
 
 > **Status:** the software is complete and tested against the simulator, but it hasn't run on a real Gardyn yet. Confirming the pin map on hardware is the next step. See [`docs/hardware/pin-map.md`](docs/hardware/pin-map.md).
 
