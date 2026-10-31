@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FsSink } from '../src/camera/fsSink'
+import { RestoreClient, restoreCommand } from '../src/backup/restore'
 import { BackupService } from '../src/backup/service'
 import { backupPaths, nodeBackupSources } from '../src/backup/sources'
 import { MirroredSink } from '../src/camera/mirrorSink'
@@ -43,7 +44,9 @@ const backup = new BackupService({
   store, hal, events, version, mirror,
   sources: nodeBackupSources({ paths: backupPaths(process.env, DATA_DIR), snapshot: dest => store.backupTo(dest), migrationsFolder: defaultMigrationsFolder() }),
 })
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource() })
+// Restores go through the root helper scripts/install puts in /usr/local/sbin (ADR-0021).
+const restore = new RestoreClient({ command: restoreCommand(), workDir: process.env.SEEDYPOD_RESTORE_WORK || '/var/lib/seedypod-restore', uploadDir: DATA_DIR })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource() })
 
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 let bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {

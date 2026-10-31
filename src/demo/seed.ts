@@ -12,7 +12,7 @@ const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian 
 export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
   const day = 86_400_000
   const started = new Date(now.getTime() - 19 * day)
-  store.settings.update({ unitName: 'Kitchen Gardyn', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', captureIntervalMin: 60 })
+  store.settings.update({ unitName: 'Kitchen Gardyn', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', captureIntervalMin: 60, setupComplete: true })
 
   store.schedules.upsert({ id: 'daylight', kind: 'light', name: 'Daylight curve', enabled: true, days: 127, spec: { setpoints: [{ minute: 360, level: 0 }, { minute: 450, level: 85 }, { minute: 1140, level: 85 }, { minute: 1260, level: 0 }] } })
   store.schedules.upsert({ id: 'morning-water', kind: 'pump', name: 'Morning watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })

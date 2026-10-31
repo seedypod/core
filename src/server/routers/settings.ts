@@ -29,6 +29,7 @@ export const SettingsSchema = z.object({
   mirrorAccessKeyId: z.string().nullable(),
   mirrorSecretAccessKey: z.string().nullable(),
   autopilotEnabled: z.boolean(),
+  setupComplete: z.boolean(),
   updatedAt: z.string(),
 })
 

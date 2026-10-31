@@ -22,7 +22,7 @@ Updated 2026-10-31 after the move to `github.com/seedypod/core` (from `ng/leafyp
 | Docs | `docs/` (OKF concepts: ADRs 0001–0016, guides, HAL reference, HA examples, plan, this handoff) and `knowledge/` (4); published at [seedypod.github.io](https://seedypod.github.io) from `seedypod/seedypod.github.io` | `scripts/validate_knowledge.py` in CI |
 | Org | `seedypod/.github` profile README; avatar source (`assets/avatar.svg`, sleepypod-style render) | — |
 
-**Simulated Phase 1 done:** [`pnpm test:sim-bringup`](hardware/sim-bringup.md) runs the full stack against `hald --sim` over MQTT in CI (14 checks). It caught a subscribe race that would have kept core from ever seeing a real `hald`.
+**Simulated Phase 1 done:** [`pnpm test:sim-bringup`](hardware/sim-bringup.md) runs the full stack against `hald --sim` over MQTT in CI (19 checks, including a backup → wipe → restore round trip). It caught a subscribe race that would have kept core from ever seeing a real `hald`.
 
 **Not done, needs hardware (Phase 1 / 2.10):** nothing has run on a real Gardyn. The pin map, I²C addresses, driver timing/CRCs, INA219 calibration, button/GPIO25 polarity, PWM overlay line, camera exposure and the install scripts' Raspberry Pi OS steps are all documented assumptions. The checklist is in `docs/hardware/pin-map.md`; the per-driver list is at the end of `docs/hardware/hal.md`.
 

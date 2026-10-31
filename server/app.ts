@@ -1,3 +1,7 @@
+import { createWriteStream } from 'node:fs'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { trpcServer } from '@hono/trpc-server'
@@ -8,6 +12,7 @@ import { createOpenApiFetchHandler } from 'trpc-to-openapi'
 import { datasetEntries, datasetName, resolveWindow } from '../src/datasets/export'
 import { tarStream } from '../src/datasets/tar'
 import { createMcpServer } from '../src/mcp/server'
+import { RestoreRefused } from '../src/backup/restore'
 import type { Context } from '../src/server/context'
 import { openApiDocument } from '../src/server/openapi'
 import { appRouter } from '../src/server/routers/app'
@@ -80,6 +85,21 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     if (!ctx.backup) return c.json({ error: 'this core has no backups (demo or tests)' }, 404)
     const { name, stream } = await ctx.backup.download({ photos: c.req.query('photos') === '1' })
     return c.body(stream, 200, { 'content-type': 'application/gzip', 'content-disposition': `attachment; filename="${name}"`, 'cache-control': 'no-store' })
+  })
+
+  // Restore from an uploaded bundle (ADR-0021): the helper checks it before answering, then restarts the unit.
+  app.post('/api/backup/restore', async (c) => {
+    if (!ctx.restore?.available) return c.json({ error: 'restore isn\'t installed on this core: run scripts/install on the unit', code: 'unavailable' }, 412)
+    const body = c.req.raw.body
+    if (!body) return c.json({ error: 'send the backup file as the request body', code: 'invalid' }, 400)
+    try {
+      const bundle = await ctx.restore.restore(path => pipeline(Readable.fromWeb(body as NodeReadableStream), createWriteStream(path)))
+      return c.json({ ok: true, restarting: true, bundle }, 202)
+    }
+    catch (e) {
+      if (!(e instanceof RestoreRefused)) throw e
+      return c.json({ error: e.message, code: e.code }, e.code === 'newer-schema' ? 409 : e.code === 'invalid' ? 400 : 500)
+    }
   })
 
   app.get('/api/openapi.json', c => c.json(openApiDocument(new URL('/api', c.req.url).toString())))

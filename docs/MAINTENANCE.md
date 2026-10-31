@@ -116,6 +116,35 @@ From a script: `curl -OJ http://seedypod.local:3000/api/backup/download`
 To keep more than 30 days of photos, turn on the off-device mirror. For
 analysis on another machine, use **Analysis → Export a dataset**.
 
+### Restoring a backup
+
+A restore brings back the settings, schedules, grow cycle, pods, Autopilot
+rules, app-added probes, calibration and history. The unit keeps its
+identity: the `unit_id` comes back in `hal.toml` or, failing that, from the
+Pi's serial number, which a card swap doesn't change. So Home Assistant keeps
+the same device and entities.
+
+There are three ways to start one:
+
+- **Welcome → Restore from a backup** on a fresh install. Upload the file,
+  or enter the mirror's bucket settings from the old card, then pick a
+  backup (newest first).
+- **Settings → Backup → Restore from a backup…** on a running unit. It uses
+  the saved bucket, and asks before it replaces anything.
+- **`scripts/install --restore <file|url>`** from the shell.
+
+Each one runs the same root helper, `/usr/local/sbin/seedypod-restore`. It
+checks the bundle first. It refuses a file that isn't a seedypod backup,
+has a damaged file, or comes from **newer** software than the unit runs. In
+that last case it names the core version to install first. Then it stops
+`seedypod-core` and `hald`, puts the files in place and starts both again.
+Database migrations run on start, as on any update. It takes under a minute,
+and the page reloads when the unit is back.
+
+**Undo.** The replaced files are kept until the next restore. If you
+restored the wrong backup, use **Settings → Backup → Undo restore** (or
+`sudo seedypod-restore --undo`). A second undo redoes the restore.
+
 ## Updates
 
 Rerun the installers. They keep your config and data:
@@ -132,10 +161,20 @@ versions running.
 
 Power the unit off at the wall before opening it.
 
-- **SD card.** Flash Raspberry Pi OS, rerun both installers, then restore
-  the backup tarball. Use `tar xzf … -C /` with the services stopped. The
-  unit keeps its id if `unit_id` is set in `hal.toml`. Otherwise it's derived
-  from the Pi, so Home Assistant may see a new device after a Pi swap.
+- **SD card.** With a recent backup (in the bucket, or a downloaded file),
+  replacing a dead card takes about fifteen minutes:
+  1. Flash Raspberry Pi OS Lite onto a new card, ideally a high-endurance
+     one, as in [Installation](INSTALLATION.md#1-flash), with the same
+     hostname and Wi-Fi.
+  2. Run `install-hal`, then `install`.
+  3. Open `http://seedypod.local:3000`, choose **Restore from a backup**, and
+     pick the latest. Or skip the browser:
+     `curl -fsSL …/scripts/install | bash -s -- --restore <file|url>`.
+
+  The unit comes back with everything listed under
+  [Restoring a backup](#restoring-a-backup). Photos come back too if the
+  backup included them; otherwise they are in the mirror. Without any
+  backup, the card is a fresh install: choose **Set up a new garden**.
 - **Camera.** Plug it into the same USB port and the stable name follows the
   port, so nothing changes. If you use a different port, run
   `hald --list-cameras` and regenerate the rules.

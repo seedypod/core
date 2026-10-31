@@ -52,6 +52,22 @@ curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install 
 Core listens on `:3000`; set `HAL_MQTT_URL` in `/etc/systemd/system/seedypod-core.service`
 if `hald` is elsewhere. Open `http://seedypod.local:3000/`.
 
+A new install opens on **Welcome**. Choose **Set up a new garden**, or
+**Restore from a backup** if this card replaces one that died
+([Maintenance → Restoring a backup](MAINTENANCE.md#restoring-a-backup)). From
+the shell, `--restore` does the same with a downloaded file or a URL:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash -s -- --restore ~/seedypod-backup-kitchen-20261031-030000.tar.gz
+```
+
+The installer also puts the restore helper at `/usr/local/sbin/seedypod-restore`
+(root-owned) and lets the core user run it with `sudo`
+(`/etc/sudoers.d/seedypod-restore`), for that one path. Once the unit is
+running, **Settings → Backup** downloads a backup. Set up the off-device
+mirror ([Capture analysis](ANALYSIS.md#mirror-photos-off-the-unit-opt-in))
+and a backup goes to your bucket every night.
+
 ## Change Wi-Fi
 
 No keyboard needed. Hold the unit's button for **10 seconds** (at 1 s it
@@ -98,6 +114,7 @@ Either way the device appears in HA with no further setup. See
 
 ```sh
 sudo systemctl disable --now seedypod-core hald
-sudo rm -rf /opt/seedypod /etc/systemd/system/seedypod-core.service /etc/systemd/system/hald.service
+sudo rm -rf /opt/seedypod /etc/systemd/system/seedypod-core.service /etc/systemd/system/hald.service \
+  /usr/local/sbin/seedypod-restore /etc/sudoers.d/seedypod-restore /var/lib/seedypod-restore
 ```
 Or reflash the stock image from step 0.

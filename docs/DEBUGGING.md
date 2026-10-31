@@ -21,6 +21,7 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
   # … reproduce, reboot, then: journalctl -b -1 -u hald -u seedypod-core
   sudo rm /etc/systemd/journald.conf.d/99-debug-persistent.conf && sudo systemctl restart systemd-journald
   ```
+- **A restore that didn't finish.** The helper logs each step to `/var/lib/seedypod-restore/status.json`. When the web UI starts the restore, it runs as a transient unit: `journalctl -u 'seedypod-restore-*'`. `sudo seedypod-restore --status` prints the last run. "restore isn't installed" means `scripts/install` hasn't put the helper and its sudoers rule in place; `sudo -n -l /usr/local/sbin/seedypod-restore` as the core user should print the path. `sudo seedypod-restore --undo` puts back what the last restore replaced. A failed restore puts the old files back by itself.
 - **SD card writes:** **Settings → Storage** (or `GET /api/storage/flash`) shows writes per day. To see who is writing, `sudo iotop -ao` or `cat /proc/<pid>/io`. `swapon --show` should list only `/dev/zram0`.
 - `sudo i2cdetect -y 1` — expect 0x40 (INA219), 0x48 (PCT2075), and 0x38 (DHT20, 3.0+). The AM2320 (1.0/2.0, 0x5C) does **not** answer `i2cdetect`.
 - A pump that refuses to start with `fault: "dry-run"` is latched: refill, then acknowledge from the UI, HA, or `POST /api/alerts/{id}/acknowledge` (the id is in `GET /api/alerts`). A doser stuck on `fault: "lockout"` works the same way through the `dose_fault` alert.

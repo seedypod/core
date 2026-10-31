@@ -34,6 +34,8 @@ export interface DeviceSettings {
   mirrorAccessKeyId: string | null
   mirrorSecretAccessKey: string | null
   autopilotEnabled: boolean
+  /** False until the owner picks Welcome → Set up a new garden, or restores a backup. */
+  setupComplete: boolean
   updatedAt: string
 }
 
@@ -240,4 +242,5 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   mirrorAccessKeyId: null,
   mirrorSecretAccessKey: null,
   autopilotEnabled: true,
+  setupComplete: false,
 }

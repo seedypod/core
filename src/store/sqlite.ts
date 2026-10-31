@@ -206,9 +206,21 @@ export class SqliteStore implements Store {
     },
   }
 
-  /** SQLite's online backup: a consistent copy while core keeps writing (ADR-0021). */
-  backupTo(path: string): Promise<unknown> {
-    return this.sqlite.backup(path)
+  /**
+   * SQLite's online backup: a consistent copy while core keeps writing (ADR-0021).
+   * The copy is a single file (no WAL) and counts as set up, so a unit restored
+   * from it doesn't open on Welcome.
+   */
+  async backupTo(path: string): Promise<void> {
+    await this.sqlite.backup(path)
+    const copy = new Database(path)
+    try {
+      copy.pragma('journal_mode = DELETE')
+      copy.prepare('UPDATE device_settings SET setupComplete = 1').run()
+    }
+    finally {
+      copy.close()
+    }
   }
 
   flash = {
