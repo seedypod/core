@@ -47,7 +47,7 @@ cargo run --manifest-path hal/Cargo.toml -p hald -- --sim --ticks 3
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) — back up the stock microSD first, flash Raspberry Pi OS, then:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leafypod/core/main/scripts/install | bash
+curl -fsSL https://raw.githubusercontent.com/ng/leafypod/main/scripts/install | bash
 ```
 
 ## Contributing

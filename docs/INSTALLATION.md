@@ -27,14 +27,14 @@ Raspberry Pi Imager → Raspberry Pi OS Lite (64-bit for Zero 2 W / Pi 4 / Pi 5;
 
 ```sh
 sudo raspi-config nonint do_i2c 0
-curl -fsSL https://raw.githubusercontent.com/leafypod/core/main/scripts/install-hal | bash   # Phase 2.9
+curl -fsSL https://raw.githubusercontent.com/ng/leafypod/main/scripts/install-hal | bash   # Phase 2.9
 hald --check
 ```
 
 ## 3. Install core (same Pi, or any LAN box)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leafypod/core/main/scripts/install | bash
+curl -fsSL https://raw.githubusercontent.com/ng/leafypod/main/scripts/install | bash
 ```
 
 Core listens on `:3000`; set `HAL_MQTT_URL` in `/etc/systemd/system/leafypod-core.service`

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # leafypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit).
-# Usage: curl -fsSL https://raw.githubusercontent.com/leafypod/core/main/scripts/install | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/ng/leafypod/main/scripts/install | bash
 #        scripts/install [--branch dev] [--prefix /opt/leafypod]
 # Installs Node (via the pinned .node-version), unpacks the release tarball,
 # installs production deps, and enables leafypod-core.service on :3000.
@@ -9,7 +9,7 @@ set -euo pipefail
 
 BRANCH="${LEAFYPOD_BRANCH:-__BRANCH__}"
 PREFIX="${LEAFYPOD_PREFIX:-/opt/leafypod}"
-REPO="leafypod/core"
+REPO="${LEAFYPOD_REPO:-ng/leafypod}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
