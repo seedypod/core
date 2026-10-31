@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+set -e
+
+echo "→ TypeScript..."
+pnpm tsc
+
+echo "→ ESLint..."
+pnpm lint
+
+echo "→ Drizzle schema validation..."
+pnpm drizzle-kit check
+
+CHANGED=$(git diff --name-only @{push}.. -- '*.ts' '*.tsx' 2>/dev/null || git diff --name-only origin/dev...HEAD -- '*.ts' '*.tsx' 2>/dev/null || true)
+if [ -n "$CHANGED" ]; then
+  echo "→ Tests (changed files)..."
+  pnpm vitest related --run $CHANGED
+else
+  echo "→ Tests skipped (no TS/TSX changes)"
+fi
+
+if git diff --name-only @{push}.. -- 'hal/' 2>/dev/null | grep -q . ; then
+  echo "→ Rust (fmt + clippy + test)..."
+  cargo fmt --manifest-path hal/Cargo.toml --check
+  cargo clippy --manifest-path hal/Cargo.toml --all-targets -- -D warnings
+  cargo test --manifest-path hal/Cargo.toml
+fi
+
+echo "✓ All pre-push checks passed"
