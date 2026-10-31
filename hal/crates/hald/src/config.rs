@@ -128,7 +128,11 @@ pub struct HomeAssistant {
 #[serde(deny_unknown_fields)]
 pub struct CameraEntry {
     pub name: String,
+    /// Normally the stable udev name `/dev/seedypod/camera-<name>` (`hald --camera-rules`).
     pub device: PathBuf,
+    /// Used while `device` doesn't exist, e.g. before the udev rules are installed.
+    #[serde(default)]
+    pub fallback: Option<PathBuf>,
     #[serde(default = "default_resolution")]
     pub resolution: String,
     #[serde(default = "default_skip")]
@@ -215,13 +219,15 @@ impl Default for Config {
             camera: vec![
                 CameraEntry {
                     name: "upper".into(),
-                    device: "/dev/video0".into(),
+                    device: "/dev/seedypod/camera-upper".into(),
+                    fallback: Some("/dev/video0".into()),
                     resolution: default_resolution(),
                     skip_frames: default_skip(),
                 },
                 CameraEntry {
                     name: "lower".into(),
-                    device: "/dev/video2".into(),
+                    device: "/dev/seedypod/camera-lower".into(),
+                    fallback: Some("/dev/video2".into()),
                     resolution: default_resolution(),
                     skip_frames: default_skip(),
                 },
@@ -605,14 +611,19 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # discovery = true
 # prefix = "homeassistant"
 
+# Cameras get stable names from udev rules keyed on their USB port
+# (`hald --list-cameras`, `hald --camera-rules`); /dev/videoN is only a
+# fallback because the numbering can swap across reboots.
 # [[camera]]
 # name = "upper"
-# device = "/dev/video0"
+# device = "/dev/seedypod/camera-upper"
+# fallback = "/dev/video0"
 # resolution = "1280x720"
 # skip_frames = 15
 # [[camera]]
 # name = "lower"
-# device = "/dev/video2"
+# device = "/dev/seedypod/camera-lower"
+# fallback = "/dev/video2"
 
 # Explicit device list. When absent, the stock set above is used. Kinds:
 # pct2075 | ina219 | dht20 | am2320 | dyp_a01 | over_temp_alert |

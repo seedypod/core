@@ -26,8 +26,8 @@ BCM numbering (not header pin numbers).
 | PCB temperature | I²C | 0x48 PCT2075 | all models | upstream |
 | Pump power | I²C | 0x40 INA219 | V / I / W | upstream |
 | Air temp + humidity | I²C | 0x5C AM2320 (Gardyn 1.0/2.0) · 0x38 DHT20 (3.0, Studio) | AM2320 needs a wake-up write before it ACKs; won't show in `i2cdetect` | upstream |
-| Upper camera | USB UVC | `/dev/video0` | through an on-board hub | upstream |
-| Lower camera | USB UVC | `/dev/video2` | | upstream |
+| Upper camera | USB UVC | `/dev/seedypod/camera-upper` (udev, by USB port; `/dev/video0` fallback) | through an on-board hub; port unverified | upstream |
+| Lower camera | USB UVC | `/dev/seedypod/camera-lower` (udev, by USB port; `/dev/video2` fallback) | port unverified | upstream |
 | Controller | — | Pi Zero W (early) / Zero 2 W | microSD boot; header soldered mirrored | upstream |
 
 ## Model detection
@@ -49,5 +49,5 @@ Studio tank ≈ 4 gal, Home ≈ 5 gal / 30 pods.
 1. Photograph both sides of the PCB, the Pi, header orientation, camera USB routing, PSU label → `docs/hardware/photos/`.
 2. `dd` the stock microSD to an image (store off-repo).
 3. Flash Raspberry Pi OS Lite 64-bit (Zero 2 W) with SSH/Wi-Fi/hostname preset.
-4. `sudo i2cdetect -y 1`; run upstream's `distance.py`, `light.py --on`, `pump.py --on --speed 20` (5 s, water present), both cameras — as throwaway probes only.
+4. `sudo i2cdetect -y 1`; run upstream's `distance.py`, `light.py --on`, `pump.py --on --speed 20` (5 s, water present), both cameras — as throwaway probes only. `hald --list-cameras` → record which USB port is the upper camera, so `hald --camera-rules` gets the default right.
 5. Update this table with verified values and the model; file ADR-0008.

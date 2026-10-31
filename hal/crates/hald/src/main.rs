@@ -6,6 +6,7 @@
 //!   MQTT with JSON lines for smoke tests and CI.
 //! * `--sim` swaps every driver for `hal-sim` and runs on virtual time.
 
+mod cameras;
 mod config;
 mod devices;
 mod engine;
@@ -18,7 +19,7 @@ mod mqtt;
 mod overlay;
 mod state;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::Arc;
@@ -57,6 +58,13 @@ struct Cli {
     /// Exit after this many telemetry ticks (for smoke tests).
     #[arg(long)]
     ticks: Option<u64>,
+    /// List the USB cameras (capture nodes) with their ports as JSON and exit.
+    #[arg(long)]
+    list_cameras: bool,
+    /// Print udev rules giving cameras stable names and exit. With no NAME=PORT
+    /// pairs, the first two cameras by port become upper and lower.
+    #[arg(long, num_args = 0.., value_name = "NAME=PORT")]
+    camera_rules: Option<Vec<String>>,
 }
 
 const DEFAULT_MQTT_URL: &str = "mqtt://127.0.0.1:1883";
@@ -70,6 +78,32 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     if cli.print_default_config {
         print!("{}", config::DEFAULT_CONFIG_TOML);
+        return Ok(());
+    }
+    if cli.list_cameras {
+        let found = cameras::discover(Path::new("/sys"), Path::new("/dev"));
+        let assigned = cameras::default_assignment(&found);
+        let rows: Vec<_> = found
+            .iter()
+            .map(|d| {
+                let name = assigned.iter().find(|(_, p)| *p == d.port).map(|(n, _)| n.clone());
+                serde_json::json!({ "device": d.device, "port": d.port, "name": d.name, "default_assignment": name,
+                                    "stable": name.as_deref().map(cameras::stable_path) })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+    if let Some(pairs) = &cli.camera_rules {
+        let assign = if pairs.is_empty() {
+            cameras::default_assignment(&cameras::discover(Path::new("/sys"), Path::new("/dev")))
+        } else {
+            cameras::parse_assignment(pairs).map_err(anyhow::Error::msg)?
+        };
+        if assign.is_empty() {
+            anyhow::bail!("no USB cameras found; plug them in or pass NAME=PORT pairs (see --list-cameras)");
+        }
+        print!("{}", cameras::rules(&assign));
         return Ok(());
     }
 

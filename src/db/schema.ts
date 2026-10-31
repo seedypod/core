@@ -3,7 +3,7 @@
  * same file (one unit, modest volume); split into a second DB like sleepypod's
  * biometrics.db only if it grows.
  */
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const deviceSettings = sqliteTable('device_settings', {
   id: integer().primaryKey().default(1),
@@ -28,6 +28,19 @@ export const deviceSettings = sqliteTable('device_settings', {
   mqttTlsEnabled: integer({ mode: 'boolean' }).notNull().default(false),
   mqttTlsInsecure: integer({ mode: 'boolean' }).notNull().default(false),
   captureIntervalMin: integer().notNull().default(60),
+  /** Analyser whose green fraction drives pod trends (ADR-0019). */
+  primaryAnalyzer: text().notNull().default('green-threshold'),
+  /** Store large analyser outputs (masks) in the blob sink. */
+  analysisArtifacts: integer({ mode: 'boolean' }).notNull().default(false),
+  /** Bearer token for POST /api/analyses/results; empty = ingest off. */
+  analysisIngestToken: text().notNull().default(''),
+  /** Opt-in S3-compatible mirror for stills and artifacts; unset = off. */
+  mirrorEndpoint: text(),
+  mirrorBucket: text(),
+  mirrorRegion: text().notNull().default('auto'),
+  mirrorPrefix: text().notNull().default(''),
+  mirrorAccessKeyId: text(),
+  mirrorSecretAccessKey: text(),
   updatedAt: text().notNull(),
 })
 
@@ -105,11 +118,27 @@ export const counters = sqliteTable('counters', {
   updatedAt: text().notNull(),
 })
 
-export const podGrowth = sqliteTable('pod_growth', {
+/**
+ * Capture analysis results (ADR-0019): one row per capture × analyser@version
+ * × pod × metric, so analysers compare on shared captures and a re-run at a
+ * new version sits beside the old rows instead of replacing them.
+ */
+export const analysisResults = sqliteTable('analysis_results', {
   id: integer().primaryKey({ autoIncrement: true }),
-  ts: text().notNull(),
-  slot: integer().notNull(),
-  /** Fraction of green pixels in the pod crop, 0–1. */
-  green: real().notNull(),
   captureId: text().notNull(),
-}, t => [index('pod_growth_slot_ts').on(t.slot, t.ts)])
+  /** Capture timestamp, denormalised so series queries never join. */
+  ts: text().notNull(),
+  camera: text({ enum: ['upper', 'lower'] }).notNull(),
+  analyzer: text().notNull(),
+  version: integer().notNull(),
+  source: text({ enum: ['device', 'remote'] }).notNull(),
+  slot: integer().notNull(),
+  metric: text().notNull(),
+  value: real().notNull(),
+  /** Small JSON; large outputs live in the blob sink under `artifact`. */
+  detail: text(),
+  artifact: text(),
+}, t => [
+  uniqueIndex('analysis_results_key').on(t.captureId, t.analyzer, t.version, t.slot, t.metric),
+  index('analysis_results_series').on(t.analyzer, t.metric, t.slot, t.ts),
+])

@@ -1,6 +1,6 @@
 import { decode } from 'jpeg-js'
-import type { Capture, Store } from '../store/types'
-import { defaultPodRects, greenFraction, growthTrend, type Rgba } from './greenArea'
+import type { Store } from '../store/types'
+import { growthTrend, type Rgba } from './greenArea'
 
 /** Decode a JPEG into RGBA; returns null for anything that isn't a JPEG (demo SVGs, stubs). */
 export function decodeJpeg(bytes: Uint8Array): Rgba | null {
@@ -14,22 +14,13 @@ export function decodeJpeg(bytes: Uint8Array): Rgba | null {
   }
 }
 
-/** Score every pod visible in a capture and persist the points. */
-export function analyzeCapture(store: Store, capture: Capture, bytes: Uint8Array): number {
-  const img = decodeJpeg(bytes)
-  if (!img) return 0
-  const rects = defaultPodRects(capture.camera, img.width, img.height)
-  const points = Object.entries(rects).map(([slot, rect]) => ({ ts: capture.ts, slot: Number(slot), green: Math.round(greenFraction(img, rect) * 1000) / 1000, captureId: capture.id }))
-  store.podGrowth.add(points)
-  return points.length
-}
-
 export interface PodTrend { slot: number, green: number | null, verdict: 'growing' | 'stalled' | 'declining' | 'unknown', slope: number, samples: number }
 
-export function podTrends(store: Store, slots = 30): PodTrend[] {
+/** Growth verdict per pod from one analyser's green fraction (the primary one unless named). */
+export function podTrends(store: Store, slots = 30, analyzer = store.settings.get().primaryAnalyzer): PodTrend[] {
   const out: PodTrend[] = []
   for (let slot = 1; slot <= slots; slot++) {
-    const series = store.podGrowth.series(slot, 48)
+    const series = store.analyses.series({ analyzer, slot, metric: 'green_fraction', limit: 48 }).map(p => ({ ts: p.ts, slot, green: p.value }))
     const t = growthTrend(series)
     out.push({ slot, green: series.at(-1)?.green ?? null, verdict: t.verdict, slope: Math.round(t.slope * 1000) / 1000, samples: series.length })
   }

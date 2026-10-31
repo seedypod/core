@@ -73,7 +73,7 @@ prints every key with its default; the important ones:
 | `[dosing]` | `enabled` | **false** | Phase 6.3, ADR-0014: off until you turn it on. |
 | `[dosing]` | `ml_per_s`, `default_dose_ml`, `max_single_ml`, `max_daily_ml`, `max_doses_per_day` | 1, 5, 10, 30, 4 | Hard daily cap; lockout after N doses until acknowledged. |
 | `[ha]` | `discovery`, `prefix` | true, `homeassistant` | |
-| `[[camera]]` | `name`, `device`, `resolution`, `skip_frames` | upper `/dev/video0`, lower `/dev/video2`, 1280x720, 15 | |
+| `[[camera]]` | `name`, `device`, `fallback`, `resolution`, `skip_frames` | upper `/dev/seedypod/camera-upper` (fallback `/dev/video0`), lower `/dev/seedypod/camera-lower` (fallback `/dev/video2`), 1280x720, 15 | See [Camera names](#camera-names) |
 
 ### Device list
 
@@ -83,7 +83,10 @@ from `[pins]` and `[i2c]`: `pct2075`, `ina219`, `dht20` *(optional)*,
 `light` (`pwm_light`) and `pump` (`pwm_pump`). Optional devices that fail to
 probe are skipped; required ones are kept and re-probed on every failed read.
 
-Explicit tables replace that list entirely:
+Explicit tables replace that list entirely, **including the water ranger the
+dry-run interlock needs** — list every part you keep. To add a probe
+(pH, EC, water temperature), prefer the app's **Sensors** screen, which appends
+instead (see *Sensors added from the app* below):
 
 ```toml
 [[sensor]]
@@ -101,7 +104,7 @@ pin = 5
 ```
 
 `hald --check` rejects unknown kinds and ids, missing `addr`/`pin`/`trigger`/`echo`,
-duplicate ids, and out-of-range limits, and prints the capability set the
+I²C addresses outside 0x08–0x77 or used twice, duplicate ids, and out-of-range limits, and prints the capability set the
 config yields. `--sim` honours the same tables, so a config can be exercised on
 a laptop first.
 
@@ -190,20 +193,60 @@ and `availability_topic = seedypod/<unit>/availability`.
 All sensors carry `state_class: measurement` and `value_template: {{ value_json.value }}`;
 the full JSON is attached as attributes.
 
+### Sensors added from the app
+
+`devices/set` (and the app's Sensors screen) adds and removes probes at
+runtime (ADR-0018). Addable kinds are `SensorKind` implementations, published
+with their calibration steps in the retained `devices` inventory: `ezo_ph`
+(0x63), `ezo_ec` (0x64) and `ezo_rtd` (0x66). An add goes live immediately:
+the driver is probed, joins the registry and `caps`, and HA discovery is
+republished. It is persisted in `<state_dir>/sensors.json` and appended to
+the configured list at every boot. Refusals: kind not addable, address
+outside 0x08–0x77 or in use, quantity already installed, probe not answering.
+Built-in (`hal.toml`) sensors can't be removed this way. The inventory also
+lists any configured sensor that failed to probe at boot, as `absent` with
+the error.
+
 ## HTTP
 
 | Endpoint | Returns |
 |---|---|
 | `GET /health` | `{ok, uptime_s, mqtt_connected}` |
-| `GET /system` | `SystemInfo` (same payload as the `system` topic) |
+| `GET /system` | `SystemInfo` (same payload as the `system` topic; reflects sensors added at runtime) |
 | `GET /state` | `{unitId, ts, sensors{id: Reading}, actuators{id: ActuatorState}, alerts{kind: Alert}, lightHoursTotal}` |
 | `GET /camera/<name>.jpg` | `image/jpeg`; one capture at a time per camera; `503` with the reason when the camera fails (and `camera_missing` is raised) |
 
 Captures shell out to `fswebcam -S <skip_frames> --no-banner` and reject
 anything that is not a plausible JPEG (upstream #143, #144).
 
+## Camera names
+
+USB cameras come up as `/dev/videoN` in whatever order they enumerate, so
+upper and lower can swap after a reboot. Each UVC camera also exposes a
+metadata node next to its capture node (`video0` + `video1`), which only
+breaks things if it gets the name. `hald` therefore prefers stable names
+pinned to the USB **port** by a udev rule that matches the capture node
+only (`ATTR{index}=="0"`), and falls back to `/dev/videoN` until the rule
+exists:
+
+```sh
+hald --list-cameras            # capture nodes, their ports, and the default assignment
+hald --camera-rules            # rules for that assignment: first port → upper, second → lower
+sudo hald --camera-rules upper=1-1.3:1.0 lower=1-1.2:1.0 \
+  | sudo tee /etc/udev/rules.d/70-seedypod-cameras.rules
+sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=video4linux
+ls -l /dev/seedypod/           # camera-upper, camera-lower
+```
+
+`scripts/install-hal` writes the rules on first install if it finds cameras,
+and prints which port became which name. If the photos come out swapped,
+rerun the third command with the ports exchanged. Which physical port feeds
+which camera on a Gardyn is still unverified (see the
+[hardware map](pin-map.md)).
+
 ## State file
 
+`<state_dir>/sensors.json` holds the sensors added from the app (above).
 `<state_dir>/state.json` (atomic write): `lightLevel`, `lightSince`,
 `lightHoursTotal` (cumulative, for LED ageing), `lastPumpRun`, `doses{id:
 ledger}`. On boot the light is restored to `lightLevel` without a glitch; on
@@ -228,7 +271,8 @@ Release, installs it to `/usr/local/bin/hald`, writes `/etc/seedypod/hal.toml`
 if absent (the commented defaults), creates the `seedypod` system user in
 `gpio`, `i2c`, `video`, enables I²C (`raspi-config nonint do_i2c 0`) and the
 PWM overlay (`dtoverlay=pwm,pin=18,func=2`, reboot required once), installs
-`fswebcam`, and installs/enables `hald.service` (`Restart=always`,
+`fswebcam`, pins camera names to USB ports (`/etc/udev/rules.d/70-seedypod-cameras.rules`,
+see [Camera names](#camera-names)), and installs/enables `hald.service` (`Restart=always`,
 `After=network-online.target`, hardened). `--binary ./hald` installs a local
 build; `--version vX.Y.Z` pins a release; `--no-enable` skips starting it.
 

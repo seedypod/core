@@ -1,5 +1,5 @@
-import { Settings } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { CloudUpload, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Card, CardHeader, KeyValue, SectionLabel } from '@/src/components/ds/core'
 import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
@@ -34,10 +34,13 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
     const rest: Record<string, unknown> = { ...d }
     delete rest.hasApiKey
     delete rest.hasMqttPassword
+    delete rest.hasAnalysisIngestToken
+    delete rest.hasMirrorSecret
     delete rest.updatedAt
     onSave(rest)
   }
   const dirty = JSON.stringify(d) !== JSON.stringify(s)
+  const [generated, setGenerated] = useState(false)
 
   return (
     <div className="mx-auto flex max-w-[960px] flex-col gap-4">
@@ -66,7 +69,8 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
 
       <Card>
         <CardHeader title="Cameras" />
-        <SettingRow label="Capture interval" sub="0 disables timelapse" divider={false}><Stepper value={num('captureIntervalMin', 60)} min={0} max={720} step={15} onChange={v => setD({ ...d, captureIntervalMin: v })} format={v => `${v} min`} /></SettingRow>
+        <SettingRow label="Capture interval" sub="0 disables timelapse"><Stepper value={num('captureIntervalMin', 60)} min={0} max={720} step={15} onChange={v => setD({ ...d, captureIntervalMin: v })} format={v => `${v} min`} /></SettingRow>
+        <SettingRow label="Keep analysis masks" sub="About 115 kB per photo; off spares the SD card" divider={false}><Toggle label="Keep analysis masks" on={!!d.analysisArtifacts} onChange={v => setD({ ...d, analysisArtifacts: v })} /></SettingRow>
       </Card>
 
       <Card>
@@ -84,6 +88,35 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
       </Card>
 
       <Card>
+        <CardHeader title="Off-device storage and analysis" subtitle="Opt-in. Off unless you fill these in; nothing leaves the unit otherwise." icon={CloudUpload} />
+        <SettingRow label="Mirror endpoint" sub="Any S3-compatible service: R2, MinIO, a NAS"><TextField value={str('mirrorEndpoint')} onChange={v => setD({ ...d, mirrorEndpoint: v || null })} placeholder="https://<account>.r2.cloudflarestorage.com" /></SettingRow>
+        <SettingRow label="Bucket"><TextField value={str('mirrorBucket')} onChange={v => setD({ ...d, mirrorBucket: v || null })} placeholder="seedypod" /></SettingRow>
+        <SettingRow label="Region"><TextField value={str('mirrorRegion')} onChange={v => setD({ ...d, mirrorRegion: v || 'auto' })} placeholder="auto" /></SettingRow>
+        <SettingRow label="Key prefix" sub="Folder inside the bucket, e.g. kitchen/"><TextField value={str('mirrorPrefix')} onChange={v => setD({ ...d, mirrorPrefix: v })} /></SettingRow>
+        <SettingRow label="Access key id"><TextField value={str('mirrorAccessKeyId')} onChange={v => setD({ ...d, mirrorAccessKeyId: v || null })} /></SettingRow>
+        <SettingRow label="Secret access key" sub={s.hasMirrorSecret ? 'set' : 'not set'}><TextField type="password" value={str('mirrorSecretAccessKey')} onChange={v => setD({ ...d, mirrorSecretAccessKey: v || null })} placeholder="••••••" /></SettingRow>
+        <MirrorControls />
+        <SettingRow
+          label="Result ingest token"
+          sub={generated ? 'Copy it now: it is hidden once saved' : s.hasAnalysisIngestToken ? 'set — remote workers can post results' : 'not set — POST /api/analyses/results is off'}
+          divider={false}
+        >
+          <div className="flex items-center gap-2">
+            <TextField type={generated ? 'text' : 'password'} value={str('analysisIngestToken')} onChange={v => setD({ ...d, analysisIngestToken: v })} placeholder="leave empty to disable" />
+            <Button
+              size="sm"
+              onClick={() => {
+                setGenerated(true)
+                setD({ ...d, analysisIngestToken: randomToken() })
+              }}
+            >
+              Generate
+            </Button>
+          </div>
+        </SettingRow>
+      </Card>
+
+      <Card>
         <CardHeader title="Wi-Fi" subtitle="Change networks, or hold the unit's button for 10 s to open a setup hotspot" />
         <SettingRow label="Network" divider={false}><Link to="/wifi" className="text-sm text-fg underline-offset-2 hover:underline">Open Wi-Fi settings</Link></SettingRow>
       </Card>
@@ -95,5 +128,33 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
         <KeyValue label="Unit id" value={system?.unitId ?? '—'} />
       </Card>
     </div>
+  )
+}
+
+function randomToken(): string {
+  const b = new Uint8Array(24)
+  crypto.getRandomValues(b)
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+}
+
+/** Test and back-fill the mirror using the saved settings. */
+function MirrorControls() {
+  const status = trpc.storage.mirror.useQuery(undefined, { refetchInterval: 5000 })
+  const test = trpc.storage.testMirror.useMutation()
+  const sync = trpc.storage.syncMirror.useMutation({ onSuccess: () => void status.refetch() })
+  const st = status.data
+  if (!st?.available) return null
+  return (
+    <SettingRow label="Mirror" sub={st.enabled ? `${st.uploaded} copied · ${st.pending} pending · ${st.failed} failed${st.lastError ? ` · ${st.lastError}` : ''}` : 'off — save an endpoint, bucket and keys to turn it on'}>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex gap-2">
+          <Button size="sm" disabled={!st.enabled || test.isPending} onClick={() => test.mutate()}>{test.isPending ? 'Testing…' : 'Test'}</Button>
+          <Button size="sm" disabled={!st.enabled || sync.isPending} onClick={() => sync.mutate()}>Copy existing photos</Button>
+        </div>
+        {test.data && <span className={`text-xs ${test.data.ok ? 'text-fg-2' : 'text-danger'}`}>{test.data.detail}</span>}
+        {sync.data && <span className="text-xs text-fg-2">{`Queued ${sync.data.queued} files`}</span>}
+        {sync.error && <span className="text-xs text-danger">{sync.error.message}</span>}
+      </div>
+    </SettingRow>
   )
 }

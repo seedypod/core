@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlertsRouteImport } from './routes/alerts'
+import { Route as AnalysisRouteImport } from './routes/analysis'
 import { Route as CamerasRouteImport } from './routes/cameras'
 import { Route as GrowRouteImport } from './routes/grow'
 import { Route as KioskRouteImport } from './routes/kiosk'
@@ -29,6 +30,11 @@ const IndexRoute = IndexRouteImport.update({
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnalysisRoute = AnalysisRouteImport.update({
+  id: '/analysis',
+  path: '/analysis',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CamerasRoute = CamerasRouteImport.update({
@@ -80,6 +86,7 @@ const WifiRoute = WifiRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/analysis': typeof AnalysisRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
@@ -93,6 +100,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/analysis': typeof AnalysisRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/analysis': typeof AnalysisRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
@@ -122,6 +131,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/alerts'
+    | '/analysis'
     | '/cameras'
     | '/grow'
     | '/kiosk'
@@ -135,6 +145,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/alerts'
+    | '/analysis'
     | '/cameras'
     | '/grow'
     | '/kiosk'
@@ -148,6 +159,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/alerts'
+    | '/analysis'
     | '/cameras'
     | '/grow'
     | '/kiosk'
@@ -162,6 +174,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
+  AnalysisRoute: typeof AnalysisRoute
   CamerasRoute: typeof CamerasRoute
   GrowRoute: typeof GrowRoute
   KioskRoute: typeof KioskRoute
@@ -187,6 +200,13 @@ declare module '@tanstack/react-router' {
       path: '/alerts'
       fullPath: '/alerts'
       preLoaderRoute: typeof AlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/analysis': {
+      id: '/analysis'
+      path: '/analysis'
+      fullPath: '/analysis'
+      preLoaderRoute: typeof AnalysisRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cameras': {
@@ -258,6 +278,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
+  AnalysisRoute: AnalysisRoute,
   CamerasRoute: CamerasRoute,
   GrowRoute: GrowRoute,
   KioskRoute: KioskRoute,
