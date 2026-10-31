@@ -51,7 +51,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install browser
-        if: matrix.task.name == 'Browser Tests'
+        # Playwright arrives with the first real e2e spec (Phase 4.3); until
+        # then tests/browser/run.mjs is a plain Node smoke and needs no browser.
+        if: matrix.task.name == 'Browser Tests' && hashFiles('node_modules/.bin/playwright') != ''
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run Task
