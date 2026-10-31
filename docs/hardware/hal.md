@@ -272,9 +272,15 @@ if absent (the commented defaults), creates the `seedypod` system user in
 `gpio`, `i2c`, `video`, enables I²C (`raspi-config nonint do_i2c 0`) and the
 PWM overlay (`dtoverlay=pwm,pin=18,func=2`, reboot required once), installs
 `fswebcam`, pins camera names to USB ports (`/etc/udev/rules.d/70-seedypod-cameras.rules`,
-see [Camera names](#camera-names)), and installs/enables `hald.service` (`Restart=always`,
-`After=network-online.target`, hardened). `--binary ./hald` installs a local
+see [Camera names](#camera-names)), installs Mosquitto with a listener on
+`127.0.0.1:1883` and no password (`/etc/mosquitto/conf.d/seedypod.conf`,
+written once), and installs/enables `hald.service` (`Restart=always`,
+`After=network-online.target mosquitto.service`, hardened). `--binary ./hald` installs a local
 build; `--version vX.Y.Z` pins a release; `--no-enable` skips starting it.
+`--mqtt-lan` adds a password-protected listener on port 1884 for Home
+Assistant on another machine and prints the `homeassistant` password once;
+`--no-broker` skips Mosquitto, for use with another broker such as Home
+Assistant's add-on ([Installation → Home Assistant](../INSTALLATION.md#4-home-assistant)).
 
 Operations: `journalctl -u hald -f`, `hald --config /etc/seedypod/hal.toml --check`,
 `mosquitto_sub -v -t 'seedypod/#'`. See [Debugging](../DEBUGGING.md).
