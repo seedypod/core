@@ -83,7 +83,10 @@ from `[pins]` and `[i2c]`: `pct2075`, `ina219`, `dht20` *(optional)*,
 `light` (`pwm_light`) and `pump` (`pwm_pump`). Optional devices that fail to
 probe are skipped; required ones are kept and re-probed on every failed read.
 
-Explicit tables replace that list entirely:
+Explicit tables replace that list entirely, **including the water ranger the
+dry-run interlock needs** — list every part you keep. To add a probe
+(pH, EC, water temperature), prefer the app's **Sensors** screen, which appends
+instead (see *Sensors added from the app* below):
 
 ```toml
 [[sensor]]
@@ -101,7 +104,7 @@ pin = 5
 ```
 
 `hald --check` rejects unknown kinds and ids, missing `addr`/`pin`/`trigger`/`echo`,
-duplicate ids, and out-of-range limits, and prints the capability set the
+I²C addresses outside 0x08–0x77 or used twice, duplicate ids, and out-of-range limits, and prints the capability set the
 config yields. `--sim` honours the same tables, so a config can be exercised on
 a laptop first.
 
@@ -187,12 +190,26 @@ and `availability_topic = seedypod/<unit>/availability`.
 All sensors carry `state_class: measurement` and `value_template: {{ value_json.value }}`;
 the full JSON is attached as attributes.
 
+### Sensors added from the app
+
+`devices/set` (and the app's Sensors screen) adds and removes probes at
+runtime (ADR-0018). Addable kinds are `SensorKind` implementations, published
+with their calibration steps in the retained `devices` inventory: `ezo_ph`
+(0x63), `ezo_ec` (0x64) and `ezo_rtd` (0x66). An add goes live immediately:
+the driver is probed, joins the registry and `caps`, and HA discovery is
+republished. It is persisted in `<state_dir>/sensors.json` and appended to
+the configured list at every boot. Refusals: kind not addable, address
+outside 0x08–0x77 or in use, quantity already installed, probe not answering.
+Built-in (`hal.toml`) sensors can't be removed this way. The inventory also
+lists any configured sensor that failed to probe at boot, as `absent` with
+the error.
+
 ## HTTP
 
 | Endpoint | Returns |
 |---|---|
 | `GET /health` | `{ok, uptime_s, mqtt_connected}` |
-| `GET /system` | `SystemInfo` (same payload as the `system` topic) |
+| `GET /system` | `SystemInfo` (same payload as the `system` topic; reflects sensors added at runtime) |
 | `GET /state` | `{unitId, ts, sensors{id: Reading}, actuators{id: ActuatorState}, alerts{kind: Alert}, lightHoursTotal}` |
 | `GET /camera/<name>.jpg` | `image/jpeg`; one capture at a time per camera; `503` with the reason when the camera fails (and `camera_missing` is raised) |
 
@@ -201,6 +218,7 @@ anything that is not a plausible JPEG (upstream #143, #144).
 
 ## State file
 
+`<state_dir>/sensors.json` holds the sensors added from the app (above).
 `<state_dir>/state.json` (atomic write): `lightLevel`, `lightSince`,
 `lightHoursTotal` (cumulative, for LED ageing), `lastPumpRun`, `doses{id:
 ledger}`. On boot the light is restored to `lightLevel` without a glitch; on
