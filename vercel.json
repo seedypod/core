@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "VITE_DEMO=1 pnpm build:web",
+  "outputDirectory": "web/dist",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": null,
+  "git": {
+    "deploymentEnabled": {
+      "*": false,
+      "dev": true
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

@@ -1,0 +1,57 @@
+name: Build & Package
+
+# Every branch gets a tarball artifact so a feature branch can be installed on
+# a unit for hardware testing (sleepypod `sp-update` pattern via nightly.link).
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Pin commit metadata into .git-info
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          jq -n \
+            --arg branch "$BRANCH" \
+            --arg hash "${SHA:0:7}" \
+            --arg title "$(git log -1 --format=%s "$SHA" 2>/dev/null || git log -1 --format=%s)" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{branch:$branch, commitHash:$hash, commitTitle:$title, buildDate:$date}' \
+            > .git-info
+      - name: Set install script default branch
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            sed -i "s|__BRANCH__|${BRANCH}|" scripts/install
+          fi
+      - name: Create deploy tarball
+        run: |
+          tar czf /tmp/leafypod-core.tar.gz \
+            --exclude='node_modules' --exclude='.git' --exclude='.env*' \
+            --exclude='*.db' --exclude='*.db-*' --exclude='test-results' \
+            --exclude='hal/target' --exclude='.claude' .
+          mv /tmp/leafypod-core.tar.gz .
+      - uses: actions/upload-artifact@v6
+        with:
+          name: leafypod-core
+          path: leafypod-core.tar.gz
+          retention-days: 14

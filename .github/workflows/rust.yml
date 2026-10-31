@@ -1,0 +1,77 @@
+name: HAL (Rust)
+
+on:
+  push:
+    branches: [dev]
+    paths: ['hal/**', '.github/workflows/rust.yml']
+  pull_request:
+    paths: ['hal/**', '.github/workflows/rust.yml']
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    working-directory: hal
+
+jobs:
+  check:
+    name: fmt + clippy + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hal
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          use_pypi: true
+          fail_ci_if_error: false
+          files: hal/lcov.info
+          flags: rust
+
+  cross:
+    name: build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Pi Zero W (ARMv6, 32-bit)
+          - target: arm-unknown-linux-gnueabihf
+          # Pi Zero 2 W / Pi 4 / Pi 5 (64-bit OS)
+          - target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hal
+          key: ${{ matrix.target }}
+      - name: Install cross
+        uses: taiki-e/install-action@cross
+      - run: cross build --release --target ${{ matrix.target }} -p hald
+      - uses: actions/upload-artifact@v6
+        with:
+          name: hald-${{ matrix.target }}
+          path: hal/target/${{ matrix.target }}/release/hald
+          retention-days: 14

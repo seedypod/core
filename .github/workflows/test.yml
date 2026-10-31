@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # Merge queue: the required checks must also report on the temporary
+  # merge-group branch or every queue entry fails.
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ${{ matrix.task.name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        task:
+          - { name: "Lint", cmd: "CHANGED=$(git diff --name-only --diff-filter=d origin/${BASE_REF#refs/heads/}...HEAD -- '*.ts' '*.tsx' | head -200); if [ -n \"$CHANGED\" ]; then echo \"$CHANGED\" | xargs -d '\\n' pnpm eslint --; else echo 'No TS/TSX files changed'; fi" }
+          - { name: "Typecheck", cmd: "pnpm build:web >/dev/null && pnpm tsc" }
+          - { name: "Unit Tests", cmd: "pnpm test run --coverage --passWithNoTests" }
+          - { name: "Browser Tests", cmd: "NODE_ENV=production CI=1 pnpm build && pnpm test:browser" }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install browser
+        if: matrix.task.name == 'Browser Tests'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Task
+        run: ${{ matrix.task.cmd }}
+        env:
+          NODE_ENV: test
+          # A PR carries base.ref; a merge-group run carries refs/heads/<base>.
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref || 'dev' }}
+
+      - name: Upload coverage reports to Codecov
+        if: matrix.task.name == 'Unit Tests' && !cancelled()
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          use_pypi: true
+          fail_ci_if_error: false
+          flags: javascript
+
+      - name: Upload test results to Codecov
+        if: matrix.task.name == 'Unit Tests' && !cancelled()
+        uses: codecov/codecov-action@v5
+        with:
+          report_type: test_results
+          use_oidc: true
+          use_pypi: true
+          fail_ci_if_error: false
+          files: test-results/junit.xml
+          flags: javascript
+
+      - name: Upload browser evidence
+        if: matrix.task.name == 'Browser Tests' && !cancelled()
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-results
+          path: test-results/browser
+          retention-days: 7

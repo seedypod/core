@@ -1,0 +1,30 @@
+// @ts-check
+/** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
+export default {
+  packageManager: 'pnpm',
+  plugins: ['@stryker-mutator/vitest-runner', '@stryker-mutator/typescript-checker'],
+  testRunner: 'vitest',
+  vitest: { configFile: 'vitest.config.mts' },
+  checkers: ['typescript'],
+  tsconfigFile: 'tsconfig.json',
+  coverageAnalysis: 'perTest',
+  mutate: [
+    'src/server/**/*.ts',
+    'src/mcp/**/*.ts',
+    'src/hardware/**/*.ts',
+    'src/lib/**/*.ts',
+    'src/scheduler/**/*.ts',
+    'src/grow/**/*.ts',
+    'src/alerts/**/*.ts',
+    '!src/**/tests/**',
+    '!src/**/*.test.ts',
+    '!src/**/*.d.ts',
+  ],
+  reporters: ['html', 'clear-text', 'progress', 'json'],
+  htmlReporter: { fileName: 'reports/mutation/index.html' },
+  jsonReporter: { fileName: 'reports/mutation/report.json' },
+  incrementalFile: 'reports/mutation/incremental.json',
+  tempDirName: '.stryker-tmp',
+  cleanTempDir: true,
+  thresholds: { high: 80, low: 60, break: null },
+}

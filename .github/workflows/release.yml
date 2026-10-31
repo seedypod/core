@@ -1,0 +1,107 @@
+name: Analyze & Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  hal:
+    name: hald ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [arm-unknown-linux-gnueabihf, aarch64-unknown-linux-gnu]
+    defaults:
+      run:
+        working-directory: hal
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hal
+          key: ${{ matrix.target }}
+      - uses: taiki-e/install-action@cross
+      - run: cross build --release --target ${{ matrix.target }} -p hald
+      - run: cp target/${{ matrix.target }}/release/hald hald-${{ matrix.target }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: hald-${{ matrix.target }}
+          path: hal/hald-${{ matrix.target }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: hal
+    permissions:
+      contents: write # to be able to publish a GitHub release
+      issues: write # to be able to comment on released issues
+      pull-requests: write # to be able to comment on released pull requests
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Pin commit metadata into .git-info
+        run: |
+          jq -n \
+            --arg branch "${{ github.ref_name }}" \
+            --arg hash "${GITHUB_SHA:0:7}" \
+            --arg title "$(git log -1 --format=%s)" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{branch:$branch, commitHash:$hash, commitTitle:$title, buildDate:$date}' \
+            > .git-info
+
+      - name: Set install script default branch
+        run: sed -i 's/__BRANCH__/${{ github.ref_name }}/' scripts/install
+
+      - name: Create deploy tarball
+        run: |
+          tar czf /tmp/leafypod-core.tar.gz \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='.env*' \
+            --exclude='*.db' \
+            --exclude='*.db-*' \
+            --exclude='test-results' \
+            --exclude='hal/target' \
+            --exclude='.claude' \
+            .
+          mv /tmp/leafypod-core.tar.gz .
+
+      - name: Download hald binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: hald-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Refresh tags (force, prune)
+        run: git fetch --tags --force --prune --prune-tags origin
+
+      - name: Semantic Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm dlx semantic-release

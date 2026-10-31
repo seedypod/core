@@ -1,0 +1,79 @@
+codecov:
+  require_ci_to_pass: true
+  notify:
+    wait_for_ci: true
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+      javascript:
+        flags:
+          - javascript
+        target: auto
+        threshold: 1%
+      rust:
+        flags:
+          - rust
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        # Patch allows headroom for view-heavy PRs: chart/UI components leave a
+        # band of framework rendering internals (e.g. recharts tick/tooltip
+        # formatters) that don't execute under jsdom. Project gate stays strict
+        # at 1%; this only relaxes the per-PR diff requirement.
+        threshold: 8%
+
+# Carry forward each flag's last good coverage when its workflow didn't run
+# on this commit (e.g. rust.yml is path-filtered to hal/**, so
+# a TS-only PR must not show rust coverage as 0%).
+flag_management:
+  default_rules:
+    carryforward: true
+  individual_flags:
+    - name: javascript
+      paths:
+        - src/
+        - server/
+        - web/
+        - lib/
+    - name: rust
+      paths:
+        - hal/
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+        threshold: 1%
+  individual_components:
+    - component_id: javascript
+      name: TypeScript / React
+      paths:
+        - src/**
+        - server/**
+        - web/**
+        - lib/**
+    - component_id: rust
+      name: Rust HAL (hald)
+      paths:
+        - hal/**
+
+comment:
+  layout: "header, diff, flags, components, files"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "hal/**/tests/**"
+  - "**/tests/**"
+  - ".next/**"
+  - "node_hal/**"
+  - "scripts/**"
