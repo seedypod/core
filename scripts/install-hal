@@ -2,18 +2,139 @@
 # seedypod HAL (hald) installer for a Raspberry Pi running Raspberry Pi OS.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 #        scripts/install-hal [--version vX.Y.Z] [--binary ./hald] [--no-enable]
+#                            [--mqtt-lan | --no-broker] [--no-wear]
 #
 # Downloads the hald binary for this CPU from the latest GitHub Release of
 # seedypod/core, installs it to /usr/local/bin, writes a commented
 # /etc/seedypod/hal.toml if absent, creates the `seedypod` service user in the
-# gpio/i2c/video groups, enables I²C and the PWM overlay, installs and enables
-# hald.service. Re-running upgrades the binary and leaves hal.toml alone.
+# gpio/i2c/video groups, enables I²C and the PWM overlay, installs the
+# Mosquitto MQTT broker (127.0.0.1:1883, for hald and core on this Pi), and
+# installs and enables hald.service. It also cuts SD card writes (ADR-0021):
+# the journal moves to RAM, swap moves to zram, and / is mounted noatime; each
+# change is checked and undone if it doesn't take. Re-running upgrades the
+# binary, reapplies those settings and leaves hal.toml and the broker config
+# alone.
+#   --mqtt-lan   also open port 1884 to the LAN with a password, for Home
+#                Assistant on another machine (prints the password once)
+#   --no-broker  skip Mosquitto: you point hald and core at another broker,
+#                such as Home Assistant's Mosquitto add-on
+#   --no-wear    leave journald, swap and the root mount options as they are
 set -euo pipefail
+
+# ---- SD card wear (ADR-0021) ---------------------------------------------------
+# Each change is checked once applied and rolled back if the check fails, so a
+# setting this OS can't take leaves it as it was. ROOT prefixes the files these
+# touch; tests/scripts/install-hal.wear.test.ts sources this file with
+# SEEDYPOD_LIB_ONLY=1 and runs them against a scratch root with stub commands.
+ROOT="${SEEDYPOD_ROOT:-}"
+JOURNALD_CONF="$ROOT/etc/systemd/journald.conf.d/50-seedypod-volatile.conf"
+ZRAM_CONF="$ROOT/etc/systemd/zram-generator.conf"
+ZRAM_GENERATOR="$ROOT/usr/lib/systemd/system-generators/zram-generator"
+
+# The journal is the largest steady writer on an idle Pi. Logs then last until reboot.
+wear_journald() {
+  local want=$'[Journal]\nStorage=volatile\nRuntimeMaxUse=32M'
+  if [ -f "$JOURNALD_CONF" ] && grep -v '^#' "$JOURNALD_CONF" | cmp -s - <(printf '%s\n' "$want"); then
+    echo "→ journal already kept in RAM"; return 0
+  fi
+  $SUDO mkdir -p "$(dirname "$JOURNALD_CONF")"
+  printf '%s\n' "# Written by seedypod scripts/install-hal (ADR-0021): logs in RAM, lost on reboot." "$want" | $SUDO tee "$JOURNALD_CONF" >/dev/null
+  if $SUDO systemctl restart systemd-journald && systemctl is-active --quiet systemd-journald; then
+    echo "→ journal kept in RAM (32 MB, cleared on reboot; docs/DEBUGGING.md shows how to keep it for a session)"
+    return 0
+  fi
+  $SUDO rm -f "$JOURNALD_CONF"
+  $SUDO systemctl restart systemd-journald || true
+  echo "   journal-in-RAM didn't take; left journald as it was" >&2
+  return 1
+}
+
+zram_active() { swapon --show=NAME --noheadings 2>/dev/null | grep '^/dev/zram' >/dev/null; }
+
+# dphys-swapfile pages to the card; zram compresses in RAM, which suits a 512 MB board.
+wear_swap() {
+  if zram_active; then
+    echo "→ swap already on zram"
+  else
+    if [ ! -x "$ZRAM_GENERATOR" ] && command -v apt-get >/dev/null 2>&1; then
+      $SUDO apt-get install -y -q systemd-zram-generator >/dev/null || true
+    fi
+    if [ ! -x "$ZRAM_GENERATOR" ]; then
+      echo "   zram isn't available (no systemd-zram-generator); swap left as it was" >&2
+      return 1
+    fi
+    $SUDO mkdir -p "$(dirname "$ZRAM_CONF")"
+    $SUDO tee "$ZRAM_CONF" >/dev/null <<'CONF'
+# Written by seedypod scripts/install-hal (ADR-0021): swap in compressed RAM, not on the SD card.
+[zram0]
+zram-size = min(ram / 2, 512)
+compression-algorithm = zstd
+swap-priority = 100
+CONF
+    $SUDO systemctl daemon-reload
+    if ! { $SUDO systemctl start dev-zram0.swap && zram_active; }; then
+      $SUDO systemctl stop dev-zram0.swap >/dev/null 2>&1 || true
+      $SUDO rm -f "$ZRAM_CONF"
+      $SUDO systemctl daemon-reload
+      echo "   zram swap didn't start; swap left as it was" >&2
+      return 1
+    fi
+    echo "→ swap on zram (compressed RAM)"
+  fi
+  # Only once zram is up, so the board is never left without swap.
+  if command -v dphys-swapfile >/dev/null 2>&1; then
+    $SUDO dphys-swapfile swapoff >/dev/null 2>&1 || true
+    $SUDO dphys-swapfile uninstall >/dev/null 2>&1 || true
+    $SUDO systemctl disable --now dphys-swapfile >/dev/null 2>&1 || true
+    echo "→ SD card swapfile (dphys-swapfile) off"
+  fi
+}
+
+root_opts() { awk '$1 !~ /^#/ && $2 == "/" { print $4 }' "$1"; }
+
+# Stops a metadata write on every file read.
+wear_noatime() {
+  local fstab="$ROOT/etc/fstab"
+  if [ ! -f "$fstab" ] || [ -z "$(root_opts "$fstab")" ]; then
+    echo "   no / entry in fstab; root mount options left as they are" >&2
+    return 1
+  fi
+  if root_opts "$fstab" | tr ',' '\n' | grep -x noatime >/dev/null; then
+    echo "→ / already mounted noatime"; return 0
+  fi
+  local backup="$fstab.seedypod-bak"
+  $SUDO cp -p "$fstab" "$backup"
+  awk 'BEGIN { OFS = "\t" } $1 !~ /^#/ && $2 == "/" { $4 = $4 ",noatime" } { print }' "$backup" | $SUDO tee "$fstab" >/dev/null
+  if findmnt --verify --tab-file "$fstab" >/dev/null 2>&1 \
+    && $SUDO mount -o remount,noatime / && findmnt -n -o OPTIONS / | tr ',' '\n' | grep -x noatime >/dev/null; then
+    $SUDO rm -f "$backup"
+    echo "→ / mounted noatime"
+    return 0
+  fi
+  $SUDO cp -p "$backup" "$fstab"
+  $SUDO rm -f "$backup"
+  $SUDO mount -o remount / >/dev/null 2>&1 || true
+  echo "   noatime didn't take; fstab restored" >&2
+  return 1
+}
+
+apply_wear_settings() {
+  local failed=0
+  wear_journald || failed=1
+  wear_swap || failed=1
+  wear_noatime || failed=1
+  if [ "$failed" -ne 0 ]; then echo "   some SD card settings were skipped (above); the rest are in place" >&2; fi
+  return 0
+}
+
+if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
 VERSION="${SEEDYPOD_HAL_VERSION:-latest}"
 BINARY=""
 ENABLE=1
+BROKER=local
+WEAR=1
 PREFIX=/usr/local/bin
 CONF_DIR=/etc/seedypod
 STATE_DIR=/var/lib/seedypod
@@ -24,7 +145,10 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$2"; shift 2 ;;
     --binary) BINARY="$2"; shift 2 ;;
     --no-enable) ENABLE=0; shift ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    --mqtt-lan) BROKER=lan; shift ;;
+    --no-broker) BROKER=none; shift ;;
+    --no-wear) WEAR=0; shift ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -72,6 +196,17 @@ for g in gpio i2c video; do
 done
 $SUDO mkdir -p "$CONF_DIR" "$STATE_DIR"
 $SUDO chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
+# Core runs as the install user and reads hal.toml, hald's state and the broker
+# password for its backups (ADR-0021): it joins the seedypod group, read-only.
+CORE_USER="${SEEDYPOD_CORE_USER:-${SUDO_USER:-}}"
+if [ -z "$CORE_USER" ] && [ "$(id -u)" -ne 0 ]; then CORE_USER="$(id -un)"; fi
+if [ -z "$CORE_USER" ] && [ -d /opt/seedypod ]; then CORE_USER="$(stat -c %U /opt/seedypod 2>/dev/null || true)"; fi
+if [ -n "$CORE_USER" ] && [ "$CORE_USER" != root ] && id -u "$CORE_USER" >/dev/null 2>&1; then
+  $SUDO usermod -aG "$SERVICE_USER" "$CORE_USER"
+  echo "→ $CORE_USER can read $CONF_DIR and $STATE_DIR (group $SERVICE_USER) for backups"
+fi
+$SUDO chgrp "$SERVICE_USER" "$CONF_DIR"
+$SUDO chmod 0755 "$CONF_DIR"
 
 # ---- binary and config --------------------------------------------------------
 $SUDO install -m 0755 "$TMP/hald" "$PREFIX/hald"
@@ -115,12 +250,68 @@ if [ ! -f "$RULES" ]; then
   fi
 fi
 
+# ---- SD card wear ------------------------------------------------------------------
+if [ "$WEAR" -eq 1 ] && [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then
+  apply_wear_settings
+fi
+
+# ---- MQTT broker ---------------------------------------------------------------
+# hald and core talk over MQTT and both default to mqtt://127.0.0.1:1883.
+MOSQ_CONF=/etc/mosquitto/conf.d/seedypod.conf
+MOSQ_PASSWD=/etc/mosquitto/seedypod.passwd
+if [ "$BROKER" != none ]; then
+  if ! command -v mosquitto >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      echo "→ installing Mosquitto (MQTT broker)"
+      $SUDO apt-get install -y -q mosquitto mosquitto-clients >/dev/null
+    else
+      echo "   no apt-get: install an MQTT broker yourself, or rerun with --no-broker" >&2
+    fi
+  fi
+  if [ -d /etc/mosquitto/conf.d ] && [ ! -f "$MOSQ_CONF" ]; then
+    echo "→ writing $MOSQ_CONF (127.0.0.1:1883, no password: only processes on this Pi can reach it)"
+    $SUDO tee "$MOSQ_CONF" >/dev/null <<'CONF'
+# Written by seedypod scripts/install-hal. Each listener has its own auth.
+per_listener_settings true
+
+# hald and core on this Pi.
+listener 1883 127.0.0.1
+allow_anonymous true
+CONF
+  fi
+  if [ "$BROKER" = lan ] && [ -f "$MOSQ_CONF" ] && ! grep -q '^listener 1884' "$MOSQ_CONF"; then
+    HA_PASS="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
+    $SUDO mosquitto_passwd -b -c "$MOSQ_PASSWD" homeassistant "$HA_PASS"
+    # Mosquitto warns (and newer releases refuse) unless its own user owns the file and
+    # it isn't world-readable; group seedypod lets core put it in backups (ADR-0021).
+    $SUDO chown "mosquitto:$SERVICE_USER" "$MOSQ_PASSWD" 2>/dev/null || true
+    $SUDO chmod 0640 "$MOSQ_PASSWD"
+    $SUDO tee -a "$MOSQ_CONF" >/dev/null <<CONF
+
+# Home Assistant and other LAN clients, with a password ($MOSQ_PASSWD).
+listener 1884
+allow_anonymous false
+password_file $MOSQ_PASSWD
+CONF
+    echo "→ MQTT for Home Assistant: $(hostname).local port 1884, user homeassistant, password $HA_PASS"
+    echo "   (shown once; change it with: sudo mosquitto_passwd $MOSQ_PASSWD homeassistant)"
+  fi
+  if [ -f "$MOSQ_PASSWD" ]; then
+    $SUDO chown "mosquitto:$SERVICE_USER" "$MOSQ_PASSWD" 2>/dev/null || true
+    $SUDO chmod 0640 "$MOSQ_PASSWD"
+  fi
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files mosquitto.service >/dev/null 2>&1; then
+    $SUDO systemctl enable mosquitto.service >/dev/null 2>&1 || true
+    $SUDO systemctl restart mosquitto.service
+  fi
+fi
+
 # ---- systemd ---------------------------------------------------------------
 $SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT
 [Unit]
 Description=seedypod hardware daemon (hald)
 Documentation=https://github.com/$REPO/blob/main/docs/hardware/hal.md
-After=network-online.target
+After=network-online.target mosquitto.service
 Wants=network-online.target
 
 [Service]
@@ -145,6 +336,8 @@ WantedBy=multi-user.target
 UNIT
 
 $SUDO systemctl daemon-reload
+# A running core only picks up the new group on restart.
+$SUDO systemctl try-restart seedypod-core.service >/dev/null 2>&1 || true
 if [ "$ENABLE" -eq 1 ]; then
   $SUDO systemctl enable hald.service >/dev/null
   $SUDO systemctl restart hald.service

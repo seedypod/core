@@ -66,6 +66,34 @@ describe('S3Sink', () => {
     configured(store)
     expect(mirrorConfig({ ...store.settings.get(), mirrorRegion: '' })?.region).toBe('auto')
   })
+  it('lists under a folder, strips the prefix and follows continuation tokens', async () => {
+    const pages: Record<string, string> = {
+      '': `<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>t&amp;2</NextContinuationToken>
+        <Contents><Key>kitchen/backups/seedypod-backup-u-20261001-030000.tar.gz</Key><LastModified>2026-10-01T03:00:01.000Z</LastModified><Size>2048</Size></Contents></ListBucketResult>`,
+      't&2': `<ListBucketResult><IsTruncated>false</IsTruncated>
+        <Contents><Key>kitchen/backups/seedypod-backup-u-20261002-030000.tar.gz</Key><LastModified>2026-10-02T03:00:01.000Z</LastModified><Size>4096</Size></Contents></ListBucketResult>`,
+    }
+    const seen: URL[] = []
+    const sink = new S3Sink(cfg, (async (input: RequestInfo | URL) => {
+      const url = new URL((input as Request).url)
+      seen.push(url)
+      return new Response(pages[url.searchParams.get('continuation-token') ?? ''])
+    }) as typeof fetch)
+    const got = await sink.list('backups/')
+    expect(got).toEqual([
+      { key: 'backups/seedypod-backup-u-20261001-030000.tar.gz', size: 2048, lastModified: '2026-10-01T03:00:01.000Z' },
+      { key: 'backups/seedypod-backup-u-20261002-030000.tar.gz', size: 4096, lastModified: '2026-10-02T03:00:01.000Z' },
+    ])
+    expect(seen[0]?.pathname).toBe('/pods')
+    expect(seen[0]?.searchParams.get('prefix')).toBe('kitchen/backups/')
+    expect(seen[0]?.searchParams.get('list-type')).toBe('2')
+    expect(seen[1]?.searchParams.get('continuation-token')).toBe('t&2')
+  })
+
+  it('surfaces a failed listing', async () => {
+    const sink = new S3Sink(cfg, (async () => new Response('AccessDenied', { status: 403 })) as typeof fetch)
+    await expect(sink.list('backups/')).rejects.toThrow(/LIST backups\/: 403 AccessDenied/)
+  })
 })
 
 describe('MirroredSink', () => {
@@ -143,5 +171,24 @@ describe('MirroredSink', () => {
     expect(await sink.get('x')).toBeNull()
     const blank: BlobSink = { put: async k => k, get: async () => new Uint8Array([0]), remove: async () => {} }
     expect((await new MirroredSink({ local: new MemorySink(), store, remote: () => blank }).test()).ok).toBe(false)
+  })
+  it('upload goes through the retry queue and resolves once the object is in the bucket', async () => {
+    const store = new MemoryStore()
+    configured(store)
+    const s3 = fakeS3(1)
+    const sink = new MirroredSink({ local: new MemorySink(), store, remote: c => new S3Sink(c, s3.fetchImpl), retryDelayMs: 1 })
+    await sink.upload('backups/b.tar.gz', new Uint8Array([1, 2]))
+    expect([...s3.objects.get('/pods/kitchen/backups/b.tar.gz') ?? []]).toEqual([1, 2])
+    expect(s3.requests.find(r => r.url.endsWith('b.tar.gz'))?.headers.get('content-type')).toBe('application/gzip')
+    expect(sink.status()).toMatchObject({ uploaded: 1, failed: 0 })
+  })
+
+  it('upload rejects after the retries, raising mirror_failed, and without a mirror', async () => {
+    const store = new MemoryStore()
+    await expect(new MirroredSink({ local: new MemorySink(), store }).upload('k', new Uint8Array())).rejects.toThrow(/not configured/)
+    configured(store)
+    const sink = new MirroredSink({ local: new MemorySink(), store, remote: c => new S3Sink(c, fakeS3(9).fetchImpl), retryDelayMs: 1, attempts: 2 })
+    await expect(sink.upload('backups/b.tar.gz', new Uint8Array([1]))).rejects.toThrow(/503 SlowDown/)
+    expect(store.alerts.list({ activeOnly: true }).map(a => a.kind)).toEqual(['mirror_failed'])
   })
 })

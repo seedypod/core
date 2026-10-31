@@ -159,6 +159,31 @@ for (const [name, make] of impls) {
       expect(store.counters.add('light_hours', 2, 't')).toBe(3.5)
       expect(store.counters.get('nothing')).toBe(0)
     })
+
+    it('backups log newest first and finds the last success per destination', () => {
+      store = make()
+      expect(store.backups.lastSuccess()).toBeNull()
+      store.backups.add({ ts: '2026-10-01T03:00:00Z', destination: 'bucket', name: 'a', bytes: 10, ok: true, detail: '' })
+      store.backups.add({ ts: '2026-10-02T03:00:00Z', destination: 'bucket', name: 'b', bytes: 0, ok: false, detail: 'timeout' })
+      const d = store.backups.add({ ts: '2026-10-01T12:00:00Z', destination: 'download', name: 'c', bytes: 20, ok: true, detail: '' })
+      expect(d.id).toBeGreaterThan(0)
+      expect(store.backups.list().map(r => r.name)).toEqual(['b', 'c', 'a'])
+      expect(store.backups.list(1)[0]).toMatchObject({ name: 'b', ok: false, detail: 'timeout', destination: 'bucket' })
+      expect(store.backups.lastSuccess()?.name).toBe('c')
+      expect(store.backups.lastSuccess('bucket')?.name).toBe('a')
+    })
+
+    it('flash samples keep order, upsert on ts and prune by age', () => {
+      store = make()
+      expect(store.flash.last()).toBeNull()
+      store.flash.add({ ts: '2026-10-02T00:00:00Z', sectors: 200, bytes: 51200 })
+      store.flash.add({ ts: '2026-10-01T00:00:00Z', sectors: 100, bytes: 0 })
+      store.flash.add({ ts: '2026-10-02T00:00:00Z', sectors: 300, bytes: 102400 })
+      expect(store.flash.last()).toEqual({ ts: '2026-10-02T00:00:00Z', sectors: 300, bytes: 102400 })
+      expect(store.flash.since('2026-10-01T00:00:00Z').map(s => s.sectors)).toEqual([100, 300])
+      expect(store.flash.prune('2026-10-02T00:00:00Z')).toBe(1)
+      expect(store.flash.since('2000-01-01T00:00:00Z')).toHaveLength(1)
+    })
   })
 }
 
@@ -188,6 +213,48 @@ describe('SqliteStore on disk', () => {
       expect(store.analyses.forCapture('pruned-long-ago')).toMatchObject([{ camera: 'upper', slot: 3 }])
       expect(store.settings.get().primaryAnalyzer).toBe('green-threshold')
       store.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('starts a new database on Welcome, but migrates an existing one as set up', () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    try {
+      const fresh = new SqliteStore({ url: join(root, 'fresh.db') })
+      expect(fresh.settings.get().setupComplete).toBe(false)
+      fresh.close()
+      // A database from before migration 0007, with its settings row.
+      const url = join(root, 'old.db')
+      const journal = JSON.parse(readFileSync(join(defaultMigrationsFolder(), 'meta/_journal.json'), 'utf8')) as { entries: { tag: string }[] }
+      const old = join(root, 'migrations-0006')
+      cpSync(defaultMigrationsFolder(), old, { recursive: true })
+      writeFileSync(join(old, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.filter(e => !e.tag.startsWith('0007')) }))
+      const db = new Database(url)
+      migrate(drizzle(db), { migrationsFolder: old })
+      db.prepare('INSERT INTO device_settings (id, updatedAt) VALUES (1, ?)').run('2026-10-01T00:00:00Z')
+      db.close()
+      const after = new SqliteStore({ url })
+      expect(after.settings.get().setupComplete).toBe(true)
+      after.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('backs up to a single-file copy that counts as set up', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    try {
+      const store = new SqliteStore({ url: join(root, 'live.db') })
+      store.settings.update({ unitName: 'Kitchen' })
+      await store.backupTo(join(root, 'copy.db'))
+      store.close()
+      expect(existsSync(join(root, 'copy.db-wal'))).toBe(false)
+      const copy = new SqliteStore({ url: join(root, 'copy.db') })
+      expect(copy.settings.get()).toMatchObject({ unitName: 'Kitchen', setupComplete: true })
+      copy.close()
     }
     finally {
       rmSync(root, { recursive: true, force: true })

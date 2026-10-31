@@ -1,24 +1,38 @@
 #!/usr/bin/env bash
 # seedypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit).
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
-#        scripts/install [--branch dev] [--prefix /opt/seedypod]
+#        scripts/install [--branch dev] [--prefix /opt/seedypod] [--restore <file|url>]
 # Installs Node (via the pinned .node-version), unpacks the release tarball,
-# installs production deps, and enables seedypod-core.service on :3000.
-# The Rust HAL (hald) is installed separately by scripts/install-hal.
+# installs production deps, and enables seedypod-core.service on :3000. It also
+# installs the restore helper (/usr/local/sbin/seedypod-restore, ADR-0021) and
+# lets this user run it with sudo, for that one path.
+#   --restore <file|url>  then restore that backup bundle (seedypod-backup-….tar.gz)
+#                         instead of choosing on the Welcome screen
+# The Rust HAL (hald) is installed separately by scripts/install-hal; on a new
+# card, run it first so the restore brings hald's state back too.
 set -euo pipefail
 
 BRANCH="${SEEDYPOD_BRANCH:-__BRANCH__}"
 PREFIX="${SEEDYPOD_PREFIX:-/opt/seedypod}"
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
+RESTORE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --branch) BRANCH="$2"; shift 2 ;;
     --prefix) PREFIX="$2"; shift 2 ;;
+    --restore) RESTORE="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [ "$BRANCH" = "__BRANCH__" ] && BRANCH=main
+# The installer cd's into $PREFIX, so a local bundle needs its full path.
+case "$RESTORE" in
+  ""|http://*|https://*) ;;
+  *)
+    [ -f "$RESTORE" ] || { echo "no such backup: $RESTORE" >&2; exit 2; }
+    RESTORE="$(cd "$(dirname "$RESTORE")" && pwd)/$(basename "$RESTORE")" ;;
+esac
 
 if [ "$BRANCH" = "main" ]; then
   TARBALL_URL="https://github.com/$REPO/releases/latest/download/seedypod-core.tar.gz"
@@ -72,6 +86,37 @@ User=$USER
 [Install]
 WantedBy=multi-user.target
 UNIT
+# Restore helper (ADR-0021): root-owned, with this prefix written in, so it never
+# loads anything from $PREFIX (which this user owns). Core runs it through sudo.
+HELPER=/usr/local/sbin/seedypod-restore
+sed "s#__PREFIX__#$PREFIX#" "$PREFIX/scripts/seedypod-restore.cjs" | sudo tee "$HELPER" >/dev/null
+sudo chown root:root "$HELPER"
+sudo chmod 0755 "$HELPER"
+SUDOERS_TMP=$(mktemp)
+echo "$USER ALL=(root) NOPASSWD: $HELPER" > "$SUDOERS_TMP"
+if sudo visudo -cf "$SUDOERS_TMP" >/dev/null; then
+  sudo install -m 0440 -o root -g root "$SUDOERS_TMP" /etc/sudoers.d/seedypod-restore
+else
+  echo "   couldn't validate the sudoers rule for $HELPER; restore from the web UI is off" >&2
+fi
+rm -f "$SUDOERS_TMP"
+
+# Backups read hal.toml, hald's state and the broker password through the seedypod
+# group that install-hal creates (ADR-0021); install-hal adds us too if it runs later.
+if getent group seedypod >/dev/null 2>&1; then sudo usermod -aG seedypod "$USER"; fi
+
 sudo systemctl daemon-reload
-sudo systemctl enable --now seedypod-core.service
+sudo systemctl enable seedypod-core.service >/dev/null
+sudo systemctl restart seedypod-core.service
+if [ -n "$RESTORE" ]; then
+  BUNDLE="$RESTORE"
+  case "$RESTORE" in
+    http://*|https://*)
+      BUNDLE="$TMP/restore.tar.gz"
+      echo "→ downloading $RESTORE"
+      curl -fsSL "$RESTORE" -o "$BUNDLE" ;;
+  esac
+  echo "→ restoring $RESTORE"
+  sudo "$HELPER" "$BUNDLE" >/dev/null
+fi
 echo "✓ seedypod core running on http://$(hostname -I | awk '{print $1}'):3000"

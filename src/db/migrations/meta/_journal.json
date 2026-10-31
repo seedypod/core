@@ -36,6 +36,27 @@
       "when": 1793444671287,
       "tag": "0004_clumsy_lake",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793487146367,
+      "tag": "0005_loud_shockwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793487619180,
+      "tag": "0006_black_silver_sable",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793488462579,
+      "tag": "0007_flawless_doctor_doom",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `device_settings` ADD `setupComplete` integer DEFAULT true NOT NULL;

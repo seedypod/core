@@ -1,12 +1,14 @@
 import { Link } from '@tanstack/react-router'
-import { CloudUpload, Settings } from 'lucide-react'
+import { Archive, CloudUpload, Download, HardDrive, Settings } from 'lucide-react'
 import { useState } from 'react'
+import { RestorePanel, RestoreProgress } from '@/src/components/Backup/RestorePanel'
 import { Button, Card, CardHeader, KeyValue, SectionLabel } from '@/src/components/ds/core'
+import { Alert } from '@/src/components/ds/feedback'
 import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
 import { PageHeader, SettingRow } from '@/src/components/ds/layout'
 import type { inferRouterOutputs } from '@trpc/server'
 import type { AppRouter } from '@/src/server/routers/app'
-import { trpc } from '@/src/utils/trpc'
+import { apiBase, trpc } from '@/src/utils/trpc'
 
 type SettingsView = inferRouterOutputs<AppRouter>['settings']['get']
 
@@ -73,6 +75,10 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
         <SettingRow label="Keep analysis masks" sub="About 115 kB per photo; off spares the SD card" divider={false}><Toggle label="Keep analysis masks" on={!!d.analysisArtifacts} onChange={v => setD({ ...d, analysisArtifacts: v })} /></SettingRow>
       </Card>
 
+      <StorageCard />
+
+      <BackupCard />
+
       <Card>
         <CardHeader title="Home Assistant bridge" subtitle="Core-level MQTT bridge for grow events and services. The hardware daemon already publishes discovery for lights, pump and sensors." />
         <SettingRow label="Broker URL"><TextField value={str('mqttUrl')} onChange={v => setD({ ...d, mqttUrl: v || null })} placeholder="mqtt://homeassistant.local:1883" /></SettingRow>
@@ -135,6 +141,129 @@ function randomToken(): string {
   const b = new Uint8Array(24)
   crypto.getRandomValues(b)
   return Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+}
+
+const size = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(b < 1e10 ? 2 : 1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(b < 1e7 ? 1 : 0)} MB` : `${Math.round(b / 1e3)} kB`)
+
+function since(s: number): string {
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min`
+  if (s < 2 * 86400) return `${Math.round(s / 3600)} h`
+  return `${Math.round(s / 86400)} days`
+}
+
+/** SD card writes (ADR-0021): how fast this unit wears its card. */
+function StorageCard() {
+  const q = trpc.storage.flash.useQuery(undefined, { refetchInterval: 60_000 })
+  return (
+    <Card>
+      <CardHeader title="Storage" subtitle="How much this unit writes to its SD card. Logs and swap stay in RAM to keep it low." icon={HardDrive} />
+      {q.data && <FlashRows f={q.data} />}
+    </Card>
+  )
+}
+
+function FlashRows({ f }: { f: inferRouterOutputs<AppRouter>['storage']['flash'] }) {
+  if (!f.available) return <SettingRow label="Flash writes" sub="No SD card counter on this machine" divider={false}><span className="text-sm text-fg-2">—</span></SettingRow>
+  return (
+    <>
+      <SettingRow label="Flash writes" sub={f.basis === 'history' ? `${Math.round(f.windowDays ?? 0)}-day average` : `average since boot (${since(f.uptimeS ?? 0)} ago)`}>
+        <span className="font-mono text-sm" data-testid="flash-rate">{f.bytesPerDay === null ? '—' : `${size(f.bytesPerDay)}/day`}</span>
+      </SettingRow>
+      <SettingRow label="Written since boot"><span className="font-mono text-sm">{size(f.sinceBootBytes ?? 0)}</span></SettingRow>
+      <SettingRow
+        label="Card"
+        sub={f.cardBytes && f.bytesPerDay !== null ? `At this rate, ${(f.bytesPerDay * 365 / f.cardBytes).toFixed(2)} full-card writes a year` : undefined}
+        divider={false}
+      >
+        <span className="font-mono text-sm">{`${f.device}${f.cardBytes ? ` · ${size(f.cardBytes)}` : ''}`}</span>
+      </SettingRow>
+    </>
+  )
+}
+
+const when = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+/** Off-card backups (ADR-0021): download any time, nightly to the mirror's bucket. */
+function BackupCard() {
+  const status = trpc.backup.status.useQuery(undefined, { refetchInterval: 30_000 })
+  const run = trpc.backup.runNow.useMutation({ onSuccess: () => void status.refetch() })
+  const info = trpc.backup.restoreInfo.useQuery()
+  const [restoring, setRestoring] = useState<'restore' | 'undo' | null>(null)
+  const undo = trpc.backup.undo.useMutation({ onSuccess: () => setRestoring('undo') })
+  const [photos, setPhotos] = useState(false)
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  const [confirmUndo, setConfirmUndo] = useState(false)
+  const st = status.data
+  const undoInfo = info.data?.undo
+  if (!st?.available) return null
+  const last = st.lastSuccess
+  const tried = st.lastBucketAttempt
+  const nightlySub = st.nightly.enabled
+    ? `After ${String(st.nightly.hour).padStart(2, '0')}:00, keeping the last ${st.nightly.keep}${tried && !tried.ok ? ` · last try failed: ${tried.detail}` : ''}`
+    : 'Off. Set up the mirror under Off-device storage to back up every night.'
+  return (
+    <Card tone={st.stale ? 'warn' : undefined}>
+      <CardHeader title="Backup" subtitle="A copy of this unit off its SD card, so a dead card is a quick swap: settings, schedules, grow cycle, pods, rules, probes, calibration and history." icon={Archive} />
+      <SettingRow label="Last off-card backup" sub={st.stale ? `None for ${st.staleAfterDays} days or more` : last?.detail || undefined}>
+        <span className="text-sm" data-testid="backup-last">{last ? `${when(last.ts)} · ${last.destination === 'bucket' ? 'bucket' : 'downloaded'}` : 'none yet'}</span>
+      </SettingRow>
+      <SettingRow label="Nightly to the bucket" sub={nightlySub}>
+        <div className="flex flex-col items-end gap-1">
+          <Button size="sm" disabled={!st.nightly.enabled || run.isPending} onClick={() => run.mutate()}>{run.isPending ? 'Backing up…' : 'Back up now'}</Button>
+          {run.data && <span className={`text-xs ${run.data.ok ? 'text-fg-2' : 'text-danger'}`}>{run.data.ok ? `Uploaded ${size(run.data.bytes)}` : run.data.detail}</span>}
+          {run.error && <span className="text-xs text-danger">{run.error.message}</span>}
+        </div>
+      </SettingRow>
+      <SettingRow label="Include photos" sub="For downloads; the mirror already keeps them. Makes the file far larger."><Toggle label="Include photos in the download" on={photos} onChange={setPhotos} /></SettingRow>
+      <SettingRow label="Download" sub="The file holds your bucket secret and MQTT password. Keep it somewhere private.">
+        <a href={`${apiBase()}/api/backup/download${photos ? '?photos=1' : ''}`} download className="inline-flex"><Button size="sm" icon={Download} tabIndex={-1}>Download backup</Button></a>
+      </SettingRow>
+      <SettingRow label="Restore" sub={info.data?.available === false ? 'Not installed on this core: run scripts/install on the unit' : 'Replace this unit with a backup, from a file or the bucket'} divider={!!undoInfo || restoreOpen}>
+        <Button size="sm" disabled={!info.data?.available || restoreOpen} onClick={() => setRestoreOpen(true)}>Restore from a backup…</Button>
+      </SettingRow>
+      {restoreOpen && !restoring && (
+        <div className="py-3">
+          <RestorePanel savedMirror={st.nightly.enabled} confirm onStarted={() => setRestoring('restore')} />
+          <div className="mt-2"><Button size="sm" onClick={() => setRestoreOpen(false)}>Close</Button></div>
+        </div>
+      )}
+      {undoInfo && (
+        <SettingRow
+          label={undoInfo.undoneAt ? 'Redo restore' : 'Undo restore'}
+          sub={undoInfo.undoneAt
+            ? `You undid the restore of the backup from ${when(undoInfo.bundle.createdAt ?? undoInfo.restoredAt)}. This puts it back.`
+            : `Restored the backup from ${when(undoInfo.bundle.createdAt ?? undoInfo.restoredAt)} on ${when(undoInfo.restoredAt)}. Undo puts back what it replaced.`}
+          divider={false}
+        >
+          <Button size="sm" disabled={undo.isPending || !!restoring} onClick={() => setConfirmUndo(true)}>{undoInfo.undoneAt ? 'Redo restore' : 'Undo restore'}</Button>
+        </SettingRow>
+      )}
+      {confirmUndo && !restoring && (
+        <Alert
+          tone="warn"
+          action={(
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  undo.mutate()
+                  setConfirmUndo(false)
+                }}
+              >
+                {undoInfo?.undoneAt ? 'Redo' : 'Undo'}
+              </Button>
+              <Button size="sm" onClick={() => setConfirmUndo(false)}>Cancel</Button>
+            </div>
+          )}
+        >
+          The unit restarts on the files it had before. Anything changed since is swapped out too, and comes back with another undo.
+        </Alert>
+      )}
+      {undo.error && <span className="text-xs text-danger">{undo.error.message}</span>}
+      {restoring && <div className="pt-3"><RestoreProgress undo={restoring === 'undo'} /></div>}
+    </Card>
+  )
 }
 
 /** Test and back-fill the mirror using the saved settings. */

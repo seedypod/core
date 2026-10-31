@@ -272,9 +272,33 @@ if absent (the commented defaults), creates the `seedypod` system user in
 `gpio`, `i2c`, `video`, enables I²C (`raspi-config nonint do_i2c 0`) and the
 PWM overlay (`dtoverlay=pwm,pin=18,func=2`, reboot required once), installs
 `fswebcam`, pins camera names to USB ports (`/etc/udev/rules.d/70-seedypod-cameras.rules`,
-see [Camera names](#camera-names)), and installs/enables `hald.service` (`Restart=always`,
-`After=network-online.target`, hardened). `--binary ./hald` installs a local
+see [Camera names](#camera-names)), installs Mosquitto with a listener on
+`127.0.0.1:1883` and no password (`/etc/mosquitto/conf.d/seedypod.conf`,
+written once), and installs/enables `hald.service` (`Restart=always`,
+`After=network-online.target mosquitto.service`, hardened). `--binary ./hald` installs a local
 build; `--version vX.Y.Z` pins a release; `--no-enable` skips starting it.
+`--mqtt-lan` adds a password-protected listener on port 1884 for Home
+Assistant on another machine and prints the `homeassistant` password once;
+`--no-broker` skips Mosquitto, for use with another broker such as Home
+Assistant's add-on ([Installation → Home Assistant](../INSTALLATION.md#4-home-assistant)).
+
+It also cuts SD card writes ([ADR-0021](../adr/0021-sd-card-wear-and-recovery.md)).
+Each change is checked once applied and undone if the check fails; a rerun
+reapplies them:
+
+| Change | How | Check, and the rollback if it fails |
+|---|---|---|
+| Journal in RAM | `/etc/systemd/journald.conf.d/50-seedypod-volatile.conf` (`Storage=volatile`, `RuntimeMaxUse=32M`), then restart `systemd-journald` | journald is active again, or the drop-in is removed |
+| Swap on zram | `systemd-zram-generator` with `/etc/systemd/zram-generator.conf` (half the RAM, at most 512 MB, zstd), then `dphys-swapfile` off | `swapon` lists `/dev/zram0`, or the config is removed and the swapfile stays on. Skipped when zram is already on (Raspberry Pi OS with `rpi-swap`) |
+| `noatime` on `/` | adds it to the `/` line in `/etc/fstab`, then `mount -o remount,noatime /` | `findmnt --verify` accepts the file and `/` shows `noatime`, or `fstab` is restored. Skipped when it's already there (stock Raspberry Pi OS) |
+
+`--no-wear` leaves all three alone.
+
+For core's backups, the user core runs as (the one who ran the installer, or
+the owner of `/opt/seedypod`; `SEEDYPOD_CORE_USER` overrides) joins the
+`seedypod` group, which can read `/etc/seedypod`, `/var/lib/seedypod` and the
+Mosquitto password file (`mosquitto:seedypod`, mode 0640). A running core is
+restarted so it picks up the group.
 
 Operations: `journalctl -u hald -f`, `hald --config /etc/seedypod/hal.toml --check`,
 `mosquitto_sub -v -t 'seedypod/#'`. See [Debugging](../DEBUGGING.md).

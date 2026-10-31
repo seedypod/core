@@ -1,7 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { createEventBus } from '../../lib/eventBus'
 import { MemoryStore } from '../../store/memory'
+import { nodeFlashSource } from '../../telemetry/flashSource'
 import { createCore } from '../bootstrap'
 import { appRouter } from '../routers/app'
 import { createCallerFactory } from '../trpc'
@@ -64,5 +68,32 @@ describe('routers', () => {
     await expect(c.pump.runOnce({ durationS: 60 })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
     await hal.acknowledgeAlert('pump_fault')
     expect((await c.pump.get())?.fault).toBeNull()
+  })
+
+  it('backup: without backups or restore (demo, tests) every procedure says so', async () => {
+    const { c } = caller()
+    expect(await c.backup.status()).toMatchObject({ available: false, lastSuccess: null, nightly: { enabled: false } })
+    expect(await c.backup.list()).toEqual([])
+    expect(await c.backup.restoreInfo()).toEqual({ available: false, status: null, undo: null })
+    await expect(c.backup.runNow()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+    await expect(c.backup.browse({})).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+    await expect(c.backup.restoreFromBucket({ key: 'backups/a.tar.gz' })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: /no restore/ })
+    await expect(c.backup.undo()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: /no restore/ })
+  })
+
+  it('storage.flash reports unavailable without an SD card, and the since-boot rate with one', async () => {
+    expect(await caller().c.storage.flash()).toMatchObject({ available: false, bytesPerDay: null })
+    const dir = mkdtempSync(join(tmpdir(), 'flash-'))
+    try {
+      mkdirSync(join(dir, 'mmcblk0'))
+      writeFileSync(join(dir, 'mmcblk0/stat'), '1 0 8 1 400 0 204800 10 0 10 10')
+      const core = createCore({ hal: new SimHal({ tickMs: 0 }), store: new MemoryStore(), version: 'test', flashSource: nodeFlashSource({ FLASH_STAT_PATH: join(dir, 'mmcblk0/stat') }) })
+      const s = await createCallerFactory(appRouter)(core.ctx).storage.flash()
+      expect(s).toMatchObject({ available: true, device: 'mmcblk0', sinceBootBytes: 204800 * 512, basis: 'boot', cardBytes: null })
+      expect(s.bytesPerDay).toBeGreaterThan(0)
+    }
+    finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

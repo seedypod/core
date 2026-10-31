@@ -9,7 +9,7 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
 export interface SqliteStoreOptions {
@@ -197,6 +197,41 @@ export class SqliteStore implements Store {
     get: (key: string): number => this.db.select().from(t.counters).where(eq(t.counters.key, key)).get()?.value ?? 0,
   }
 
+  backups = {
+    add: (r: Omit<BackupRecord, 'id'>): BackupRecord => rowToBackup(this.db.insert(t.backups).values(r).returning().get()),
+    list: (limit = 50): BackupRecord[] => this.db.select().from(t.backups).orderBy(desc(t.backups.ts), desc(t.backups.id)).limit(limit).all().map(rowToBackup),
+    lastSuccess: (destination?: BackupRecord['destination']): BackupRecord | null => {
+      const r = this.db.select().from(t.backups).where(destination ? and(eq(t.backups.ok, true), eq(t.backups.destination, destination)) : eq(t.backups.ok, true)).orderBy(desc(t.backups.ts), desc(t.backups.id)).limit(1).get()
+      return r ? rowToBackup(r) : null
+    },
+  }
+
+  /**
+   * SQLite's online backup: a consistent copy while core keeps writing (ADR-0021).
+   * The copy is a single file (no WAL) and counts as set up, so a unit restored
+   * from it doesn't open on Welcome.
+   */
+  async backupTo(path: string): Promise<void> {
+    await this.sqlite.backup(path)
+    const copy = new Database(path)
+    try {
+      copy.pragma('journal_mode = DELETE')
+      copy.prepare('UPDATE device_settings SET setupComplete = 1').run()
+    }
+    finally {
+      copy.close()
+    }
+  }
+
+  flash = {
+    add: (sample: FlashSample): void => {
+      this.db.insert(t.flashSamples).values(sample).onConflictDoUpdate({ target: t.flashSamples.ts, set: { sectors: sample.sectors, bytes: sample.bytes } }).run()
+    },
+    last: (): FlashSample | null => this.db.select().from(t.flashSamples).orderBy(desc(t.flashSamples.ts)).limit(1).get() ?? null,
+    since: (fromTs: string): FlashSample[] => this.db.select().from(t.flashSamples).where(gte(t.flashSamples.ts, fromTs)).orderBy(asc(t.flashSamples.ts)).all(),
+    prune: (beforeTs: string): number => this.db.delete(t.flashSamples).where(lt(t.flashSamples.ts, beforeTs)).run().changes,
+  }
+
   analyses = {
     add: (rows: AnalysisRow[]): void => {
       if (rows.length === 0) return
@@ -291,4 +326,8 @@ function automationColumns(r: Partial<Omit<AutomationRule, 'id'>>) {
 
 function rowToAutomation(r: typeof t.automations.$inferSelect): Automation {
   return { ...r, trigger: JSON.parse(r.trigger) as AutomationRule['trigger'], conditions: JSON.parse(r.conditions) as AutomationRule['conditions'], actions: JSON.parse(r.actions) as AutomationRule['actions'] }
+}
+
+function rowToBackup(r: typeof t.backups.$inferSelect): BackupRecord {
+  return { ...r, destination: r.destination as BackupRecord['destination'] }
 }

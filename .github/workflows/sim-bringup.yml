@@ -9,7 +9,7 @@ on:
   push:
     branches: [dev]
   pull_request:
-    paths: ['hal/**', 'src/**', 'server/**', 'tests/sim/**', 'package.json', 'pnpm-lock.yaml', '.github/workflows/sim-bringup.yml']
+    paths: ['hal/**', 'src/**', 'server/**', 'scripts/**', 'tests/sim/**', 'package.json', 'pnpm-lock.yaml', '.github/workflows/sim-bringup.yml']
   merge_group:
   workflow_dispatch:
 

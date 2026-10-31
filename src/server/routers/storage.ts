@@ -12,8 +12,24 @@ const Status = z.object({
   lastUploadAt: z.string().nullable(),
 })
 
-/** The opt-in off-device mirror (ADR-0019): configured in settings, driven from here. */
+const Flash = z.object({
+  available: z.boolean(),
+  device: z.string().nullable(),
+  cardBytes: z.number().nullable(),
+  sinceBootBytes: z.number().nullable(),
+  uptimeS: z.number().nullable(),
+  bytesPerDay: z.number().nullable(),
+  basis: z.enum(['history', 'boot']).nullable(),
+  windowDays: z.number().nullable(),
+  lastSampleAt: z.string().nullable(),
+})
+
+/** The SD card's write meter (ADR-0021) and the opt-in off-device mirror (ADR-0019), configured in settings and driven from here. */
 export const storageRouter = router({
+  flash: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/storage/flash', tags: ['storage'], summary: 'SD card writes: bytes per day (7-day average, or since boot until a day of samples exists), written since boot, card size' } })
+    .output(Flash)
+    .query(({ ctx }) => ctx.flash.status()),
   mirror: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/storage/mirror', tags: ['storage'], summary: 'Off-device mirror status: enabled, uploads pending/done/failed, last error' } })
     .output(Status)

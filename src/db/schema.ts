@@ -43,6 +43,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   mirrorSecretAccessKey: text(),
   /** Autopilot kill switch (ADR-0020): off stops every rule and drops their light leases. */
   autopilotEnabled: integer({ mode: 'boolean' }).notNull().default(true),
+  /** Off on a new database so the first run opens on Welcome (ADR-0021); databases from before it migrate as set up. */
+  setupComplete: integer({ mode: 'boolean' }).notNull().default(true),
   updatedAt: text().notNull(),
 })
 
@@ -118,6 +120,24 @@ export const counters = sqliteTable('counters', {
   key: text().primaryKey(),
   value: real().notNull().default(0),
   updatedAt: text().notNull(),
+})
+
+/** Off-card backups (ADR-0021): every download and bucket upload, kept as a log for the staleness alert and Settings → Backup. */
+export const backups = sqliteTable('backups', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  ts: text().notNull(),
+  destination: text().notNull(),
+  name: text().notNull(),
+  bytes: integer().notNull().default(0),
+  ok: integer({ mode: 'boolean' }).notNull(),
+  detail: text().notNull().default(''),
+}, t => [index('backups_ts').on(t.ts)])
+
+/** Hourly samples of the SD card's sectors-written counter (ADR-0021); `bytes` is the write since the previous sample. */
+export const flashSamples = sqliteTable('flash_samples', {
+  ts: text().primaryKey(),
+  sectors: integer().notNull(),
+  bytes: integer().notNull(),
 })
 
 /**
