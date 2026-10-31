@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server'
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,6 +8,7 @@ import { MirroredSink } from '../src/camera/mirrorSink'
 import { createHal } from '../src/hardware/factory'
 import { createEventBus } from '../src/lib/eventBus'
 import { connectBridge } from '../src/mqtt/bridge'
+import { NmcliWifi } from '../src/network/wifi'
 import { createCore } from '../src/server/bootstrap'
 import { SqliteStore } from '../src/store/sqlite'
 import { createWorkerExecutor } from '../src/vision/workerExecutor'
@@ -27,7 +29,12 @@ const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(wo
 // Stills and artifacts live under DATA_DIR/captures; the opt-in mirror copies them off the unit (ADR-0019).
 const capturesDir = `${DATA_DIR}/captures`
 const mirror = new MirroredSink({ local: new FsSink(capturesDir), store, events, keyOf: p => relative(capturesDir, p) })
-const core = createCore({ hal, store, events, version: readVersion(), sink: mirror, mirror, startServices: process.env.CI !== '1', analysisExecutor: vision?.run })
+// Wi-Fi setup drives NetworkManager; on a machine without nmcli the Wi-Fi screen says it's unavailable.
+const nmcli = (args: string[]) => new Promise<string>((resolve, reject) => {
+  execFile('nmcli', args, { timeout: 60_000 }, (err, stdout, stderr) => (err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)))
+})
+const wifi = new NmcliWifi({ run: nmcli, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'unit' })
+const core = createCore({ hal, store, events, version: readVersion(), sink: mirror, mirror, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi })
 
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 let bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {

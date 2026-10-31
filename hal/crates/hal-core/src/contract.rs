@@ -249,6 +249,8 @@ pub enum ButtonPress {
     Single,
     Double,
     Long,
+    /// Held for `setup_hold_ms` (10 s): core opens its Wi-Fi setup hotspot.
+    Setup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -418,6 +420,8 @@ mod fixture_tests {
         assert!(inv.addable[0].calibration[1].optional);
         let dc: DeviceCommand = serde_json::from_str(&fixture("device_command")).unwrap();
         assert_eq!(dc.op, DeviceOp::Add);
+        let be: ButtonEvent = serde_json::from_str(&fixture("button_event")).unwrap();
+        assert_eq!(be.press, ButtonPress::Setup);
         let dr: DeviceResult = serde_json::from_str(&fixture("device_result")).unwrap();
         assert!(!dr.ok);
         let cr: CalibrationResult = serde_json::from_str(&fixture("calibration_result")).unwrap();

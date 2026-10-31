@@ -8,6 +8,8 @@ const { data, calls } = vi.hoisted(() => ({
   calls: { update: vi.fn(), test: vi.fn(), sync: vi.fn() },
 }))
 
+vi.mock('@tanstack/react-router', () => ({ Link: ({ to, children, className }: { to: string, children: unknown, className?: string }) => <a href={to} className={className}>{children as string}</a> }))
+
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name), refetch: vi.fn() }) })
   const mutation = (name: 'update' | 'test' | 'sync') => ({ useMutation: () => ({
@@ -44,6 +46,13 @@ beforeEach(() => {
 afterEach(cleanup)
 
 const field = (label: string) => screen.getByText(label).closest('div')?.parentElement?.querySelector('input') as HTMLInputElement
+
+describe('Settings: Wi-Fi', () => {
+  it('links to the Wi-Fi screen', () => {
+    render(<SettingsPage />)
+    expect((screen.getByText('Open Wi-Fi settings') as HTMLAnchorElement).getAttribute('href')).toBe('/wifi')
+  })
+})
 
 describe('Settings: off-device storage and analysis', () => {
   it('saves mirror settings and the masks toggle without the has* flags', () => {

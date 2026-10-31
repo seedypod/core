@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { CloudUpload, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Card, CardHeader, KeyValue, SectionLabel } from '@/src/components/ds/core'
@@ -113,6 +114,11 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
             </Button>
           </div>
         </SettingRow>
+      </Card>
+
+      <Card>
+        <CardHeader title="Wi-Fi" subtitle="Change networks, or hold the unit's button for 10 s to open a setup hotspot" />
+        <SettingRow label="Network" divider={false}><Link to="/wifi" className="text-sm text-fg underline-offset-2 hover:underline">Open Wi-Fi settings</Link></SettingRow>
       </Card>
 
       <SectionLabel>About</SectionLabel>

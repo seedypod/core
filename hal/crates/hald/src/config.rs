@@ -99,6 +99,8 @@ pub struct Button {
     pub debounce_ms: u64,
     pub double_window_ms: u64,
     pub long_press_ms: u64,
+    /// Keep holding this long to open core's Wi-Fi setup hotspot.
+    pub setup_hold_ms: u64,
     pub active_low: bool,
     /// Bounded pump run started by a double press (clamped by the guard).
     pub pump_run_s: u64,
@@ -299,6 +301,7 @@ impl Default for Button {
             debounce_ms: 30,
             double_window_ms: 400,
             long_press_ms: 1000,
+            setup_hold_ms: 10_000,
             active_low: true,
             pump_run_s: 300,
         }
@@ -591,7 +594,8 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 [button]
 # debounce_ms = 30
 # double_window_ms = 400
-# long_press_ms = 1000
+# long_press_ms = 1000    # long press => acknowledge latched faults
+# setup_hold_ms = 10000   # keep holding => Wi-Fi setup hotspot (core)
 # active_low = true
 # pump_run_s = 300        # double press => bounded pump run
 

@@ -385,6 +385,8 @@ impl Engine {
                             out.extend(self.handle(Inbound::AlertAck(AlertKind::DoseFault), now));
                         }
                     }
+                    // Networking is core's job (ADR-0004); hald only reports the gesture.
+                    ButtonPress::Setup => {}
                 }
             }
             Inbound::CameraResult { name, ok, detail } => {
@@ -1370,6 +1372,10 @@ mod tests {
         assert_eq!(r.engine.pump.fault(), Some("dry-run"));
         r.engine.handle(Inbound::Button(ButtonPress::Long), r.now);
         assert_eq!(r.engine.pump.fault(), None);
+        // The setup hold is only reported; core opens the Wi-Fi hotspot.
+        let out = r.engine.handle(Inbound::Button(ButtonPress::Setup), r.now);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].payload, r#"{"press":"setup"}"#);
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

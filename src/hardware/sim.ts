@@ -9,7 +9,7 @@
  */
 import kindsFixture from '../../hal/contract/fixtures/device_kinds.json'
 import { CONTRACT_VERSION, DeviceKindInfo } from './contract'
-import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, CalibrationCommand, CalibrationResult, DeviceEntry, DeviceInventory, DeviceResult, Reading, SensorId, SystemInfo } from './contract'
+import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, ButtonPress, CalibrationCommand, CalibrationResult, DeviceEntry, DeviceInventory, DeviceResult, Reading, SensorId, SystemInfo } from './contract'
 import type { HalClient, HalEvent, HalSnapshot, Unsubscribe } from './types'
 
 export interface SimHalOptions {
@@ -219,7 +219,7 @@ export class SimHal implements HalClient {
     this.emit({ type: 'sensor', id: 'water_distance', reading: this.read('water_distance') })
   }
 
-  pressButton(press: 'single' | 'double' | 'long'): void {
+  pressButton(press: ButtonPress): void {
     this.emit({ type: 'button', press })
   }
 

@@ -1,4 +1,4 @@
-import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, CalibrationCommand, CalibrationResult, DeviceInventory, DeviceResult, Reading, SensorId, SystemInfo } from './contract'
+import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, ButtonPress, CalibrationCommand, CalibrationResult, DeviceInventory, DeviceResult, Reading, SensorId, SystemInfo } from './contract'
 
 export interface HalSnapshot {
   system: SystemInfo | null
@@ -17,7 +17,7 @@ export type HalEvent
     | { type: 'availability', online: boolean }
     | { type: 'system', system: SystemInfo }
     | { type: 'devices', devices: DeviceInventory }
-    | { type: 'button', press: 'single' | 'double' | 'long' }
+    | { type: 'button', press: ButtonPress }
 
 export type Unsubscribe = () => void
 
