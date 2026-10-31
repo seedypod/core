@@ -22,4 +22,4 @@ Format follows sleepypod/core (`# ADR NNNN: Title`, Status/Date, Context, Decisi
 - [0018 Runtime sensor inventory](0018-runtime-sensor-inventory.md)
 - [0019 Pluggable capture analysis](0019-pluggable-capture-analysis.md)
 - [0020 Autopilot — reactive automations](0020-autopilot-reactive-automations.md)
-- [0021 SD card wear and fast recovery](0021-sd-card-wear-and-recovery.md) — proposed
+- [0021 SD card wear and fast recovery](0021-sd-card-wear-and-recovery.md) — phases 1–3 accepted, phase 4 (SD image) proposed

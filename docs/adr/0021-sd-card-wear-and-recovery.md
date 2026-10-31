@@ -2,14 +2,14 @@
 type: "Decision record"
 title: "ADR 0021: SD card wear and fast recovery"
 description: "Write less to the microSD card, using sleepypod's eMMC approach, and make a dead card a ten-minute swap: automatic off-card backups, a one-step restore, and a ready-made SD image."
-status: "draft"
+status: "stable"
 generated: {"by": "claude/opus-5.5", "at": "2026-10-31T23:00:00+00:00"}
 sources: [{"resource": "https://github.com/sleepypod/core/blob/dev/docs/adr/0018-tmpfs-raw-frames.md", "title": "sleepypod ADR 0018: tmpfs for live RAW frames"}, {"resource": "https://github.com/sleepypod/core/blob/dev/scripts/lib/journald-helpers", "title": "sleepypod journald helpers (RAM-only journal)"}, {"resource": "https://sleepypod.github.io/core/system/storage/", "title": "sleepypod: System → Storage (flash writes)"}, {"resource": "/adr/0012-deployment-and-trust.md", "title": "ADR 0012: Deployment and trust model"}, {"resource": "/adr/0019-pluggable-capture-analysis.md", "title": "ADR 0019: Pluggable capture analysis"}, {"resource": "/MAINTENANCE.md", "title": "Maintenance"}]
 ---
 
 # ADR 0021: SD card wear and fast recovery
 
-**Status:** Proposed
+**Status:** Accepted (phases 1–3; phase 4 proposed)
 **Date:** 2026-10-31
 
 ## Context
@@ -70,7 +70,8 @@ These are left unchanged:
 - **Captures.** These are a few small JPEGs a day, pruned to a cap.
 
 **Flash writes.** Core samples `/sys/block/mmcblk0/stat` hourly and shows
-writes per day under **Settings → Storage**, as sleepypod does. With that
+writes per day under **Settings → Storage**, as sleepypod does. Until a day
+of samples exists, it shows the average since boot. With that
 number, an owner can see whether a card's lifespan is years or decades.
 
 Rejected for now: a read-only root (overlayroot). It removes nearly all wear,
@@ -83,19 +84,22 @@ Core makes a **backup bundle**: `seedypod-backup-<unit>-<date>.tar.gz`. It
 contains:
 
 - **`seedypod.db`:** taken with SQLite's online backup, so core keeps running.
-- **`/etc/seedypod/`:** `hal.toml` and the Mosquitto LAN password file.
+- **`/etc/seedypod/hal.toml`**, and the Mosquitto LAN password file
+  (`/etc/mosquitto/seedypod.passwd`) when `--mqtt-lan` made one.
 - **`/var/lib/seedypod/`:** `hald`'s state, the dosing ledger and the probes
   added in the app (`sensors.json`).
 - **`manifest.json`:** unit id, core and `hald` versions, schema migration,
-  creation time and file checksums.
+  creation time and file checksums. It is the last entry, so checksums are
+  computed as the files stream by.
 
 Photos are left out by default. The mirror (ADR 0019) already carries them,
 and they would make the bundle 100× larger. An **Include photos** switch
 covers owners without a mirror.
 
-Core runs as the install user and can't read `hald`'s state directory.
-`install-hal` adds that user to a `seedypod` group with read access to
-`/etc/seedypod` and `/var/lib/seedypod`. Read access is all that's needed.
+Core runs as the install user. `install-hal` and `install` add that user to
+the `seedypod` group, which can read `/etc/seedypod`, `/var/lib/seedypod`
+and the Mosquitto password file (owner `mosquitto`, group `seedypod`, mode
+0640). Read access is all that's needed.
 
 Destinations:
 
@@ -106,8 +110,10 @@ Destinations:
 - Nothing local. A backup on the same card dies with it.
 
 **Staleness alert.** A `backup_stale` alert fires when no off-card backup
-has succeeded for 7 days. Until the first one, it reads "No off-card backup
-yet". The alert also shows on the Home screen and in Home Assistant.
+has succeeded for 7 days. A finished download counts as one. On a unit that
+has never had one, the 7 days count from core's first start, and the alert
+reads "No off-card backup yet". The alert also shows on the Home screen and
+in Home Assistant.
 
 The bundle holds the S3 secret and the MQTT password. Download shows a
 warning saying so, and the bucket copy sits behind those same credentials.
@@ -115,22 +121,34 @@ warning saying so, and the bucket copy sits behind those same credentials.
 ### 3. Restore in one step
 
 A restore can happen in three places. They all call one root helper,
-`/usr/local/sbin/seedypod-restore <bundle>`. `install-hal` installs it and
-grants the core user `NOPASSWD` for that one path, the same pattern sleepypod
-uses for its service restarts. The helper:
+`/usr/local/sbin/seedypod-restore <bundle>`. It ships in core's tarball, so
+it always matches the installed schema. `scripts/install` copies it there
+(root-owned, with the install prefix written in) and grants the core user
+`NOPASSWD` for that one path, the same pattern sleepypod uses for its service
+restarts. The helper:
 
-1. Checks the manifest and checksums. It refuses a bundle from a **newer**
-   schema than the installed core and names the version to install first.
-2. Stops `seedypod-core` and `hald`.
-3. Replaces the database, `/etc/seedypod` and `/var/lib/seedypod`.
+1. Copies the bundle into a root-only staging directory, then checks it
+   there: only known file names, only regular files, every checksum in the
+   manifest. It refuses a bundle from a **newer** schema than the installed
+   core and names the version to install first.
+2. Stops `seedypod-core` and `hald`. When core asks for the restore, the
+   rest runs in its own transient unit (`systemd-run`), since stopping core
+   would otherwise stop the helper too.
+3. Replaces the database, `hal.toml`, the Mosquitto password file and
+   `hald`'s state files. It never restores Mosquitto's config: when a
+   password file comes back, the helper writes the LAN listener itself.
 4. Starts both services. Migrations run on start, as on any update.
-5. Keeps the replaced files in `/var/lib/seedypod/pre-restore/` until the
-   next successful restore, so a wrong bundle can be undone.
+5. Keeps the replaced files in `/var/lib/seedypod-restore/pre-restore/`
+   until the next successful restore, so a wrong bundle can be undone with
+   `seedypod-restore --undo` or **Undo restore** in Settings. That
+   directory is root-owned, unlike `hald`'s state directory, so nothing but
+   the helper can change what an undo puts back.
 
 The three entry points:
 
 - **First-run web UI.** A fresh install with an empty database opens on
-  **Welcome**, with two options:
+  **Welcome** (a new database starts with `setupComplete` off; databases
+  from before this ADR migrate as set up), with two options:
   - **Set up a new garden.**
   - **Restore from a backup.** Upload a bundle, or enter S3 settings to list
     the bucket's `backups/` and pick one, newest first.
