@@ -13,9 +13,7 @@ use hal_core::{ActuatorId, BinarySensor, ButtonPress, SensorId};
 #[cfg(feature = "hardware")]
 use tracing::{info, warn};
 
-use crate::config::Config;
-#[cfg(feature = "hardware")]
-use crate::config::SensorEntry;
+use crate::config::{Config, SensorEntry};
 use crate::http::SharedCamera;
 
 pub struct Built {
@@ -29,6 +27,10 @@ pub struct Built {
     pub detected_model: Option<String>,
     /// Set to stop driver threads (button poller) on shutdown.
     pub stop: Arc<AtomicBool>,
+    /// Builds drivers for sensors added at runtime (same bus / world as above).
+    pub factory: Box<dyn crate::kinds::SensorFactory>,
+    /// Each configured sensor entry and why it failed, if it did.
+    pub status: Vec<(SensorEntry, Option<String>)>,
 }
 
 /// Which contract sensor ids a kind provides (used by the simulator and by
@@ -87,9 +89,11 @@ pub fn build_sim(cfg: &Config) -> Built {
         cameras,
         over_temp: None,
         button: None,
-        world: Some(world),
+        world: Some(world.clone()),
         detected_model: Some("gardyn 3.0 (sim)".into()),
         stop: Arc::new(AtomicBool::new(false)),
+        factory: Box::new(crate::kinds::SimFactory(world)),
+        status: cfg.sensors().into_iter().map(|s| (s, None)).collect(),
     }
 }
 
@@ -121,6 +125,7 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
     };
     let cache = Duration::from_millis(500);
     let tank = (&cfg.tank).into();
+    let mut status = Vec::new();
 
     for s in cfg.sensors() {
         let kind = s.kind.as_str();
@@ -191,25 +196,22 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                     b.probe().map_err(|e| anyhow::anyhow!("{e}"))?;
                     over_temp = Some(Box::new(b));
                 }
-                "ezo_ph" | "ezo_ec" | "ezo_rtd" => {
-                    let k = match kind {
-                        "ezo_ph" => hal_drivers::ezo::EzoKind::Ph,
-                        "ezo_ec" => hal_drivers::ezo::EzoKind::Ec,
-                        _ => hal_drivers::ezo::EzoKind::Rtd,
-                    };
-                    let mut d = hal_drivers::ezo::Ezo::new(bus(&mut i2c)?, StdDelay, k, addr(&s)?);
-                    probe_sensor(&mut d, &s)?;
-                    registry.add_sensor(Box::new(d));
+                k if crate::kinds::find(k).is_some() => {
+                    let spec = crate::kinds::find(k).expect("matched above");
+                    for d in spec.build_hw(bus(&mut i2c)?, addr(&s)?)? {
+                        registry.add_sensor(d);
+                    }
                 }
                 other => anyhow::bail!("unknown sensor kind {other:?}"),
             }
             Ok(())
         })();
-        match outcome {
+        match &outcome {
             Ok(()) => info!(kind, addr = ?s.addr, pin = ?s.pin, "sensor ready"),
             Err(e) if s.optional => info!(kind, %e, "optional sensor absent; skipping"),
             Err(e) => warn!(kind, %e, "sensor unavailable; continuing without it"),
         }
+        status.push((s.clone(), outcome.err().map(|e| e.to_string())));
     }
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -308,6 +310,11 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
         world: None,
         detected_model,
         stop,
+        factory: Box::new(crate::kinds::HwFactory {
+            bus: cfg.i2c.bus,
+            i2c,
+        }),
+        status,
     })
 }
 

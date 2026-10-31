@@ -12,8 +12,10 @@ mod engine;
 mod ha;
 mod http;
 mod identity;
+mod kinds;
 mod mdns;
 mod mqtt;
+mod overlay;
 mod state;
 
 use std::path::PathBuf;
@@ -75,6 +77,21 @@ async fn main() -> anyhow::Result<()> {
     if let Some(u) = &cli.mqtt_url {
         cfg.mqtt_url = Some(u.clone());
     }
+    let state_dir = if cli.sim && cfg.state_dir == config::Config::default().state_dir {
+        std::env::temp_dir().join("seedypod-sim")
+    } else {
+        cfg.state_dir.clone()
+    };
+    // Sensors added from the app. A bad overlay must never keep hald from starting.
+    let overlay = overlay::Overlay::new(&state_dir);
+    cfg.extra_sensors = overlay.load();
+    if !cfg.extra_sensors.is_empty() && !cfg.validate().is_empty() {
+        let bad = cfg.validate();
+        cfg.extra_sensors.clear();
+        if cfg.validate().is_empty() {
+            warn!(errors = ?bad, "ignoring the app-added sensor list; it no longer validates");
+        }
+    }
     let errors = cfg.validate();
     let unit_id = identity::unit_id(cfg.unit_id.as_deref());
 
@@ -134,11 +151,6 @@ async fn main() -> anyhow::Result<()> {
     };
     info!(unit = %unit_id, model = %system.model, sensors = ?system.caps.sensors, actuators = ?system.caps.actuators, "hald starting");
 
-    let state_dir = if cli.sim && cfg.state_dir == config::Config::default().state_dir {
-        std::env::temp_dir().join("seedypod-sim")
-    } else {
-        cfg.state_dir.clone()
-    };
     let snapshot: SharedSnapshot = Arc::default();
     let engine = Engine::new(
         system.clone(),
@@ -153,7 +165,13 @@ async fn main() -> anyhow::Result<()> {
         built.over_temp,
         Some(state::StateFile::new(&state_dir)),
         snapshot.clone(),
-    );
+    )
+    .with_devices(engine::Devices {
+        entries: engine::Devices::from_boot(&built.status, &cfg.extra_sensors),
+        user: cfg.extra_sensors.clone(),
+        factory: Some(built.factory),
+        overlay: Some(overlay),
+    });
 
     let (inbound_tx, inbound_rx) = std::sync::mpsc::channel::<Inbound>();
     let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Outbound>();

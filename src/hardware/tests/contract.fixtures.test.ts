@@ -1,10 +1,10 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ActuatorCommand, ActuatorState, Alert, CalibrationCommand, CalibrationResult, Reading, SystemInfo } from '../contract'
+import { ActuatorCommand, ActuatorState, Alert, CalibrationCommand, CalibrationResult, DeviceCommand, DeviceInventory, DeviceResult, Reading, SystemInfo } from '../contract'
 
 const dir = join(__dirname, '../../../hal/contract/fixtures')
-const schemas = { system: SystemInfo, actuator_state: ActuatorState, reading: Reading, alert: Alert, alert_dose_fault: Alert, command: ActuatorCommand, calibration_command: CalibrationCommand, calibration_result: CalibrationResult } as const
+const schemas = { system: SystemInfo, actuator_state: ActuatorState, reading: Reading, alert: Alert, alert_dose_fault: Alert, command: ActuatorCommand, calibration_command: CalibrationCommand, calibration_result: CalibrationResult, device_inventory: DeviceInventory, device_command: DeviceCommand, device_result: DeviceResult } as const
 
 describe('HAL contract fixtures parse on the TS side', () => {
   for (const file of readdirSync(dir)) {

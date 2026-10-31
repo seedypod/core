@@ -49,7 +49,9 @@ async fn health(State(s): State<AppState>) -> Json<serde_json::Value> {
 }
 
 async fn system(State(s): State<AppState>) -> Json<SystemInfo> {
-    Json(s.system.clone())
+    // The engine's copy tracks sensors added at runtime; the boot copy is a fallback.
+    let current = s.snapshot.read().ok().and_then(|snap| snap.system.clone());
+    Json(current.unwrap_or_else(|| s.system.clone()))
 }
 
 async fn snapshot(State(s): State<AppState>) -> Response {
