@@ -9,7 +9,7 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
 export interface SqliteStoreOptions {
@@ -195,6 +195,15 @@ export class SqliteStore implements Store {
       return this.counters.get(key)
     },
     get: (key: string): number => this.db.select().from(t.counters).where(eq(t.counters.key, key)).get()?.value ?? 0,
+  }
+
+  flash = {
+    add: (sample: FlashSample): void => {
+      this.db.insert(t.flashSamples).values(sample).onConflictDoUpdate({ target: t.flashSamples.ts, set: { sectors: sample.sectors, bytes: sample.bytes } }).run()
+    },
+    last: (): FlashSample | null => this.db.select().from(t.flashSamples).orderBy(desc(t.flashSamples.ts)).limit(1).get() ?? null,
+    since: (fromTs: string): FlashSample[] => this.db.select().from(t.flashSamples).where(gte(t.flashSamples.ts, fromTs)).orderBy(asc(t.flashSamples.ts)).all(),
+    prune: (beforeTs: string): number => this.db.delete(t.flashSamples).where(lt(t.flashSamples.ts, beforeTs)).run().changes,
   }
 
   analyses = {

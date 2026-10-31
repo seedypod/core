@@ -282,6 +282,18 @@ Assistant on another machine and prints the `homeassistant` password once;
 `--no-broker` skips Mosquitto, for use with another broker such as Home
 Assistant's add-on ([Installation → Home Assistant](../INSTALLATION.md#4-home-assistant)).
 
+It also cuts SD card writes ([ADR-0021](../adr/0021-sd-card-wear-and-recovery.md)).
+Each change is checked once applied and undone if the check fails; a rerun
+reapplies them:
+
+| Change | How | Check, and the rollback if it fails |
+|---|---|---|
+| Journal in RAM | `/etc/systemd/journald.conf.d/50-seedypod-volatile.conf` (`Storage=volatile`, `RuntimeMaxUse=32M`), then restart `systemd-journald` | journald is active again, or the drop-in is removed |
+| Swap on zram | `systemd-zram-generator` with `/etc/systemd/zram-generator.conf` (half the RAM, at most 512 MB, zstd), then `dphys-swapfile` off | `swapon` lists `/dev/zram0`, or the config is removed and the swapfile stays on. Skipped when zram is already on (Raspberry Pi OS with `rpi-swap`) |
+| `noatime` on `/` | adds it to the `/` line in `/etc/fstab`, then `mount -o remount,noatime /` | `findmnt --verify` accepts the file and `/` shows `noatime`, or `fstab` is restored. Skipped when it's already there (stock Raspberry Pi OS) |
+
+`--no-wear` leaves all three alone.
+
 Operations: `journalctl -u hald -f`, `hald --config /etc/seedypod/hal.toml --check`,
 `mosquitto_sub -v -t 'seedypod/#'`. See [Debugging](../DEBUGGING.md).
 

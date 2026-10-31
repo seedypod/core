@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { CloudUpload, Settings } from 'lucide-react'
+import { CloudUpload, HardDrive, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Card, CardHeader, KeyValue, SectionLabel } from '@/src/components/ds/core'
 import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
@@ -73,6 +73,8 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
         <SettingRow label="Keep analysis masks" sub="About 115 kB per photo; off spares the SD card" divider={false}><Toggle label="Keep analysis masks" on={!!d.analysisArtifacts} onChange={v => setD({ ...d, analysisArtifacts: v })} /></SettingRow>
       </Card>
 
+      <StorageCard />
+
       <Card>
         <CardHeader title="Home Assistant bridge" subtitle="Core-level MQTT bridge for grow events and services. The hardware daemon already publishes discovery for lights, pump and sensors." />
         <SettingRow label="Broker URL"><TextField value={str('mqttUrl')} onChange={v => setD({ ...d, mqttUrl: v || null })} placeholder="mqtt://homeassistant.local:1883" /></SettingRow>
@@ -135,6 +137,44 @@ function randomToken(): string {
   const b = new Uint8Array(24)
   crypto.getRandomValues(b)
   return Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+}
+
+const size = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(b < 1e10 ? 2 : 1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(b < 1e7 ? 1 : 0)} MB` : `${Math.round(b / 1e3)} kB`)
+
+function since(s: number): string {
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min`
+  if (s < 2 * 86400) return `${Math.round(s / 3600)} h`
+  return `${Math.round(s / 86400)} days`
+}
+
+/** SD card writes (ADR-0021): how fast this unit wears its card. */
+function StorageCard() {
+  const q = trpc.storage.flash.useQuery(undefined, { refetchInterval: 60_000 })
+  return (
+    <Card>
+      <CardHeader title="Storage" subtitle="How much this unit writes to its SD card. Logs and swap stay in RAM to keep it low." icon={HardDrive} />
+      {q.data && <FlashRows f={q.data} />}
+    </Card>
+  )
+}
+
+function FlashRows({ f }: { f: inferRouterOutputs<AppRouter>['storage']['flash'] }) {
+  if (!f.available) return <SettingRow label="Flash writes" sub="No SD card counter on this machine" divider={false}><span className="text-sm text-fg-2">—</span></SettingRow>
+  return (
+    <>
+      <SettingRow label="Flash writes" sub={f.basis === 'history' ? `${Math.round(f.windowDays ?? 0)}-day average` : `average since boot (${since(f.uptimeS ?? 0)} ago)`}>
+        <span className="font-mono text-sm" data-testid="flash-rate">{f.bytesPerDay === null ? '—' : `${size(f.bytesPerDay)}/day`}</span>
+      </SettingRow>
+      <SettingRow label="Written since boot"><span className="font-mono text-sm">{size(f.sinceBootBytes ?? 0)}</span></SettingRow>
+      <SettingRow
+        label="Card"
+        sub={f.cardBytes && f.bytesPerDay !== null ? `At this rate, ${(f.bytesPerDay * 365 / f.cardBytes).toFixed(2)} full-card writes a year` : undefined}
+        divider={false}
+      >
+        <span className="font-mono text-sm">{`${f.device}${f.cardBytes ? ` · ${size(f.cardBytes)}` : ''}`}</span>
+      </SettingRow>
+    </>
+  )
 }
 
 /** Test and back-fill the mirror using the saved settings. */

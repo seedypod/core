@@ -159,6 +159,18 @@ for (const [name, make] of impls) {
       expect(store.counters.add('light_hours', 2, 't')).toBe(3.5)
       expect(store.counters.get('nothing')).toBe(0)
     })
+
+    it('flash samples keep order, upsert on ts and prune by age', () => {
+      store = make()
+      expect(store.flash.last()).toBeNull()
+      store.flash.add({ ts: '2026-10-02T00:00:00Z', sectors: 200, bytes: 51200 })
+      store.flash.add({ ts: '2026-10-01T00:00:00Z', sectors: 100, bytes: 0 })
+      store.flash.add({ ts: '2026-10-02T00:00:00Z', sectors: 300, bytes: 102400 })
+      expect(store.flash.last()).toEqual({ ts: '2026-10-02T00:00:00Z', sectors: 300, bytes: 102400 })
+      expect(store.flash.since('2026-10-01T00:00:00Z').map(s => s.sectors)).toEqual([100, 300])
+      expect(store.flash.prune('2026-10-02T00:00:00Z')).toBe(1)
+      expect(store.flash.since('2000-01-01T00:00:00Z')).toHaveLength(1)
+    })
   })
 }
 

@@ -1,14 +1,19 @@
 // Boots the built server (simulator HAL, scratch SQLite) on :3218 and runs the
 // Playwright e2e specs against it. Mirrors sleepypod's tests/browser/run.mjs.
 import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const PORT = 3218
 const dataDir = mkdtempSync(join(tmpdir(), 'seedypod-e2e-'))
-const env = { ...process.env, PORT: String(PORT), CI: '1', DATA_DIR: dataDir, DATABASE_URL: join(dataDir, 'e2e.db') }
+// A stand-in SD card for the flash-writes meter: 1 GB written, a 32 GB card.
+const block = join(dataDir, 'block/mmcblk0')
+mkdirSync(block, { recursive: true })
+writeFileSync(join(block, 'stat'), '5021 1544 412366 8133 2210 3122 1953125 14880 0 11440 23010\n')
+writeFileSync(join(block, 'size'), '62500000\n')
+const env = { ...process.env, PORT: String(PORT), CI: '1', DATA_DIR: dataDir, DATABASE_URL: join(dataDir, 'e2e.db'), FLASH_STAT_PATH: join(block, 'stat') }
 const server = spawn('node', ['server/dist/index.js'], { env, stdio: 'inherit' })
 let code = 1
 try {

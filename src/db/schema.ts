@@ -120,6 +120,13 @@ export const counters = sqliteTable('counters', {
   updatedAt: text().notNull(),
 })
 
+/** Hourly samples of the SD card's sectors-written counter (ADR-0021); `bytes` is the write since the previous sample. */
+export const flashSamples = sqliteTable('flash_samples', {
+  ts: text().primaryKey(),
+  sectors: integer().notNull(),
+  bytes: integer().notNull(),
+})
+
 /**
  * Capture analysis results (ADR-0019): one row per capture × analyser@version
  * × pod × metric, so analysers compare on shared captures and a re-run at a
