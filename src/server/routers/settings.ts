@@ -19,15 +19,25 @@ export const SettingsSchema = z.object({
   mqttTlsEnabled: z.boolean(),
   mqttTlsInsecure: z.boolean(),
   captureIntervalMin: z.number().int().min(0),
+  primaryAnalyzer: z.string().min(1).max(64),
+  analysisArtifacts: z.boolean(),
+  analysisIngestToken: z.string(),
+  mirrorEndpoint: z.string().url().nullable(),
+  mirrorBucket: z.string().min(1).max(63).nullable(),
+  mirrorRegion: z.string().min(1),
+  mirrorPrefix: z.string(),
+  mirrorAccessKeyId: z.string().nullable(),
+  mirrorSecretAccessKey: z.string().nullable(),
   updatedAt: z.string(),
 })
 
 /** Secrets are never returned to clients. */
-const Public = SettingsSchema.omit({ mqttPassword: true, apiKey: true }).extend({ hasApiKey: z.boolean(), hasMqttPassword: z.boolean() })
+const Public = SettingsSchema.omit({ mqttPassword: true, apiKey: true, analysisIngestToken: true, mirrorSecretAccessKey: true })
+  .extend({ hasApiKey: z.boolean(), hasMqttPassword: z.boolean(), hasAnalysisIngestToken: z.boolean(), hasMirrorSecret: z.boolean() })
 
 function publicView(s: z.infer<typeof SettingsSchema>) {
-  const { mqttPassword, apiKey, ...rest } = s
-  return { ...rest, hasApiKey: apiKey.length > 0, hasMqttPassword: !!mqttPassword }
+  const { mqttPassword, apiKey, analysisIngestToken, mirrorSecretAccessKey, ...rest } = s
+  return { ...rest, hasApiKey: apiKey.length > 0, hasMqttPassword: !!mqttPassword, hasAnalysisIngestToken: analysisIngestToken.length > 0, hasMirrorSecret: !!mirrorSecretAccessKey }
 }
 
 export const settingsRouter = router({

@@ -1,41 +1,31 @@
-import { encode } from 'jpeg-js'
 import { describe, expect, it } from 'vitest'
 import { MemoryStore } from '../../store/memory'
-import { analyzeCapture, decodeJpeg, podTrends } from '../analyze'
-
-function jpeg(width: number, height: number, greenLeftHalf: boolean) {
-  const data = new Uint8Array(width * height * 4)
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4
-      const green = greenLeftHalf && x < width / 2
-      data[i] = green ? 60 : 20
-      data[i + 1] = green ? 180 : 20
-      data[i + 2] = green ? 70 : 25
-      data[i + 3] = 255
-    }
-  }
-  return new Uint8Array(encode({ data, width, height }, 90).data)
-}
+import type { AnalysisRow } from '../../store/types'
+import { decodeJpeg, podTrends } from '../analyze'
+import { jpeg } from './fixtures'
 
 describe('vision analyze', () => {
   it('decodes JPEGs and rejects other bytes', () => {
     expect(decodeJpeg(new Uint8Array([1, 2, 3]))).toBeNull()
+    expect(decodeJpeg(new Uint8Array([0xFF, 0xD8, 0, 0, 1]))).toBeNull()
     expect(decodeJpeg(jpeg(60, 40, false))?.width).toBe(60)
   })
 
-  it('scores pods per capture and reports trends', () => {
+  it('reports per-pod trends from the primary analyser, or the one asked for', () => {
     const store = new MemoryStore()
-    const bytes = jpeg(300, 250, true)
+    const rows: AnalysisRow[] = []
     for (let i = 0; i < 12; i++) {
-      analyzeCapture(store, { id: `c${i}`, camera: 'upper', ts: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`, path: '', bytes: bytes.byteLength }, bytes)
+      const base = { captureId: `c${i}`, ts: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`, camera: 'upper' as const, version: 1, source: 'device' as const, metric: 'green_fraction', detail: null, artifact: null }
+      rows.push({ ...base, analyzer: 'green-threshold', slot: 1, value: 0.6 })
+      rows.push({ ...base, analyzer: 'exg-otsu', slot: 1, value: 0.1 + i * 0.05 })
     }
-    const trends = podTrends(store, 15)
-    expect(trends).toHaveLength(15)
-    // left column (slots 1, 4, 7, …) is green, right column is not
-    expect(trends[0]?.green).toBeGreaterThan(0.5)
-    expect(trends[2]?.green).toBeLessThan(0.1)
-    expect(trends[0]?.verdict).toBe('stalled')
-    expect(store.podGrowth.series(1)).toHaveLength(12)
+    store.analyses.add(rows)
+    const primary = podTrends(store, 15)
+    expect(primary).toHaveLength(15)
+    expect(primary[0]).toMatchObject({ slot: 1, green: 0.6, verdict: 'stalled', samples: 12 })
+    expect(primary[1]).toMatchObject({ green: null, verdict: 'unknown', samples: 0 })
+    expect(podTrends(store, 1, 'exg-otsu')[0]?.verdict).toBe('growing')
+    store.settings.update({ primaryAnalyzer: 'exg-otsu' })
+    expect(podTrends(store, 1)[0]?.verdict).toBe('growing')
   })
 })

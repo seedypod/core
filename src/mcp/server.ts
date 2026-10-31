@@ -53,8 +53,18 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: { camera: z.enum(['upper', 'lower']).optional(), limit: z.number().int().min(1).max(50).optional() },
   }, async i => text(await caller.camera.list({ camera: i.camera, limit: i.limit ?? 10 })))
 
+  server.registerTool('list_analyses', {
+    description: 'Camera analysers and what they have produced: every on-device analyser (id, version, metrics it emits, which one is primary for pod_health) plus any off-device worker that posted results, with row and capture counts and time span, and the analysis queue status. Pass slot to also get that pod\'s series from every analyser@version side by side, to see which ones agree. Read-only: choosing the primary analyser and re-running analysers are done in the app.',
+    inputSchema: { slot: z.number().int().min(1).max(30).optional(), metric: z.string().optional() },
+  }, async (i) => {
+    const analyzers = await caller.vision.analyzers()
+    const status = await caller.vision.status()
+    const compare = i.slot ? await caller.vision.compare({ slot: i.slot, metric: i.metric ?? 'green_fraction', limit: 48 }) : undefined
+    return text({ analyzers, status, compare })
+  })
+
   server.registerTool('pod_health', {
-    description: 'Per-pod growth verdicts from camera stills: green-area fraction and trend (growing / stalled / declining / unknown). Use with `pods` to decide which slots need attention.',
+    description: 'Per-pod growth verdicts from camera stills: green-area fraction and trend (growing / stalled / declining / unknown), from the primary analyser (see list_analyses). Use with `pods` to decide which slots need attention.',
     inputSchema: {},
   }, async () => text(await caller.vision.podTrends()))
 

@@ -1,10 +1,13 @@
 import { serve } from '@hono/node-server'
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { FsSink } from '../src/camera/fsSink'
 import { createHal } from '../src/hardware/factory'
 import { createEventBus } from '../src/lib/eventBus'
 import { connectBridge } from '../src/mqtt/bridge'
 import { createCore } from '../src/server/bootstrap'
 import { SqliteStore } from '../src/store/sqlite'
+import { createWorkerExecutor } from '../src/vision/workerExecutor'
 import { createApp } from './app'
 import { readVersion } from './version'
 
@@ -15,7 +18,11 @@ const DATA_DIR = process.env.DATA_DIR ?? './data'
 const events = createEventBus()
 const hal = await createHal({ events })
 const store = new SqliteStore({ url: process.env.DATABASE_URL ?? `${DATA_DIR}/seedypod.db` })
-const core = createCore({ hal, store, events, version: readVersion(), sink: new FsSink(`${DATA_DIR}/captures`), startServices: process.env.CI !== '1' })
+// Capture analysis runs on a worker thread when the bundled worker sits next to this file (a build);
+// under `tsx watch` it runs inline.
+const workerScript = new URL('./visionWorker.js', import.meta.url)
+const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(workerScript) : null
+const core = createCore({ hal, store, events, version: readVersion(), sink: new FsSink(`${DATA_DIR}/captures`), startServices: process.env.CI !== '1', analysisExecutor: vision?.run })
 
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 let bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {
@@ -39,7 +46,7 @@ injectWebSocket(server)
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     bridge?.stop()
-    void core.stop().finally(() => {
+    void core.stop().then(() => vision?.close()).finally(() => {
       server.close()
       process.exit(0)
     })
