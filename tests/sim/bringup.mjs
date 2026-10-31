@@ -225,6 +225,20 @@ try {
     return `${files.length} files`
   })
 
+  await check('an off-device worker posts results that sit beside the on-device ones', async () => {
+    const off = await fetch(`${api}/analyses/results`, { method: 'POST', headers: { 'content-type': 'application/json', 'authorization': 'Bearer x' }, body: '{}' })
+    assert(off.status === 404, `ingest without a token → ${off.status}`)
+    const r = await fetch(`${api}/settings`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ analysisIngestToken: 'bringup-token' }) })
+    assert(r.status === 200, `settings → ${r.status}`)
+    const run = spawnSync(process.execPath, [join(root, 'scripts/analysis-worker.mjs'), '--id', 'exg-strict', '--limit', '5'], { encoding: 'utf8', env: { ...process.env, SEEDYPOD_URL: `http://127.0.0.1:${corePort}`, SEEDYPOD_INGEST_TOKEN: 'bringup-token' } })
+    assert(run.status === 0, `worker exited ${run.status}: ${run.stderr || run.stdout}`)
+    const remote = (await get('/vision/analyzers')).find(a => a.id === 'exg-strict')
+    assert(remote?.source === 'remote' && remote.rows > 0, `analyzers ${JSON.stringify(remote)}`)
+    const cmp = await get('/vision/compare/1')
+    assert(cmp.some(s => s.analyzer === 'exg-strict') && cmp.some(s => s.analyzer === 'green-threshold'), 'not comparable on pod 1')
+    return run.stdout.trim()
+  })
+
   await check('EZO calibration reaches the probe; unknown probe refused', async () => {
     const ok = await post('/sensors/ph/calibrate', { point: 'mid', value: 7 })
     assert(ok.status === 200 && ok.body.ok && ok.body.points === 1, `${ok.status} ${JSON.stringify(ok.body)}`)

@@ -1,7 +1,9 @@
 import { serve } from '@hono/node-server'
 import { existsSync } from 'node:fs'
+import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FsSink } from '../src/camera/fsSink'
+import { MirroredSink } from '../src/camera/mirrorSink'
 import { createHal } from '../src/hardware/factory'
 import { createEventBus } from '../src/lib/eventBus'
 import { connectBridge } from '../src/mqtt/bridge'
@@ -22,7 +24,10 @@ const store = new SqliteStore({ url: process.env.DATABASE_URL ?? `${DATA_DIR}/se
 // under `tsx watch` it runs inline.
 const workerScript = new URL('./visionWorker.js', import.meta.url)
 const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(workerScript) : null
-const core = createCore({ hal, store, events, version: readVersion(), sink: new FsSink(`${DATA_DIR}/captures`), startServices: process.env.CI !== '1', analysisExecutor: vision?.run })
+// Stills and artifacts live under DATA_DIR/captures; the opt-in mirror copies them off the unit (ADR-0019).
+const capturesDir = `${DATA_DIR}/captures`
+const mirror = new MirroredSink({ local: new FsSink(capturesDir), store, events, keyOf: p => relative(capturesDir, p) })
+const core = createCore({ hal, store, events, version: readVersion(), sink: mirror, mirror, startServices: process.env.CI !== '1', analysisExecutor: vision?.run })
 
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 let bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {

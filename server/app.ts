@@ -11,7 +11,8 @@ import { createMcpServer } from '../src/mcp/server'
 import type { Context } from '../src/server/context'
 import { openApiDocument } from '../src/server/openapi'
 import { appRouter } from '../src/server/routers/app'
-import { apiKeyGuard } from './auth'
+import { IngestBatch, IngestRefused, ingestResults } from '../src/vision/ingest'
+import { apiKeyGuard, timingSafeEqual } from './auth'
 
 export interface CreateAppOptions {
   ctx: Context
@@ -26,6 +27,26 @@ export interface CreateAppOptions {
 export function createApp({ ctx, staticRoot }: CreateAppOptions) {
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
+
+  // Off-device results (ADR-0019) authenticate with their own token, so this route sits before the API-key guard.
+  app.post('/api/analyses/results', async (c) => {
+    const token = ctx.store.settings.get().analysisIngestToken
+    if (!token) return c.json({ error: 'result ingest is off; set an ingest token in Settings' }, 404)
+    const given = c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
+    if (!given || !timingSafeEqual(given, token)) return c.json({ error: 'unauthorized' }, 401)
+    if (Number(c.req.header('content-length') ?? 0) > 5_000_000) return c.json({ error: 'batch over 5 MB; post fewer results per request' }, 413)
+    const parsed = IngestBatch.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ error: 'invalid batch', issues: parsed.error.issues }, 400)
+    try {
+      const out = ingestResults(ctx.store, parsed.data)
+      ctx.events.emit({ kind: 'mutation', path: 'analyses' })
+      return c.json(out)
+    }
+    catch (e) {
+      if (e instanceof IngestRefused) return c.json({ error: e.message }, 409)
+      throw e
+    }
+  })
 
   app.use('/api/*', cors({ origin: origin => origin ?? '*' }))
   app.use('/api/*', apiKeyGuard(ctx.store))
