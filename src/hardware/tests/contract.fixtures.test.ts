@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { ActuatorCommand, ActuatorState, Alert, Reading, SystemInfo } from '../contract'
 
 const dir = join(__dirname, '../../../hal/contract/fixtures')
-const schemas = { system: SystemInfo, actuator_state: ActuatorState, reading: Reading, alert: Alert, command: ActuatorCommand } as const
+const schemas = { system: SystemInfo, actuator_state: ActuatorState, reading: Reading, alert: Alert, alert_dose_fault: Alert, command: ActuatorCommand } as const
 
 describe('HAL contract fixtures parse on the TS side', () => {
   for (const file of readdirSync(dir)) {

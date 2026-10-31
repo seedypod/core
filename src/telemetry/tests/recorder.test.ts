@@ -28,6 +28,14 @@ describe('Recorder', () => {
     expect(store.alerts.list({ activeOnly: true })[0]?.kind).toBe('hal_offline')
   })
 
+  it('leaves doser faults to the HAL dose_fault alert', () => {
+    const store = new MemoryStore()
+    const r = new Recorder({ store, events: createEventBus() })
+    r.onHal({ type: 'actuator', id: 'dose_1', state: { on: false, level: 0, since: 't', fault: 'lockout', remainingS: null } })
+    r.onHal({ type: 'alert', alert: { kind: 'dose_fault', active: true, ts: 't', detail: 'dose_1: lockout' } })
+    expect(store.alerts.list({ activeOnly: true }).map(a => a.kind)).toEqual(['dose_fault'])
+  })
+
   it('accumulates light hours across on/off', () => {
     const store = new MemoryStore()
     let t = 0

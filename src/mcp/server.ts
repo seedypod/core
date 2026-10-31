@@ -66,7 +66,7 @@ export function createMcpServer(ctx: Context): McpServer {
   server.registerTool('stop_pump', { description: 'Stop the pump immediately.', inputSchema: {} }, async () => text(await caller.pump.stop()))
 
   server.registerTool('acknowledge_alert', {
-    description: 'Acknowledge an alert by id (from status). For latched hardware faults (pump_fault) this re-enables the actuator — only do it after the cause is fixed (e.g. tank refilled). For reminders it marks the chore done.',
+    description: 'Acknowledge an alert by id (from status). For latched hardware faults (pump_fault, dose_fault) this re-enables the actuator — only do it after the cause is fixed (e.g. tank refilled, dosing checked). For reminders it marks the chore done.',
     inputSchema: { id: z.number().int() },
   }, async i => text(await caller.alerts.acknowledge({ id: i.id })))
 

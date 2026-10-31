@@ -25,3 +25,13 @@ off.
 ## Consequences
 
 - No dosing ever happens from a schedule alone; a measured pH/EC is required.
+
+## Amendment (2026-10-31): `dose_fault`
+
+Dosing lockouts and faults now raise their own `dose_fault` alert kind
+(contract fixture `alert_dose_fault.json`) instead of sharing `pump_fault`.
+`alert/dose_fault/ack` clears only the dosers; `alert/pump_fault/ack` clears
+only the circulation pump, so re-arming one can never silently re-arm the
+other. The long button press, which needs someone at the unit, clears both.
+Core no longer raises per-doser `dose_N_fault` rows; the single `dose_fault`
+alert names the doser and its acknowledge reaches `hald`.
