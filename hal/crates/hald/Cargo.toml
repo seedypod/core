@@ -1,0 +1,29 @@
+[package]
+name = "hald"
+description = "leafypod hardware daemon: owns the Gardyn's pins and buses, publishes over MQTT, serves stills over HTTP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "hald"
+path = "src/main.rs"
+
+[dependencies]
+hal-core.workspace = true
+hal-sim.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+toml = "0.8"
+
+[features]
+default = []
+# Real drivers (rppal etc.) land in Phase 2.5; gated so laptops build without them.
+hardware = []
