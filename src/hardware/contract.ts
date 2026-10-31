@@ -24,7 +24,7 @@ export type SensorId = z.infer<typeof SensorId>
 export const ActuatorId = z.enum(['light', 'pump', 'dose_1', 'dose_2', 'dose_3'])
 export type ActuatorId = z.infer<typeof ActuatorId>
 
-export const AlertKind = z.enum(['water_low', 'pump_fault', 'over_temp', 'camera_missing', 'hal_offline'])
+export const AlertKind = z.enum(['water_low', 'pump_fault', 'dose_fault', 'over_temp', 'camera_missing', 'hal_offline'])
 export type AlertKind = z.infer<typeof AlertKind>
 
 export const Quality = z.enum(['good', 'stale', 'suspect'])

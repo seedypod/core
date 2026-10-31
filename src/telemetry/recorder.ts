@@ -63,6 +63,8 @@ export class Recorder {
           if (event.state.on && this.lightOnSince === null) this.lightOnSince = now.getTime()
           if (!event.state.on) this.flushLightHours()
         }
+        // Doser faults surface once, as the HAL's acknowledgeable dose_fault alert that names the doser.
+        if (event.id.startsWith('dose_')) break
         if (event.state.fault) store.alerts.raise(`${event.id}_fault`, event.state.fault, now.toISOString())
         else store.alerts.clear(`${event.id}_fault`, now.toISOString())
         break

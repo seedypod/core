@@ -23,7 +23,7 @@ Written at the pause point on 2026-10-31. `dev` is at the HAL merge; `main` is a
 
 **Not done, needs hardware (Phase 1 / 2.10):** nothing has run on a real Gardyn. The pin map, I²C addresses, driver timing/CRCs, INA219 calibration, button/GPIO25 polarity, PWM overlay line, camera exposure and the install scripts' Raspberry Pi OS steps are all documented assumptions. The checklist is in `docs/hardware/pin-map.md`; the per-driver list is at the end of `docs/hardware/hal.md`.
 
-**Known deliberate limits:** dosing lockout reuses the `pump_fault` alert kind (contract has no dose kind yet); EZO calibration has driver methods but no MQTT topic; `hald` MQTT is plain TCP (LAN-only); over-temp uses a single threshold plus the GPIO25 line (latch provides anti-flap); the Next.js memory spike (plan 0.0) was not run — the plan is built on the Hono/Vite outcome.
+**Known deliberate limits:** EZO calibration has driver methods but no MQTT topic; `hald` MQTT is plain TCP (LAN-only); over-temp uses a single threshold plus the GPIO25 line (latch provides anti-flap); the Next.js memory spike (plan 0.0) was not run — the plan is built on the Hono/Vite outcome.
 
 ## 2. Transfer (done 2026-10-31)
 

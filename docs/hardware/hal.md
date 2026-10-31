@@ -118,8 +118,9 @@ QoS 1 throughout. Client id `hald-<unit-id>`.
 | `actuator/<id>/state` | → | yes | `ActuatorState {on, level, since, fault, remainingS}`; a refused command republishes the state with its `fault` |
 | `actuator/<id>/set` | ← | — | `ActuatorCommand {on?, level?, durationS?}` (empty payload = `{}`) |
 | `event/button` | → | no | `{"press": "single" \| "double" \| "long"}` |
-| `alert/<kind>` | → | yes | `Alert {kind, active, ts, detail}` for `water_low`, `pump_fault`, `over_temp`, `camera_missing` |
-| `alert/pump_fault/ack` | ← | — | any payload; clears the latched pump fault **and** dosing lockouts |
+| `alert/<kind>` | → | yes | `Alert {kind, active, ts, detail}` for `water_low`, `pump_fault`, `dose_fault` (only with a doser configured), `over_temp`, `camera_missing` |
+| `alert/pump_fault/ack` | ← | — | any payload; clears the latched pump fault |
+| `alert/dose_fault/ack` | ← | — | any payload; clears every doser's lockout or fault |
 | `ha/light/state`, `ha/light/brightness/state` | → | yes | `ON`/`OFF`, `0–100` (mirrors for HA's `light` platform) |
 | `ha/light/set`, `ha/light/brightness/set` | ← | — | `ON`/`OFF`, `0–100` → translated to an `ActuatorCommand` |
 | `ha/pump/state`, `ha/pump/percentage/state` | → | yes | `ON`/`OFF`, duty % |
@@ -139,10 +140,10 @@ Semantics worth knowing:
 - **Dosing** (`dose_1..3`): `durationS` is seconds of pumping, converted to ml
   through `ml_per_s`, clamped to `max_single_ml`; omitted → `default_dose_ml`.
   Refused when disabled, when the dose would cross `max_daily_ml` (UTC day),
-  while a dose runs, or after `max_doses_per_day` until acknowledged. The
-  ledger survives restarts.
+  while a dose runs, or after `max_doses_per_day` until `alert/dose_fault/ack`.
+  The ledger survives restarts.
 - **Button** (GPIO13): single toggles the light, double starts/stops a
-  `button.pump_run_s` bounded pump run, long acknowledges the pump fault. All
+  `button.pump_run_s` bounded pump run, long acknowledges the pump fault and any dosing lockout. All
   three are also published on `event/button`.
 - **Reconnect**: on broker loss `hald` backs off 1 → 30 s and keeps running;
   after reconnecting it republishes every retained topic and discovery.
@@ -168,6 +169,7 @@ and `availability_topic = seedypod/<unit>/availability`.
 | `binary_sensor` | `water_low`, `pump_fault` | `alert/<kind>` | `device_class: problem` |
 | `binary_sensor` | `over_temp` | `alert/over_temp` | `device_class: heat` |
 | `button` | `ack_pump_fault` | `alert/pump_fault/ack` | "Acknowledge pump fault" |
+| `binary_sensor`, `button` | `dose_fault`, `ack_dose_fault` | `alert/dose_fault`, `alert/dose_fault/ack` | "Dosing lockout" / "Acknowledge dosing lockout" (only when a doser is configured) |
 | `button` | `dose_1..3` | `actuator/dose_N/set` | fires the default dose (only when a doser is configured) |
 | `event` | `button` | `event/button` | `event_types: [single, double, long]` |
 

@@ -158,11 +158,20 @@ pub fn discovery(prefix: &str, system: &SystemInfo) -> Vec<Outbound> {
         }
     }
 
-    for (kind, name, class) in [
+    let dosing = system
+        .caps
+        .actuators
+        .iter()
+        .any(|a| matches!(a, ActuatorId::Dose1 | ActuatorId::Dose2 | ActuatorId::Dose3));
+    let mut alerts = vec![
         (AlertKind::WaterLow, "Water low", "problem"),
         (AlertKind::PumpFault, "Pump fault", "problem"),
         (AlertKind::OverTemp, "Board over temperature", "heat"),
-    ] {
+    ];
+    if dosing {
+        alerts.push((AlertKind::DoseFault, "Dosing lockout", "problem"));
+    }
+    for (kind, name, class) in alerts {
         out.push(entity(
             prefix,
             "binary_sensor",
@@ -190,6 +199,20 @@ pub fn discovery(prefix: &str, system: &SystemInfo) -> Vec<Outbound> {
             "payload_press": "{}",
         }),
     ));
+    if dosing {
+        out.push(entity(
+            prefix,
+            "button",
+            system,
+            "ack_dose_fault",
+            json!({
+                "name": "Acknowledge dosing lockout",
+                "icon": "mdi:restart-alert",
+                "command_topic": topics::alert_ack(unit, AlertKind::DoseFault),
+                "payload_press": "{}",
+            }),
+        ));
+    }
 
     out.push(entity(
         prefix,
@@ -325,7 +348,8 @@ mod tests {
     #[test]
     fn every_entity_shares_the_device_and_availability() {
         let out = discovery("homeassistant", &system());
-        assert_eq!(out.len(), 3 + 3 + 3 + 1 + 1);
+        // sensors + actuators + alert binary_sensors (incl. dose_fault) + ack buttons + event
+        assert_eq!(out.len(), 3 + 3 + 4 + 2 + 1);
         for o in &out {
             let v: Value = serde_json::from_str(&o.payload).unwrap();
             assert_eq!(v["availability_topic"], "seedypod/u1/availability");
@@ -401,9 +425,21 @@ mod tests {
         let ack = find(&out, "homeassistant/button/u1_ack_pump_fault/config");
         assert_eq!(ack["command_topic"], "seedypod/u1/alert/pump_fault/ack");
         assert_eq!(ack["payload_press"], "{}");
+        let df = find(&out, "homeassistant/binary_sensor/u1_dose_fault/config");
+        assert_eq!(df["state_topic"], "seedypod/u1/alert/dose_fault");
+        let dack = find(&out, "homeassistant/button/u1_ack_dose_fault/config");
+        assert_eq!(dack["command_topic"], "seedypod/u1/alert/dose_fault/ack");
         let ev = find(&out, "homeassistant/event/u1_button/config");
         assert_eq!(ev["state_topic"], "seedypod/u1/event/button");
         assert_eq!(ev["event_types"], json!(["single", "double", "long"]));
+    }
+
+    #[test]
+    fn dose_fault_entities_only_exist_with_dosers() {
+        let mut sys = system();
+        sys.caps.actuators.retain(|a| !matches!(a, ActuatorId::Dose1));
+        let out = discovery("homeassistant", &sys);
+        assert!(!out.iter().any(|o| o.topic.contains("dose_fault")));
     }
 
     #[test]

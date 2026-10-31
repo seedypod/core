@@ -253,16 +253,22 @@ impl Engine {
             Inbound::ActuatorSet(id, cmd) => out.extend(self.actuator_set(id, &cmd, now)),
             Inbound::AlertAck(kind) => {
                 info!(?kind, "alert acknowledged");
-                if kind == AlertKind::PumpFault {
-                    self.pump.acknowledge();
-                    for g in self.doses.values_mut() {
-                        g.acknowledge();
+                match kind {
+                    AlertKind::PumpFault => {
+                        self.pump.acknowledge();
+                        out.extend(self.publish_actuator(ActuatorId::Pump, now));
+                        self.save_state(now);
                     }
-                    out.extend(self.publish_actuator(ActuatorId::Pump, now));
-                    for id in self.doses.keys().copied().collect::<Vec<_>>() {
-                        out.extend(self.publish_actuator(id, now));
+                    AlertKind::DoseFault => {
+                        for g in self.doses.values_mut() {
+                            g.acknowledge();
+                        }
+                        for id in self.doses.keys().copied().collect::<Vec<_>>() {
+                            out.extend(self.publish_actuator(id, now));
+                        }
+                        self.save_state(now);
                     }
-                    self.save_state(now);
+                    _ => {}
                 }
                 self.refresh_alerts(now, false, &mut out);
             }
@@ -301,8 +307,12 @@ impl Engine {
                             now,
                         ));
                     }
+                    // Someone is standing at the unit: clear every latched fault.
                     ButtonPress::Long => {
-                        out.extend(self.handle(Inbound::AlertAck(AlertKind::PumpFault), now))
+                        out.extend(self.handle(Inbound::AlertAck(AlertKind::PumpFault), now));
+                        if !self.doses.is_empty() {
+                            out.extend(self.handle(Inbound::AlertAck(AlertKind::DoseFault), now));
+                        }
                     }
                 }
             }
@@ -629,21 +639,26 @@ impl Engine {
                 detail,
             });
         }
-        let mut fault_detail: Vec<String> = Vec::new();
-        if let Some(f) = self.pump.fault() {
-            fault_detail.push(format!("pump: {f}"));
-        }
-        for (id, g) in &self.doses {
-            if let Some(f) = g.fault() {
-                fault_detail.push(format!("{}: {f}", key(id)));
-            }
-        }
+        let pump_fault = self.pump.fault();
         v.push(Alert {
             kind: AlertKind::PumpFault,
-            active: !fault_detail.is_empty(),
+            active: pump_fault.is_some(),
             ts: ts.clone(),
-            detail: fault_detail.join("; "),
+            detail: pump_fault.map(|f| format!("pump: {f}")).unwrap_or_default(),
         });
+        if !self.doses.is_empty() {
+            let dose_detail: Vec<String> = self
+                .doses
+                .iter()
+                .filter_map(|(id, g)| g.fault().map(|f| format!("{}: {f}", key(id))))
+                .collect();
+            v.push(Alert {
+                kind: AlertKind::DoseFault,
+                active: !dose_detail.is_empty(),
+                ts: ts.clone(),
+                detail: dose_detail.join("; "),
+            });
+        }
         let hot_by_temp = matches!(
             (self.cfg.pump.over_temp_c, self.env.pcb_temp_c),
             (Some(max), Some(t)) if t >= max
@@ -1139,7 +1154,7 @@ mod tests {
         assert_eq!(r.world.lock().unwrap().dose_level[0], 0.0);
         let saved = StateFile::new(&r.dir).load();
         assert_eq!(saved.doses["dose_1"].doses, 1);
-        // Exhaust the lockout (default 4 doses) → pump_fault alert names the doser.
+        // Exhaust the lockout (default 4 doses) → dose_fault alert names the doser.
         for _ in 0..3 {
             r.engine
                 .handle(Inbound::ActuatorSet(ActuatorId::Dose1, on(None, Some(1))), r.now);
@@ -1152,11 +1167,17 @@ mod tests {
         let st = payload(&out, "seedypod/u1/actuator/dose_1/state");
         assert_eq!(st["on"], false);
         assert_eq!(st["fault"], "lockout");
-        let pf = &r.engine.alerts[&AlertKind::PumpFault];
-        assert!(pf.active && pf.detail.contains("dose_1: lockout"), "{pf:?}");
-        assert!(r.snapshot.read().unwrap().alerts["pump_fault"].active);
+        let df = &r.engine.alerts[&AlertKind::DoseFault];
+        assert!(df.active && df.detail.contains("dose_1: lockout"), "{df:?}");
+        assert!(r.snapshot.read().unwrap().alerts["dose_fault"].active);
+        assert!(!r.engine.alerts[&AlertKind::PumpFault].active);
+        // Acknowledging the pump fault leaves the dosing lockout latched.
         let out = r.engine.handle(Inbound::AlertAck(AlertKind::PumpFault), r.now);
+        assert!(!out.iter().any(|o| o.topic == "seedypod/u1/actuator/dose_1/state"));
+        assert!(r.engine.alerts[&AlertKind::DoseFault].active);
+        let out = r.engine.handle(Inbound::AlertAck(AlertKind::DoseFault), r.now);
         assert!(payload(&out, "seedypod/u1/actuator/dose_1/state")["fault"].is_null());
+        assert_eq!(payload(&out, "seedypod/u1/alert/dose_fault")["active"], false);
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

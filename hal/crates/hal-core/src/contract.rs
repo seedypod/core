@@ -39,6 +39,9 @@ pub enum ActuatorId {
 pub enum AlertKind {
     WaterLow,
     PumpFault,
+    /// A dosing pump hit its daily cap or lockout (ADR-0014). Separate from
+    /// `PumpFault` so acknowledging one never re-arms the other.
+    DoseFault,
     OverTemp,
     CameraMissing,
     HalOffline,
@@ -190,6 +193,10 @@ mod tests {
             serde_json::to_string(&AlertKind::PumpFault).unwrap(),
             "\"pump_fault\""
         );
+        assert_eq!(
+            serde_json::to_string(&AlertKind::DoseFault).unwrap(),
+            "\"dose_fault\""
+        );
     }
 
     #[test]
@@ -247,6 +254,8 @@ mod fixture_tests {
         assert_eq!(r.unit, "cm");
         let al: Alert = serde_json::from_str(&fixture("alert")).unwrap();
         assert_eq!(al.kind, AlertKind::PumpFault);
+        let dl: Alert = serde_json::from_str(&fixture("alert_dose_fault")).unwrap();
+        assert_eq!(dl.kind, AlertKind::DoseFault);
         let c: ActuatorCommand = serde_json::from_str(&fixture("command")).unwrap();
         assert_eq!(c.duration_s, Some(300));
     }
