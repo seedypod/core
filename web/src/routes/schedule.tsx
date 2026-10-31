@@ -1,4 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Placeholder } from '@/src/components/Placeholder'
+import { SchedulePage } from '@/src/components/Schedule/SchedulePage'
 
-export const Route = createFileRoute('/schedule')({ component: () => <Placeholder title="Schedule" /> })
+export const Route = createFileRoute('/schedule')({ component: SchedulePage })

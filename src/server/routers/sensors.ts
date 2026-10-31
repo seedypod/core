@@ -5,8 +5,8 @@ import { publicProcedure, router } from '../trpc'
 export const sensorsRouter = router({
   latest: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/sensors', tags: ['sensors'], summary: 'Latest reading for every sensor' } })
-    .output(z.record(SensorId, Reading))
-    .query(({ ctx }) => ctx.hal.snapshot().sensors as Record<z.infer<typeof SensorId>, z.infer<typeof Reading>>),
+    .output(z.partialRecord(SensorId, Reading))
+    .query(({ ctx }) => ctx.hal.snapshot().sensors),
   read: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/sensors/{id}', tags: ['sensors'] } })
     .input(z.object({ id: SensorId }))

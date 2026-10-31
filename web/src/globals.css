@@ -2,6 +2,10 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Vite's root is web/, so tell Tailwind where the shared components live. */
+@source "../../src";
+@source "../../lib";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

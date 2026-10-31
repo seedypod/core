@@ -15,6 +15,13 @@ function caller() {
 }
 
 describe('routers', () => {
+  it('sensors.latest validates with a partial sensor set', async () => {
+    const { c } = caller()
+    const s = await c.sensors.latest()
+    expect(Object.keys(s)).toContain('air_temp')
+    expect(s.ph).toBeUndefined()
+  })
+
   it('system.info reports the HAL identity and limits', async () => {
     const { c } = caller()
     const info = await c.system.info()

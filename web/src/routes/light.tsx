@@ -1,4 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Placeholder } from '@/src/components/Placeholder'
+import { LightPage } from '@/src/components/Light/LightPage'
 
-export const Route = createFileRoute('/light')({ component: () => <Placeholder title="Light" /> })
+export const Route = createFileRoute('/light')({ component: LightPage })
