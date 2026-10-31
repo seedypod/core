@@ -2,7 +2,8 @@ import Database from 'better-sqlite3'
 import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
-import { dirname, join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { SensorId } from '../hardware/contract'
 import * as t from '../db/schema'
@@ -20,6 +21,21 @@ export interface SqliteStoreOptions {
 
 const here = dirname(fileURLToPath(import.meta.url))
 
+/**
+ * Migrations live in src/db/migrations. From source (vitest/tsx) that is next
+ * to this file; from the esbuild bundle (server/dist/index.js) it is two levels
+ * up; MIGRATIONS_DIR overrides both for exotic layouts.
+ */
+export function defaultMigrationsFolder(): string {
+  const candidates = [
+    process.env.MIGRATIONS_DIR,
+    join(here, '../db/migrations'),
+    resolve(here, '../../src/db/migrations'),
+    resolve(process.cwd(), 'src/db/migrations'),
+  ].filter((c): c is string => !!c)
+  return candidates.find(c => existsSync(join(c, 'meta/_journal.json'))) ?? candidates[1] as string
+}
+
 export class SqliteStore implements Store {
   private readonly sqlite: Database.Database
   private readonly db
@@ -29,7 +45,7 @@ export class SqliteStore implements Store {
     this.sqlite.pragma('journal_mode = WAL')
     this.sqlite.pragma('busy_timeout = 5000')
     this.db = drizzle(this.sqlite, { schema: t })
-    migrate(this.db, { migrationsFolder: opts.migrationsFolder ?? join(here, '../db/migrations') })
+    migrate(this.db, { migrationsFolder: opts.migrationsFolder ?? defaultMigrationsFolder() })
     this.seed(opts.podCount ?? 30)
   }
 
