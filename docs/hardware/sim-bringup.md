@@ -39,10 +39,13 @@ CI runs it as **Sim Bring-up** on `dev` and on PRs touching `hal/`, `src/`,
 | 5 | A light command round-trips and `hald` echoes the new state | `POST /api/light` |
 | 6 | Pump duty is clamped to the guard (30 %) and the run stops at its bound | `POST /api/pump/run-once` |
 | 7 | A still is fetched over `hald`'s HTTP server and stored | `POST /api/camera/upper/capture` |
-| 8 | EZO calibration reaches the probe; an unconfigured probe returns 412 | `POST /api/sensors/{id}/calibrate` |
-| 9 | Exhausting the doser raises `dose_fault` (not `pump_fault`); acknowledging it clears the latch in `hald` | MQTT `actuator/dose_1/set`, `POST /api/alerts/{id}/acknowledge` |
-| 10 | A probe added from the app goes live (readings, inventory, HA entity) and is removed again; removing a `hal.toml` probe is refused | `POST`/`DELETE /api/devices/sensors` |
-| 11 | Killing `hald` is noticed through the broker's last will | `hal_offline` alert |
+| 8 | Both on-device analysers score that still on the worker thread | `GET /api/vision/captures/{id}`, `/api/vision/status` |
+| 9 | The dataset export streams a tar with the manifest, tables and stills | `GET /api/datasets/export` |
+| 10 | `scripts/analysis-worker.mjs` posts results that compare next to the on-device ones; ingest is off without a token | `POST /api/analyses/results`, `GET /api/vision/compare/1` |
+| 11 | EZO calibration reaches the probe; an unconfigured probe returns 412 | `POST /api/sensors/{id}/calibrate` |
+| 12 | Exhausting the doser raises `dose_fault` (not `pump_fault`); acknowledging it clears the latch in `hald` | MQTT `actuator/dose_1/set`, `POST /api/alerts/{id}/acknowledge` |
+| 13 | A probe added from the app goes live (readings, inventory, HA entity) and is removed again; removing a `hal.toml` probe is refused | `POST`/`DELETE /api/devices/sensors` |
+| 14 | Killing `hald` is noticed through the broker's last will | `hal_offline` alert |
 
 ## What it found
 

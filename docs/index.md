@@ -11,7 +11,7 @@ profile as `knowledge/`). Concepts carry frontmatter with `status`,
 - [Handoff](HANDOFF.md) — State at the pause point, transfer steps, what remains.
 - [Architecture decision records](adr/index.md) — Why things are the way they are.
 - [Implementation plan](implementation-plan.md) — Phase 0 → 1.0 with parallelism markers.
-- [Installation](INSTALLATION.md) · [Adding a probe](SENSORS.md) · [Maintenance](MAINTENANCE.md) · [Deployment](DEPLOYMENT.md) · [Debugging](DEBUGGING.md) · [Privacy](PRIVACY.md)
+- [Installation](INSTALLATION.md) · [Adding a probe](SENSORS.md) · [Capture analysis](ANALYSIS.md) · [Maintenance](MAINTENANCE.md) · [Deployment](DEPLOYMENT.md) · [Debugging](DEBUGGING.md) · [Privacy](PRIVACY.md)
 - [Hardware](hardware/index.md) — Pin map and verification checklist.
 - [Testing](testing/index.md) — What runs where.
 
