@@ -3,6 +3,7 @@
  * `MemoryStore` (tests, browser demo) implement the same interface, so every
  * router, the scheduler and the grow cycle are storage-agnostic.
  */
+import type { AutomationRule, RunOutcome } from '../autopilot/types'
 import type { SensorId } from '../hardware/contract'
 
 export interface DeviceSettings {
@@ -32,6 +33,7 @@ export interface DeviceSettings {
   mirrorPrefix: string
   mirrorAccessKeyId: string | null
   mirrorSecretAccessKey: string | null
+  autopilotEnabled: boolean
   updatedAt: string
 }
 
@@ -167,8 +169,23 @@ export interface Store {
     range(fromTs: string, toTs: string): AnalysisRow[]
     stats(): AnalyzerStats[]
   }
+  automations: {
+    list(): Automation[]
+    get(id: number): Automation | null
+    create(rule: Omit<AutomationRule, 'id'>, ts: string): Automation
+    update(id: number, patch: Partial<Omit<AutomationRule, 'id'>>, ts: string): Automation | null
+    remove(id: number): boolean
+    addRun(run: Omit<AutomationRun, 'id'>): void
+    /** Newest first. */
+    runs(q?: { automationId?: number, limit?: number }): AutomationRun[]
+    /** Drop runs older than `beforeTs`; returns how many went. */
+    pruneRuns(beforeTs: string): number
+  }
   close(): void
 }
+
+export interface Automation extends AutomationRule { createdAt: string, updatedAt: string }
+export interface AutomationRun { id: number, automationId: number, firedAt: string, outcome: RunOutcome, detail: unknown }
 
 export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   unitName: 'Gardyn',
@@ -197,4 +214,5 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   mirrorPrefix: '',
   mirrorAccessKeyId: null,
   mirrorSecretAccessKey: null,
+  autopilotEnabled: true,
 }

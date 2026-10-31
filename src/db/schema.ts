@@ -41,6 +41,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   mirrorPrefix: text().notNull().default(''),
   mirrorAccessKeyId: text(),
   mirrorSecretAccessKey: text(),
+  /** Autopilot kill switch (ADR-0020): off stops every rule and drops their light leases. */
+  autopilotEnabled: integer({ mode: 'boolean' }).notNull().default(true),
   updatedAt: text().notNull(),
 })
 
@@ -142,3 +144,27 @@ export const analysisResults = sqliteTable('analysis_results', {
   uniqueIndex('analysis_results_key').on(t.captureId, t.analyzer, t.version, t.slot, t.metric),
   index('analysis_results_series').on(t.analyzer, t.metric, t.slot, t.ts),
 ])
+
+/** Autopilot rules (ADR-0020); the AST lives in JSON columns validated by zod at the API. */
+export const automations = sqliteTable('automations', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  name: text().notNull(),
+  enabled: integer({ mode: 'boolean' }).notNull().default(true),
+  dryRun: integer({ mode: 'boolean' }).notNull().default(true),
+  priority: integer().notNull().default(50),
+  cooldownMin: integer(),
+  trigger: text().notNull(),
+  conditions: text().notNull(),
+  actions: text().notNull(),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+})
+
+/** One row per evaluation where a rule's trigger was active: the audit log behind "why did it do that". */
+export const automationRuns = sqliteTable('automation_runs', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  automationId: integer().notNull(),
+  firedAt: text().notNull(),
+  outcome: text({ enum: ['fired', 'skipped', 'clamped', 'dry_run', 'refused', 'error'] }).notNull(),
+  detail: text().notNull().default('{}'),
+}, t => [index('automation_runs_rule_time').on(t.automationId, t.firedAt)])

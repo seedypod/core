@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AnalysisRouteImport } from './routes/analysis'
+import { Route as AutopilotRouteImport } from './routes/autopilot'
 import { Route as CamerasRouteImport } from './routes/cameras'
 import { Route as GrowRouteImport } from './routes/grow'
 import { Route as KioskRouteImport } from './routes/kiosk'
@@ -35,6 +36,11 @@ const AlertsRoute = AlertsRouteImport.update({
 const AnalysisRoute = AnalysisRouteImport.update({
   id: '/analysis',
   path: '/analysis',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutopilotRoute = AutopilotRouteImport.update({
+  id: '/autopilot',
+  path: '/autopilot',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CamerasRoute = CamerasRouteImport.update({
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/analysis': typeof AnalysisRoute
+  '/autopilot': typeof AutopilotRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
@@ -101,6 +108,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/analysis': typeof AnalysisRoute
+  '/autopilot': typeof AutopilotRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/analysis': typeof AnalysisRoute
+  '/autopilot': typeof AutopilotRoute
   '/cameras': typeof CamerasRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/analysis'
+    | '/autopilot'
     | '/cameras'
     | '/grow'
     | '/kiosk'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/analysis'
+    | '/autopilot'
     | '/cameras'
     | '/grow'
     | '/kiosk'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/analysis'
+    | '/autopilot'
     | '/cameras'
     | '/grow'
     | '/kiosk'
@@ -175,6 +187,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
   AnalysisRoute: typeof AnalysisRoute
+  AutopilotRoute: typeof AutopilotRoute
   CamerasRoute: typeof CamerasRoute
   GrowRoute: typeof GrowRoute
   KioskRoute: typeof KioskRoute
@@ -207,6 +220,13 @@ declare module '@tanstack/react-router' {
       path: '/analysis'
       fullPath: '/analysis'
       preLoaderRoute: typeof AnalysisRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autopilot': {
+      id: '/autopilot'
+      path: '/autopilot'
+      fullPath: '/autopilot'
+      preLoaderRoute: typeof AutopilotRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cameras': {
@@ -279,6 +299,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
   AnalysisRoute: AnalysisRoute,
+  AutopilotRoute: AutopilotRoute,
   CamerasRoute: CamerasRoute,
   GrowRoute: GrowRoute,
   KioskRoute: KioskRoute,

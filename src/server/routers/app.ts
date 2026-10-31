@@ -1,6 +1,7 @@
 import { router } from '../trpc'
 import { lightRouter, pumpRouter } from './actuators'
 import { alertsRouter } from './alerts'
+import { automationsRouter } from './automations'
 import { cameraRouter } from './camera'
 import { datasetsRouter } from './datasets'
 import { devicesRouter } from './devices'
@@ -25,6 +26,7 @@ export const appRouter = router({
   light: lightRouter,
   pump: pumpRouter,
   schedules: schedulesRouter,
+  automations: automationsRouter,
   grow: growRouter,
   camera: cameraRouter,
   vision: visionRouter,
