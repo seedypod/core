@@ -1,6 +1,7 @@
 import { Droplets, Sun, Thermometer, Waves, Zap } from 'lucide-react'
 import { Card, CardHeader, GrowBackdrop, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
 import type { Reading, SensorId } from '@/src/hardware/contract'
+import { formatReading, SENSOR_META } from '@/src/lib/sensorMeta'
 import { trpc } from '@/src/utils/trpc'
 
 function minutesNow(): number {
@@ -13,6 +14,7 @@ export function Dashboard() {
   const lightState = trpc.light.get.useQuery()
   const pumpState = trpc.pump.get.useQuery()
   const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
+  const system = trpc.system.info.useQuery()
   const setLight = trpc.light.set.useMutation({ onSuccess: () => lightState.refetch() })
   const runPump = trpc.pump.runOnce.useMutation({ onSuccess: () => pumpState.refetch() })
   const stopPump = trpc.pump.stop.useMutation({ onSuccess: () => pumpState.refetch() })
@@ -21,6 +23,7 @@ export function Dashboard() {
   const l = lightState.data
   const p = pumpState.data
   const active = (alerts.data ?? []).filter(a => a.active)
+  const quality = (system.data?.system?.caps.sensors ?? []).filter(id => SENSOR_META[id].group === 'water-quality')
 
   return (
     <div className="mx-auto flex max-w-[960px] flex-col gap-4">
@@ -70,6 +73,15 @@ export function Dashboard() {
         </div>
         {runPump.error && <InlineError>{runPump.error.message}</InlineError>}
       </Card>
+
+      {quality.length > 0 && (
+        <>
+          <SectionLabel>Water quality</SectionLabel>
+          <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3">
+            {quality.map(id => <Metric key={id} label={SENSOR_META[id].label} value={formatReading(s[id])} icon={SENSOR_META[id].icon} />)}
+          </div>
+        </>
+      )}
 
       <SectionLabel>Environment</SectionLabel>
       <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3">
