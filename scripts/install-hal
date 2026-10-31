@@ -2,26 +2,139 @@
 # seedypod HAL (hald) installer for a Raspberry Pi running Raspberry Pi OS.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 #        scripts/install-hal [--version vX.Y.Z] [--binary ./hald] [--no-enable]
-#                            [--mqtt-lan | --no-broker]
+#                            [--mqtt-lan | --no-broker] [--no-wear]
 #
 # Downloads the hald binary for this CPU from the latest GitHub Release of
 # seedypod/core, installs it to /usr/local/bin, writes a commented
 # /etc/seedypod/hal.toml if absent, creates the `seedypod` service user in the
 # gpio/i2c/video groups, enables I²C and the PWM overlay, installs the
 # Mosquitto MQTT broker (127.0.0.1:1883, for hald and core on this Pi), and
-# installs and enables hald.service. Re-running upgrades the binary and leaves
-# hal.toml and the broker config alone.
+# installs and enables hald.service. It also cuts SD card writes (ADR-0021):
+# the journal moves to RAM, swap moves to zram, and / is mounted noatime; each
+# change is checked and undone if it doesn't take. Re-running upgrades the
+# binary, reapplies those settings and leaves hal.toml and the broker config
+# alone.
 #   --mqtt-lan   also open port 1884 to the LAN with a password, for Home
 #                Assistant on another machine (prints the password once)
 #   --no-broker  skip Mosquitto: you point hald and core at another broker,
 #                such as Home Assistant's Mosquitto add-on
+#   --no-wear    leave journald, swap and the root mount options as they are
 set -euo pipefail
+
+# ---- SD card wear (ADR-0021) ---------------------------------------------------
+# Each change is checked once applied and rolled back if the check fails, so a
+# setting this OS can't take leaves it as it was. ROOT prefixes the files these
+# touch; tests/scripts/install-hal.wear.test.ts sources this file with
+# SEEDYPOD_LIB_ONLY=1 and runs them against a scratch root with stub commands.
+ROOT="${SEEDYPOD_ROOT:-}"
+JOURNALD_CONF="$ROOT/etc/systemd/journald.conf.d/50-seedypod-volatile.conf"
+ZRAM_CONF="$ROOT/etc/systemd/zram-generator.conf"
+ZRAM_GENERATOR="$ROOT/usr/lib/systemd/system-generators/zram-generator"
+
+# The journal is the largest steady writer on an idle Pi. Logs then last until reboot.
+wear_journald() {
+  local want=$'[Journal]\nStorage=volatile\nRuntimeMaxUse=32M'
+  if [ -f "$JOURNALD_CONF" ] && grep -v '^#' "$JOURNALD_CONF" | cmp -s - <(printf '%s\n' "$want"); then
+    echo "→ journal already kept in RAM"; return 0
+  fi
+  $SUDO mkdir -p "$(dirname "$JOURNALD_CONF")"
+  printf '%s\n' "# Written by seedypod scripts/install-hal (ADR-0021): logs in RAM, lost on reboot." "$want" | $SUDO tee "$JOURNALD_CONF" >/dev/null
+  if $SUDO systemctl restart systemd-journald && systemctl is-active --quiet systemd-journald; then
+    echo "→ journal kept in RAM (32 MB, cleared on reboot; docs/DEBUGGING.md shows how to keep it for a session)"
+    return 0
+  fi
+  $SUDO rm -f "$JOURNALD_CONF"
+  $SUDO systemctl restart systemd-journald || true
+  echo "   journal-in-RAM didn't take; left journald as it was" >&2
+  return 1
+}
+
+zram_active() { swapon --show=NAME --noheadings 2>/dev/null | grep '^/dev/zram' >/dev/null; }
+
+# dphys-swapfile pages to the card; zram compresses in RAM, which suits a 512 MB board.
+wear_swap() {
+  if zram_active; then
+    echo "→ swap already on zram"
+  else
+    if [ ! -x "$ZRAM_GENERATOR" ] && command -v apt-get >/dev/null 2>&1; then
+      $SUDO apt-get install -y -q systemd-zram-generator >/dev/null || true
+    fi
+    if [ ! -x "$ZRAM_GENERATOR" ]; then
+      echo "   zram isn't available (no systemd-zram-generator); swap left as it was" >&2
+      return 1
+    fi
+    $SUDO mkdir -p "$(dirname "$ZRAM_CONF")"
+    $SUDO tee "$ZRAM_CONF" >/dev/null <<'CONF'
+# Written by seedypod scripts/install-hal (ADR-0021): swap in compressed RAM, not on the SD card.
+[zram0]
+zram-size = min(ram / 2, 512)
+compression-algorithm = zstd
+swap-priority = 100
+CONF
+    $SUDO systemctl daemon-reload
+    if ! { $SUDO systemctl start dev-zram0.swap && zram_active; }; then
+      $SUDO systemctl stop dev-zram0.swap >/dev/null 2>&1 || true
+      $SUDO rm -f "$ZRAM_CONF"
+      $SUDO systemctl daemon-reload
+      echo "   zram swap didn't start; swap left as it was" >&2
+      return 1
+    fi
+    echo "→ swap on zram (compressed RAM)"
+  fi
+  # Only once zram is up, so the board is never left without swap.
+  if command -v dphys-swapfile >/dev/null 2>&1; then
+    $SUDO dphys-swapfile swapoff >/dev/null 2>&1 || true
+    $SUDO dphys-swapfile uninstall >/dev/null 2>&1 || true
+    $SUDO systemctl disable --now dphys-swapfile >/dev/null 2>&1 || true
+    echo "→ SD card swapfile (dphys-swapfile) off"
+  fi
+}
+
+root_opts() { awk '$1 !~ /^#/ && $2 == "/" { print $4 }' "$1"; }
+
+# Stops a metadata write on every file read.
+wear_noatime() {
+  local fstab="$ROOT/etc/fstab"
+  if [ ! -f "$fstab" ] || [ -z "$(root_opts "$fstab")" ]; then
+    echo "   no / entry in fstab; root mount options left as they are" >&2
+    return 1
+  fi
+  if root_opts "$fstab" | tr ',' '\n' | grep -x noatime >/dev/null; then
+    echo "→ / already mounted noatime"; return 0
+  fi
+  local backup="$fstab.seedypod-bak"
+  $SUDO cp -p "$fstab" "$backup"
+  awk 'BEGIN { OFS = "\t" } $1 !~ /^#/ && $2 == "/" { $4 = $4 ",noatime" } { print }' "$backup" | $SUDO tee "$fstab" >/dev/null
+  if findmnt --verify --tab-file "$fstab" >/dev/null 2>&1 \
+    && $SUDO mount -o remount,noatime / && findmnt -n -o OPTIONS / | tr ',' '\n' | grep -x noatime >/dev/null; then
+    $SUDO rm -f "$backup"
+    echo "→ / mounted noatime"
+    return 0
+  fi
+  $SUDO cp -p "$backup" "$fstab"
+  $SUDO rm -f "$backup"
+  $SUDO mount -o remount / >/dev/null 2>&1 || true
+  echo "   noatime didn't take; fstab restored" >&2
+  return 1
+}
+
+apply_wear_settings() {
+  local failed=0
+  wear_journald || failed=1
+  wear_swap || failed=1
+  wear_noatime || failed=1
+  if [ "$failed" -ne 0 ]; then echo "   some SD card settings were skipped (above); the rest are in place" >&2; fi
+  return 0
+}
+
+if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
 VERSION="${SEEDYPOD_HAL_VERSION:-latest}"
 BINARY=""
 ENABLE=1
 BROKER=local
+WEAR=1
 PREFIX=/usr/local/bin
 CONF_DIR=/etc/seedypod
 STATE_DIR=/var/lib/seedypod
@@ -34,7 +147,8 @@ while [ $# -gt 0 ]; do
     --no-enable) ENABLE=0; shift ;;
     --mqtt-lan) BROKER=lan; shift ;;
     --no-broker) BROKER=none; shift ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    --no-wear) WEAR=0; shift ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -123,6 +237,11 @@ if [ ! -f "$RULES" ]; then
   else
     echo "→ no USB cameras found; run 'sudo $PREFIX/hald --camera-rules | sudo tee $RULES' once they're plugged in"
   fi
+fi
+
+# ---- SD card wear ------------------------------------------------------------------
+if [ "$WEAR" -eq 1 ] && [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then
+  apply_wear_settings
 fi
 
 # ---- MQTT broker ---------------------------------------------------------------

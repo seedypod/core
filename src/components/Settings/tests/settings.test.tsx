@@ -23,7 +23,7 @@ vi.mock('@/src/utils/trpc', () => {
       useUtils: () => ({ settings: { invalidate: vi.fn() } }),
       settings: { get: query('settings'), update: mutation('update') },
       system: { info: query('info') },
-      storage: { mirror: query('mirror'), testMirror: mutation('test'), syncMirror: mutation('sync') },
+      storage: { flash: query('flash'), mirror: query('mirror'), testMirror: mutation('test'), syncMirror: mutation('sync') },
     },
   }
 })
@@ -46,6 +46,31 @@ beforeEach(() => {
 afterEach(cleanup)
 
 const field = (label: string) => screen.getByText(label).closest('div')?.parentElement?.querySelector('input') as HTMLInputElement
+
+describe('Settings: storage', () => {
+  it('shows the since-boot write rate, the card and its yearly full-card writes', () => {
+    data.set('flash', { available: true, device: 'mmcblk0', cardBytes: 32e9, sinceBootBytes: 1.5e9, uptimeS: 2 * 3600, bytesPerDay: 0.8e9, basis: 'boot', windowDays: null, lastSampleAt: null })
+    render(<SettingsPage />)
+    expect(screen.getByTestId('flash-rate').textContent).toBe('800 MB/day')
+    expect(screen.getByText('average since boot (2 h ago)')).toBeTruthy()
+    expect(screen.getByText('1.50 GB')).toBeTruthy()
+    expect(screen.getByText('mmcblk0 · 32.0 GB')).toBeTruthy()
+    expect(screen.getByText('At this rate, 9.13 full-card writes a year')).toBeTruthy()
+  })
+
+  it('names the averaging window once there is history', () => {
+    data.set('flash', { available: true, device: 'mmcblk0', cardBytes: null, sinceBootBytes: 1e6, uptimeS: 9e5, bytesPerDay: 2.4e8, basis: 'history', windowDays: 7, lastSampleAt: '2026-10-31T00:00:00Z' })
+    render(<SettingsPage />)
+    expect(screen.getByText('7-day average')).toBeTruthy()
+    expect(screen.getByText('mmcblk0')).toBeTruthy()
+  })
+
+  it('says when there is no SD card to measure', () => {
+    data.set('flash', { available: false, device: null, cardBytes: null, sinceBootBytes: null, uptimeS: null, bytesPerDay: null, basis: null, windowDays: null, lastSampleAt: null })
+    render(<SettingsPage />)
+    expect(screen.getByText('No SD card counter on this machine')).toBeTruthy()
+  })
+})
 
 describe('Settings: Wi-Fi', () => {
   it('links to the Wi-Fi screen', () => {

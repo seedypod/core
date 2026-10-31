@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS } from './types'
 
@@ -16,6 +16,7 @@ export class MemoryStore implements Store {
   private readonly captureRows: Capture[] = []
   private readonly points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
+  private flashRows: FlashSample[] = []
   private readonly analysisRows: AnalysisRow[] = []
   private automationRows: Automation[] = []
   private runRows: AutomationRun[] = []
@@ -167,6 +168,19 @@ export class MemoryStore implements Store {
       return v
     },
     get: (key: string): number => this.counterRows.get(key) ?? 0,
+  }
+
+  flash = {
+    add: (sample: FlashSample): void => {
+      this.flashRows = [...this.flashRows.filter(r => r.ts !== sample.ts), sample].sort((a, b) => a.ts.localeCompare(b.ts))
+    },
+    last: (): FlashSample | null => this.flashRows.at(-1) ?? null,
+    since: (fromTs: string): FlashSample[] => this.flashRows.filter(r => r.ts >= fromTs),
+    prune: (beforeTs: string): number => {
+      const before = this.flashRows.length
+      this.flashRows = this.flashRows.filter(r => r.ts >= beforeTs)
+      return before - this.flashRows.length
+    },
   }
 
   analyses = {

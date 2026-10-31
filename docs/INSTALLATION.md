@@ -19,6 +19,12 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 
 ## 1. Flash
 
+Use a **high-endurance** microSD card, the kind rated for continuous video
+recording (SanDisk High Endurance, Samsung PRO Endurance or similar). It costs
+a few dollars more than a standard card and is the cheapest reliability gain
+there is. `install-hal` also cuts what the unit writes (below), and
+**Settings → Storage** shows how much it writes a day.
+
 Raspberry Pi Imager → Raspberry Pi OS Lite (64-bit for Zero 2 W / Pi 4 / Pi 5;
 32-bit for the original Zero W). In the advanced options set hostname
 `seedypod`, enable SSH, add Wi-Fi. Reseat the card, boot, `ssh pi@seedypod.local`.
@@ -30,6 +36,12 @@ sudo raspi-config nonint do_i2c 0
 curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash   # Phase 2.9
 hald --check
 ```
+
+Besides `hald`, this keeps the system journal in RAM, moves swap to
+compressed RAM (zram) and mounts `/` with `noatime`, so the card sees far
+fewer writes ([ADR-0021](adr/0021-sd-card-wear-and-recovery.md)). Each change
+is checked and undone if it doesn't take; `--no-wear` skips them. Logs then
+last until reboot; [Debugging](DEBUGGING.md) shows how to keep them longer.
 
 ## 3. Install core (same Pi, or any LAN box)
 
