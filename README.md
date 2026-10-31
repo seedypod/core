@@ -26,7 +26,9 @@ Everything stays on your LAN. No account, no telemetry, no phoning home.
 
 ## Status
 
-Phase 0 of the [implementation plan](docs/implementation-plan.md): repo, CI/CD, design system, contract, safety guard, simulator, dashboard. Nothing has touched a real Gardyn yet — that's Phase 1. Watch the plan for progress.
+Software complete through the [implementation plan](docs/implementation-plan.md)'s Phases 0 and 3–5, with classical plant vision (7) and the opt-in API key (8): tRPC/REST/MCP/WebSocket server, SQLite store with migrations, light curves and bounded pump cycles, grow cycle with reminders, 30-pod tracking, camera captures with per-pod growth trends, Home Assistant bridge, the full web UI and a seeded browser demo. The Rust daemon has its safety guard, simulator and contract; its real drivers are written against the documented pin map.
+
+**Nothing has run on a real Gardyn yet.** Phase 1 — open the unit, image the stock card, confirm the pin map — is next, and it gates the hardware claims in `docs/hardware/pin-map.md`.
 
 ## Quick start (development, no hardware)
 
