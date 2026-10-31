@@ -4,11 +4,5 @@
   "outputDirectory": "web/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
-  "git": {
-    "deploymentEnabled": {
-      "*": false,
-      "dev": true
-    }
-  },
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }

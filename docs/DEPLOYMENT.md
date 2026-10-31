@@ -24,3 +24,16 @@ How code gets from `dev` to a unit (mirrors sleepypod/core).
 The unit runs two systemd services: `hald` (Rust, owns hardware) and
 `leafypod-core` (Node, `:3000`). Both restart on failure. Core is LAN-only;
 no outbound connections are made by either service.
+
+## Repository secrets and variables
+
+| Name | Kind | Used by | How to get it |
+|---|---|---|---|
+| `CODECOV_TOKEN` | secret | `test.yml`, `rust.yml` | codecov.io → repo → Settings → Upload token |
+| `VERCEL_TOKEN` | secret | `vercel.yml` | vercel.com → Account → Tokens |
+| `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | secrets | `vercel.yml` | create the project once (`pnpm dlx vercel link`), then read `.vercel/project.json` |
+| `VERCEL_ENABLED` | variable = `true` | `vercel.yml` | Settings → Variables; the workflow is skipped until set |
+| `BACKMERGE_TOKEN` | secret | `back-merge.yml` | fine-grained PAT with `contents: write`, on the dev ruleset bypass list |
+| Renovate | GitHub App | `renovate.json` | install the Renovate app on the repo; it opens an onboarding PR |
+
+Renovate: minor/patch automerge after 3 days, Mondays; majors and the core stack (react, router, hono, vite, rppal, tokio…) stay manual; cargo is enabled; vulnerability alerts get the `security` label.
