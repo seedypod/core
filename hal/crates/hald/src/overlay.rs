@@ -62,7 +62,7 @@ mod tests {
             optional: false,
             active_low: None,
         };
-        o.save(&[e.clone()]).unwrap();
+        o.save(std::slice::from_ref(&e)).unwrap();
         assert_eq!(o.load(), vec![e]);
         std::fs::write(dir.join("sensors.json"), "not json").unwrap();
         assert!(o.load().is_empty());
