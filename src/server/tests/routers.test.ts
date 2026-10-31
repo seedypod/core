@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { createEventBus } from '../../lib/eventBus'
+import { MemoryStore } from '../../store/memory'
+import { createCore } from '../bootstrap'
 import { appRouter } from '../routers/app'
 import { createCallerFactory } from '../trpc'
 
 function caller() {
   const hal = new SimHal({ tickMs: 0, limits: { waterLowCm: 8 } })
   const events = createEventBus()
-  const c = createCallerFactory(appRouter)({ hal, events, version: 'test' })
-  return { hal, events, c }
+  const core = createCore({ hal, store: new MemoryStore(), events, version: 'test' })
+  const c = createCallerFactory(appRouter)(core.ctx)
+  return { hal, events, c, store: core.ctx.store }
 }
 
 describe('routers', () => {
@@ -33,7 +36,7 @@ describe('routers', () => {
     await c.pump.runOnce({ durationS: 900, level: 30 })
     for (let i = 0; i < 40; i++) hal.tick(60) // drain to dry-run fault
     await expect(c.pump.runOnce({ durationS: 60 })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
-    await c.alerts.acknowledge({ kind: 'pump_fault' })
+    await hal.acknowledgeAlert('pump_fault')
     expect((await c.pump.get())?.fault).toBeNull()
   })
 })

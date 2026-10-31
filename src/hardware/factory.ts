@@ -18,7 +18,6 @@ export async function createHal(opts: HalFactoryOptions): Promise<HalClient> {
   if (url) {
     throw new Error('MqttHalClient is not implemented yet (Phase 3.1); unset HAL_MQTT_URL to use the simulator')
   }
-  const hal = new SimHal({ timeScale: Number(process.env.SIM_TIME_SCALE ?? 1) })
-  hal.subscribe(event => opts.events.emit({ kind: 'hal', event }))
-  return hal
+  void opts.events
+  return new SimHal({ timeScale: Number(process.env.SIM_TIME_SCALE ?? 1) })
 }

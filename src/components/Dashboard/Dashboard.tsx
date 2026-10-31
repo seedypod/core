@@ -12,7 +12,7 @@ export function Dashboard() {
   const sensors = trpc.sensors.latest.useQuery()
   const lightState = trpc.light.get.useQuery()
   const pumpState = trpc.pump.get.useQuery()
-  const alerts = trpc.alerts.list.useQuery()
+  const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
   const setLight = trpc.light.set.useMutation({ onSuccess: () => lightState.refetch() })
   const runPump = trpc.pump.runOnce.useMutation({ onSuccess: () => pumpState.refetch() })
   const stopPump = trpc.pump.stop.useMutation({ onSuccess: () => pumpState.refetch() })

@@ -28,6 +28,15 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
 
   app.use('/api/trpc/*', trpcServer({ endpoint: '/api/trpc', router: appRouter, createContext: () => ({ ...ctx }) }))
 
+  app.get('/api/captures/:file', async (c) => {
+    const id = c.req.param('file').replace(/\.jpg$/, '')
+    const got = await ctx.captures.bytes(id)
+    if (!got) return c.text('not found', 404)
+    if (got.capture.path.startsWith('data:')) return c.redirect(got.capture.path)
+    const body = new Uint8Array(got.bytes).buffer as ArrayBuffer
+    return c.body(body, 200, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' })
+  })
+
   app.get('/api/openapi.json', c => c.json(openApiDocument(new URL('/api', c.req.url).toString())))
 
   // Raw event stream over WebSocket (ADR-0005 amendment). Same CoreEvent frames

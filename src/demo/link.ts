@@ -7,8 +7,10 @@ import type { TRPCLink } from '@trpc/client'
 import { TRPCClientError } from '@trpc/client'
 import { observable } from '@trpc/server/observable'
 import { SimHal } from '../hardware/sim'
-import { createEventBus } from '../lib/eventBus'
 import type { Context } from '../server/context'
+import { createCore } from '../server/bootstrap'
+import { MemoryStore } from '../store/memory'
+import { seedDemo } from './seed'
 import { appRouter, type AppRouter } from '../server/routers/app'
 import { createCallerFactory } from '../server/trpc'
 
@@ -19,10 +21,11 @@ export function isDemo(): boolean {
 let ctx: Context | null = null
 function demoContext(): Context {
   if (!ctx) {
-    const events = createEventBus()
     const hal = new SimHal({ timeScale: 60, tickMs: 1000 })
-    hal.subscribe(event => events.emit({ kind: 'hal', event }))
-    ctx = { hal, events, version: 'demo' }
+    const store = new MemoryStore()
+    seedDemo(store, hal)
+    const core = createCore({ hal, store, version: 'demo', startServices: true, captureMinBytes: 1 })
+    ctx = core.ctx
   }
   return ctx
 }
