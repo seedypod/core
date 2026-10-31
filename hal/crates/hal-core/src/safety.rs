@@ -61,6 +61,8 @@ pub struct Env {
     pub water_distance_cm: Option<f64>,
     /// PCB temperature (°C), `None` if unavailable.
     pub pcb_temp_c: Option<f64>,
+    /// The board's own over-temperature alert line (GPIO25) is asserted.
+    pub over_temp_signal: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -193,7 +195,8 @@ impl PumpGuard {
     }
 
     fn is_hot(&self, env: Env) -> bool {
-        matches!((self.limits.over_temp_c, env.pcb_temp_c), (Some(max), Some(t)) if t >= max)
+        env.over_temp_signal
+            || matches!((self.limits.over_temp_c, env.pcb_temp_c), (Some(max), Some(t)) if t >= max)
     }
 }
 
@@ -228,6 +231,7 @@ mod tests {
         Env {
             water_distance_cm: Some(7.0),
             pcb_temp_c: Some(30.0),
+            over_temp_signal: false,
         }
     }
     fn on(level: Option<f64>, duration_s: Option<u64>) -> ActuatorCommand {
@@ -275,6 +279,7 @@ mod tests {
         let dry = Env {
             water_distance_cm: Some(17.0),
             pcb_temp_c: Some(30.0),
+            over_temp_signal: false,
         };
         assert_eq!(
             g.request(&on(None, None), dry, Instant::now()),
@@ -283,6 +288,7 @@ mod tests {
         let missing = Env {
             water_distance_cm: None,
             pcb_temp_c: Some(30.0),
+            over_temp_signal: false,
         };
         assert_eq!(
             g.request(&on(None, None), missing, Instant::now()),
@@ -296,9 +302,34 @@ mod tests {
         let hot = Env {
             water_distance_cm: Some(7.0),
             pcb_temp_c: Some(36.5),
+            over_temp_signal: false,
         };
         assert_eq!(
             g.request(&on(None, None), hot, Instant::now()),
+            Err(Refusal::OverTemp)
+        );
+    }
+
+    #[test]
+    fn over_temp_signal_refuses_and_trips_even_without_a_temperature_limit() {
+        let mut g = PumpGuard::new(PumpLimits {
+            over_temp_c: None,
+            ..PumpLimits::default()
+        });
+        let t0 = Instant::now();
+        g.request(&on(None, None), wet(), t0).unwrap();
+        let signalled = Env {
+            over_temp_signal: true,
+            ..wet()
+        };
+        assert_eq!(
+            g.tick(signalled, t0 + Duration::from_secs(1)),
+            Some(Decision::Stop)
+        );
+        assert_eq!(g.fault(), Some("over-temp"));
+        g.acknowledge();
+        assert_eq!(
+            g.request(&on(None, None), signalled, t0 + Duration::from_secs(2)),
             Err(Refusal::OverTemp)
         );
     }
@@ -311,6 +342,7 @@ mod tests {
         let dry = Env {
             water_distance_cm: Some(16.0),
             pcb_temp_c: Some(30.0),
+            over_temp_signal: false,
         };
         assert_eq!(g.tick(dry, t0 + Duration::from_secs(60)), Some(Decision::Stop));
         assert_eq!(g.fault(), Some("dry-run"));
@@ -334,6 +366,7 @@ mod tests {
             Env {
                 water_distance_cm: Some(40.0),
                 pcb_temp_c: None,
+                over_temp_signal: false,
             },
             t0 + Duration::from_secs(1),
         );
@@ -358,6 +391,7 @@ mod tests {
         let env = Env {
             water_distance_cm: None,
             pcb_temp_c: None,
+            over_temp_signal: false,
         };
         assert!(g.request(&on(None, None), env, Instant::now()).is_ok());
     }
