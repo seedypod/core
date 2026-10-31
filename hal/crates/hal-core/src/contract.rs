@@ -115,6 +115,41 @@ pub struct SystemInfo {
     pub limits: Limits,
 }
 
+/// Which calibration point a probe should store. Atlas EZO naming: pH uses
+/// `mid` (first, required), `low`, `high`; EC uses `dry` then `single` or
+/// `low` + `high`; RTD uses `single`. `clear` wipes stored points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CalibrationPoint {
+    Mid,
+    Low,
+    High,
+    Dry,
+    Single,
+    Clear,
+}
+
+/// `sensor/<id>/calibrate` payload. `value` is the reference solution in the
+/// sensor's reported unit (pH, mS/cm, °C); `dry` and `clear` take none.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CalibrationCommand {
+    pub point: CalibrationPoint,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
+}
+
+/// `sensor/<id>/calibration` (retained): outcome of the last calibrate command.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalibrationResult {
+    pub ts: String,
+    pub point: CalibrationPoint,
+    pub ok: bool,
+    /// Points the probe reports as stored after the command, when it says.
+    pub points: Option<u8>,
+    pub detail: String,
+}
+
 /// Physical button gesture, published on `event/button` as `{"press": "single"}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -166,6 +201,12 @@ pub mod topics {
     }
     pub fn actuator_set(unit: &str, id: ActuatorId) -> String {
         format!("{}/actuator/{}/set", prefix(unit), snake(&id))
+    }
+    pub fn sensor_calibrate(unit: &str, id: SensorId) -> String {
+        format!("{}/sensor/{}/calibrate", prefix(unit), snake(&id))
+    }
+    pub fn sensor_calibration(unit: &str, id: SensorId) -> String {
+        format!("{}/sensor/{}/calibration", prefix(unit), snake(&id))
     }
     pub fn button(unit: &str) -> String {
         format!("{}/event/button", prefix(unit))
@@ -219,6 +260,14 @@ mod tests {
             topics::alert_ack("u1", AlertKind::WaterLow),
             "seedypod/u1/alert/water_low/ack"
         );
+        assert_eq!(
+            topics::sensor_calibrate("u1", SensorId::Ph),
+            "seedypod/u1/sensor/ph/calibrate"
+        );
+        assert_eq!(
+            topics::sensor_calibration("u1", SensorId::Ec),
+            "seedypod/u1/sensor/ec/calibration"
+        );
     }
 
     #[test]
@@ -258,5 +307,11 @@ mod fixture_tests {
         assert_eq!(dl.kind, AlertKind::DoseFault);
         let c: ActuatorCommand = serde_json::from_str(&fixture("command")).unwrap();
         assert_eq!(c.duration_s, Some(300));
+        let cc: CalibrationCommand = serde_json::from_str(&fixture("calibration_command")).unwrap();
+        assert_eq!(cc.point, CalibrationPoint::Mid);
+        assert_eq!(cc.value, Some(7.0));
+        let cr: CalibrationResult = serde_json::from_str(&fixture("calibration_result")).unwrap();
+        assert!(cr.ok);
+        assert_eq!(cr.points, Some(1));
     }
 }

@@ -17,7 +17,7 @@ use hal_core::registry::Registry;
 use hal_core::safety::{Decision, DoseGuard, DoseLimits, Env, PumpGuard, PumpLimits};
 use hal_core::{
     topics, ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, BinarySensor, ButtonEvent,
-    ButtonPress, Reading, SensorId, SystemInfo,
+    ButtonPress, CalibrationCommand, CalibrationResult, Reading, SensorId, SystemInfo,
 };
 use serde::Serialize;
 use tracing::{info, warn};
@@ -53,6 +53,8 @@ impl Outbound {
 pub enum Inbound {
     ActuatorSet(ActuatorId, ActuatorCommand),
     AlertAck(AlertKind),
+    /// Store a calibration point on a probe (EZO); the result is published retained.
+    Calibrate(SensorId, CalibrationCommand),
     Button(ButtonPress),
     /// Outcome of a camera capture (from the HTTP server) → `camera_missing`.
     CameraResult {
@@ -336,6 +338,28 @@ impl Engine {
                     self.alerts.insert(kind, a);
                     self.update_snapshot(now);
                 }
+            }
+            Inbound::Calibrate(id, cmd) => {
+                let res = match self.registry.sensor_mut(id) {
+                    Some(s) => s.calibrate(&cmd).map_err(|e| e.to_string()),
+                    None => Err(format!("no {} sensor configured", key(&id))),
+                };
+                match &res {
+                    Ok(points) => info!(sensor = %key(&id), point = ?cmd.point, ?points, "calibrated"),
+                    Err(e) => warn!(sensor = %key(&id), point = ?cmd.point, %e, "calibration refused"),
+                }
+                let result = CalibrationResult {
+                    ts: now.ts(),
+                    point: cmd.point,
+                    ok: res.is_ok(),
+                    points: res.as_ref().ok().copied().flatten(),
+                    detail: res.err().unwrap_or_default(),
+                };
+                out.push(Outbound::json(
+                    topics::sensor_calibration(&self.unit, id),
+                    &result,
+                    true,
+                ));
             }
             Inbound::Resync => out.extend(self.resync(now)),
             Inbound::Shutdown => out.extend(self.shutdown(now)),
@@ -1178,6 +1202,49 @@ mod tests {
         let out = r.engine.handle(Inbound::AlertAck(AlertKind::DoseFault), r.now);
         assert!(payload(&out, "seedypod/u1/actuator/dose_1/state")["fault"].is_null());
         assert_eq!(payload(&out, "seedypod/u1/alert/dose_fault")["active"], false);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn calibration_reaches_the_probe_and_publishes_a_retained_result() {
+        use hal_core::CalibrationPoint;
+        let mut r = rig(vec![], false, "cal");
+        r.engine
+            .registry
+            .add_sensor(Box::new(hal_sim::SimSensor::new(SensorId::Ph, r.world.clone())));
+        r.engine.boot(r.now);
+        let cmd = |point, value| CalibrationCommand { point, value };
+        let out = r.engine.handle(
+            Inbound::Calibrate(SensorId::Ph, cmd(CalibrationPoint::Mid, Some(7.0))),
+            r.now,
+        );
+        let o = out
+            .iter()
+            .find(|o| o.topic == "seedypod/u1/sensor/ph/calibration")
+            .unwrap();
+        assert!(o.retain);
+        let v: serde_json::Value = serde_json::from_str(&o.payload).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["points"], 1);
+        assert_eq!(v["point"], "mid");
+        // Missing value → refused by the probe, reported, nothing stored.
+        let out = r.engine.handle(
+            Inbound::Calibrate(SensorId::Ph, cmd(CalibrationPoint::Low, None)),
+            r.now,
+        );
+        let v = payload(&out, "seedypod/u1/sensor/ph/calibration");
+        assert_eq!(v["ok"], false);
+        assert!(v["points"].is_null());
+        assert!(v["detail"].as_str().unwrap().contains("reference value"));
+        assert_eq!(r.world.lock().unwrap().cal_points[0], 1);
+        // No such probe configured.
+        let out = r.engine.handle(
+            Inbound::Calibrate(SensorId::Ec, cmd(CalibrationPoint::Dry, None)),
+            r.now,
+        );
+        let v = payload(&out, "seedypod/u1/sensor/ec/calibration");
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["detail"], "no ec sensor configured");
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

@@ -4,7 +4,10 @@
 use std::sync::{Arc, Mutex};
 
 use hal_core::device::now_rfc3339;
-use hal_core::{Actuator, ActuatorId, Camera, DeviceError, Reading, Sensor, SensorId};
+use hal_core::{
+    Actuator, ActuatorId, CalibrationCommand, CalibrationPoint, Camera, DeviceError, Reading, Sensor,
+    SensorId,
+};
 
 #[derive(Debug)]
 pub struct SimWorld {
@@ -16,6 +19,8 @@ pub struct SimWorld {
     pub pump_level: f64,
     /// Dosing pumps 1–3 (on/off).
     pub dose_level: [f64; 3],
+    /// Stored calibration points for the simulated pH, EC and RTD probes.
+    pub cal_points: [u8; 3],
 }
 
 impl Default for SimWorld {
@@ -28,6 +33,7 @@ impl Default for SimWorld {
             light_level: 0.0,
             pump_level: 0.0,
             dose_level: [0.0; 3],
+            cal_points: [0; 3],
         }
     }
 }
@@ -109,6 +115,30 @@ impl Sensor for SimSensor {
             unit: unit.into(),
             quality: Default::default(),
         })
+    }
+    /// Accepts any point with a finite value (or none for `dry`/`clear`) on the
+    /// probes an EZO would back; the real range checks live in the driver.
+    fn calibrate(&mut self, cmd: &CalibrationCommand) -> Result<Option<u8>, DeviceError> {
+        let slot = match self.id {
+            SensorId::Ph => 0,
+            SensorId::Ec => 1,
+            SensorId::WaterTemp => 2,
+            _ => return Err(DeviceError::Other("sensor does not support calibration".into())),
+        };
+        let needs_value = !matches!(cmd.point, CalibrationPoint::Dry | CalibrationPoint::Clear);
+        if needs_value && !cmd.value.is_some_and(f64::is_finite) {
+            return Err(DeviceError::Other(format!(
+                "{:?} calibration needs a reference value",
+                cmd.point
+            )));
+        }
+        let mut w = self.world.lock().map_err(|e| DeviceError::Other(e.to_string()))?;
+        w.cal_points[slot] = if cmd.point == CalibrationPoint::Clear {
+            0
+        } else {
+            (w.cal_points[slot] + 1).min(3)
+        };
+        Ok(Some(w.cal_points[slot]))
     }
 }
 

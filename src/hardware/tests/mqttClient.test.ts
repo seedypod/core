@@ -67,6 +67,21 @@ describe('MqttHalClient', () => {
     await expect(client.setActuator('pump', { on: false })).rejects.toThrow(/did not acknowledge/)
   })
 
+  it('round-trips a calibration and ignores retained results nobody asked for', async () => {
+    const { mqtt, client } = make()
+    mqtt.fire('connect')
+    expect(mqtt.subscribed).toContain(`seedypod/${U}/sensor/+/calibration`)
+    mqtt.msg(`seedypod/${U}/sensor/ph/calibration`, { ts: '2026-10-30T00:00:00Z', point: 'low', ok: true, points: 2, detail: '' })
+    const p = client.calibrate('ph', { point: 'mid', value: 7 })
+    expect(mqtt.published.at(-1)).toMatchObject({ topic: `seedypod/${U}/sensor/ph/calibrate`, payload: JSON.stringify({ point: 'mid', value: 7 }) })
+    mqtt.msg(`seedypod/${U}/sensor/ph/calibration`, { ts: '2026-10-31T00:00:00Z', point: 'low', ok: true, points: 2, detail: '' })
+    mqtt.msg(`seedypod/${U}/sensor/ph/calibration`, { ts: '2026-10-31T00:00:01Z', point: 'mid', ok: true, points: 1, detail: '' })
+    await expect(p).resolves.toMatchObject({ ok: true, points: 1 })
+    expect(client.snapshot().sensors.ph).toBeUndefined()
+    const slow = new MqttHalClient({ unitId: U, mqtt, httpBase: '', calibrationTimeoutMs: 10 })
+    await expect(slow.calibrate('ec', { point: 'dry' })).rejects.toThrow(/did not report ec calibration/)
+  })
+
   it('acknowledges alerts, fetches stills over HTTP, forwards button events, and drops garbage', async () => {
     const { mqtt, client } = make()
     const events: string[] = []

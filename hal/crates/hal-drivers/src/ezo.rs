@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use hal_core::{DeviceError, Reading, Sensor, SensorId};
+use hal_core::{CalibrationCommand, CalibrationPoint, DeviceError, Reading, Sensor, SensorId};
 
 use crate::bus::{Delay, I2cBus};
 
@@ -142,6 +142,48 @@ impl<B: I2cBus, D: Delay> Ezo<B, D> {
     }
 }
 
+/// Turn a contract calibration command into the EZO `Cal,…` arguments,
+/// refusing points the circuit doesn't have and implausible reference values.
+/// EC values arrive in mS/cm (the reported unit) and go out in µS/cm.
+pub fn calibration_args(kind: EzoKind, cmd: &CalibrationCommand) -> Result<String, DeviceError> {
+    use CalibrationPoint::*;
+    let bad = |why: String| Err(DeviceError::Other(why));
+    if cmd.point == Clear {
+        return Ok("clear".into());
+    }
+    let needs_value = cmd.point != Dry;
+    let v = match (needs_value, cmd.value) {
+        (true, Some(v)) if v.is_finite() => v,
+        (true, _) => return bad(format!("{:?} calibration needs a reference value", cmd.point)),
+        (false, Some(_)) => return bad("dry calibration takes no value".into()),
+        (false, None) => 0.0,
+    };
+    match (kind, cmd.point) {
+        (EzoKind::Ph, Mid | Low | High) if (0.0..=14.0).contains(&v) => {
+            let p = match cmd.point {
+                Mid => "mid",
+                Low => "low",
+                _ => "high",
+            };
+            Ok(format!("{p},{v:.2}"))
+        }
+        (EzoKind::Ph, Mid | Low | High) => bad(format!("pH reference {v} is outside 0–14")),
+        (EzoKind::Ec, Dry) => Ok("dry".into()),
+        (EzoKind::Ec, Single | Low | High) if v > 0.0 && v <= 500.0 => {
+            let us = (v * 1000.0).round() as u64;
+            Ok(match cmd.point {
+                Single => format!("{us}"),
+                Low => format!("low,{us}"),
+                _ => format!("high,{us}"),
+            })
+        }
+        (EzoKind::Ec, Single | Low | High) => bad(format!("EC reference {v} mS/cm is outside (0, 500]")),
+        (EzoKind::Rtd, Single) if (-126.0..=1254.0).contains(&v) => Ok(format!("{v:.2}")),
+        (EzoKind::Rtd, Single) => bad(format!("RTD reference {v} °C is outside −126–1254")),
+        (k, p) => bad(format!("EZO {k:?} has no {p:?} calibration point")),
+    }
+}
+
 impl<B: I2cBus, D: Delay> Sensor for Ezo<B, D> {
     fn id(&self) -> SensorId {
         self.kind.sensor_id()
@@ -170,6 +212,11 @@ impl<B: I2cBus, D: Delay> Sensor for Ezo<B, D> {
     fn read(&mut self) -> Result<Reading, DeviceError> {
         let text = self.command("R", READ_WAIT)?;
         Ok(Reading::new(parse_value(self.kind, &text)?, self.kind.unit()))
+    }
+    fn calibrate(&mut self, cmd: &CalibrationCommand) -> Result<Option<u8>, DeviceError> {
+        let args = calibration_args(self.kind, cmd)?;
+        Ezo::calibrate(self, &args)?;
+        Ok(self.calibration_points().ok())
     }
 }
 
@@ -266,5 +313,64 @@ mod tests {
         let bus = FakeI2c::with_reads(vec![reply(1, "garbage")]);
         let mut s = Ezo::new(bus, NoDelay::default(), EzoKind::Ph, 0x63);
         assert!(s.calibration_points().is_err());
+    }
+
+    fn cal(point: CalibrationPoint, value: Option<f64>) -> CalibrationCommand {
+        CalibrationCommand { point, value }
+    }
+
+    #[test]
+    fn contract_calibration_maps_to_ezo_arguments() {
+        use CalibrationPoint::*;
+        assert_eq!(
+            calibration_args(EzoKind::Ph, &cal(Mid, Some(7.0))).unwrap(),
+            "mid,7.00"
+        );
+        assert_eq!(
+            calibration_args(EzoKind::Ph, &cal(Low, Some(4.0))).unwrap(),
+            "low,4.00"
+        );
+        assert_eq!(calibration_args(EzoKind::Ph, &cal(Clear, None)).unwrap(), "clear");
+        assert_eq!(calibration_args(EzoKind::Ec, &cal(Dry, None)).unwrap(), "dry");
+        assert_eq!(
+            calibration_args(EzoKind::Ec, &cal(Single, Some(1.413))).unwrap(),
+            "1413"
+        );
+        assert_eq!(
+            calibration_args(EzoKind::Ec, &cal(High, Some(80.0))).unwrap(),
+            "high,80000"
+        );
+        assert_eq!(
+            calibration_args(EzoKind::Rtd, &cal(Single, Some(100.0))).unwrap(),
+            "100.00"
+        );
+    }
+
+    #[test]
+    fn implausible_calibrations_are_refused_before_touching_the_bus() {
+        use CalibrationPoint::*;
+        for (k, c) in [
+            (EzoKind::Ph, cal(Mid, None)),
+            (EzoKind::Ph, cal(Mid, Some(15.0))),
+            (EzoKind::Ph, cal(Mid, Some(f64::NAN))),
+            (EzoKind::Ph, cal(Dry, None)),
+            (EzoKind::Ec, cal(Dry, Some(1.0))),
+            (EzoKind::Ec, cal(Single, Some(0.0))),
+            (EzoKind::Ec, cal(Mid, Some(7.0))),
+            (EzoKind::Rtd, cal(Low, Some(0.0))),
+        ] {
+            assert!(calibration_args(k, &c).is_err(), "{k:?} {c:?}");
+        }
+        let mut s = Ezo::new(FakeI2c::with_reads(vec![]), NoDelay::default(), EzoKind::Ph, 0x63);
+        assert!(Sensor::calibrate(&mut s, &cal(Mid, Some(99.0))).is_err());
+        assert!(s.bus.writes.is_empty());
+    }
+
+    #[test]
+    fn sensor_calibrate_reports_stored_points() {
+        let bus = FakeI2c::with_reads(vec![reply(1, ""), reply(1, "?Cal,1")]);
+        let mut s = Ezo::new(bus, NoDelay::default(), EzoKind::Ph, 0x63);
+        let n = Sensor::calibrate(&mut s, &cal(CalibrationPoint::Mid, Some(7.0))).unwrap();
+        assert_eq!(n, Some(1));
     }
 }

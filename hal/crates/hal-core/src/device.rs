@@ -5,7 +5,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::contract::{ActuatorId, Quality, Reading, SensorId};
+use crate::contract::{ActuatorId, CalibrationCommand, Quality, Reading, SensorId};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -25,6 +25,17 @@ pub trait Sensor: Send {
     /// (Re)initialise. Called lazily and again after a read failure.
     fn probe(&mut self) -> Result<(), DeviceError>;
     fn read(&mut self) -> Result<Reading, DeviceError>;
+    /// Store a calibration point; returns how many points the probe now holds,
+    /// if it reports that. Only probes that calibrate in-circuit (EZO) override this.
+    fn calibrate(&mut self, _cmd: &CalibrationCommand) -> Result<Option<u8>, DeviceError> {
+        Err(DeviceError::Other(format!(
+            "{} does not support calibration",
+            serde_json::to_value(self.id())
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default()
+        )))
+    }
 }
 
 pub trait Actuator: Send {
