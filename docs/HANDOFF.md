@@ -22,6 +22,8 @@ Updated 2026-10-31 after the move to `github.com/seedypod/core` (from `ng/leafyp
 | Docs | `docs/` (OKF concepts: ADRs 0001–0016, guides, HAL reference, HA examples, plan, this handoff) and `knowledge/` (4); published at [seedypod.github.io](https://seedypod.github.io) from `seedypod/seedypod.github.io` | `scripts/validate_knowledge.py` in CI |
 | Org | `seedypod/.github` profile README; avatar source (`assets/avatar.svg`, sleepypod-style render) | — |
 
+**Simulated Phase 1 done:** [`pnpm test:sim-bringup`](hardware/sim-bringup.md) runs the full stack against `hald --sim` over MQTT in CI (10 checks). It caught a subscribe race that would have kept core from ever seeing a real `hald`.
+
 **Not done, needs hardware (Phase 1 / 2.10):** nothing has run on a real Gardyn. The pin map, I²C addresses, driver timing/CRCs, INA219 calibration, button/GPIO25 polarity, PWM overlay line, camera exposure and the install scripts' Raspberry Pi OS steps are all documented assumptions. The checklist is in `docs/hardware/pin-map.md`; the per-driver list is at the end of `docs/hardware/hal.md`.
 
 **Known deliberate limits:** `hald` MQTT is plain TCP (LAN-only); over-temp uses a single threshold plus the GPIO25 line (latch provides anti-flap); the Next.js memory spike (plan 0.0) was not run — the plan is built on the Hono/Vite outcome.
@@ -53,9 +55,9 @@ On a unit: `scripts/install-hal` then `scripts/install`; set `HAL_MQTT_URL`, `HA
 
 ## 5. Next steps, in order
 
-1. **Phase 1** — teardown, `dd` the stock card, flash, `hald --check` + `--features hardware` on the unit, confirm the pin map; file ADR-0008 with the real model/controller; mark `knowledge/hardware/*` and `docs/hardware/pin-map.md` as verified. With EZO probes fitted, run the calibration procedure in `docs/hardware/hal.md`.
-2. Replace the placeholder secrets (`VERCEL_TOKEN`, `BACKMERGE_TOKEN`, optionally `CODECOV_TOKEN`) — tracked in seedypod/core#6 — then upload the org avatar and install Renovate.
-3. iOS: evaluate forking `sleepypod/ios`'s networking layer against this tRPC router.
+1. **Phase 1 on a real unit** (the simulated run is done) — teardown, `dd` the stock card, flash, `hald --check` + `--features hardware` on the unit, confirm the pin map; file ADR-0008 with the real model/controller; mark `knowledge/hardware/*` and `docs/hardware/pin-map.md` as verified. With EZO probes fitted, run the calibration procedure in `docs/hardware/hal.md`.
+2. Replace the placeholder secrets (`VERCEL_TOKEN`, `BACKMERGE_TOKEN`, `RENOVATE_TOKEN`, optionally `CODECOV_TOKEN`) — tracked in seedypod/core#6 — and upload the org avatar. Renovate runs self-hosted from `.github/workflows/renovate.yml` once `RENOVATE_TOKEN` is real; no app install needed. The demo at seedypod.vercel.app was first deployed by hand with the Vercel CLI.
+3. iOS: evaluated in [ADR-0017](adr/0017-ios-client.md) — new `seedypod/ios` app reusing sleepypod's tRPC transport, discovery and stream patterns; first add a `_seedypod._tcp` mDNS advertisement to core.
 4. A calibration screen in the web UI (the API is `POST /api/sensors/{id}/calibrate`) once a unit with probes exists to test it against.
 
 Done since the pause: transfer and rename; repo settings; Vercel project; the `dose_fault` alert kind; the EZO calibration topic; the docs site; the org profile; fixing the crash on first boot when the data directory is missing.
