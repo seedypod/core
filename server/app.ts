@@ -75,6 +75,13 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     return c.body(tarStream(datasetEntries(ctx, w)), 200, { 'content-type': 'application/x-tar', 'content-disposition': `attachment; filename="${name}.tar"` })
   })
 
+  // Backup bundle (ADR-0021): streamed; counts as an off-card backup once fully sent.
+  app.get('/api/backup/download', async (c) => {
+    if (!ctx.backup) return c.json({ error: 'this core has no backups (demo or tests)' }, 404)
+    const { name, stream } = await ctx.backup.download({ photos: c.req.query('photos') === '1' })
+    return c.body(stream, 200, { 'content-type': 'application/gzip', 'content-disposition': `attachment; filename="${name}"`, 'cache-control': 'no-store' })
+  })
+
   app.get('/api/openapi.json', c => c.json(openApiDocument(new URL('/api', c.req.url).toString())))
 
   // Raw event stream over WebSocket (ADR-0005 amendment). Same CoreEvent frames

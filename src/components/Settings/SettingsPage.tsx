@@ -1,12 +1,12 @@
 import { Link } from '@tanstack/react-router'
-import { CloudUpload, HardDrive, Settings } from 'lucide-react'
+import { Archive, CloudUpload, Download, HardDrive, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Card, CardHeader, KeyValue, SectionLabel } from '@/src/components/ds/core'
 import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
 import { PageHeader, SettingRow } from '@/src/components/ds/layout'
 import type { inferRouterOutputs } from '@trpc/server'
 import type { AppRouter } from '@/src/server/routers/app'
-import { trpc } from '@/src/utils/trpc'
+import { apiBase, trpc } from '@/src/utils/trpc'
 
 type SettingsView = inferRouterOutputs<AppRouter>['settings']['get']
 
@@ -74,6 +74,8 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
       </Card>
 
       <StorageCard />
+
+      <BackupCard />
 
       <Card>
         <CardHeader title="Home Assistant bridge" subtitle="Core-level MQTT bridge for grow events and services. The hardware daemon already publishes discovery for lights, pump and sensors." />
@@ -174,6 +176,41 @@ function FlashRows({ f }: { f: inferRouterOutputs<AppRouter>['storage']['flash']
         <span className="font-mono text-sm">{`${f.device}${f.cardBytes ? ` · ${size(f.cardBytes)}` : ''}`}</span>
       </SettingRow>
     </>
+  )
+}
+
+const when = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+/** Off-card backups (ADR-0021): download any time, nightly to the mirror's bucket. */
+function BackupCard() {
+  const status = trpc.backup.status.useQuery(undefined, { refetchInterval: 30_000 })
+  const run = trpc.backup.runNow.useMutation({ onSuccess: () => void status.refetch() })
+  const [photos, setPhotos] = useState(false)
+  const st = status.data
+  if (!st?.available) return null
+  const last = st.lastSuccess
+  const tried = st.lastBucketAttempt
+  const nightlySub = st.nightly.enabled
+    ? `After ${String(st.nightly.hour).padStart(2, '0')}:00, keeping the last ${st.nightly.keep}${tried && !tried.ok ? ` · last try failed: ${tried.detail}` : ''}`
+    : 'Off. Set up the mirror under Off-device storage to back up every night.'
+  return (
+    <Card tone={st.stale ? 'warn' : undefined}>
+      <CardHeader title="Backup" subtitle="A copy of this unit off its SD card, so a dead card is a quick swap: settings, schedules, grow cycle, pods, rules, probes, calibration and history." icon={Archive} />
+      <SettingRow label="Last off-card backup" sub={st.stale ? `None for ${st.staleAfterDays} days or more` : last?.detail || undefined}>
+        <span className="text-sm" data-testid="backup-last">{last ? `${when(last.ts)} · ${last.destination === 'bucket' ? 'bucket' : 'downloaded'}` : 'none yet'}</span>
+      </SettingRow>
+      <SettingRow label="Nightly to the bucket" sub={nightlySub}>
+        <div className="flex flex-col items-end gap-1">
+          <Button size="sm" disabled={!st.nightly.enabled || run.isPending} onClick={() => run.mutate()}>{run.isPending ? 'Backing up…' : 'Back up now'}</Button>
+          {run.data && <span className={`text-xs ${run.data.ok ? 'text-fg-2' : 'text-danger'}`}>{run.data.ok ? `Uploaded ${size(run.data.bytes)}` : run.data.detail}</span>}
+          {run.error && <span className="text-xs text-danger">{run.error.message}</span>}
+        </div>
+      </SettingRow>
+      <SettingRow label="Include photos" sub="For downloads; the mirror already keeps them. Makes the file far larger."><Toggle label="Include photos in the download" on={photos} onChange={setPhotos} /></SettingRow>
+      <SettingRow label="Download" sub="The file holds your bucket secret and MQTT password. Keep it somewhere private." divider={false}>
+        <a href={`${apiBase()}/api/backup/download${photos ? '?photos=1' : ''}`} download className="inline-flex"><Button size="sm" icon={Download} tabIndex={-1}>Download backup</Button></a>
+      </SettingRow>
+    </Card>
   )
 }
 

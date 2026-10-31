@@ -2,6 +2,7 @@ import { router } from '../trpc'
 import { lightRouter, pumpRouter } from './actuators'
 import { alertsRouter } from './alerts'
 import { automationsRouter } from './automations'
+import { backupRouter } from './backup'
 import { cameraRouter } from './camera'
 import { datasetsRouter } from './datasets'
 import { devicesRouter } from './devices'
@@ -32,6 +33,7 @@ export const appRouter = router({
   vision: visionRouter,
   datasets: datasetsRouter,
   storage: storageRouter,
+  backup: backupRouter,
   alerts: alertsRouter,
   events: eventsRouter,
 })

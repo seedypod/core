@@ -43,6 +43,13 @@
       "when": 1793487146367,
       "tag": "0005_loud_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793487619180,
+      "tag": "0006_black_silver_sable",
+      "breakpoints": true
     }
   ]
 }

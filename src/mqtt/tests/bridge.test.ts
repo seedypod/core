@@ -66,6 +66,16 @@ describe('HaBridge', () => {
     expect(after.reminders.reminder_nutrients).toBe(false)
   })
 
+  it('backup_stale is a problem sensor that follows the alert', () => {
+    const { mqtt, store, events } = setup()
+    mqtt.fire('connect')
+    const cfg = JSON.parse(mqtt.published.find(p => p.topic === 'homeassistant/binary_sensor/u1_core_backup_stale/config')?.payload ?? '{}') as Record<string, string>
+    expect(cfg).toMatchObject({ name: 'Backup overdue', device_class: 'problem', state_topic: 'seedypod/u1/core/state' })
+    store.alerts.raise('backup_stale', 'No off-card backup yet', '2026-10-31T00:00:00Z')
+    events.emit({ kind: 'mutation', path: 'alerts.backup_stale' })
+    expect(JSON.parse(mqtt.published.at(-1)?.payload ?? '{}')).toMatchObject({ backupStale: true })
+  })
+
   it('water_now runs a bounded pump cycle through the HAL', async () => {
     const { hal, bridge } = setup()
     await bridge.onMessage('seedypod/u1/core/water_now', '120')

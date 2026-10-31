@@ -120,6 +120,17 @@ export const counters = sqliteTable('counters', {
   updatedAt: text().notNull(),
 })
 
+/** Off-card backups (ADR-0021): every download and bucket upload, kept as a log for the staleness alert and Settings → Backup. */
+export const backups = sqliteTable('backups', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  ts: text().notNull(),
+  destination: text().notNull(),
+  name: text().notNull(),
+  bytes: integer().notNull().default(0),
+  ok: integer({ mode: 'boolean' }).notNull(),
+  detail: text().notNull().default(''),
+}, t => [index('backups_ts').on(t.ts)])
+
 /** Hourly samples of the SD card's sectors-written counter (ADR-0021); `bytes` is the write since the previous sample. */
 export const flashSamples = sqliteTable('flash_samples', {
   ts: text().primaryKey(),

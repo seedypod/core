@@ -196,6 +196,17 @@ for g in gpio i2c video; do
 done
 $SUDO mkdir -p "$CONF_DIR" "$STATE_DIR"
 $SUDO chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
+# Core runs as the install user and reads hal.toml, hald's state and the broker
+# password for its backups (ADR-0021): it joins the seedypod group, read-only.
+CORE_USER="${SEEDYPOD_CORE_USER:-${SUDO_USER:-}}"
+if [ -z "$CORE_USER" ] && [ "$(id -u)" -ne 0 ]; then CORE_USER="$(id -un)"; fi
+if [ -z "$CORE_USER" ] && [ -d /opt/seedypod ]; then CORE_USER="$(stat -c %U /opt/seedypod 2>/dev/null || true)"; fi
+if [ -n "$CORE_USER" ] && [ "$CORE_USER" != root ] && id -u "$CORE_USER" >/dev/null 2>&1; then
+  $SUDO usermod -aG "$SERVICE_USER" "$CORE_USER"
+  echo "→ $CORE_USER can read $CONF_DIR and $STATE_DIR (group $SERVICE_USER) for backups"
+fi
+$SUDO chgrp "$SERVICE_USER" "$CONF_DIR"
+$SUDO chmod 0755 "$CONF_DIR"
 
 # ---- binary and config --------------------------------------------------------
 $SUDO install -m 0755 "$TMP/hald" "$PREFIX/hald"
@@ -271,9 +282,10 @@ CONF
   if [ "$BROKER" = lan ] && [ -f "$MOSQ_CONF" ] && ! grep -q '^listener 1884' "$MOSQ_CONF"; then
     HA_PASS="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
     $SUDO mosquitto_passwd -b -c "$MOSQ_PASSWD" homeassistant "$HA_PASS"
-    # Mosquitto warns (and newer releases refuse) unless its own user owns the file.
-    $SUDO chown mosquitto:mosquitto "$MOSQ_PASSWD" 2>/dev/null || true
-    $SUDO chmod 0600 "$MOSQ_PASSWD"
+    # Mosquitto warns (and newer releases refuse) unless its own user owns the file and
+    # it isn't world-readable; group seedypod lets core put it in backups (ADR-0021).
+    $SUDO chown "mosquitto:$SERVICE_USER" "$MOSQ_PASSWD" 2>/dev/null || true
+    $SUDO chmod 0640 "$MOSQ_PASSWD"
     $SUDO tee -a "$MOSQ_CONF" >/dev/null <<CONF
 
 # Home Assistant and other LAN clients, with a password ($MOSQ_PASSWD).
@@ -283,6 +295,10 @@ password_file $MOSQ_PASSWD
 CONF
     echo "→ MQTT for Home Assistant: $(hostname).local port 1884, user homeassistant, password $HA_PASS"
     echo "   (shown once; change it with: sudo mosquitto_passwd $MOSQ_PASSWD homeassistant)"
+  fi
+  if [ -f "$MOSQ_PASSWD" ]; then
+    $SUDO chown "mosquitto:$SERVICE_USER" "$MOSQ_PASSWD" 2>/dev/null || true
+    $SUDO chmod 0640 "$MOSQ_PASSWD"
   fi
   if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files mosquitto.service >/dev/null 2>&1; then
     $SUDO systemctl enable mosquitto.service >/dev/null 2>&1 || true
@@ -320,6 +336,8 @@ WantedBy=multi-user.target
 UNIT
 
 $SUDO systemctl daemon-reload
+# A running core only picks up the new group on restart.
+$SUDO systemctl try-restart seedypod-core.service >/dev/null 2>&1 || true
 if [ "$ENABLE" -eq 1 ]; then
   $SUDO systemctl enable hald.service >/dev/null
   $SUDO systemctl restart hald.service

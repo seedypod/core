@@ -64,8 +64,9 @@ S3-compatible bucket (Cloudflare R2, Backblaze B2, MinIO, a NAS) under
 **Settings → Off-device storage and analysis**:
 
 1. Fill in the endpoint, bucket, region (`auto` for R2), an optional key
-   prefix such as `kitchen/`, and an access key pair that can read and write
-   that bucket. Save.
+   prefix such as `kitchen/`, and an access key pair that can read, write,
+   list and delete in that bucket (listing and deleting are for the nightly
+   backups). Save.
 2. Press **Test**. It writes, reads back and deletes a probe object.
 3. Press **Copy existing photos** to upload what is already on the unit.
 
@@ -73,6 +74,8 @@ From then on each new photo (and mask) is copied in the background. The unit
 still prunes its own copy after 30 days; the bucket keeps everything, and the
 app reads from it when the local copy is gone. If uploads keep failing, an
 **Off-device copy failed** alert says why; it clears on the next success.
+The same bucket also gets a nightly backup of the unit under `backups/`
+([Maintenance → Backups](MAINTENANCE.md#backups)).
 
 Nothing is sent anywhere until these fields are filled in. See
 [Privacy](PRIVACY.md).

@@ -160,6 +160,19 @@ for (const [name, make] of impls) {
       expect(store.counters.get('nothing')).toBe(0)
     })
 
+    it('backups log newest first and finds the last success per destination', () => {
+      store = make()
+      expect(store.backups.lastSuccess()).toBeNull()
+      store.backups.add({ ts: '2026-10-01T03:00:00Z', destination: 'bucket', name: 'a', bytes: 10, ok: true, detail: '' })
+      store.backups.add({ ts: '2026-10-02T03:00:00Z', destination: 'bucket', name: 'b', bytes: 0, ok: false, detail: 'timeout' })
+      const d = store.backups.add({ ts: '2026-10-01T12:00:00Z', destination: 'download', name: 'c', bytes: 20, ok: true, detail: '' })
+      expect(d.id).toBeGreaterThan(0)
+      expect(store.backups.list().map(r => r.name)).toEqual(['b', 'c', 'a'])
+      expect(store.backups.list(1)[0]).toMatchObject({ name: 'b', ok: false, detail: 'timeout', destination: 'bucket' })
+      expect(store.backups.lastSuccess()?.name).toBe('c')
+      expect(store.backups.lastSuccess('bucket')?.name).toBe('a')
+    })
+
     it('flash samples keep order, upsert on ts and prune by age', () => {
       store = make()
       expect(store.flash.last()).toBeNull()

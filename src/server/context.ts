@@ -8,6 +8,7 @@ import type { CaptureService } from '../camera/captures'
 import type { MirroredSink } from '../camera/mirrorSink'
 import type { AnalysisService } from '../vision/service'
 import type { FlashMeter } from '../telemetry/flash'
+import type { BackupService } from '../backup/service'
 
 export interface Context {
   hal: HalClient
@@ -22,6 +23,8 @@ export interface Context {
   flash: FlashMeter
   /** Present when stills go through the opt-in off-device mirror (the unit; not tests or the demo). */
   mirror?: MirroredSink
+  /** Off-card backups (ADR-0021); on the unit only, like the mirror. */
+  backup?: BackupService
   /** Build info pinned at release time (.git-info) or 'dev'. */
   version: string
   now?: () => Date

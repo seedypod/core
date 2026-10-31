@@ -5,24 +5,26 @@ import { SettingsPage } from '../SettingsPage'
 
 const { data, calls } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { update: vi.fn(), test: vi.fn(), sync: vi.fn() },
+  calls: { update: vi.fn(), test: vi.fn(), sync: vi.fn(), run: vi.fn() },
 }))
 
 vi.mock('@tanstack/react-router', () => ({ Link: ({ to, children, className }: { to: string, children: unknown, className?: string }) => <a href={to} className={className}>{children as string}</a> }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name), refetch: vi.fn() }) })
-  const mutation = (name: 'update' | 'test' | 'sync') => ({ useMutation: () => ({
+  const mutation = (name: 'update' | 'test' | 'sync' | 'run') => ({ useMutation: () => ({
     isPending: false,
     data: data.get(`${name}Result`),
     error: data.get(`${name}Error`) ?? null,
     mutate: (input?: unknown) => calls[name](input),
   }) })
   return {
+    apiBase: () => '',
     trpc: {
       useUtils: () => ({ settings: { invalidate: vi.fn() } }),
       settings: { get: query('settings'), update: mutation('update') },
       system: { info: query('info') },
+      backup: { status: query('backup'), runNow: mutation('run') },
       storage: { flash: query('flash'), mirror: query('mirror'), testMirror: mutation('test'), syncMirror: mutation('sync') },
     },
   }
@@ -69,6 +71,45 @@ describe('Settings: storage', () => {
     data.set('flash', { available: false, device: null, cardBytes: null, sinceBootBytes: null, uptimeS: null, bytesPerDay: null, basis: null, windowDays: null, lastSampleAt: null })
     render(<SettingsPage />)
     expect(screen.getByText('No SD card counter on this machine')).toBeTruthy()
+  })
+})
+
+const record = (o: Partial<{ ts: string, destination: 'download' | 'bucket', ok: boolean, detail: string, bytes: number }>) => ({ id: 1, ts: '2026-10-31T03:00:00Z', destination: 'bucket', name: 'seedypod-backup-u-20261031-030000.tar.gz', bytes: 2_400_000, ok: true, detail: '', ...o })
+const backup = (o: Record<string, unknown> = {}) => ({ available: true, lastSuccess: null, lastBucketAttempt: null, nightly: { enabled: false, hour: 3, keep: 14 }, staleAfterDays: 7, stale: false, recent: [], ...o })
+
+describe('Settings: backup', () => {
+  it('offers a download with the secrets warning, and photos on request', () => {
+    data.set('backup', backup())
+    render(<SettingsPage />)
+    expect(screen.getByTestId('backup-last').textContent).toBe('none yet')
+    expect(screen.getByText('The file holds your bucket secret and MQTT password. Keep it somewhere private.')).toBeTruthy()
+    const link = () => screen.getByText('Download backup').closest('a') as HTMLAnchorElement
+    expect(link().getAttribute('href')).toBe('/api/backup/download')
+    fireEvent.click(screen.getByRole('switch', { name: 'Include photos in the download' }))
+    expect(link().getAttribute('href')).toBe('/api/backup/download?photos=1')
+    expect((screen.getByRole('button', { name: 'Back up now' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(/Set up the mirror under Off-device storage/)).toBeTruthy()
+  })
+
+  it('runs a bucket backup now and shows a failed nightly attempt', () => {
+    data.set('backup', backup({ nightly: { enabled: true, hour: 3, keep: 14 }, lastSuccess: record({}), lastBucketAttempt: record({ ok: false, detail: '503 SlowDown' }) }))
+    render(<SettingsPage />)
+    expect(screen.getByText('After 03:00, keeping the last 14 · last try failed: 503 SlowDown')).toBeTruthy()
+    expect(screen.getByTestId('backup-last').textContent).toMatch(/· bucket$/)
+    fireEvent.click(screen.getByRole('button', { name: 'Back up now' }))
+    expect(calls.run).toHaveBeenCalled()
+  })
+
+  it('says when backups are overdue', () => {
+    data.set('backup', backup({ stale: true }))
+    render(<SettingsPage />)
+    expect(screen.getByText('None for 7 days or more')).toBeTruthy()
+  })
+
+  it('is hidden where there are no backups (demo)', () => {
+    data.set('backup', backup({ available: false }))
+    render(<SettingsPage />)
+    expect(screen.queryByText('Download backup')).toBeNull()
   })
 })
 

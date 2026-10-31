@@ -13,7 +13,17 @@ const block = join(dataDir, 'block/mmcblk0')
 mkdirSync(block, { recursive: true })
 writeFileSync(join(block, 'stat'), '5021 1544 412366 8133 2210 3122 1953125 14880 0 11440 23010\n')
 writeFileSync(join(block, 'size'), '62500000\n')
-const env = { ...process.env, PORT: String(PORT), CI: '1', DATA_DIR: dataDir, DATABASE_URL: join(dataDir, 'e2e.db'), FLASH_STAT_PATH: join(block, 'stat') }
+// What a backup bundles besides the database: hal.toml and hald's state.
+const etc = join(dataDir, 'etc')
+const state = join(dataDir, 'hal-state')
+mkdirSync(etc)
+mkdirSync(state)
+writeFileSync(join(etc, 'hal.toml'), 'unit_id = "sim-0001"\n')
+writeFileSync(join(state, 'state.json'), '{"light_level":0}\n')
+const env = {
+  ...process.env, PORT: String(PORT), CI: '1', DATA_DIR: dataDir, DATABASE_URL: join(dataDir, 'e2e.db'), FLASH_STAT_PATH: join(block, 'stat'),
+  SEEDYPOD_ETC_DIR: etc, SEEDYPOD_STATE_DIR: state, SEEDYPOD_MOSQUITTO_PASSWD: join(dataDir, 'no-passwd'),
+}
 const server = spawn('node', ['server/dist/index.js'], { env, stdio: 'inherit' })
 let code = 1
 try {
