@@ -1,0 +1,19 @@
+[package]
+name = "hal-drivers"
+description = "leafypod HAL: real Gardyn drivers (GPIO/PWM/I²C/UVC) behind the `hardware` feature, with host-testable pure parts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hal-core.workspace = true
+serde.workspace = true
+tracing.workspace = true
+rppal = { version = "0.22", optional = true }
+
+[features]
+default = []
+# rppal-backed bus/pin adaptors. Compiles on any Linux; only runs on a Pi.
+hardware = ["dep:rppal"]
