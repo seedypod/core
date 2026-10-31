@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Capture, DeviceSettings, GrowCycle, GrowStage, Pod, PodGrowthPoint, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
 /** In-memory Store for tests and the browser demo. Same semantics as SqliteStore. */
@@ -15,7 +15,7 @@ export class MemoryStore implements Store {
   private readonly captureRows: Capture[] = []
   private readonly points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
-  private readonly growthRows: PodGrowthPoint[] = []
+  private readonly analysisRows: AnalysisRow[] = []
 
   constructor(podCount = 30) {
     const ts = new Date(0).toISOString()
@@ -164,15 +164,41 @@ export class MemoryStore implements Store {
     get: (key: string): number => this.counterRows.get(key) ?? 0,
   }
 
-  podGrowth = {
-    add: (pts: PodGrowthPoint[]): void => {
-      this.growthRows.push(...pts)
+  analyses = {
+    add: (rows: AnalysisRow[]): void => {
+      for (const r of rows) {
+        const i = this.analysisRows.findIndex(x => x.captureId === r.captureId && x.analyzer === r.analyzer && x.version === r.version && x.slot === r.slot && x.metric === r.metric)
+        if (i >= 0) this.analysisRows[i] = { ...r }
+        else this.analysisRows.push({ ...r })
+      }
     },
-    series: (slot: number, limit = 200): PodGrowthPoint[] => this.growthRows.filter(p => p.slot === slot).sort((a, b) => a.ts.localeCompare(b.ts)).slice(-limit),
-    latest: (): PodGrowthPoint[] => {
-      const m = new Map<number, PodGrowthPoint>()
-      for (const p of [...this.growthRows].sort((a, b) => a.ts.localeCompare(b.ts))) m.set(p.slot, p)
-      return [...m.values()].sort((a, b) => a.slot - b.slot)
+    series: (q: { analyzer: string, version?: number, slot: number, metric: string, limit?: number }): AnalysisPoint[] => {
+      const versions = this.analysisRows.filter(r => r.analyzer === q.analyzer).map(r => r.version)
+      const version = q.version ?? (versions.length ? Math.max(...versions) : undefined)
+      if (version === undefined) return []
+      return this.analysisRows
+        .filter(r => r.analyzer === q.analyzer && r.version === version && r.slot === q.slot && r.metric === q.metric)
+        .sort((a, b) => a.ts.localeCompare(b.ts))
+        .slice(-(q.limit ?? 200))
+        .map(r => ({ ts: r.ts, value: r.value, captureId: r.captureId }))
+    },
+    forCapture: (captureId: string): AnalysisRow[] =>
+      this.analysisRows.filter(r => r.captureId === captureId)
+        .sort((a, b) => a.analyzer.localeCompare(b.analyzer) || a.version - b.version || a.slot - b.slot || a.metric.localeCompare(b.metric)),
+    range: (fromTs: string, toTs: string): AnalysisRow[] =>
+      this.analysisRows.filter(r => r.ts >= fromTs && r.ts <= toTs).sort((a, b) => a.ts.localeCompare(b.ts)),
+    stats: (): AnalyzerStats[] => {
+      const m = new Map<string, AnalyzerStats & { ids: Set<string> }>()
+      for (const r of this.analysisRows) {
+        const k = `${r.analyzer}@${r.version}@${r.source}`
+        const s = m.get(k) ?? { analyzer: r.analyzer, version: r.version, source: r.source, rows: 0, captures: 0, firstTs: r.ts, lastTs: r.ts, ids: new Set<string>() }
+        s.rows++
+        s.ids.add(r.captureId)
+        if (r.ts < s.firstTs) s.firstTs = r.ts
+        if (r.ts > s.lastTs) s.lastTs = r.ts
+        m.set(k, s)
+      }
+      return [...m.values()].map(({ ids, ...s }) => ({ ...s, captures: ids.size })).sort((a, b) => a.analyzer.localeCompare(b.analyzer) || a.version - b.version)
     },
   }
 

@@ -1,10 +1,13 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import Database from 'better-sqlite3'
+import { drizzle } from 'drizzle-orm/better-sqlite3'
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MemoryStore } from '../memory'
-import { SqliteStore } from '../sqlite'
-import type { Store } from '../types'
+import { defaultMigrationsFolder, SqliteStore } from '../sqlite'
+import type { AnalysisRow, Store } from '../types'
 
 const impls: [string, () => Store][] = [
   ['MemoryStore', () => new MemoryStore(30)],
@@ -97,15 +100,34 @@ for (const [name, make] of impls) {
       expect(r.every(p => p.sensor === 'air_temp')).toBe(true)
     })
 
-    it('pod growth series and latest per slot', () => {
+    it('analysis rows upsert, version per series and stats per analyser', () => {
       store = make()
-      store.podGrowth.add([
-        { ts: '2026-01-01T00:00:00Z', slot: 1, green: 0.1, captureId: 'a' },
-        { ts: '2026-01-02T00:00:00Z', slot: 1, green: 0.2, captureId: 'b' },
-        { ts: '2026-01-01T00:00:00Z', slot: 2, green: 0.5, captureId: 'a' },
+      const row = (o: Partial<AnalysisRow>): AnalysisRow => ({ captureId: 'a', ts: '2026-01-01T00:00:00Z', camera: 'upper', analyzer: 'green-threshold', version: 1, source: 'device', slot: 1, metric: 'green_fraction', value: 0.1, detail: null, artifact: null, ...o })
+      store.analyses.add([
+        row({}),
+        row({ captureId: 'b', ts: '2026-01-02T00:00:00Z', value: 0.2 }),
+        row({ slot: 2, value: 0.5 }),
+        row({ analyzer: 'exg-otsu', value: 0.15, detail: { threshold: 140 }, artifact: 'analysis/a/exg-otsu@1/mask.pbm' }),
+        row({ analyzer: 'exg-otsu', version: 2, value: 0.17 }),
+        row({ analyzer: 'leaf-unet', source: 'remote', value: 0.12 }),
       ])
-      expect(store.podGrowth.series(1).map(p => p.green)).toEqual([0.1, 0.2])
-      expect(store.podGrowth.latest().map(p => [p.slot, p.green])).toEqual([[1, 0.2], [2, 0.5]])
+      // Re-running the same analyser@version on a capture replaces, never duplicates.
+      store.analyses.add([row({ value: 0.11 })])
+      expect(store.analyses.series({ analyzer: 'green-threshold', slot: 1, metric: 'green_fraction' }).map(p => p.value)).toEqual([0.11, 0.2])
+      expect(store.analyses.series({ analyzer: 'exg-otsu', slot: 1, metric: 'green_fraction' }).map(p => p.value)).toEqual([0.17])
+      expect(store.analyses.series({ analyzer: 'exg-otsu', version: 1, slot: 1, metric: 'green_fraction' }).map(p => p.value)).toEqual([0.15])
+      expect(store.analyses.series({ analyzer: 'nothing', slot: 1, metric: 'green_fraction' })).toEqual([])
+      const a = store.analyses.forCapture('a')
+      expect(a).toHaveLength(5)
+      expect(a.find(r => r.analyzer === 'exg-otsu' && r.version === 1)).toMatchObject({ detail: { threshold: 140 }, artifact: 'analysis/a/exg-otsu@1/mask.pbm' })
+      expect(store.analyses.range('2026-01-02T00:00:00Z', '2026-01-03T00:00:00Z').map(r => r.captureId)).toEqual(['b'])
+      expect(store.analyses.stats().map(s => [s.analyzer, s.version, s.source, s.rows, s.captures])).toEqual([
+        ['exg-otsu', 1, 'device', 1, 1],
+        ['exg-otsu', 2, 'device', 1, 1],
+        ['green-threshold', 1, 'device', 3, 2],
+        ['leaf-unet', 1, 'remote', 1, 1],
+      ])
+      expect(store.analyses.stats().find(s => s.analyzer === 'green-threshold')).toMatchObject({ firstTs: '2026-01-01T00:00:00Z', lastTs: '2026-01-02T00:00:00Z' })
     })
 
     it('counters accumulate', () => {
@@ -118,6 +140,37 @@ for (const [name, make] of impls) {
 }
 
 describe('SqliteStore on disk', () => {
+  it('migrates pod_growth into analysis_results as green-threshold@1', () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    const url = join(root, 'core.db')
+    try {
+      // Bring a database up to the last schema that had pod_growth, with history in it.
+      const old = mkdtempSync(join(tmpdir(), 'migrations-'))
+      const src = defaultMigrationsFolder()
+      cpSync(src, old, { recursive: true })
+      const journal = JSON.parse(readFileSync(join(old, 'meta/_journal.json'), 'utf8')) as { entries: Array<{ tag: string }> }
+      journal.entries = journal.entries.slice(0, 2)
+      writeFileSync(join(old, 'meta/_journal.json'), JSON.stringify(journal))
+      const db = new Database(url)
+      migrate(drizzle(db), { migrationsFolder: old })
+      db.prepare('INSERT INTO captures (id, camera, ts, path, bytes) VALUES (?, ?, ?, ?, ?)').run('lower-1', 'lower', '2026-01-01T00:00:00Z', 'x', 1)
+      db.prepare('INSERT INTO pod_growth (ts, slot, green, captureId) VALUES (?, ?, ?, ?)').run('2026-01-01T00:00:00Z', 16, 0.4, 'lower-1')
+      db.prepare('INSERT INTO pod_growth (ts, slot, green, captureId) VALUES (?, ?, ?, ?)').run('2026-01-01T00:00:00Z', 3, 0.2, 'pruned-long-ago')
+      db.close()
+      rmSync(old, { recursive: true, force: true })
+
+      const store = new SqliteStore({ url })
+      expect(store.analyses.forCapture('lower-1')).toMatchObject([{ analyzer: 'green-threshold', version: 1, source: 'device', camera: 'lower', slot: 16, metric: 'green_fraction', value: 0.4 }])
+      // A capture pruned before the migration still lands on the camera its slot implies.
+      expect(store.analyses.forCapture('pruned-long-ago')).toMatchObject([{ camera: 'upper', slot: 3 }])
+      expect(store.settings.get().primaryAnalyzer).toBe('green-threshold')
+      store.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('creates a missing data directory on first boot', () => {
     const root = mkdtempSync(join(tmpdir(), 'store-'))
     const url = join(root, 'data', 'nested', 'core.db')

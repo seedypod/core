@@ -198,6 +198,19 @@ try {
     return `${caps.length} capture(s)`
   })
 
+  await check('capture analysis runs every analyser on the worker thread', async () => {
+    const [latest] = await get('/captures?limit=1')
+    const rows = await until('analysis rows', async () => {
+      const r = await get(`/vision/captures/${latest.id}`)
+      return r.length > 0 ? r : null
+    })
+    const analyzers = [...new Set(rows.map(r => r.analyzer))].sort()
+    assert(analyzers.join() === 'exg-otsu,green-threshold', `analysers ${analyzers}`)
+    const status = await get('/vision/status')
+    assert(status.failed === 0, `failed ${status.failed}`)
+    return `${rows.length} rows from ${analyzers.join(' + ')}`
+  })
+
   await check('EZO calibration reaches the probe; unknown probe refused', async () => {
     const ok = await post('/sensors/ph/calibrate', { point: 'mid', value: 7 })
     assert(ok.status === 200 && ok.body.ok && ok.body.points === 1, `${ok.status} ${JSON.stringify(ok.body)}`)
