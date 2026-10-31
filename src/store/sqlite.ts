@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import type { SensorId } from '../hardware/contract'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Capture, DeviceSettings, GrowCycle, GrowStage, LightSpec, Pod, PodGrowthPoint, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
 export interface SqliteStoreOptions {
@@ -196,15 +196,36 @@ export class SqliteStore implements Store {
     get: (key: string): number => this.db.select().from(t.counters).where(eq(t.counters.key, key)).get()?.value ?? 0,
   }
 
-  podGrowth = {
-    add: (pts: PodGrowthPoint[]): void => {
-      if (pts.length) this.db.insert(t.podGrowth).values(pts).run()
+  analyses = {
+    add: (rows: AnalysisRow[]): void => {
+      if (rows.length === 0) return
+      this.sqlite.transaction(() => {
+        for (const r of rows) {
+          const values = { ...r, detail: r.detail ? JSON.stringify(r.detail) : null }
+          this.db.insert(t.analysisResults).values(values).onConflictDoUpdate({
+            target: [t.analysisResults.captureId, t.analysisResults.analyzer, t.analysisResults.version, t.analysisResults.slot, t.analysisResults.metric],
+            set: { value: values.value, detail: values.detail, artifact: values.artifact, source: values.source, ts: values.ts, camera: values.camera },
+          }).run()
+        }
+      })()
     },
-    series: (slot: number, limit = 200): PodGrowthPoint[] =>
-      this.db.select({ ts: t.podGrowth.ts, slot: t.podGrowth.slot, green: t.podGrowth.green, captureId: t.podGrowth.captureId }).from(t.podGrowth)
-        .where(eq(t.podGrowth.slot, slot)).orderBy(desc(t.podGrowth.ts)).limit(limit).all().reverse(),
-    latest: (): PodGrowthPoint[] =>
-      this.db.all<PodGrowthPoint>(sql`SELECT ts, slot, green, captureId FROM pod_growth p WHERE ts = (SELECT MAX(ts) FROM pod_growth q WHERE q.slot = p.slot) ORDER BY slot`),
+    series: (q: { analyzer: string, version?: number, slot: number, metric: string, limit?: number }): AnalysisPoint[] => {
+      const a = t.analysisResults
+      const version = q.version ?? this.db.select({ v: sql<number | null>`max(${a.version})` }).from(a).where(eq(a.analyzer, q.analyzer)).get()?.v
+      if (version === null || version === undefined) return []
+      return this.db.select({ ts: a.ts, value: a.value, captureId: a.captureId }).from(a)
+        .where(and(eq(a.analyzer, q.analyzer), eq(a.version, version), eq(a.slot, q.slot), eq(a.metric, q.metric)))
+        .orderBy(desc(a.ts)).limit(q.limit ?? 200).all().reverse()
+    },
+    forCapture: (captureId: string): AnalysisRow[] =>
+      this.db.select().from(t.analysisResults).where(eq(t.analysisResults.captureId, captureId))
+        .orderBy(asc(t.analysisResults.analyzer), asc(t.analysisResults.version), asc(t.analysisResults.slot), asc(t.analysisResults.metric)).all().map(rowToAnalysis),
+    range: (fromTs: string, toTs: string): AnalysisRow[] =>
+      this.db.select().from(t.analysisResults).where(and(gte(t.analysisResults.ts, fromTs), lte(t.analysisResults.ts, toTs)))
+        .orderBy(asc(t.analysisResults.ts), asc(t.analysisResults.id)).all().map(rowToAnalysis),
+    stats: (): AnalyzerStats[] =>
+      this.db.all<AnalyzerStats>(sql`SELECT analyzer, version, source, count(*) AS rows, count(DISTINCT captureId) AS captures, min(ts) AS firstTs, max(ts) AS lastTs
+        FROM analysis_results GROUP BY analyzer, version, source ORDER BY analyzer, version`),
   }
 
   close(): void {
@@ -218,4 +239,8 @@ function rowToSchedule(r: typeof t.schedules.$inferSelect): Schedule {
 
 function rowToCycle(r: typeof t.growCycles.$inferSelect): GrowCycle {
   return { ...r, issued: JSON.parse(r.issued) as string[] }
+}
+
+function rowToAnalysis(r: typeof t.analysisResults.$inferSelect): AnalysisRow {
+  return { captureId: r.captureId, ts: r.ts, camera: r.camera, analyzer: r.analyzer, version: r.version, source: r.source, slot: r.slot, metric: r.metric, value: r.value, detail: r.detail ? JSON.parse(r.detail) as Record<string, unknown> : null, artifact: r.artifact }
 }

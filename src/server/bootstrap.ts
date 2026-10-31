@@ -10,6 +10,8 @@ import { createEventBus, type EventBus } from '../lib/eventBus'
 import { Scheduler } from '../scheduler/scheduler'
 import type { Store } from '../store/types'
 import { Recorder } from '../telemetry/recorder'
+import type { Executor } from '../vision/execute'
+import { AnalysisService } from '../vision/service'
 import type { Context } from './context'
 
 export interface CoreOptions {
@@ -22,6 +24,8 @@ export interface CoreOptions {
   /** Start timers (scheduler minute tick, grow tick, periodic captures). Off in tests. */
   startServices?: boolean
   captureMinBytes?: number
+  /** Where capture analysis runs; defaults to this thread (tests, browser demo). */
+  analysisExecutor?: Executor
 }
 
 export interface Core {
@@ -36,8 +40,10 @@ export function createCore(o: CoreOptions): Core {
   const events = o.events ?? createEventBus()
   // Every HAL event becomes a CoreEvent: the recorder, SSE/WS clients and the UI all hang off this bus.
   const unsubHal = o.hal.subscribe(event => events.emit({ kind: 'hal', event }))
-  const captures = new CaptureService({ hal: o.hal, store: o.store, sink: o.sink ?? new MemorySink(), now: o.now, minBytes: o.captureMinBytes })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, version: o.version, now: o.now }
+  const sink = o.sink ?? new MemorySink()
+  const analysis = new AnalysisService({ store: o.store, sink, events, executor: o.analysisExecutor })
+  const captures = new CaptureService({ hal: o.hal, store: o.store, sink, now: o.now, minBytes: o.captureMinBytes, analysis })
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, version: o.version, now: o.now }
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, now: o.now })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })
@@ -63,6 +69,7 @@ export function createCore(o: CoreOptions): Core {
       unsubHal()
       scheduler.stop()
       captures.stop()
+      await analysis.idle()
       recorder.stop()
       if (growTimer) clearInterval(growTimer)
       await o.hal.close()

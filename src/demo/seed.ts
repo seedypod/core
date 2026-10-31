@@ -5,7 +5,7 @@
  * the same every load.
  */
 import type { SimHal } from '../hardware/sim'
-import type { Store, TelemetryPoint } from '../store/types'
+import type { AnalysisRow, Store, TelemetryPoint } from '../store/types'
 
 const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian Kale', 'Cherry Tomato', 'Thai Basil', 'Mint', 'Swiss Chard', 'Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
 
@@ -58,6 +58,7 @@ export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
       const ts = new Date(now.getTime() - i * 6 * 3_600_000)
       const id = `${cam}-${ts.toISOString().replace(/[:.]/g, '-')}`
       store.captures.add({ id, camera: cam, ts: ts.toISOString(), path: `data:image/svg+xml;utf8,${encodeURIComponent(frameSvg(cam, 19 - i / 4))}`, bytes: 4096 })
+      store.analyses.add(demoAnalyses(id, cam, ts.toISOString(), 19 - i / 4))
     }
   }
 
@@ -73,6 +74,25 @@ function frameSvg(camera: 'upper' | 'lower', dayAge: number): string {
     return `<ellipse cx="${x}" cy="${camera === 'upper' ? 150 : 190}" rx="${r}" ry="${r * 0.7}" fill="#50c878" opacity="0.9"/><ellipse cx="${x + 10}" cy="${camera === 'upper' ? 135 : 175}" rx="${r * 0.8}" ry="${r * 0.5}" fill="#6fd68f" opacity="0.8"/>`
   }).join('')
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300"><rect width="720" height="300" fill="#141414"/><rect y="220" width="720" height="80" fill="#1d1d1f"/>${leaves}<text x="12" y="290" font-family="monospace" font-size="14" fill="#8b8b92">${camera} · demo frame</text></svg>`
+}
+
+/**
+ * Both on-device analysers' view of a demo frame. The SVG stills can't be
+ * decoded, so the scores follow the same growth curve the frames draw, with
+ * Otsu reading slightly higher on lush pods, as it does on real stills.
+ */
+function demoAnalyses(captureId: string, camera: 'upper' | 'lower', ts: string, dayAge: number): AnalysisRow[] {
+  const g = Math.min(1, dayAge / 30)
+  const first = camera === 'upper' ? 1 : 16
+  return Array.from({ length: 15 }, (_, k) => first + k).flatMap((slot) => {
+    const vigour = 0.55 + ((slot * 37) % 10) / 20
+    const base = Math.min(0.95, g * vigour * 0.9)
+    const row = { captureId, ts, camera, version: 1, source: 'device' as const, slot, metric: 'green_fraction', artifact: null }
+    return [
+      { ...row, analyzer: 'green-threshold', value: Math.round(base * 1000) / 1000, detail: null },
+      { ...row, analyzer: 'exg-otsu', value: Math.round(Math.min(0.97, base * 1.08 + 0.01) * 1000) / 1000, detail: { threshold: 141 } },
+    ]
+  })
 }
 
 function round(n: number): number {

@@ -4,7 +4,6 @@
  */
 import type { HalClient } from '../hardware/types'
 import type { Capture, Store } from '../store/types'
-import { analyzeCapture } from '../vision/analyze'
 
 export interface BlobSink {
   put(key: string, bytes: Uint8Array): Promise<string>
@@ -38,6 +37,8 @@ export interface CaptureServiceOptions {
   now?: () => Date
   /** Minimum plausible JPEG size; smaller means the camera is missing (upstream #144). */
   minBytes?: number
+  /** Scores each still after it is stored (ADR-0019); omitted = no analysis. */
+  analysis?: { enqueue(c: Capture, bytes: Uint8Array): void, removeArtifacts(captureId: string): Promise<void> }
 }
 
 export class CaptureService {
@@ -64,13 +65,11 @@ export class CaptureService {
     const path = await this.o.sink.put(`${id}.jpg`, bytes)
     const row: Capture = { id, camera, ts, path, bytes: bytes.byteLength }
     this.o.store.captures.add(row)
-    try {
-      analyzeCapture(this.o.store, row, bytes)
+    this.o.analysis?.enqueue(row, bytes)
+    for (const dropped of this.o.store.captures.prune(camera, this.keep)) {
+      await this.o.sink.remove(dropped.path)
+      await this.o.analysis?.removeArtifacts(dropped.id)
     }
-    catch {
-      // vision is best-effort; a bad frame never fails the capture
-    }
-    for (const dropped of this.o.store.captures.prune(camera, this.keep)) await this.o.sink.remove(dropped.path)
     return row
   }
 
