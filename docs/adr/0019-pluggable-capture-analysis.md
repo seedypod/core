@@ -2,14 +2,14 @@
 type: "Decision record"
 title: "ADR 0019: Pluggable capture analysis"
 description: "Vision analysers are an interface; their outputs share one versioned results table, export as a dataset, and can be mirrored to opt-in off-device storage and compute."
-status: "draft"
+status: "stable"
 generated: {"by": "claude/fable-5.1", "at": "2026-10-31T10:00:00+00:00"}
 sources: [{"resource": "/adr/0004-two-tier-hal-core.md", "title": "ADR 0004: Two tiers — hardware daemon and core"}, {"resource": "/adr/0018-runtime-sensor-inventory.md", "title": "ADR 0018: Runtime sensor inventory"}, {"resource": "/PRIVACY.md", "title": "Privacy"}, {"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (sleep-stage calibration dataset)"}]
 ---
 
 # ADR 0019: Pluggable capture analysis
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-31
 
 ## Context
@@ -109,8 +109,15 @@ number per pod in `pod_growth`. It works as a first signal, but:
 
 ## Phases
 
-1. **On device** — `CaptureAnalyzer`, the results table and migration, the
-   worker queue, `exg-otsu@1`, the compare view, `list_analyses`.
-2. **Export** — the dataset bundle and a documented pull-to-laptop workflow.
-3. **Off device** — `S3Sink` mirror and the results-ingest endpoint, when
-   there is a remote worker to use them.
+All three phases shipped together; [Capture analysis](../ANALYSIS.md) is the
+user and integrator guide.
+
+1. **On device** — `CaptureAnalyzer` (`src/vision/analyzer.ts`), the
+   `analysis_results` table (migrations 0002–0003 move `pod_growth` in as
+   `green-threshold@1`), the worker queue (`src/vision/service.ts`,
+   `visionWorker.ts`), `exg-otsu@1`, the Analysis screen, `list_analyses`.
+2. **Export** — `GET /api/datasets/export`, a streamed tar
+   (`src/datasets/`), with a download card on the Analysis screen.
+3. **Off device** — `MirroredSink`/`S3Sink` (`src/camera/mirrorSink.ts`,
+   SigV4 via `aws4fetch`), `POST /api/analyses/results` with its own bearer
+   token, and `scripts/analysis-worker.mjs` as the reference worker.

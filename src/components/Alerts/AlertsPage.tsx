@@ -6,7 +6,7 @@ import { PageHeader } from '@/src/components/ds/layout'
 import { trpc } from '@/src/utils/trpc'
 
 const LABEL: Record<string, string> = {
-  water_low: 'Water low', pump_fault: 'Pump fault', dose_fault: 'Dosing lockout', over_temp: 'Board over temperature', camera_missing: 'Camera missing', hal_offline: 'Hardware daemon offline',
+  water_low: 'Water low', pump_fault: 'Pump fault', dose_fault: 'Dosing lockout', over_temp: 'Board over temperature', camera_missing: 'Camera missing', hal_offline: 'Hardware daemon offline', mirror_failed: 'Off-device copy failed',
   reminder_thinning: 'Thin seedlings', reminder_root_check: 'Check roots', reminder_harvest: 'Harvest window', reminder_nutrients: 'Add nutrients', light_fault: 'Light fault',
 }
 const DANGER = new Set(['pump_fault', 'dose_fault', 'over_temp', 'hal_offline'])

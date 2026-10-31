@@ -4,6 +4,7 @@
  * browser demo and the tests — one wiring, three hosts.
  */
 import { CaptureService, MemorySink, type BlobSink } from '../camera/captures'
+import type { MirroredSink } from '../camera/mirrorSink'
 import { GrowEngine } from '../grow/grow'
 import type { HalClient } from '../hardware/types'
 import { createEventBus, type EventBus } from '../lib/eventBus'
@@ -20,6 +21,8 @@ export interface CoreOptions {
   version: string
   events?: EventBus
   sink?: BlobSink
+  /** The off-device mirror, when `sink` is one; exposed to the storage router. */
+  mirror?: MirroredSink
   now?: () => Date
   /** Start timers (scheduler minute tick, grow tick, periodic captures). Off in tests. */
   startServices?: boolean
@@ -43,7 +46,7 @@ export function createCore(o: CoreOptions): Core {
   const sink = o.sink ?? new MemorySink()
   const analysis = new AnalysisService({ store: o.store, sink, events, executor: o.analysisExecutor })
   const captures = new CaptureService({ hal: o.hal, store: o.store, sink, now: o.now, minBytes: o.captureMinBytes, analysis })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, version: o.version, now: o.now }
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, version: o.version, now: o.now }
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, now: o.now })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })
