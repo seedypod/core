@@ -1,0 +1,22 @@
+name: Knowledge (OKF)
+
+on:
+  push:
+    branches: [dev, main]
+    paths: ['knowledge/**', 'scripts/validate_knowledge.py']
+  pull_request:
+    paths: ['knowledge/**', 'scripts/validate_knowledge.py']
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml
+      - run: python scripts/validate_knowledge.py
