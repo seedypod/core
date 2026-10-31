@@ -47,7 +47,7 @@ pub fn discover(sysfs: &Path, dev: &Path) -> Vec<Detected> {
             })
         })
         .collect();
-    out.sort_by(|a, b| port_key(&a.port).cmp(&port_key(&b.port)));
+    out.sort_by_key(|d| port_key(&d.port));
     out
 }
 
