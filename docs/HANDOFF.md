@@ -55,7 +55,7 @@ On a unit: `scripts/install-hal` then `scripts/install`; set `HAL_MQTT_URL`, `HA
 
 1. **Phase 1** — teardown, `dd` the stock card, flash, `hald --check` + `--features hardware` on the unit, confirm the pin map; file ADR-0008 with the real model/controller; mark `knowledge/hardware/*` and `docs/hardware/pin-map.md` as verified. With EZO probes fitted, run the calibration procedure in `docs/hardware/hal.md`.
 2. Replace the placeholder secrets (`VERCEL_TOKEN`, `BACKMERGE_TOKEN`, optionally `CODECOV_TOKEN`) — tracked in seedypod/core#6 — then upload the org avatar and install Renovate.
-3. iOS: evaluate forking `sleepypod/ios`'s networking layer against this tRPC router.
+3. iOS: evaluated in [ADR-0017](adr/0017-ios-client.md) — new `seedypod/ios` app reusing sleepypod's tRPC transport, discovery and stream patterns; first add a `_seedypod._tcp` mDNS advertisement to core.
 4. A calibration screen in the web UI (the API is `POST /api/sensors/{id}/calibrate`) once a unit with probes exists to test it against.
 
 Done since the pause: transfer and rename; repo settings; Vercel project; the `dose_fault` alert kind; the EZO calibration topic; the docs site; the org profile; fixing the crash on first boot when the data directory is missing.
