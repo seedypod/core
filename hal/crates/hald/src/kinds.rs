@@ -181,6 +181,20 @@ mod tests {
         assert_eq!(label("ezo_ec"), "Conductivity (EC) probe");
     }
 
+    /// `hal/contract/fixtures/device_kinds.json` is what core's simulator offers
+    /// (it imports the fixture), so it must equal these descriptors.
+    /// `SEEDYPOD_WRITE_FIXTURES=1 cargo test` regenerates it.
+    #[test]
+    fn addable_kinds_match_the_contract_fixture() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../contract/fixtures/device_kinds.json");
+        let ours: Vec<DeviceKindInfo> = addable().iter().map(|k| k.info()).collect();
+        if std::env::var_os("SEEDYPOD_WRITE_FIXTURES").is_some() {
+            std::fs::write(path, serde_json::to_string_pretty(&ours).unwrap() + "\n").unwrap();
+        }
+        let fixture: Vec<DeviceKindInfo> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(fixture, ours, "run SEEDYPOD_WRITE_FIXTURES=1 cargo test to update the fixture");
+    }
+
     #[test]
     fn sim_factory_builds_one_driver_per_quantity() {
         let mut f = SimFactory(hal_sim::world());

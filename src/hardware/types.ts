@@ -1,4 +1,4 @@
-import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, CalibrationCommand, CalibrationResult, Reading, SensorId, SystemInfo } from './contract'
+import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, CalibrationCommand, CalibrationResult, DeviceInventory, DeviceResult, Reading, SensorId, SystemInfo } from './contract'
 
 export interface HalSnapshot {
   system: SystemInfo | null
@@ -6,6 +6,8 @@ export interface HalSnapshot {
   sensors: Partial<Record<SensorId, Reading>>
   actuators: Partial<Record<ActuatorId, ActuatorState>>
   alerts: Partial<Record<AlertKind, Alert>>
+  /** Configured sensor devices and addable kinds; null until hald publishes it. */
+  devices: DeviceInventory | null
 }
 
 export type HalEvent
@@ -14,6 +16,7 @@ export type HalEvent
     | { type: 'alert', alert: Alert }
     | { type: 'availability', online: boolean }
     | { type: 'system', system: SystemInfo }
+    | { type: 'devices', devices: DeviceInventory }
     | { type: 'button', press: 'single' | 'double' | 'long' }
 
 export type Unsubscribe = () => void
@@ -29,6 +32,10 @@ export interface HalClient {
   acknowledgeAlert(kind: AlertKind): Promise<void>
   /** Store a probe calibration point; resolves with the daemon's result (ok or the refusal). */
   calibrate(id: SensorId, cmd: CalibrationCommand): Promise<CalibrationResult>
+  /** Add a probe of an addable kind at an I²C address; resolves with hald's verdict (ok or the refusal). */
+  addSensor(kind: string, addr: number): Promise<DeviceResult>
+  /** Remove an app-added probe; sensors from hal.toml are refused. */
+  removeSensor(kind: string, addr: number): Promise<DeviceResult>
   captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array>
   subscribe(listener: (event: HalEvent) => void): Unsubscribe
   close(): Promise<void>

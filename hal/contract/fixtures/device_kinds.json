@@ -1,0 +1,80 @@
+[
+  {
+    "kind": "ezo_ph",
+    "label": "pH probe",
+    "description": "Atlas Scientific EZO-pH circuit with a pH probe, on the I²C bus.",
+    "ids": [
+      "ph"
+    ],
+    "bus": "i2c",
+    "defaultAddr": 99,
+    "calibration": [
+      {
+        "point": "mid",
+        "label": "Midpoint (pH 7)",
+        "instruction": "Rinse the probe in distilled water, put it in pH 7.00 buffer and wait until the reading stops drifting (1–2 minutes). The midpoint clears any earlier calibration.",
+        "defaultValue": 7.0,
+        "optional": false
+      },
+      {
+        "point": "low",
+        "label": "Low point (pH 4)",
+        "instruction": "Rinse, put the probe in pH 4.00 buffer and wait for the reading to settle.",
+        "defaultValue": 4.0,
+        "optional": true
+      },
+      {
+        "point": "high",
+        "label": "High point (pH 10)",
+        "instruction": "Rinse, put the probe in pH 10.00 buffer and wait for the reading to settle.",
+        "defaultValue": 10.0,
+        "optional": true
+      }
+    ]
+  },
+  {
+    "kind": "ezo_ec",
+    "label": "Conductivity (EC) probe",
+    "description": "Atlas Scientific EZO-EC circuit with a conductivity probe, on the I²C bus.",
+    "ids": [
+      "ec"
+    ],
+    "bus": "i2c",
+    "defaultAddr": 100,
+    "calibration": [
+      {
+        "point": "dry",
+        "label": "Dry",
+        "instruction": "Dry the probe completely and hold it in air.",
+        "defaultValue": null,
+        "optional": false
+      },
+      {
+        "point": "single",
+        "label": "Reference solution",
+        "instruction": "Put the probe in the reference solution (1.413 mS/cm = 1413 µS/cm unless yours says otherwise), tap out bubbles and wait for the reading to settle.",
+        "defaultValue": 1.413,
+        "optional": false
+      }
+    ]
+  },
+  {
+    "kind": "ezo_rtd",
+    "label": "Water temperature probe",
+    "description": "Atlas Scientific EZO-RTD circuit with a PT-1000 probe, on the I²C bus.",
+    "ids": [
+      "water_temp"
+    ],
+    "bus": "i2c",
+    "defaultAddr": 102,
+    "calibration": [
+      {
+        "point": "single",
+        "label": "Reference temperature",
+        "instruction": "Put the probe in water of a known temperature (an ice-water bath is 0 °C) and wait for the reading to settle.",
+        "defaultValue": 0.0,
+        "optional": false
+      }
+    ]
+  }
+]
