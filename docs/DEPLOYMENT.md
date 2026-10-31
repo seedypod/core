@@ -34,6 +34,6 @@ no outbound connections are made by either service.
 | `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | secrets | `vercel.yml` | set: team `therealngs-projects`, project `seedypod-demo` (`vercel project inspect seedypod-demo`) |
 | `VERCEL_ENABLED` | variable = `true` | `vercel.yml` | Settings → Variables; the workflow is skipped until set |
 | `BACKMERGE_TOKEN` | secret | `back-merge.yml` | fine-grained PAT owned by a `seedypod` org admin (admins bypass the `Dev` ruleset), resource owner `seedypod`, repo `core`, `Contents: read and write` |
-| Renovate | GitHub App | `renovate.json` | install the Renovate app on the repo; it opens an onboarding PR |
+| `RENOVATE_TOKEN` | secret | `renovate.yml` (self-hosted, Mondays 06:00 UTC) | fine-grained PAT, repo `seedypod/core`: Contents, Pull requests, Issues, Workflows read/write. The job skips while it is unset or the placeholder |
 
 Renovate: minor/patch automerge after 3 days, Mondays; majors and the core stack (react, router, hono, vite, rppal, tokio…) stay manual; cargo is enabled; vulnerability alerts get the `security` label.
