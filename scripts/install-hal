@@ -2,18 +2,26 @@
 # seedypod HAL (hald) installer for a Raspberry Pi running Raspberry Pi OS.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 #        scripts/install-hal [--version vX.Y.Z] [--binary ./hald] [--no-enable]
+#                            [--mqtt-lan | --no-broker]
 #
 # Downloads the hald binary for this CPU from the latest GitHub Release of
 # seedypod/core, installs it to /usr/local/bin, writes a commented
 # /etc/seedypod/hal.toml if absent, creates the `seedypod` service user in the
-# gpio/i2c/video groups, enables I²C and the PWM overlay, installs and enables
-# hald.service. Re-running upgrades the binary and leaves hal.toml alone.
+# gpio/i2c/video groups, enables I²C and the PWM overlay, installs the
+# Mosquitto MQTT broker (127.0.0.1:1883, for hald and core on this Pi), and
+# installs and enables hald.service. Re-running upgrades the binary and leaves
+# hal.toml and the broker config alone.
+#   --mqtt-lan   also open port 1884 to the LAN with a password, for Home
+#                Assistant on another machine (prints the password once)
+#   --no-broker  skip Mosquitto: you point hald and core at another broker,
+#                such as Home Assistant's Mosquitto add-on
 set -euo pipefail
 
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
 VERSION="${SEEDYPOD_HAL_VERSION:-latest}"
 BINARY=""
 ENABLE=1
+BROKER=local
 PREFIX=/usr/local/bin
 CONF_DIR=/etc/seedypod
 STATE_DIR=/var/lib/seedypod
@@ -24,7 +32,9 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$2"; shift 2 ;;
     --binary) BINARY="$2"; shift 2 ;;
     --no-enable) ENABLE=0; shift ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    --mqtt-lan) BROKER=lan; shift ;;
+    --no-broker) BROKER=none; shift ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -115,12 +125,58 @@ if [ ! -f "$RULES" ]; then
   fi
 fi
 
+# ---- MQTT broker ---------------------------------------------------------------
+# hald and core talk over MQTT and both default to mqtt://127.0.0.1:1883.
+MOSQ_CONF=/etc/mosquitto/conf.d/seedypod.conf
+MOSQ_PASSWD=/etc/mosquitto/seedypod.passwd
+if [ "$BROKER" != none ]; then
+  if ! command -v mosquitto >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      echo "→ installing Mosquitto (MQTT broker)"
+      $SUDO apt-get install -y -q mosquitto mosquitto-clients >/dev/null
+    else
+      echo "   no apt-get: install an MQTT broker yourself, or rerun with --no-broker" >&2
+    fi
+  fi
+  if [ -d /etc/mosquitto/conf.d ] && [ ! -f "$MOSQ_CONF" ]; then
+    echo "→ writing $MOSQ_CONF (127.0.0.1:1883, no password: only processes on this Pi can reach it)"
+    $SUDO tee "$MOSQ_CONF" >/dev/null <<'CONF'
+# Written by seedypod scripts/install-hal. Each listener has its own auth.
+per_listener_settings true
+
+# hald and core on this Pi.
+listener 1883 127.0.0.1
+allow_anonymous true
+CONF
+  fi
+  if [ "$BROKER" = lan ] && [ -f "$MOSQ_CONF" ] && ! grep -q '^listener 1884' "$MOSQ_CONF"; then
+    HA_PASS="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
+    $SUDO mosquitto_passwd -b -c "$MOSQ_PASSWD" homeassistant "$HA_PASS"
+    # Mosquitto warns (and newer releases refuse) unless its own user owns the file.
+    $SUDO chown mosquitto:mosquitto "$MOSQ_PASSWD" 2>/dev/null || true
+    $SUDO chmod 0600 "$MOSQ_PASSWD"
+    $SUDO tee -a "$MOSQ_CONF" >/dev/null <<CONF
+
+# Home Assistant and other LAN clients, with a password ($MOSQ_PASSWD).
+listener 1884
+allow_anonymous false
+password_file $MOSQ_PASSWD
+CONF
+    echo "→ MQTT for Home Assistant: $(hostname).local port 1884, user homeassistant, password $HA_PASS"
+    echo "   (shown once; change it with: sudo mosquitto_passwd $MOSQ_PASSWD homeassistant)"
+  fi
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files mosquitto.service >/dev/null 2>&1; then
+    $SUDO systemctl enable mosquitto.service >/dev/null 2>&1 || true
+    $SUDO systemctl restart mosquitto.service
+  fi
+fi
+
 # ---- systemd ---------------------------------------------------------------
 $SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT
 [Unit]
 Description=seedypod hardware daemon (hald)
 Documentation=https://github.com/$REPO/blob/main/docs/hardware/hal.md
-After=network-online.target
+After=network-online.target mosquitto.service
 Wants=network-online.target
 
 [Service]

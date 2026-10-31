@@ -61,8 +61,26 @@ itself after 15 minutes.
 
 ## 4. Home Assistant
 
-Point HA's MQTT integration at the same broker; the device appears via discovery
-with no core required. See `docs/homeassistant/` (Phase 5).
+`hald` publishes the unit to Home Assistant over MQTT discovery, so HA needs to
+reach the same broker. Pick one:
+
+- **HA on another machine, using the unit's broker.** Run
+  `scripts/install-hal --mqtt-lan`. The broker then also listens on port
+  **1884** with a password, and the installer prints the `homeassistant`
+  password once. In HA, go to **Settings → Devices & services → Add
+  integration → MQTT** and enter host `seedypod.local`, port 1884, user
+  `homeassistant` and that password. Port 1883 stays local to the Pi.
+- **HA's own broker** (the Mosquitto add-on). Install `hald` with
+  `--no-broker`, then point both sides at HA's broker:
+  - In `/etc/seedypod/hal.toml`, set `mqtt_url = "mqtt://homeassistant.local:1883"`
+    plus `mqtt_username` and `mqtt_password`.
+  - In `/etc/systemd/system/seedypod-core.service`, set
+    `HAL_MQTT_URL=mqtt://USER:PASS@homeassistant.local:1883`.
+
+  Then run `sudo systemctl daemon-reload && sudo systemctl restart hald seedypod-core`.
+
+Either way the device appears in HA with no further setup. See
+`docs/homeassistant/` for an example dashboard.
 
 ## Uninstall
 
