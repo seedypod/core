@@ -9,17 +9,18 @@ sources: [{"resource": "/implementation-plan.md", "title": "Implementation plan"
 
 # Handoff
 
-Written at the pause point on 2026-10-31. `dev` is at the HAL merge; `main` is at the v1.0.0 release (Phase 0 scaffold). Both branches now live at `github.com/seedypod/core` (transferred from `ng/leafypod` and renamed; see the ADR-0001 amendment).
+Updated 2026-10-31 after the move to `github.com/seedypod/core` (from `ng/leafypod`; renamed to seedypod, see the ADR-0001 amendment). `dev` carries the full software stack, including the `dose_fault` alert and EZO calibration. `main` is promoted from `dev` by a `feat:` PR that cuts the first full-stack release.
 
 ## 1. What exists
 
 | Area | State | Verified by |
 |---|---|---|
 | Repo conventions | dev→main, PR title gate, semantic-release, back-merge, dev-latest, Codecov flags, Renovate, Stryker, Vercel workflow, OKF validator | 11 workflows; v1.0.0 released with `hald` binaries + tarball |
-| Rust HAL (`hal/`) | `hal-core` (contract, traits, `PumpGuard`, `DoseGuard`, derived sensors), `hal-drivers` (all documented parts + EZO pH/EC/RTD + dosing, behind `hardware`), `hal-sim`, `hald` (MQTT, HA discovery, HTTP, mDNS, state file, CLI) | 145 tests; end-to-end run against Mosquitto; CI cross-builds armv6 + aarch64 |
-| Core (`server/`, `src/`) | Hono + tRPC + OpenAPI + MCP + WS; `Store` (SQLite/drizzle + memory); scheduler, grow cycle, recorder, captures, vision, HA bridge, API key; `MqttHalClient` | 79 vitest (unit + integration) |
+| Rust HAL (`hal/`) | `hal-core` (contract, traits, `PumpGuard`, `DoseGuard`, derived sensors), `hal-drivers` (all documented parts + EZO pH/EC/RTD + dosing, behind `hardware`), `hal-sim`, `hald` (MQTT, HA discovery, HTTP, mDNS, state file, CLI) | 148 tests; end-to-end run against Mosquitto; CI cross-builds armv6 + aarch64 |
+| Core (`server/`, `src/`) | Hono + tRPC + OpenAPI + MCP + WS; `Store` (SQLite/drizzle + memory); scheduler, grow cycle, recorder, captures, vision, HA bridge, API key; `MqttHalClient` | 86 vitest (unit + integration) |
 | Web (`web/`) | 8 screens + `/kiosk` on the sleepypod design system; seeded in-browser demo (`VITE_DEMO=1`) | 6 Playwright e2e over the built server; all routes rendered headlessly with zero console errors |
-| Docs | `docs/` (22 OKF concepts: ADRs 0001–0016, guides, HAL reference, HA examples, plan) and `knowledge/` (4) | `scripts/validate_knowledge.py` in CI |
+| Docs | `docs/` (OKF concepts: ADRs 0001–0016, guides, HAL reference, HA examples, plan, this handoff) and `knowledge/` (4); published at [seedypod.github.io](https://seedypod.github.io) from `seedypod/seedypod.github.io` | `scripts/validate_knowledge.py` in CI |
+| Org | `seedypod/.github` profile README; avatar source (`assets/avatar.svg`, sleepypod-style render) | — |
 
 **Not done, needs hardware (Phase 1 / 2.10):** nothing has run on a real Gardyn. The pin map, I²C addresses, driver timing/CRCs, INA219 calibration, button/GPIO25 polarity, PWM overlay line, camera exposure and the install scripts' Raspberry Pi OS steps are all documented assumptions. The checklist is in `docs/hardware/pin-map.md`; the per-driver list is at the end of `docs/hardware/hal.md`.
 
@@ -52,11 +53,12 @@ On a unit: `scripts/install-hal` then `scripts/install`; set `HAL_MQTT_URL`, `HA
 
 ## 5. Next steps, in order
 
-1. **Phase 1** — teardown, `dd` the stock card, flash, `hald --check` + `--features hardware` on the unit, confirm the pin map; file ADR-0008 with the real model/controller; mark `knowledge/hardware/*` and `docs/hardware/pin-map.md` as verified.
-2. Promote `dev` → `main` with a `feat:` PR to cut a release containing the full stack (currently `main` = Phase 0 only).
-3. Add a `dose_fault` alert kind to the contract (fixture first, then both sides) and an EZO calibration topic.
-4. Docs site repo (`<owner>/<owner>.github.io`, Nextra) once the org exists; `docs/` remains the source.
-5. iOS: evaluate forking `sleepypod/ios`'s networking layer against this tRPC router.
+1. **Phase 1** — teardown, `dd` the stock card, flash, `hald --check` + `--features hardware` on the unit, confirm the pin map; file ADR-0008 with the real model/controller; mark `knowledge/hardware/*` and `docs/hardware/pin-map.md` as verified. With EZO probes fitted, run the calibration procedure in `docs/hardware/hal.md`.
+2. Replace the placeholder secrets (`VERCEL_TOKEN`, `BACKMERGE_TOKEN`, optionally `CODECOV_TOKEN`) — tracked in seedypod/core#6 — then upload the org avatar and install Renovate.
+3. iOS: evaluate forking `sleepypod/ios`'s networking layer against this tRPC router.
+4. A calibration screen in the web UI (the API is `POST /api/sensors/{id}/calibrate`) once a unit with probes exists to test it against.
+
+Done since the pause: transfer and rename; repo settings; Vercel project; the `dose_fault` alert kind; the EZO calibration topic; the docs site; the org profile; fixing the crash on first boot when the data directory is missing.
 
 ## 6. Conventions to keep
 
