@@ -1,6 +1,6 @@
 [package]
 name = "hald"
-description = "leafypod hardware daemon: owns the Gardyn's pins and buses, publishes over MQTT, serves stills over HTTP"
+description = "seedypod hardware daemon: owns the Gardyn's pins and buses, publishes over MQTT, serves stills over HTTP"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

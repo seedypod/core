@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test'
 
-if (!process.env.LEAFYPOD_E2E) {
+if (!process.env.SEEDYPOD_E2E) {
   throw new Error('Run browser tests via `node tests/browser/run.mjs` (it boots the built server with a scratch database).')
 }
 

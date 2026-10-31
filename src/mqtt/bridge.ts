@@ -38,7 +38,7 @@ export class HaBridge {
   private readonly now: () => Date
 
   constructor(private readonly o: BridgeOptions) {
-    this.p = `${o.prefix ?? 'leafypod'}/${o.unitId}/core`
+    this.p = `${o.prefix ?? 'seedypod'}/${o.unitId}/core`
     this.now = o.now ?? (() => new Date())
     o.mqtt.on('connect', () => this.onConnect())
     o.mqtt.on('message', (topic, payload) => this.onMessage(topic, new TextDecoder().decode(payload)))
@@ -65,7 +65,7 @@ export class HaBridge {
   }
 
   private device() {
-    return { identifiers: [this.o.unitId], name: `Gardyn ${this.o.unitId}`, manufacturer: 'leafypod', model: this.o.hal.snapshot().system?.model ?? 'gardyn' }
+    return { identifiers: [this.o.unitId], name: `Gardyn ${this.o.unitId}`, manufacturer: 'seedypod', model: this.o.hal.snapshot().system?.model ?? 'gardyn' }
   }
 
   onConnect(): void {
@@ -136,8 +136,8 @@ export async function connectBridge(o: Omit<BridgeOptions, 'mqtt'>): Promise<HaB
     rejectUnauthorized: !s.mqttTlsInsecure,
     reconnectPeriod: 5000,
     keepalive: 30,
-    will: { topic: `${o.prefix ?? 'leafypod'}/${o.unitId}/core/availability`, payload: Buffer.from('offline'), retain: true, qos: 0 },
-    clientId: `leafypod-core-bridge-${o.unitId}`,
+    will: { topic: `${o.prefix ?? 'seedypod'}/${o.unitId}/core/availability`, payload: Buffer.from('offline'), retain: true, qos: 0 },
+    clientId: `seedypod-core-bridge-${o.unitId}`,
   })
   const bridge = new HaBridge({ ...o, mqtt })
   bridge.start()

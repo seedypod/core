@@ -24,7 +24,7 @@ export interface MqttLike {
 export interface MqttHalClientOptions {
   unitId: string
   mqtt: MqttLike
-  /** Base URL of hald's HTTP server for stills, e.g. http://leafypod.local:3001 */
+  /** Base URL of hald's HTTP server for stills, e.g. http://seedypod.local:3001 */
   httpBase: string
   /** How long to wait for the daemon to echo a new actuator state. */
   commandTimeoutMs?: number

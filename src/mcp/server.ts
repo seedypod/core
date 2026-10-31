@@ -20,7 +20,7 @@ function text(data: unknown) {
 
 export function createMcpServer(ctx: Context): McpServer {
   const caller = createCaller(ctx)
-  const server = new McpServer({ name: 'leafypod', version: ctx.version })
+  const server = new McpServer({ name: 'seedypod', version: ctx.version })
 
   // ── Read ─────────────────────────────────────────────────────────────────
   server.registerTool('status', {
@@ -100,10 +100,10 @@ export function createMcpServer(ctx: Context): McpServer {
   server.registerTool('capture_still', { description: 'Take a still from a camera now and return its record (URL relative to the core host).', inputSchema: { camera: z.enum(['upper', 'lower']) } }, async i => text(await caller.camera.capture(i)))
 
   // ── Resources ────────────────────────────────────────────────────────────
-  server.registerResource('sensors', 'leafypod://sensors', { description: 'Latest sensor readings', mimeType: 'application/json' }, async uri => ({
+  server.registerResource('sensors', 'seedypod://sensors', { description: 'Latest sensor readings', mimeType: 'application/json' }, async uri => ({
     contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(ctx.hal.snapshot().sensors) }],
   }))
-  server.registerResource('limits', 'leafypod://limits', { description: 'Hardware limits the HAL enforces (pump max run, max duty, dry-run threshold)', mimeType: 'application/json' }, async uri => ({
+  server.registerResource('limits', 'seedypod://limits', { description: 'Hardware limits the HAL enforces (pump max run, max duty, dry-run threshold)', mimeType: 'application/json' }, async uri => ({
     contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(ctx.hal.snapshot().system?.limits ?? null) }],
   }))
 

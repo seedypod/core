@@ -9,7 +9,7 @@ sources: [{"resource": "/implementation-plan.md", "title": "Implementation plan"
 
 # Handoff
 
-Written at the pause point on 2026-10-31. `dev` is at the HAL merge; `main` is at the v1.0.0 release (Phase 0 scaffold). Both branches live at `github.com/ng/leafypod` pending transfer.
+Written at the pause point on 2026-10-31. `dev` is at the HAL merge; `main` is at the v1.0.0 release (Phase 0 scaffold). Both branches now live at `github.com/seedypod/core` (transferred from `ng/leafypod` and renamed; see the ADR-0001 amendment).
 
 ## 1. What exists
 
@@ -25,19 +25,17 @@ Written at the pause point on 2026-10-31. `dev` is at the HAL merge; `main` is a
 
 **Known deliberate limits:** dosing lockout reuses the `pump_fault` alert kind (contract has no dose kind yet); EZO calibration has driver methods but no MQTT topic; `hald` MQTT is plain TCP (LAN-only); over-temp uses a single threshold plus the GPIO25 line (latch provides anti-flap); the Next.js memory spike (plan 0.0) was not run — the plan is built on the Hono/Vite outcome.
 
-## 2. Transfer
+## 2. Transfer (done 2026-10-31)
 
-1. GitHub → repo Settings → Danger zone → **Transfer** to the target owner. GitHub redirects `ng/leafypod` clones, releases and links; Actions, releases and tags move with it.
-2. After transfer, these references need the new `owner/repo` (all currently `ng/leafypod`): `package.json` (`repository` if you add one), `hal/Cargo.toml` (`workspace.package.repository`), `scripts/install` (`REPO` default; overridable via `LEAFYPOD_REPO`), `scripts/install-hal` (same), `README.md`, `docs/INSTALLATION.md`, `docs/hardware/hal.md`, `docs/adr/0001-new-repository.md`, `docs/implementation-plan.md`. One `sed` and a `chore:` commit.
-3. If the repo name also changes (e.g. `core`), nothing in the build depends on the directory name.
-4. Re-attach the Claude GitHub App on the new owner if you want pushes from Claude sessions.
+The repo moved from `ng/leafypod` to `seedypod/core` (GitHub redirects the old URLs) and the project was renamed to **seedypod** throughout: package, crates, MQTT prefix, mDNS service, install paths and `SEEDYPOD_*` installer variables. Re-attach the Claude GitHub App on the `seedypod` org if you want pushes from Claude sessions.
 
-## 3. Settings to set on the destination (cannot be done via API from a session)
+## 3. Destination settings (applied via the API)
 
-- Default branch **`dev`**; branch rulesets on `dev` and `main` with a merge queue (CI's `merge_group` trigger expects it). `main`'s queue should **squash**; `dev` should use merge commits.
-- Required checks: `Lint`, `Typecheck`, `Unit Tests`, `Browser Tests`, `fmt + clippy + test`, `PR Title Gate (main)` (on `main`).
-- Secrets: `CODECOV_TOKEN`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `BACKMERGE_TOKEN`. Variable: `VERCEL_ENABLED=true`. Apps: Renovate, Codecov (optional with token), Vercel (optional; the workflow deploys without the git integration).
+- Default branch **`dev`**. Rulesets `Dev` (default branch, merge queue **merge**) and `Main` (`main`, merge queue **squash**, linear history); org admins bypass. Auto-merge on, branches deleted on merge.
+- Required checks on both: `Lint`, `Typecheck`, `Unit Tests`, `Browser Tests`. Left optional on purpose: `fmt + clippy + test` (path-filtered to `hal/**`, so it never reports on TS-only PRs and would block them) and `check-title` (only runs on `pull_request`, never on `merge_group`, so requiring it would stall the queue). Add `codecov/patch` once Codecov reports.
+- Secrets: `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` are real (Vercel project `seedypod-demo` in *therealng's projects*, aliased to `seedypod.vercel.app`). `CODECOV_TOKEN`, `VERCEL_TOKEN` and `BACKMERGE_TOKEN` hold placeholders — see [Deployment](DEPLOYMENT.md#repository-secrets-and-variables) for where each comes from. Variable `VERCEL_ENABLED=true`, so the demo deploy fails until `VERCEL_TOKEN` is real.
 - Labels: `mutation-test`, `dependencies`, `hardware`, `safety`, `security`.
+- Still manual (UI only): install the Codecov and Renovate apps on the org, and upload the org avatar.
 
 ## 4. Running it
 

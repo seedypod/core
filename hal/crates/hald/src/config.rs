@@ -196,7 +196,7 @@ impl Default for Config {
             mqtt_password: None,
             http_bind: "0.0.0.0:3001".into(),
             telemetry_interval_s: 10,
-            state_dir: PathBuf::from("/var/lib/leafypod"),
+            state_dir: PathBuf::from("/var/lib/seedypod"),
             pins: Pins::default(),
             i2c: I2c::default(),
             limits: Limits::default(),
@@ -509,7 +509,7 @@ pub fn parse_actuator_id(s: &str) -> Option<hal_core::ActuatorId> {
 }
 
 /// The commented `hal.toml` written by the installer and `--print-default-config`.
-pub const DEFAULT_CONFIG_TOML: &str = r##"# leafypod hald configuration. Every pin, address and limit lives here;
+pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every pin, address and limit lives here;
 # drivers take them as arguments. Values shown are the defaults for a stock
 # Gardyn (BCM GPIO numbering). Uncomment to change.
 
@@ -520,7 +520,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# leafypod hald configuration. Every p
 # mqtt_password = ""
 # http_bind = "0.0.0.0:3001"
 # telemetry_interval_s = 10
-# state_dir = "/var/lib/leafypod"
+# state_dir = "/var/lib/seedypod"
 # mdns = true
 
 [pins]

@@ -39,23 +39,23 @@ fn sim_run_publishes_the_contract_and_goes_offline() {
         .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{e}: {l}")))
         .collect();
     let topics: Vec<&str> = lines.iter().map(|v| v["topic"].as_str().unwrap()).collect();
-    assert_eq!(topics[0], "leafypod/smoke/system");
+    assert_eq!(topics[0], "seedypod/smoke/system");
     assert_eq!(
         lines[0]["payload"]["caps"]["actuators"],
         serde_json::json!(["light", "pump"])
     );
     assert!(topics.contains(&"homeassistant/light/smoke_light/config"));
     assert!(topics.contains(&"homeassistant/fan/smoke_pump/config"));
-    assert!(topics.contains(&"leafypod/smoke/alert/water_low"));
+    assert!(topics.contains(&"seedypod/smoke/alert/water_low"));
     assert!(
         topics
             .iter()
-            .filter(|t| **t == "leafypod/smoke/sensor/air_temp")
+            .filter(|t| **t == "seedypod/smoke/sensor/air_temp")
             .count()
             >= 2
     );
     let last = lines.last().unwrap();
-    assert_eq!(last["topic"], "leafypod/smoke/availability");
+    assert_eq!(last["topic"], "seedypod/smoke/availability");
     assert_eq!(last["payload"], "offline");
     assert_eq!(last["retain"], true);
     assert!(dir.join("state").join("state.json").exists());

@@ -1,5 +1,5 @@
 /**
- * leafypod.db — configuration and state. Telemetry is downsampled into the
+ * seedypod.db — configuration and state. Telemetry is downsampled into the
  * same file (one unit, modest volume); split into a second DB like sleepypod's
  * biometrics.db only if it grows.
  */

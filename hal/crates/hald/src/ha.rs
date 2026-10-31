@@ -2,7 +2,7 @@
 //! with zero core (ADR-0007). Sensors, alerts, the button event and the
 //! acknowledge button bind straight to contract topics. The light and the
 //! pump need plain-text ON/OFF and number topics that HA's `light` / `fan`
-//! platforms can speak, so `hald` mirrors them under `leafypod/<unit>/ha/…`
+//! platforms can speak, so `hald` mirrors them under `seedypod/<unit>/ha/…`
 //! and translates commands back into `ActuatorCommand`s — which then go
 //! through the guard like any other command.
 
@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use crate::engine::Outbound;
 
-/// `leafypod/<unit>/ha/<rest>`.
+/// `seedypod/<unit>/ha/<rest>`.
 pub fn ha_topic(unit: &str, rest: &str) -> String {
     format!("{}/ha/{rest}", topics::prefix(unit))
 }
@@ -28,7 +28,7 @@ fn device(system: &SystemInfo) -> Value {
     json!({
         "identifiers": [system.unit_id],
         "name": format!("Gardyn {}", system.unit_id),
-        "manufacturer": "leafypod",
+        "manufacturer": "seedypod",
         "model": system.model,
         "sw_version": system.hal_version,
     })
@@ -225,7 +225,7 @@ pub fn state_mirror(unit: &str, id: ActuatorId, st: &ActuatorState) -> Vec<Outbo
     }
 }
 
-/// Translate a `leafypod/<unit>/ha/...` command into an actuator command.
+/// Translate a `seedypod/<unit>/ha/...` command into an actuator command.
 /// Returns `None` for topics that are not HA commands.
 pub fn translate_command(unit: &str, topic: &str, payload: &str) -> Option<(ActuatorId, ActuatorCommand)> {
     let rest = topic.strip_prefix(&ha_topic(unit, ""))?;
@@ -328,10 +328,10 @@ mod tests {
         assert_eq!(out.len(), 3 + 3 + 3 + 1 + 1);
         for o in &out {
             let v: Value = serde_json::from_str(&o.payload).unwrap();
-            assert_eq!(v["availability_topic"], "leafypod/u1/availability");
+            assert_eq!(v["availability_topic"], "seedypod/u1/availability");
             assert_eq!(v["device"]["identifiers"][0], "u1");
             assert_eq!(v["device"]["name"], "Gardyn u1");
-            assert_eq!(v["device"]["manufacturer"], "leafypod");
+            assert_eq!(v["device"]["manufacturer"], "seedypod");
             assert_eq!(v["device"]["model"], "gardyn 3.0");
             assert_eq!(v["device"]["sw_version"], "0.1.0");
             assert!(v["unique_id"].as_str().unwrap().starts_with("u1_"));
@@ -346,7 +346,7 @@ mod tests {
         assert_eq!(t["device_class"], "temperature");
         assert_eq!(t["unit_of_measurement"], "°C");
         assert_eq!(t["state_class"], "measurement");
-        assert_eq!(t["state_topic"], "leafypod/u1/sensor/air_temp");
+        assert_eq!(t["state_topic"], "seedypod/u1/sensor/air_temp");
         let ph = find(&out, "homeassistant/sensor/u1_ph/config");
         assert_eq!(ph["device_class"], "ph");
         assert!(ph.get("unit_of_measurement").is_none());
@@ -372,37 +372,37 @@ mod tests {
     fn light_and_pump_use_the_ha_mirror_topics() {
         let out = discovery("homeassistant", &system());
         let l = find(&out, "homeassistant/light/u1_light/config");
-        assert_eq!(l["command_topic"], "leafypod/u1/ha/light/set");
+        assert_eq!(l["command_topic"], "seedypod/u1/ha/light/set");
         assert_eq!(
             l["brightness_command_topic"],
-            "leafypod/u1/ha/light/brightness/set"
+            "seedypod/u1/ha/light/brightness/set"
         );
         assert_eq!(l["brightness_scale"], 100);
         let f = find(&out, "homeassistant/fan/u1_pump/config");
         assert_eq!(
             f["percentage_command_topic"],
-            "leafypod/u1/ha/pump/percentage/set"
+            "seedypod/u1/ha/pump/percentage/set"
         );
         assert_eq!(f["speed_range_max"], 30);
         let d = find(&out, "homeassistant/button/u1_dose_1/config");
-        assert_eq!(d["command_topic"], "leafypod/u1/actuator/dose_1/set");
+        assert_eq!(d["command_topic"], "seedypod/u1/actuator/dose_1/set");
     }
 
     #[test]
     fn alerts_button_and_event_bind_to_contract_topics() {
         let out = discovery("homeassistant", &system());
         let w = find(&out, "homeassistant/binary_sensor/u1_water_low/config");
-        assert_eq!(w["state_topic"], "leafypod/u1/alert/water_low");
+        assert_eq!(w["state_topic"], "seedypod/u1/alert/water_low");
         assert_eq!(w["device_class"], "problem");
         let pf = find(&out, "homeassistant/binary_sensor/u1_pump_fault/config");
         assert_eq!(pf["device_class"], "problem");
         let ot = find(&out, "homeassistant/binary_sensor/u1_over_temp/config");
         assert_eq!(ot["device_class"], "heat");
         let ack = find(&out, "homeassistant/button/u1_ack_pump_fault/config");
-        assert_eq!(ack["command_topic"], "leafypod/u1/alert/pump_fault/ack");
+        assert_eq!(ack["command_topic"], "seedypod/u1/alert/pump_fault/ack");
         assert_eq!(ack["payload_press"], "{}");
         let ev = find(&out, "homeassistant/event/u1_button/config");
-        assert_eq!(ev["state_topic"], "leafypod/u1/event/button");
+        assert_eq!(ev["state_topic"], "seedypod/u1/event/button");
         assert_eq!(ev["event_types"], json!(["single", "double", "long"]));
     }
 
@@ -427,8 +427,8 @@ mod tests {
                 .map(|o| (o.topic.as_str(), o.payload.as_str(), o.retain))
                 .collect::<Vec<_>>(),
             vec![
-                ("leafypod/u1/ha/light/state", "ON", true),
-                ("leafypod/u1/ha/light/brightness/state", "73", true)
+                ("seedypod/u1/ha/light/state", "ON", true),
+                ("seedypod/u1/ha/light/brightness/state", "73", true)
             ]
         );
         let off = ActuatorState {
@@ -438,28 +438,28 @@ mod tests {
         };
         let m = state_mirror("u1", ActuatorId::Pump, &off);
         assert_eq!(m[0].payload, "OFF");
-        assert_eq!(m[1].topic, "leafypod/u1/ha/pump/percentage/state");
+        assert_eq!(m[1].topic, "seedypod/u1/ha/pump/percentage/state");
         assert!(state_mirror("u1", ActuatorId::Dose1, &off).is_empty());
     }
 
     #[test]
     fn commands_translate_to_actuator_commands() {
-        let (id, c) = translate_command("u1", "leafypod/u1/ha/light/set", "ON").unwrap();
+        let (id, c) = translate_command("u1", "seedypod/u1/ha/light/set", "ON").unwrap();
         assert_eq!((id, c.on), (ActuatorId::Light, Some(true)));
-        let (_, c) = translate_command("u1", "leafypod/u1/ha/light/set", "off").unwrap();
+        let (_, c) = translate_command("u1", "seedypod/u1/ha/light/set", "off").unwrap();
         assert_eq!(c.on, Some(false));
-        let (_, c) = translate_command("u1", "leafypod/u1/ha/light/brightness/set", "40").unwrap();
+        let (_, c) = translate_command("u1", "seedypod/u1/ha/light/brightness/set", "40").unwrap();
         assert_eq!((c.on, c.level), (Some(true), Some(40.0)));
-        let (_, c) = translate_command("u1", "leafypod/u1/ha/light/brightness/set", "0").unwrap();
+        let (_, c) = translate_command("u1", "seedypod/u1/ha/light/brightness/set", "0").unwrap();
         assert_eq!(c.on, Some(false));
-        let (id, c) = translate_command("u1", "leafypod/u1/ha/pump/set", "ON").unwrap();
+        let (id, c) = translate_command("u1", "seedypod/u1/ha/pump/set", "ON").unwrap();
         assert_eq!((id, c.on, c.duration_s), (ActuatorId::Pump, Some(true), None));
-        let (_, c) = translate_command("u1", "leafypod/u1/ha/pump/percentage/set", "20").unwrap();
+        let (_, c) = translate_command("u1", "seedypod/u1/ha/pump/percentage/set", "20").unwrap();
         assert_eq!(c.level, Some(20.0));
-        assert!(translate_command("u1", "leafypod/u1/ha/light/set", "maybe").is_none());
-        assert!(translate_command("u1", "leafypod/u1/ha/light/brightness/set", "bright").is_none());
-        assert!(translate_command("u1", "leafypod/u1/ha/nothing", "ON").is_none());
-        assert!(translate_command("u1", "leafypod/u2/ha/light/set", "ON").is_none());
+        assert!(translate_command("u1", "seedypod/u1/ha/light/set", "maybe").is_none());
+        assert!(translate_command("u1", "seedypod/u1/ha/light/brightness/set", "bright").is_none());
+        assert!(translate_command("u1", "seedypod/u1/ha/nothing", "ON").is_none());
+        assert!(translate_command("u1", "seedypod/u2/ha/light/set", "ON").is_none());
         assert_eq!(command_topics("u1").len(), 4);
     }
 }

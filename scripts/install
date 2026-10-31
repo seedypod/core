@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# leafypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit).
-# Usage: curl -fsSL https://raw.githubusercontent.com/ng/leafypod/main/scripts/install | bash
-#        scripts/install [--branch dev] [--prefix /opt/leafypod]
+# seedypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit).
+# Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
+#        scripts/install [--branch dev] [--prefix /opt/seedypod]
 # Installs Node (via the pinned .node-version), unpacks the release tarball,
-# installs production deps, and enables leafypod-core.service on :3000.
+# installs production deps, and enables seedypod-core.service on :3000.
 # The Rust HAL (hald) is installed separately by scripts/install-hal.
 set -euo pipefail
 
-BRANCH="${LEAFYPOD_BRANCH:-__BRANCH__}"
-PREFIX="${LEAFYPOD_PREFIX:-/opt/leafypod}"
-REPO="${LEAFYPOD_REPO:-ng/leafypod}"
+BRANCH="${SEEDYPOD_BRANCH:-__BRANCH__}"
+PREFIX="${SEEDYPOD_PREFIX:-/opt/seedypod}"
+REPO="${SEEDYPOD_REPO:-seedypod/core}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -21,18 +21,18 @@ done
 [ "$BRANCH" = "__BRANCH__" ] && BRANCH=main
 
 if [ "$BRANCH" = "main" ]; then
-  TARBALL_URL="https://github.com/$REPO/releases/latest/download/leafypod-core.tar.gz"
+  TARBALL_URL="https://github.com/$REPO/releases/latest/download/seedypod-core.tar.gz"
 elif [ "$BRANCH" = "dev" ]; then
-  TARBALL_URL="https://github.com/$REPO/releases/download/dev-latest/leafypod-core.tar.gz"
+  TARBALL_URL="https://github.com/$REPO/releases/download/dev-latest/seedypod-core.tar.gz"
 else
-  TARBALL_URL="https://nightly.link/$REPO/workflows/build/$BRANCH/leafypod-core.zip"
+  TARBALL_URL="https://nightly.link/$REPO/workflows/build/$BRANCH/seedypod-core.zip"
 fi
 
-echo "→ leafypod core: branch=$BRANCH prefix=$PREFIX"
+echo "→ seedypod core: branch=$BRANCH prefix=$PREFIX"
 sudo mkdir -p "$PREFIX" && sudo chown "$USER" "$PREFIX"
 TMP=$(mktemp -d)
 curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
-if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf leafypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
+if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf seedypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
 
 cd "$PREFIX"
 NODE_WANT=$(cat .node-version)
@@ -43,9 +43,9 @@ fi
 corepack enable >/dev/null 2>&1 || true
 pnpm install --prod --frozen-lockfile
 
-sudo tee /etc/systemd/system/leafypod-core.service >/dev/null <<UNIT
+sudo tee /etc/systemd/system/seedypod-core.service >/dev/null <<UNIT
 [Unit]
-Description=leafypod core (tRPC/MCP/web)
+Description=seedypod core (tRPC/MCP/web)
 After=network-online.target
 Wants=network-online.target
 
@@ -62,5 +62,5 @@ User=$USER
 WantedBy=multi-user.target
 UNIT
 sudo systemctl daemon-reload
-sudo systemctl enable --now leafypod-core.service
-echo "✓ leafypod core running on http://$(hostname -I | awk '{print $1}'):3000"
+sudo systemctl enable --now seedypod-core.service
+echo "✓ seedypod core running on http://$(hostname -I | awk '{print $1}'):3000"

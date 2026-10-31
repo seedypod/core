@@ -1,7 +1,7 @@
 ---
 type: "Evidence reference"
 title: "Upstream failure modes"
-description: "Hardware-relevant bugs recorded in garden-of-eden's issue tracker and the leafypod invariant each one motivates."
+description: "Hardware-relevant bugs recorded in garden-of-eden's issue tracker and the seedypod invariant each one motivates."
 status: "draft"
 generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:10:00+00:00"}
 sources: [{"resource": "https://github.com/iot-root/garden-of-eden/issues", "title": "garden-of-eden open issues (read 2026-10-29)"}]
@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden/issues", "tit
 
 # Upstream failure modes
 
-| Issue | Observation | leafypod invariant |
+| Issue | Observation | seedypod invariant |
 |---|---|---|
 | #108, #109, #114 | Pump max-run and low-water checks lived in callers; scheduled/CLI runs bypassed them; the cap was a literal in three places | One `PumpGuard` in the HAL is the only path to the pump (ADR-0009) |
 | #111 | Guard used one ultrasonic ping, alert used a 5-sample median | Median of N in the driver, consumed identically by guard and alert |

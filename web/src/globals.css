@@ -14,7 +14,7 @@
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-  /* ─── Leafypod design tokens (ported from sleepypod) ─────────────────────── */
+  /* ─── Seedypod design tokens (ported from sleepypod) ─────────────────────── */
   --color-app: var(--surface-app);
   --color-surface: var(--surface-card);
   --color-active: var(--surface-active);
@@ -108,7 +108,7 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
-/* ─── Leafypod color tokens ────────────────────────────────────────────
+/* ─── Seedypod color tokens ────────────────────────────────────────────
    Dark is the default. Light applies via [data-theme="light"] on <html>,
    or via prefers-color-scheme when the theme preference is "auto". */
 :root {

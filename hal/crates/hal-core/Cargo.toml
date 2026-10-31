@@ -1,6 +1,6 @@
 [package]
 name = "hal-core"
-description = "leafypod HAL: sensor/actuator traits, registry, safety interlocks and the v1 wire contract"
+description = "seedypod HAL: sensor/actuator traits, registry, safety interlocks and the v1 wire contract"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
