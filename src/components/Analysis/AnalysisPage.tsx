@@ -1,10 +1,11 @@
-import { RefreshCw, ScanEye, Star } from 'lucide-react'
+import { Download, RefreshCw, ScanEye, Star } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useState } from 'react'
 import { LineChart } from '@/src/components/charts/LineChart'
 import { Badge, Button, Card, CardHeader, InlineError, SectionLabel } from '@/src/components/ds/core'
-import { SegmentedControl, SelectValue } from '@/src/components/ds/forms'
-import { PageHeader } from '@/src/components/ds/layout'
+import { SegmentedControl, SelectValue, Toggle } from '@/src/components/ds/forms'
+import { PageHeader, SettingRow } from '@/src/components/ds/layout'
+import { isDemo } from '@/src/demo/link'
 import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
 
@@ -44,6 +45,9 @@ export function AnalysisPage() {
 
       <SectionLabel right={<SegmentedControl ariaLabel="Camera" size="sm" options={[{ value: 'upper', label: 'Upper' }, { value: 'lower', label: 'Lower' }]} value={camera} onChange={setCamera} />}>Latest photo, side by side</SectionLabel>
       <LatestCapture camera={camera} />
+
+      <SectionLabel>Dataset</SectionLabel>
+      <DatasetCard />
     </div>
   )
 }
@@ -140,6 +144,33 @@ function LatestCapture({ camera }: { camera: 'upper' | 'lower' }) {
               </table>
             </div>
           )}
+    </Card>
+  )
+}
+
+const WINDOWS = [{ value: '7', label: '7 days' }, { value: '30', label: '30 days' }, { value: '90', label: '90 days' }] as const
+const mb = (b: number) => `${(b / 1_000_000).toFixed(b < 10_000_000 ? 1 : 0)} MB`
+
+/** Export the photos, results, pods and telemetry for off-device analysis or training (ADR-0019 phase 2). */
+function DatasetCard() {
+  const [days, setDays] = useState<'7' | '30' | '90'>('30')
+  const [images, setImages] = useState(true)
+  const [to] = useState(() => new Date())
+  const from = new Date(to.getTime() - Number(days) * 86_400_000).toISOString()
+  const summary = trpc.datasets.summary.useQuery({ from, to: to.toISOString(), images })
+  const s = summary.data
+  const href = `${apiBase()}/api/datasets/export?${new URLSearchParams({ from, to: to.toISOString(), images: images ? '1' : '0' }).toString()}`
+  return (
+    <Card>
+      <CardHeader title="Export a dataset" subtitle="Photos, every analyser's results, pods and sensor history as a tar" icon={Download} />
+      <SettingRow label="Window"><SegmentedControl ariaLabel="Window" size="sm" options={WINDOWS} value={days} onChange={setDays} /></SettingRow>
+      <SettingRow label="Include photos" sub="The bulk of the size" divider={false}><Toggle label="Include photos" on={images} onChange={setImages} /></SettingRow>
+      {s && <p className="mt-2 font-mono text-[12px] text-fg-3">{`${s.captures} photos · ${s.analyses} results · ${s.telemetry} readings${images ? ` · about ${mb(s.imageBytes)}` : ''}`}</p>}
+      <div className="mt-3">
+        {isDemo()
+          ? <p className="text-[13px] text-fg-2">Downloads need a real unit; the demo has no server.</p>
+          : <a href={href} download className="inline-flex"><Button size="sm" icon={Download} tabIndex={-1}>Download</Button></a>}
+      </div>
     </Card>
   )
 }

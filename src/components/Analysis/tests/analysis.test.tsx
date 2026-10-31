@@ -3,16 +3,20 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnalysisPage } from '../AnalysisPage'
 
-const { data, calls, invalidate } = vi.hoisted(() => ({
+const { data, calls, invalidate, demo } = vi.hoisted(() => ({
+  demo: { on: false },
   data: new Map<string, unknown>(),
-  calls: { setPrimary: vi.fn(), rerun: vi.fn(), compare: vi.fn(), capture: vi.fn() },
+  calls: { setPrimary: vi.fn(), rerun: vi.fn(), compare: vi.fn(), capture: vi.fn(), summary: vi.fn() },
   invalidate: vi.fn(),
 }))
+
+vi.mock('@/src/demo/link', () => ({ isDemo: () => demo.on }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: (input?: unknown, opts?: { enabled?: boolean }) => {
     if (name === 'compare') calls.compare(input)
     if (name === 'capture') calls.capture(input, opts)
+    if (name === 'summary') calls.summary(input)
     return { data: opts?.enabled === false ? undefined : data.get(name) }
   } })
   const mutation = (name: 'setPrimary' | 'rerun') => ({ useMutation: (o?: { onSuccess?: () => void }) => ({
@@ -29,6 +33,7 @@ vi.mock('@/src/utils/trpc', () => {
       useUtils: () => ({ vision: { invalidate } }),
       vision: { analyzers: query('analyzers'), status: query('status'), compare: query('compare'), capture: query('capture'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun') },
       camera: { list: query('frames') },
+      datasets: { summary: query('summary') },
     },
   }
 })
@@ -39,6 +44,7 @@ const row = (analyzer: string, slot: number, value: number) => ({ captureId: 'up
 
 beforeEach(() => {
   data.clear()
+  demo.on = false
   for (const f of Object.values(calls)) f.mockReset()
   data.set('analyzers', [
     { ...base, id: 'green-threshold', version: 1, label: 'Fixed green threshold', description: 'Fixed cut-off.', primary: true },
@@ -109,5 +115,28 @@ describe('AnalysisPage', () => {
     expect(screen.getByText('Scoring upper-9')).toBeTruthy()
     expect(screen.getByText('No photos from this camera yet.')).toBeTruthy()
     expect(calls.capture).toHaveBeenLastCalledWith({ captureId: '' }, { enabled: false })
+  })
+
+  it('offers a dataset download for the chosen window, with or without photos', () => {
+    data.set('summary', { from: '', to: '', images: true, captures: 12, analyses: 360, telemetry: 900, imageBytes: 2_400_000 })
+    render(<AnalysisPage />)
+    expect(screen.getByText('12 photos · 360 results · 900 readings · about 2.4 MB')).toBeTruthy()
+    const link = screen.getByText('Download').closest('a') as HTMLAnchorElement
+    const q = new URL(link.href, 'http://unit').searchParams
+    expect(q.get('images')).toBe('1')
+    expect(Date.parse(q.get('to') ?? '') - Date.parse(q.get('from') ?? '')).toBe(30 * 86_400_000)
+    fireEvent.click(screen.getByRole('tab', { name: '7 days' }))
+    fireEvent.click(screen.getByLabelText('Include photos'))
+    const q2 = new URL((screen.getByText('Download').closest('a') as HTMLAnchorElement).href, 'http://unit').searchParams
+    expect(q2.get('images')).toBe('0')
+    expect(Date.parse(q2.get('to') ?? '') - Date.parse(q2.get('from') ?? '')).toBe(7 * 86_400_000)
+    expect(calls.summary).toHaveBeenLastCalledWith(expect.objectContaining({ images: false }))
+  })
+
+  it('explains that the demo cannot download', () => {
+    demo.on = true
+    render(<AnalysisPage />)
+    expect(screen.getByText(/Downloads need a real unit/)).toBeTruthy()
+    expect(screen.queryByText('Download')).toBeNull()
   })
 })

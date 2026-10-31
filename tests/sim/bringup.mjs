@@ -211,6 +211,20 @@ try {
     return `${rows.length} rows from ${analyzers.join(' + ')}`
   })
 
+  await check('dataset export streams a tar with the stills and results', async () => {
+    const r = await fetch(`${api}/datasets/export`)
+    assert(r.status === 200 && r.headers.get('content-type') === 'application/x-tar', `${r.status} ${r.headers.get('content-type')}`)
+    const tar = join(work, 'dataset.tar')
+    writeFileSync(tar, new Uint8Array(await r.arrayBuffer()))
+    const list = spawnSync('tar', ['-tf', tar], { encoding: 'utf8' })
+    assert(list.status === 0, list.stderr)
+    const files = list.stdout.trim().split('\n')
+    for (const want of ['manifest.json', 'captures.jsonl', 'analyses.jsonl', 'telemetry.jsonl', 'pods.json'])
+      assert(files.some(f => f.endsWith(`/${want}`)), `no ${want}`)
+    assert(files.some(f => /\/images\/upper-.*\.jpg$/.test(f)), 'no still')
+    return `${files.length} files`
+  })
+
   await check('EZO calibration reaches the probe; unknown probe refused', async () => {
     const ok = await post('/sensors/ph/calibrate', { point: 'mid', value: 7 })
     assert(ok.status === 200 && ok.body.ok && ok.body.points === 1, `${ok.status} ${JSON.stringify(ok.body)}`)
