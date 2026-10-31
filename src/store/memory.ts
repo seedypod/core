@@ -1,5 +1,6 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS } from './types'
 
 /** In-memory Store for tests and the browser demo. Same semantics as SqliteStore. */
@@ -16,6 +17,10 @@ export class MemoryStore implements Store {
   private readonly points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
   private readonly analysisRows: AnalysisRow[] = []
+  private automationRows: Automation[] = []
+  private runRows: AutomationRun[] = []
+  private nextAutomationId = 1
+  private nextRunId = 1
 
   constructor(podCount = 30) {
     const ts = new Date(0).toISOString()
@@ -202,6 +207,44 @@ export class MemoryStore implements Store {
     },
   }
 
+  automations = {
+    list: (): Automation[] => this.automationRows.map(clone),
+    get: (id: number): Automation | null => {
+      const r = this.automationRows.find(a => a.id === id)
+      return r ? clone(r) : null
+    },
+    create: (rule: Omit<AutomationRule, 'id'>, ts: string): Automation => {
+      const r: Automation = { ...clone(rule), id: this.nextAutomationId++, createdAt: ts, updatedAt: ts }
+      this.automationRows.push(r)
+      return clone(r)
+    },
+    update: (id: number, patch: Partial<Omit<AutomationRule, 'id'>>, ts: string): Automation | null => {
+      const i = this.automationRows.findIndex(a => a.id === id)
+      const cur = this.automationRows[i]
+      if (!cur) return null
+      const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
+      const next: Automation = { ...cur, ...clone(defined), updatedAt: ts }
+      this.automationRows[i] = next
+      return clone(next)
+    },
+    remove: (id: number): boolean => {
+      this.runRows = this.runRows.filter(r => r.automationId !== id)
+      const before = this.automationRows.length
+      this.automationRows = this.automationRows.filter(a => a.id !== id)
+      return this.automationRows.length < before
+    },
+    addRun: (run: Omit<AutomationRun, 'id'>): void => {
+      this.runRows.push({ ...run, id: this.nextRunId++ })
+    },
+    runs: (q?: { automationId?: number, limit?: number }): AutomationRun[] =>
+      this.runRows.filter(r => q?.automationId === undefined || r.automationId === q.automationId).slice().reverse().slice(0, q?.limit ?? 100),
+    pruneRuns: (beforeTs: string): number => {
+      const before = this.runRows.length
+      this.runRows = this.runRows.filter(r => r.firedAt >= beforeTs)
+      return before - this.runRows.length
+    },
+  }
+
   close(): void {
     // nothing to release
   }
@@ -214,4 +257,8 @@ export function downsample<T>(rows: T[], max: number): T[] {
   const out: T[] = []
   for (let i = 0; i < max; i++) out.push(rows[Math.floor(i * stride)] as T)
   return out
+}
+
+function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T
 }

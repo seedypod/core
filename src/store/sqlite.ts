@@ -1,14 +1,15 @@
 import Database from 'better-sqlite3'
-import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, lt, lte, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { SensorId } from '../hardware/contract'
+import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, Capture, DeviceSettings, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
 export interface SqliteStoreOptions {
@@ -228,6 +229,36 @@ export class SqliteStore implements Store {
         FROM analysis_results GROUP BY analyzer, version, source ORDER BY analyzer, version`),
   }
 
+  automations = {
+    list: (): Automation[] => this.db.select().from(t.automations).orderBy(asc(t.automations.id)).all().map(rowToAutomation),
+    get: (id: number): Automation | null => {
+      const r = this.db.select().from(t.automations).where(eq(t.automations.id, id)).get()
+      return r ? rowToAutomation(r) : null
+    },
+    create: (rule: Omit<AutomationRule, 'id'>, ts: string): Automation => {
+      const r = this.db.insert(t.automations).values({ ...automationColumns(rule), createdAt: ts, updatedAt: ts }).returning().get()
+      return rowToAutomation(r)
+    },
+    update: (id: number, patch: Partial<Omit<AutomationRule, 'id'>>, ts: string): Automation | null => {
+      const r = this.db.update(t.automations).set({ ...automationColumns(patch), updatedAt: ts }).where(eq(t.automations.id, id)).returning().get()
+      return r ? rowToAutomation(r) : null
+    },
+    remove: (id: number): boolean => {
+      this.db.delete(t.automationRuns).where(eq(t.automationRuns.automationId, id)).run()
+      return this.db.delete(t.automations).where(eq(t.automations.id, id)).run().changes > 0
+    },
+    addRun: (run: Omit<AutomationRun, 'id'>): void => {
+      this.db.insert(t.automationRuns).values({ ...run, detail: JSON.stringify(run.detail ?? {}) }).run()
+    },
+    runs: (q?: { automationId?: number, limit?: number }): AutomationRun[] => {
+      const base = this.db.select().from(t.automationRuns)
+      const rows = (q?.automationId !== undefined ? base.where(eq(t.automationRuns.automationId, q.automationId)) : base)
+        .orderBy(desc(t.automationRuns.id)).limit(q?.limit ?? 100).all()
+      return rows.map(r => ({ ...r, detail: JSON.parse(r.detail) as unknown }))
+    },
+    pruneRuns: (beforeTs: string): number => this.db.delete(t.automationRuns).where(lt(t.automationRuns.firedAt, beforeTs)).run().changes,
+  }
+
   close(): void {
     this.sqlite.close()
   }
@@ -243,4 +274,21 @@ function rowToCycle(r: typeof t.growCycles.$inferSelect): GrowCycle {
 
 function rowToAnalysis(r: typeof t.analysisResults.$inferSelect): AnalysisRow {
   return { captureId: r.captureId, ts: r.ts, camera: r.camera, analyzer: r.analyzer, version: r.version, source: r.source, slot: r.slot, metric: r.metric, value: r.value, detail: r.detail ? JSON.parse(r.detail) as Record<string, unknown> : null, artifact: r.artifact }
+}
+
+function automationColumns(r: Partial<Omit<AutomationRule, 'id'>>) {
+  const out: Partial<typeof t.automations.$inferInsert> = {}
+  if (r.name !== undefined) out.name = r.name
+  if (r.enabled !== undefined) out.enabled = r.enabled
+  if (r.dryRun !== undefined) out.dryRun = r.dryRun
+  if (r.priority !== undefined) out.priority = r.priority
+  if (r.cooldownMin !== undefined) out.cooldownMin = r.cooldownMin
+  if (r.trigger !== undefined) out.trigger = JSON.stringify(r.trigger)
+  if (r.conditions !== undefined) out.conditions = JSON.stringify(r.conditions)
+  if (r.actions !== undefined) out.actions = JSON.stringify(r.actions)
+  return out as typeof t.automations.$inferInsert
+}
+
+function rowToAutomation(r: typeof t.automations.$inferSelect): Automation {
+  return { ...r, trigger: JSON.parse(r.trigger) as AutomationRule['trigger'], conditions: JSON.parse(r.conditions) as AutomationRule['conditions'], actions: JSON.parse(r.actions) as AutomationRule['actions'] }
 }

@@ -26,7 +26,32 @@ export const lightRouter = router({
     .meta({ openapi: { method: 'POST', path: '/light', tags: ['light'], summary: 'Turn the grow light on/off and set brightness 0–100' } })
     .input(ActuatorCommand.omit({ durationS: true }))
     .output(ActuatorState)
-    .mutation(({ ctx, input }) => set(ctx, 'light', input)),
+    .mutation(async ({ ctx, input }) => {
+      // A person set the light: it holds over Autopilot and the curve for a while (ADR-0020).
+      const level = input.on === false ? 0 : input.level ?? (ctx.hal.snapshot().actuators.light?.level || 100)
+      try {
+        const state = await ctx.light.setManual(level)
+        ctx.events.emit({ kind: 'mutation', path: 'actuators.light' })
+        return state
+      }
+      catch (e) {
+        if (e instanceof HalRefused) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: e.message })
+        throw e
+      }
+    }),
+  owner: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/light/owner', tags: ['light'], summary: 'Who controls the light now: manual hold, Autopilot or the schedule' } })
+    .output(z.object({ source: z.enum(['manual', 'autopilot', 'schedule']).nullable(), level: z.number().nullable(), leaseId: z.string().nullable(), manualUntil: z.string().nullable(), schedule: z.number().nullable() }))
+    .query(({ ctx }) => ctx.light.status()),
+  resume: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/light/resume', tags: ['light'], summary: 'End a manual hold and hand the light back to Autopilot or the schedule' } })
+    .output(z.object({ source: z.enum(['manual', 'autopilot', 'schedule']).nullable(), level: z.number().nullable(), leaseId: z.string().nullable(), manualUntil: z.string().nullable(), schedule: z.number().nullable() }))
+    .mutation(async ({ ctx }) => {
+      await ctx.light.resume()
+      await ctx.light.idle()
+      ctx.events.emit({ kind: 'mutation', path: 'actuators.light' })
+      return ctx.light.status()
+    }),
 })
 
 export const pumpRouter = router({
