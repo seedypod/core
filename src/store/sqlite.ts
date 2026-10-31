@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { SensorId } from '../hardware/contract'
@@ -41,6 +41,8 @@ export class SqliteStore implements Store {
   private readonly db
 
   constructor(opts: SqliteStoreOptions) {
+    // better-sqlite3 creates the file but not its directory; a fresh install has no ./data yet.
+    if (opts.url !== ':memory:') mkdirSync(dirname(resolve(opts.url)), { recursive: true })
     this.sqlite = new Database(opts.url)
     this.sqlite.pragma('journal_mode = WAL')
     this.sqlite.pragma('busy_timeout = 5000')
