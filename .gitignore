@@ -1,0 +1,42 @@
+.DS_Store
+
+# Node
+node_modules
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Build artifacts
+dist
+web/dist
+server/dist
+.git-info
+.vite
+
+# Testing
+test-results
+coverage
+.stryker-tmp
+reports/mutation
+playwright-report
+
+# SQLite (local/dev)
+*.db
+*.db-shm
+*.db-wal
+
+# Rust
+hal/target
+
+# Python (uv)
+.venv
+__pycache__/
+
+# Claude Code / agents
+.claude/worktrees
+.claude/reviews
+.codex/worktrees
+.reviews/
+
+# Local env
+.env
+.env.local
