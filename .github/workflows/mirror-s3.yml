@@ -1,0 +1,66 @@
+name: Mirror (real S3)
+
+# Runs the photo mirror's integration test (src/camera/tests/mirror.s3.test.ts)
+# against a real S3-compatible bucket, such as Cloudflare R2, because the unit
+# tests only use fakes. It needs four secrets: MIRROR_TEST_ENDPOINT,
+# MIRROR_TEST_BUCKET, MIRROR_TEST_ACCESS_KEY and MIRROR_TEST_SECRET (see
+# seedypod/core#6). Until they are set, the job skips.
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/camera/mirrorSink.ts'
+      - 'src/camera/tests/mirror.s3.test.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+
+concurrency:
+  group: mirror-s3
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the bucket secrets
+        id: secrets
+        env:
+          ENDPOINT: ${{ secrets.MIRROR_TEST_ENDPOINT }}
+          KEY: ${{ secrets.MIRROR_TEST_ACCESS_KEY }}
+        run: |
+          if [ -z "$ENDPOINT" ] || [ "$ENDPOINT" = "PLACEHOLDER-replace-me" ] || [ -z "$KEY" ] || [ "$KEY" = "PLACEHOLDER-replace-me" ]; then
+            echo "::notice::MIRROR_TEST_* secrets are not set; skipping the real-S3 mirror test."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v6
+        if: steps.secrets.outputs.present == 'true'
+      - uses: pnpm/action-setup@v6
+        if: steps.secrets.outputs.present == 'true'
+        with:
+          run_install: false
+      - uses: actions/setup-node@v6
+        if: steps.secrets.outputs.present == 'true'
+        with:
+          node-version-file: '.node-version'
+          cache: 'pnpm'
+      - name: Install Dependencies
+        if: steps.secrets.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Mirror against the bucket
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          MIRROR_TEST_ENDPOINT: ${{ secrets.MIRROR_TEST_ENDPOINT }}
+          MIRROR_TEST_BUCKET: ${{ secrets.MIRROR_TEST_BUCKET }}
+          MIRROR_TEST_ACCESS_KEY: ${{ secrets.MIRROR_TEST_ACCESS_KEY }}
+          MIRROR_TEST_SECRET: ${{ secrets.MIRROR_TEST_SECRET }}
+          MIRROR_TEST_REGION: auto
+        run: pnpm exec vitest run src/camera/tests/mirror.s3.test.ts

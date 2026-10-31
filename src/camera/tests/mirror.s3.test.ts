@@ -1,7 +1,10 @@
 /**
  * The mirror against a real S3-compatible server (MinIO, R2, …), not a fake.
  * Opt-in: set MIRROR_TEST_ENDPOINT, MIRROR_TEST_ACCESS_KEY and MIRROR_TEST_SECRET
- * (and optionally MIRROR_TEST_REGION); the test creates and empties its own bucket.
+ * (and optionally MIRROR_TEST_REGION). With MIRROR_TEST_BUCKET it uses that existing
+ * bucket (an R2 object-scoped token can't create buckets) under a fresh prefix;
+ * otherwise it creates its own bucket and deletes it afterwards. Either way it
+ * removes every object it wrote. `.github/workflows/mirror-s3.yml` runs it in CI.
  *
  *   MIRROR_TEST_ENDPOINT=http://127.0.0.1:9000 MIRROR_TEST_ACCESS_KEY=… MIRROR_TEST_SECRET=… pnpm exec vitest run src/camera/tests/mirror.s3.test.ts
  */
@@ -21,13 +24,15 @@ const secretAccessKey = process.env.MIRROR_TEST_SECRET ?? ''
 const region = process.env.MIRROR_TEST_REGION ?? 'us-east-1'
 
 describe.skipIf(!endpoint)('mirror against a real S3-compatible server', () => {
-  const bucket = `seedypod-test-${Date.now().toString(36)}`
-  const cfg: MirrorConfig = { endpoint: endpoint ?? '', bucket, region, prefix: 'kitchen/', accessKeyId, secretAccessKey }
+  const own = !process.env.MIRROR_TEST_BUCKET
+  const bucket = process.env.MIRROR_TEST_BUCKET ?? `seedypod-test-${Date.now().toString(36)}`
+  const run = `seedypod-test-${Date.now().toString(36)}/`
+  const cfg: MirrorConfig = { endpoint: endpoint ?? '', bucket, region, prefix: `${run}kitchen/`, accessKeyId, secretAccessKey }
   const admin = new AwsClient({ accessKeyId, secretAccessKey, region, service: 's3' })
   const bucketUrl = `${(endpoint ?? '').replace(/\/+$/, '')}/${bucket}`
 
   it('signs real requests: put, get, 404, delete, and a bad secret is refused', async () => {
-    expect((await admin.fetch(bucketUrl, { method: 'PUT' })).status).toBe(200)
+    if (own) expect((await admin.fetch(bucketUrl, { method: 'PUT' })).status).toBe(200)
     const s3 = new S3Sink(cfg)
     const jpeg = new Uint8Array([0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9])
     await s3.put('upper-2026-10-31T12-00-00-000Z.jpg', jpeg)
@@ -42,7 +47,7 @@ describe.skipIf(!endpoint)('mirror against a real S3-compatible server', () => {
 
   it('copies stills in the background, keeps them after a local prune, and drives the storage API', async () => {
     const store = new MemoryStore()
-    store.settings.update({ mirrorEndpoint: cfg.endpoint, mirrorBucket: bucket, mirrorRegion: region, mirrorPrefix: 'unit/', mirrorAccessKeyId: accessKeyId, mirrorSecretAccessKey: secretAccessKey })
+    store.settings.update({ mirrorEndpoint: cfg.endpoint, mirrorBucket: bucket, mirrorRegion: region, mirrorPrefix: `${run}unit/`, mirrorAccessKeyId: accessKeyId, mirrorSecretAccessKey: secretAccessKey })
     const local = new MemorySink()
     const mirror = new MirroredSink({ local, store })
     const core = createCore({ hal: new SimHal({ tickMs: 0 }), store, version: 'test', sink: mirror, mirror })
@@ -60,11 +65,12 @@ describe.skipIf(!endpoint)('mirror against a real S3-compatible server', () => {
     expect(await c.storage.syncMirror()).toEqual({ queued: 1 })
     await mirror.flush()
     expect(await c.storage.mirror()).toMatchObject({ available: true, enabled: true, failed: 0, uploaded: 2, lastError: null })
-    expect([...(await new S3Sink({ ...cfg, prefix: 'unit/' }).get('old.jpg')) ?? []]).toEqual([1])
+    expect([...(await new S3Sink({ ...cfg, prefix: `${run}unit/` }).get('old.jpg')) ?? []]).toEqual([1])
 
     // Tidy up so the bucket can be deleted.
-    const s3 = new S3Sink({ ...cfg, prefix: '' })
+    const s3 = new S3Sink({ ...cfg, prefix: run })
     for (const key of ['unit/lower-1.jpg', 'unit/old.jpg', 'kitchen/analysis/upper-1/exg-otsu@1/mask.pbm']) await s3.remove(key)
-    expect((await admin.fetch(bucketUrl, { method: 'DELETE' })).status).toBe(204)
+    for (const key of ['unit/lower-1.jpg', 'unit/old.jpg']) expect(await s3.get(key)).toBeNull()
+    if (own) expect((await admin.fetch(bucketUrl, { method: 'DELETE' })).status).toBe(204)
   })
 })

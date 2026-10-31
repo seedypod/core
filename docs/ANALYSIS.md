@@ -86,8 +86,13 @@ MIRROR_TEST_ENDPOINT=http://127.0.0.1:9000 MIRROR_TEST_ACCESS_KEY=… MIRROR_TES
   pnpm exec vitest run src/camera/tests/mirror.s3.test.ts
 ```
 
-It creates its own bucket, removes it afterwards, and leaves nothing else in
-the account.
+It creates its own bucket and removes it afterwards. With
+`MIRROR_TEST_BUCKET` it uses that existing bucket instead (an R2 token scoped
+to one bucket can't create buckets), under a fresh prefix. Either way it
+deletes everything it wrote. In CI, **Mirror (real S3)**
+(`.github/workflows/mirror-s3.yml`) runs it weekly and whenever the mirror
+changes, once the `MIRROR_TEST_*` secrets hold a real bucket (see
+seedypod/core#6).
 
 ## Plug in an off-device analyser
 
