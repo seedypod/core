@@ -278,6 +278,30 @@ try {
     return 'added EC at 0x64 → readings + HA entity → removed; hal.toml probe refused'
   })
 
+  await check('an armed Autopilot rule drives the light through hald; the kill switch releases it', async () => {
+    const rule = {
+      name: 'bring-up: light follows pH',
+      dryRun: false,
+      trigger: { kind: 'tick', everyMin: 1 },
+      conditions: { kind: 'compare', op: '>', left: { kind: 'signal', signal: 'sensor.ph' }, right: { kind: 'literal', value: 5 } },
+      actions: [{ kind: 'setLight', level: { kind: 'literal', value: 35 } }],
+    }
+    // The light check above set the light by hand, which holds for 30 minutes; hand it back first.
+    const resumed = await post('/light/resume', {})
+    assert(resumed.status === 200 && resumed.body.source !== 'manual', `resume → ${resumed.status} ${JSON.stringify(resumed.body)}`)
+    const created = await post('/automations', rule)
+    assert(created.status === 200, `create → ${created.status} ${JSON.stringify(created.body)}`)
+    await until('hald to report light 35', () => JSON.parse(seen.get(`seedypod/${unit}/actuator/light/state`) ?? '{}').level === 35)
+    const owner = await get('/light/owner')
+    assert(owner.source === 'autopilot', `owner ${JSON.stringify(owner)}`)
+    const [run] = await get(`/automations/runs?automationId=${created.body.id}&limit=1`)
+    assert(run?.outcome === 'fired', `run ${JSON.stringify(run)}`)
+    const off = await fetch(`${api}/autopilot/enabled`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }) })
+    assert(off.status === 200, `kill switch → ${off.status}`)
+    await until('light released', async () => (await get('/light/owner')).source !== 'autopilot')
+    return `rule ${created.body.id} fired → light 35 in hald → kill switch released it`
+  })
+
   await check('daemon loss is noticed (LWT → hal_offline)', async () => {
     daemon.kill('SIGKILL')
     // Without a clean disconnect the broker fires the will after the keep-alive lapses.

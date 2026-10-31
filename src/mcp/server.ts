@@ -8,6 +8,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { RuleInput } from '../autopilot/schema'
 import { SensorId } from '../hardware/contract'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
@@ -61,6 +62,19 @@ export function createMcpServer(ctx: Context): McpServer {
     const status = await caller.vision.status()
     const compare = i.slot ? await caller.vision.compare({ slot: i.slot, metric: i.metric ?? 'green_fraction', limit: 48 }) : undefined
     return text({ analyzers, status, compare })
+  })
+
+  server.registerTool('list_automations', {
+    description: 'Autopilot rules (WHEN trigger / IF conditions / THEN actions, as JSON), whether each is enabled or in dry-run, its last run, the kill switch, which source owns the light (manual hold, Autopilot or schedule), and the latest audit-log entries. Read-only: creating, arming or disabling rules changes what the unit does unattended, so that is done in the app.',
+    inputSchema: { runs: z.number().int().min(0).max(100).optional() },
+  }, async i => text({ rules: await caller.automations.list(), status: await caller.automations.status(), runs: await caller.automations.runs({ limit: i.runs ?? 20 }) }))
+
+  server.registerTool('backtest_automation', {
+    description: 'Replay an Autopilot rule over recorded history without touching hardware: by id, or a draft rule (same JSON shape as list_automations returns, without id). Returns the traces of every signal it reads, when it would have fired and what each action would have done (raw and clamped values), cooldown suppressions, and signals that are live-only (unknown in a backtest). Signal keys come from the catalog: sensor.<id>, light.level, pump.on, alert.<kind>, pod.<slot>.green, pod.<slot>.trend, grow.day.',
+    inputSchema: { id: z.number().int().optional(), rule: z.unknown().optional(), hours: z.number().int().min(1).max(336).optional(), step_min: z.number().int().min(1).max(60).optional() },
+  }, async (i) => {
+    const rule = i.rule === undefined ? undefined : RuleInput.parse(i.rule)
+    return text(await caller.automations.backtest({ id: i.id, rule, hours: i.hours ?? 24, stepMin: i.step_min ?? 5 }))
   })
 
   server.registerTool('pod_health', {

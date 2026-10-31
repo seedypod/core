@@ -7,6 +7,7 @@
  * minute) even if the process restarts — the Store's run log is the
  * idempotency key. All inputs are injected so it is testable to the minute.
  */
+import type { LightArbiter } from '../control/light'
 import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
 import type { LightSpec, PumpSpec, Schedule, Store } from '../store/types'
@@ -16,6 +17,8 @@ export interface SchedulerDeps {
   store: Store
   hal: HalClient
   events: EventBus
+  /** When present, the curve is handed to the light arbiter (ADR-0020) instead of written directly. */
+  light?: LightArbiter
   now?: () => Date
   log?: (msg: string) => void
 }
@@ -85,7 +88,13 @@ export class Scheduler {
       const lvl = lightLevelAt(s.spec, lt.minute)
       if (lvl !== null) lightTarget = lightTarget === null ? lvl : Math.max(lightTarget, lvl)
     }
-    if (lightTarget !== null && lightTarget !== this.lastLightApplied) {
+    if (this.deps.light) {
+      // The arbiter decides whether the curve or a higher source (manual, Autopilot) owns the light.
+      if (lightTarget !== this.lastLightApplied) this.deps.events.emit({ kind: 'schedule', action: 'fired', id: 'light-curve' })
+      this.lastLightApplied = lightTarget
+      await this.deps.light.setSchedule(lightTarget)
+    }
+    else if (lightTarget !== null && lightTarget !== this.lastLightApplied) {
       try {
         await hal.setActuator('light', lightTarget === 0 ? { on: false, level: 0 } : { on: true, level: lightTarget })
         this.lastLightApplied = lightTarget

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { createEventBus } from '../../lib/eventBus'
+import { LightArbiter } from '../../control/light'
 import { MemoryStore } from '../../store/memory'
 import { lightLevelAt, Scheduler } from '../scheduler'
 import { dayEnabled, localTime, minuteToHHMM } from '../time'
@@ -64,6 +65,30 @@ describe('Scheduler', () => {
     await s.tick()
     expect(hal.snapshot().actuators.light?.level).toBe(60)
     expect(sets).toBe(2)
+  })
+
+  it('hands the curve to the light arbiter, which lets a manual hold win until it ends', async () => {
+    const store = new MemoryStore()
+    store.settings.update({ timezone: 'UTC' })
+    const hal = new SimHal({ tickMs: 0 })
+    let now = new Date('2026-10-31T07:00:00Z')
+    const light = new LightArbiter({ hal, now: () => now.getTime(), holdMs: 30 * 60_000 })
+    const s = new Scheduler({ store, hal, events: createEventBus(), light, now: () => now })
+    store.schedules.upsert({ id: 'l', kind: 'light', name: 'day', enabled: true, days: 127, spec: { setpoints: [{ minute: 360, level: 0 }, { minute: 480, level: 60 }] } })
+    expect((await s.tick()).lightTarget).toBe(30)
+    await light.idle()
+    expect(hal.snapshot().actuators.light?.level).toBe(30)
+    await light.setManual(100)
+    now = new Date('2026-10-31T07:20:00Z')
+    await s.tick()
+    await light.idle()
+    expect(hal.snapshot().actuators.light?.level).toBe(100)
+    now = new Date('2026-10-31T07:40:00Z')
+    await s.tick()
+    await light.idle()
+    // The hold is over: the light lands on the curve's current point, not the one it skipped.
+    expect(hal.snapshot().actuators.light?.level).toBe(50)
+    light.close()
   })
 
   it('fires a pump schedule exactly once per minute-of-day, bounded by the HAL', async () => {

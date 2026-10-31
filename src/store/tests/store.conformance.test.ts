@@ -130,6 +130,29 @@ for (const [name, make] of impls) {
       expect(store.analyses.stats().find(s => s.analyzer === 'green-threshold')).toMatchObject({ firstTs: '2026-01-01T00:00:00Z', lastTs: '2026-01-02T00:00:00Z' })
     })
 
+    it('automations round-trip their AST, update in place and keep a pruned run log', () => {
+      store = make()
+      const rule = { name: 'pH high', enabled: true, dryRun: true, priority: 50, cooldownMin: 30, trigger: { kind: 'tick' as const, everyMin: 5 }, conditions: { kind: 'compare' as const, op: '>' as const, left: { kind: 'signal' as const, signal: 'sensor.ph' }, right: { kind: 'literal' as const, value: 6.5 } }, actions: [{ kind: 'notify' as const, message: 'high' }] }
+      const a = store.automations.create(rule, '2026-10-01T00:00:00Z')
+      const b = store.automations.create({ ...rule, name: 'other' }, '2026-10-01T00:00:00Z')
+      expect(a).toMatchObject({ ...rule, id: a.id, createdAt: '2026-10-01T00:00:00Z' })
+      expect(store.automations.update(a.id, { dryRun: false, cooldownMin: null }, '2026-10-02T00:00:00Z')).toMatchObject({ dryRun: false, cooldownMin: null, name: 'pH high', updatedAt: '2026-10-02T00:00:00Z' })
+      expect(store.automations.update(999, { name: 'x' }, 't')).toBeNull()
+      expect(store.automations.get(999)).toBeNull()
+      store.automations.addRun({ automationId: a.id, firedAt: '2026-10-01T00:00:00Z', outcome: 'skipped', detail: { reason: 'condition-false' } })
+      store.automations.addRun({ automationId: a.id, firedAt: '2026-10-03T00:00:00Z', outcome: 'fired', detail: { actions: [] } })
+      store.automations.addRun({ automationId: b.id, firedAt: '2026-10-03T00:00:00Z', outcome: 'dry_run', detail: {} })
+      expect(store.automations.runs({ automationId: a.id }).map(r => r.outcome)).toEqual(['fired', 'skipped'])
+      expect(store.automations.runs({ limit: 1 })[0]).toMatchObject({ automationId: b.id })
+      expect(store.automations.runs({ automationId: a.id })[1]?.detail).toEqual({ reason: 'condition-false' })
+      expect(store.automations.pruneRuns('2026-10-02T00:00:00Z')).toBe(1)
+      expect(store.automations.remove(a.id)).toBe(true)
+      expect(store.automations.remove(a.id)).toBe(false)
+      expect(store.automations.runs()).toHaveLength(1)
+      expect(store.automations.list().map(r => r.name)).toEqual(['other'])
+      expect(store.settings.get().autopilotEnabled).toBe(true)
+    })
+
     it('counters accumulate', () => {
       store = make()
       store.counters.add('light_hours', 1.5, 't')

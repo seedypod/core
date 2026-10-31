@@ -223,6 +223,12 @@ export class SimHal implements HalClient {
     this.emit({ type: 'button', press })
   }
 
+  /** Force the air temperature (it drifts back toward the light-driven target as the sim ticks). */
+  setAirTemp(c: number): void {
+    this.airTempC = c
+    this.emit({ type: 'sensor', id: 'air_temp', reading: this.read('air_temp') })
+  }
+
   /** Advance the simulation by `seconds`. */
   tick(seconds: number): void {
     const dt = seconds
