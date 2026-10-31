@@ -1,4 +1,4 @@
-"""Validate this repository's OKF authoring profile (not scientific validity)."""
+"""Validate this repository's OKF bundles (knowledge/ and docs/) — authoring profile, not scientific validity."""
 from datetime import datetime, date
 from pathlib import Path
 import re
@@ -6,7 +6,9 @@ import sys
 from urllib.parse import unquote, urlsplit
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1] / 'knowledge'
+REPO = Path(__file__).resolve().parents[1]
+ROOTS = [REPO / 'knowledge', REPO / 'docs']
+ROOT = ROOTS[0]
 
 
 def check(root=ROOT):
@@ -78,8 +80,12 @@ def check(root=ROOT):
 
 
 if __name__ == '__main__':
-    count, errors = check()
-    if errors:
-        print('\n'.join(errors), file=sys.stderr)
-        sys.exit(1)
-    print(f'Validated {count} concepts: OKF metadata and local links. Scientific claims not verified.')
+    failed = False
+    for root in ROOTS:
+        count, errors = check(root)
+        if errors:
+            print('\n'.join(f'{root.name}/{e}' for e in errors), file=sys.stderr)
+            failed = True
+        else:
+            print(f'{root.name}/: validated {count} concepts (OKF metadata and local links; claims not verified).')
+    sys.exit(1 if failed else 0)

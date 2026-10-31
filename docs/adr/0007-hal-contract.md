@@ -1,3 +1,12 @@
+---
+type: "Decision record"
+title: "ADR 0007: HAL contract v1 — MQTT + HTTP, versioned JSON, HA discovery from the HAL"
+description: "MQTT topic tree, payload schemas, HTTP endpoints and HA discovery published by hald."
+status: "stable"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (conventions and ADR precedents)"}, {"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}]
+---
+
 # ADR 0007: HAL contract v1 — MQTT + HTTP, versioned JSON, HA discovery from the HAL
 
 **Status:** Accepted

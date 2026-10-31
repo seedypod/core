@@ -1,3 +1,12 @@
+---
+type: "Decision record"
+title: "ADR 0003: Core application stack"
+description: "TypeScript, Hono, Vite, TanStack Router, Tailwind 4; Next.js rejected pending the memory spike."
+status: "draft"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (conventions and ADR precedents)"}]
+---
+
 # ADR 0003: Core application stack
 
 **Status:** Proposed (pending the Phase 0 memory spike)

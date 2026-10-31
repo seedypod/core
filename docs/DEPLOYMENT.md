@@ -1,3 +1,12 @@
+---
+type: "Guide"
+title: "Deployment"
+description: "How code moves from dev and main to a unit: tarballs, dev-latest, releases, scripts/deploy."
+status: "draft"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (conventions and ADR precedents)"}, {"resource": "/adr/index.md", "title": "Architecture decision records"}]
+---
+
 # Deployment
 
 How code gets from `dev` to a unit (mirrors sleepypod/core).

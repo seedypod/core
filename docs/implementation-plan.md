@@ -1,3 +1,12 @@
+---
+type: "Plan"
+title: "Implementation plan (Phase 0 → 1.0)"
+description: "Phased build plan with parallelism markers, ADR index, HAL contract draft and OKRs."
+status: "draft"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (conventions and ADR precedents)"}, {"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}, {"resource": "https://www.anthropic.com/news/model-hardware-standard-research-preview", "title": "Model Hardware Standard research preview"}]
+---
+
 # Gardyn Liberation — Implementation Plan (Phase 0 → Done)
 
 **Status:** Draft v2 (lightweight stack + DS port) · **Date:** 2026-10-29 · **Author:** @ng (drafted with Claude)

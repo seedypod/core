@@ -1,3 +1,12 @@
+---
+type: "Decision record"
+title: "ADR 0004: Two tiers — a hardware daemon and a core"
+description: "One hardware daemon (hald) and one core, joined by a versioned contract; deployment topologies."
+status: "stable"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (conventions and ADR precedents)"}, {"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}]
+---
+
 # ADR 0004: Two tiers — a hardware daemon and a core
 
 **Status:** Accepted

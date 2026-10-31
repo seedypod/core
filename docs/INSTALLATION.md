@@ -1,3 +1,12 @@
+---
+type: "Guide"
+title: "Installation"
+description: "Back up the stock card, flash Raspberry Pi OS, install hald and core, connect Home Assistant."
+status: "draft"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}, {"resource": "/adr/index.md", "title": "Architecture decision records"}]
+---
+
 # Installation
 
 > Phase 1 is not done: nothing here has run on a real Gardyn yet. Follow at your

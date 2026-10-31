@@ -1,3 +1,12 @@
+---
+type: "Decision record"
+title: "ADR 0006: Rust for the hardware daemon"
+description: "Why the hardware daemon is Rust (rppal, cross-compiled) rather than Python/gpiozero."
+status: "stable"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (conventions and ADR precedents)"}]
+---
+
 # ADR 0006: Rust for the hardware daemon
 
 **Status:** Accepted

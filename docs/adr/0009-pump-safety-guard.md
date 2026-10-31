@@ -1,3 +1,12 @@
+---
+type: "Decision record"
+title: "ADR 0009: Pump safety guard and latched faults"
+description: "Pump duty clamp, bounded runs, dry-run interlock, over-temp cutoff and latched faults."
+status: "stable"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (conventions and ADR precedents)"}, {"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}, {"resource": "https://github.com/sleepypod/core/blob/dev/docs/adr/0022-pump-stall-safety.md", "title": "sleepypod ADR 0022 pump stall safety"}]
+---
+
 # ADR 0009: Pump safety guard and latched faults
 
 **Status:** Accepted

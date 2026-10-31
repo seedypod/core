@@ -1,3 +1,12 @@
+---
+type: "Reference"
+title: "Gardyn hardware map"
+description: "Pins, I²C addresses, parts and model detection as documented upstream, with the Phase 1 verification checklist."
+status: "draft"
+generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
+sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}]
+---
+
 # Gardyn hardware map
 
 **Status: unverified on our unit.** Everything here comes from
