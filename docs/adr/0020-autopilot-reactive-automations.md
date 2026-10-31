@@ -2,14 +2,14 @@
 type: "Decision record"
 title: "ADR 0020: Autopilot — reactive automations"
 description: "WHEN/IF/THEN rules over live sensor and analysis signals, ported from sleepypod's Autopilot, with a light arbiter that ranks manual > Autopilot > schedule, an audit log, dry-run and backtests; hald's guards still bound every action."
-status: "draft"
+status: "stable"
 generated: {"by": "claude/opus-5.5", "at": "2026-10-31T14:00:00+00:00"}
 sources: [{"resource": "https://github.com/sleepypod/core/blob/dev/docs/adr/0023-autopilot-reactive-automations.md", "title": "sleepypod ADR 0023: Reactive automations engine (Autopilot)"}, {"resource": "/adr/0004-two-tier-hal-core.md", "title": "ADR 0004: Two tiers — hardware daemon and core"}, {"resource": "/adr/0009-pump-safety-guard.md", "title": "ADR 0009: Pump safety guard"}, {"resource": "/adr/0014-auto-dosing-safety.md", "title": "ADR 0014: Auto-dosing safety"}, {"resource": "/adr/0015-event-bus.md", "title": "ADR 0015: Event bus and mutation broadcast"}, {"resource": "/adr/0019-pluggable-capture-analysis.md", "title": "ADR 0019: Pluggable capture analysis"}]
 ---
 
 # ADR 0020: Autopilot — reactive automations
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-31
 
 ## Context
@@ -100,7 +100,7 @@ The AST is ported from sleepypod `src/automation/types.ts`.
 
 | Action | Goes through | Bounded by |
 |---|---|---|
-| `notify(message)` | An `autopilot` alert with the rule name. It reaches the UI, Home Assistant and MCP like any alert. | Nothing touches hardware. This is the safe default. |
+| `notify(message)` | An `autopilot` alert with the rule name. It shows in the app's alerts and in MCP `status`. The Home Assistant bridge only carries grow reminders today. | Nothing touches hardware. This is the safe default. |
 | `setLight(level, clamp?)` | The **light arbiter** (below) | Per-action clamp, then 0–100. Anti-thrash: re-sent only when it moves ≥ 2 points. |
 | `runPump(durationS, level?)` | `hal.setActuator('pump')` | `hald`'s pump guard: dry-run interlock, max run, max duty (ADR 0009) |
 | `stopPump` | `hal.setActuator('pump', off)` | — |
@@ -238,3 +238,23 @@ It uses forms, not a node graph, for the reasons sleepypod gives.
   every rule in dry-run until armed).
 - Backtests can't replay actuator-state signals. The builder marks those
   signals "live only".
+
+## Implementation
+
+[Autopilot](../AUTOPILOT.md) is the user and integrator guide. Two deviations
+from the plan above, both found while building it:
+
+- **REST paths.** The kill switch lives at `PUT /autopilot/enabled`, because
+  `PUT /automations/enabled` would collide with `PUT /automations/{id}`.
+- **Backtest.** It drives the real engine with a simulated clock instead of a
+  separate replay model, so its result can't drift from live behaviour.
+
+Code:
+
+- Engine: `src/autopilot/` (`engine.ts`, `evaluator.ts`, `expressions.ts`,
+  `windows.ts`, `signals.ts`, `backtest.ts`, `instance.ts`).
+- Arbiter: `src/control/light.ts`.
+- API: `src/server/routers/automations.ts`.
+- UI: `src/components/Autopilot/`.
+- Tests: `tests/sim/bringup.mjs` and `tests/browser/autopilot.e2e.ts` check it
+  end to end.
