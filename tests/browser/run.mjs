@@ -40,7 +40,7 @@ try {
   // A fresh database opens on Welcome; the other specs start from a unit that's set up (welcome.e2e.ts resets it).
   await fetch(`http://127.0.0.1:${PORT}/api/settings`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ setupComplete: true }) })
   code = await new Promise((resolve) => {
-    const pw = spawn('pnpm', ['exec', 'playwright', 'test', '--config', 'tests/browser/playwright.config.ts'], { env: { ...env, SEEDYPOD_E2E: '1' }, stdio: 'inherit' })
+    const pw = spawn('pnpm', ['exec', 'playwright', 'test', '--config', 'tests/browser/playwright.config.ts', ...process.argv.slice(2)], { env: { ...env, SEEDYPOD_E2E: '1' }, stdio: 'inherit' })
     pw.on('exit', c => resolve(c ?? 1))
   })
 }

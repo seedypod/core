@@ -4,7 +4,7 @@ import { Button, Card, CardHeader, GhostIcon, SectionLabel } from '@/src/compone
 import { DayPicker, SegmentedControl, TextField, Toggle } from '@/src/components/ds/forms'
 import { Modal } from '@/src/components/ds/feedback'
 import { PageHeader } from '@/src/components/ds/layout'
-import { fmtClock } from '@/src/components/charts/LineChart'
+import { fmtClock } from '@/src/components/charts/format'
 import { daysLabel, daysToList, listToDays } from './days'
 import { trpc } from '@/src/utils/trpc'
 

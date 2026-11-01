@@ -42,15 +42,27 @@ beforeEach(() => {
   localStorage.clear()
   data.set('grow', { cycle: { id: 'c1', startedAt: '2026-10-12T00:00:00Z', endedAt: null, stage: 'vegetative', notes: 'greens', issued: [] }, day: 19 })
   data.set('pods', [pod(1, { plant: 'Basil', status: 'growing', plantedAt: '2026-10-12' }), pod(2, { plant: 'Kale', status: 'attention', notes: 'yellow' }), pod(3)])
-  data.set('trends', [{ slot: 1, green: 0.42, verdict: 'growing', slope: 0.01, samples: 6 }])
+  data.set('trends', [{ slot: 1, green: 0.42, verdict: 'growing', slope: 0.01, samples: 6, recent: [0.2, 0.3, 0.42] }])
   data.set('sensors', { water_level_pct: { value: 64, unit: '%', ts: '' } })
   data.set('light', { on: true, level: 85 })
 })
 afterEach(cleanup)
 
 describe('Grow', () => {
+  it('opens on the table: each pod with its plant, age and growth', () => {
+    render(<GrowPage />)
+    expect(screen.queryByTestId('tower')).toBeNull()
+    const basil = screen.getByRole('button', { name: '1 Basil' })
+    expect(basil.textContent).toMatch(/^1d\d+Basil42%$/)
+    expect(basil.querySelector('svg')).not.toBeNull()
+    expect(screen.getByRole('button', { name: '3 empty' }).textContent).toBe('3Empty')
+    fireEvent.click(basil)
+    expect(screen.getByText('Pod 1')).toBeTruthy()
+  })
+
   it('feeds the tower the pods, their green area, the tank and the light', () => {
     render(<GrowPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Tower' }))
     expect(screen.getByTestId('tower')).toBeTruthy()
     expect(tower.props).toMatchObject({ waterPct: 64, lightLevel: 85, selected: null })
     expect((tower.props?.pods as unknown[])[0]).toEqual({ slot: 1, status: 'growing', plant: 'Basil', green: 0.42, ageDays: expect.any(Number) })
@@ -59,6 +71,7 @@ describe('Grow', () => {
 
   it('edits the pod picked on the tower in the side panel', () => {
     render(<GrowPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Tower' }))
     act(() => (tower.props?.onSelect as (s: number) => void)(1))
     expect(screen.getByText('Pod 1')).toBeTruthy()
     expect(screen.getByText('42% · growing')).toBeTruthy()
@@ -88,19 +101,20 @@ describe('Grow', () => {
     expect(calls.updatePod).toHaveBeenCalledWith(expect.objectContaining({ slot: 3, status: 'seeded', plantedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }))
   })
 
-  it('switches to the table and remembers it', () => {
+  it('switches to the tower and remembers it', () => {
     const { unmount } = render(<GrowPage />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }))
-    expect(screen.queryByTestId('tower')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /^1\s*Basil$/ }))
-    expect(screen.getByText('Pod 1')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tower' }))
+    expect(screen.getByTestId('tower')).toBeTruthy()
     unmount()
     render(<GrowPage />)
+    expect(screen.getByTestId('tower')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Table' }))
     expect(screen.queryByTestId('tower')).toBeNull()
   })
 
   it('falls back to the table without WebGL', async () => {
     tower.unavailable = true
+    localStorage.setItem('seedypod.growView', 'tower')
     render(<GrowPage />)
     expect(await screen.findByText(/needs WebGL/)).toBeTruthy()
     expect(screen.queryByTestId('tower')).toBeNull()

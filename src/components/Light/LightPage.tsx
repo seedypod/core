@@ -3,7 +3,9 @@ import { useState } from 'react'
 import { Button, Card, CardHeader, GrowBackdrop, SectionLabel, StatusDot } from '@/src/components/ds/core'
 import { Slider, Toggle } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
-import { fmtClock, LineChart } from '@/src/components/charts/LineChart'
+import { fmtClock } from '@/src/components/charts/format'
+import { TimeChart } from '@/src/components/charts/TimeChart'
+import { QualityRing } from '@/src/components/ds/charts'
 import { CurveEditor } from '@/src/components/Schedule/CurveEditor'
 import { trpc } from '@/src/utils/trpc'
 
@@ -49,8 +51,20 @@ export function LightPage() {
           </span>
           {o?.source === 'manual' && <Button size="sm" variant="ghost" disabled={resume.isPending} onClick={() => resume.mutate()}>Resume</Button>}
         </div>
-        {lightHours.data && <p className="mt-1 text-[12px] text-fg-3">{`LED hours: ${lightHours.data.hours.toLocaleString()} (${lightHours.data.pctUsed}% of rated life).`}</p>}
       </Card>
+
+      {lightHours.data && (
+        <Card>
+          <div className="flex items-center gap-4">
+            <QualityRing score={Math.max(0, 100 - lightHours.data.pctUsed)} text={`${Math.round(Math.max(0, 100 - lightHours.data.pctUsed))}%`} label="LED life" size={88} color="var(--accent-light)" />
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-fg">LED bars</span>
+              <span className="font-mono text-[12px] text-fg-2" data-testid="led-hours">{`${Math.round(lightHours.data.hours).toLocaleString()} of ${lightHours.data.ratedHours.toLocaleString()} rated hours`}</span>
+              <span className="text-[12px] text-fg-3">Rated life is when the bars fall to about 70% of their first brightness.</span>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <SectionLabel right={<Button size="sm" onClick={() => upsert.mutate({ id: `curve-${Date.now().toString(36)}`, kind: 'light', name: 'New curve', enabled: false, days: 127, spec: { setpoints: [{ minute: 420, level: 0 }, { minute: 480, level: 80 }, { minute: 1200, level: 80 }, { minute: 1260, level: 0 }] } })}>Add curve</Button>}>Light curves</SectionLabel>
       {curves.length === 0 && <Card dashed><p className="text-[13px] text-fg-2">No curves yet. A curve is a set of setpoints by time of day; brightness ramps between them, so sunrise and sunset are free.</p></Card>}
@@ -59,7 +73,7 @@ export function LightPage() {
           <CardHeader title={s.name} subtitle={`${s.spec && 'setpoints' in s.spec ? s.spec.setpoints.length : 0} setpoints`} right={<StatusDot tone={s.enabled ? 'ok' : 'muted'} label={s.enabled ? 'active' : 'off'} />} />
           {'setpoints' in s.spec && (
             <>
-              <LineChart className="mt-3" height={120} yMin={0} yMax={100} formatX={fmtClock} formatY={y => `${Math.round(y)}%`} fill series={[{ name: s.name, points: Array.from({ length: 97 }, (_, i) => i * 15).map(m => ({ x: m, y: levelAt(s.spec as { setpoints: { minute: number, level: number }[] }, m) })) }]} />
+              <TimeChart className="mt-3" height={110} yMin={0} yMax={100} formatX={fmtClock} formatY={y => `${Math.round(y)}%`} fill markers={[{ x: minutesNow, label: 'now' }]} maxBins={97} series={[{ name: s.name, color: 'var(--accent-light)', points: Array.from({ length: 97 }, (_, i) => i * 15).map(m => ({ x: m, y: levelAt(s.spec as { setpoints: { minute: number, level: number }[] }, m) })) }]} />
               <CurveEditor schedule={{ id: s.id, kind: 'light', name: s.name, enabled: s.enabled, days: s.days, spec: s.spec }} onSave={next => upsert.mutate(next)} />
             </>
           )}

@@ -5,6 +5,7 @@ import { SegmentedControl, SelectValue, TextField } from '@/src/components/ds/fo
 import { PageHeader } from '@/src/components/ds/layout'
 import { cn } from '@/lib/utils'
 import { trpc } from '@/src/utils/trpc'
+import { LineChart } from '@/src/components/ds/charts'
 import { ageDays } from './towerLayout'
 import { TowerView } from './TowerView'
 
@@ -18,10 +19,10 @@ const VIEW_KEY = 'seedypod.growView'
 
 function savedView(): View {
   try {
-    return localStorage.getItem(VIEW_KEY) === 'table' ? 'table' : 'tower'
+    return localStorage.getItem(VIEW_KEY) === 'tower' ? 'tower' : 'table'
   }
   catch {
-    return 'tower'
+    return 'table'
   }
 }
 
@@ -87,7 +88,7 @@ export function GrowPage() {
     <div className="mx-auto flex max-w-[1180px] flex-col gap-4">
       <PageHeader
         title="Grow"
-        right={!noWebGL && <SegmentedControl<View> size="sm" ariaLabel="Pod view" value={shown} options={[{ value: 'tower', label: 'Tower' }, { value: 'table', label: 'Table' }]} onChange={chooseView} />}
+        right={!noWebGL && <SegmentedControl<View> size="sm" ariaLabel="Pod view" value={shown} options={[{ value: 'table', label: 'Table' }, { value: 'tower', label: 'Tower' }]} onChange={chooseView} />}
       />
       <div className="grid gap-4 [grid-template-areas:'cycle'_'pods'_'pod'] min-[900px]:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] min-[900px]:grid-rows-[auto_1fr] min-[900px]:[grid-template-areas:'pods_cycle'_'pods_pod']">
         <Card className="[grid-area:cycle]">
@@ -121,20 +122,33 @@ export function GrowPage() {
           )}
           {noWebGL && <p className="mb-2 text-xs text-fg-3">The 3D tower needs WebGL, which this browser doesn&apos;t offer, so the pods are shown as a table.</p>}
           {shown === 'table' && (
-            <div className="grid grid-cols-5 gap-2 min-[600px]:grid-cols-6">
-              {all.map(p => (
-                <button
-                  key={p.slot}
-                  type="button"
-                  onClick={() => select(p.slot)}
-                  aria-pressed={draft?.slot === p.slot}
-                  className={cn('flex aspect-square flex-col items-center justify-center rounded-[var(--radius-ctl)] border p-1 text-center', POD_CLASS[p.status], draft?.slot === p.slot && 'outline outline-2 outline-offset-2 outline-[var(--text-1)]')}
-                  title={p.plant ?? 'empty'}
-                >
-                  <span className="font-mono text-[10px] opacity-70">{p.slot}</span>
-                  <span className="line-clamp-2 text-[10px] leading-tight">{p.plant ?? ''}</span>
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-2 min-[600px]:grid-cols-3 min-[1100px]:grid-cols-5" aria-label="Pods">
+              {all.map((p) => {
+                const t = trendBySlot.get(p.slot)
+                const age = ageDays(p.plantedAt)
+                return (
+                  <button
+                    key={p.slot}
+                    type="button"
+                    onClick={() => select(p.slot)}
+                    aria-pressed={draft?.slot === p.slot}
+                    aria-label={`${p.slot} ${p.plant ?? 'empty'}`}
+                    className={cn('flex min-h-[92px] flex-col gap-1 rounded-[var(--radius-ctl)] border p-2 text-left', POD_CLASS[p.status], draft?.slot === p.slot && 'outline outline-2 outline-offset-2 outline-[var(--text-1)]')}
+                  >
+                    <span className="flex items-baseline justify-between gap-1 font-mono text-[10px] opacity-70">
+                      <span>{p.slot}</span>
+                      {age !== null && p.status !== 'empty' && <span>{`d${Math.floor(age)}`}</span>}
+                    </span>
+                    <span className="line-clamp-2 text-[12px] leading-tight">{p.plant ?? (p.status === 'empty' ? 'Empty' : '')}</span>
+                    {t && t.recent.length > 1 && p.status !== 'empty' && (
+                      <span className="mt-auto flex items-end gap-1.5">
+                        <span className="min-w-0 flex-1"><LineChart series={[{ data: t.recent, color: 'var(--status-ok)', width: 1.25 }]} height={18} /></span>
+                        <span className="font-mono text-[10px] text-fg-2">{`${Math.round((t.green ?? 0) * 100)}%`}</span>
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>

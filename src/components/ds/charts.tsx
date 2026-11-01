@@ -171,7 +171,7 @@ export function LineChart({ series, min, max, height = 80, className, xLabel, fo
     <div className={cn('relative', className)} onPointerMove={xLabel ? hover.onPointerMove : undefined} onPointerLeave={xLabel ? hover.onPointerLeave : undefined}>
       {svg}
       {labelled.map(g => (
-        <span key={`guide-${g.value}`} aria-hidden className="pointer-events-none absolute right-full -translate-y-1/2 pr-1.5 font-mono text-[10px] leading-3 text-fg-3" style={{ top: yOf(g.value) }}>
+        <span key={`guide-${g.value}`} aria-hidden className="pointer-events-none absolute right-full -translate-y-1/2 whitespace-nowrap pr-1.5 font-mono text-[10px] leading-3 text-fg-3" style={{ top: yOf(g.value) }}>
           {g.label}
         </span>
       ))}

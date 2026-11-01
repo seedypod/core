@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { podTrends } from '../../vision/analyze'
 import { publicProcedure, router } from '../trpc'
 
-const Trend = z.object({ slot: z.number(), green: z.number().nullable(), verdict: z.enum(['growing', 'stalled', 'declining', 'unknown']), slope: z.number(), samples: z.number() })
+const Trend = z.object({ slot: z.number(), green: z.number().nullable(), verdict: z.enum(['growing', 'stalled', 'declining', 'unknown']), slope: z.number(), samples: z.number(), recent: z.array(z.number()) })
 const Metric = z.object({ name: z.string(), label: z.string(), unit: z.string().optional(), description: z.string() })
 const Source = z.enum(['device', 'remote'])
 const Analyzer = z.object({

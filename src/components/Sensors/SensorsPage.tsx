@@ -4,7 +4,9 @@ import { Badge, Button, Card, CardHeader, InlineError, SectionLabel, StatusDot }
 import { Modal } from '@/src/components/ds/feedback'
 import { TextField } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
-import type { DeviceEntry, DeviceKindInfo } from '@/src/hardware/contract'
+import type { DeviceEntry, DeviceKindInfo, SensorId } from '@/src/hardware/contract'
+import { TrendCard } from '@/src/components/charts/TrendCard'
+import { SensorAge } from '@/src/components/ds/charts'
 import { formatReading, hexAddr, SENSOR_META } from '@/src/lib/sensorMeta'
 import { trpc } from '@/src/utils/trpc'
 import { CalibrationWizard } from './CalibrationWizard'
@@ -18,10 +20,22 @@ export function SensorsPage() {
   const [removing, setRemoving] = useState<DeviceEntry | null>(null)
   const inv = devices.data
   const kindOf = (d: DeviceEntry) => inv?.addable.find(k => k.kind === d.kind)
+  // Every quantity a working sensor reports, in contract order, as a trend card.
+  const order = Object.keys(SENSOR_META) as SensorId[]
+  const live = order.filter(id => (inv?.sensors ?? []).some(d => d.status === 'ready' && d.ids.includes(id)))
 
   return (
     <div className="mx-auto flex max-w-[960px] flex-col gap-4">
       <PageHeader title="Sensors" right={inv && inv.addable.length > 0 && <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Add sensor</Button>} />
+      {live.length > 0 && (
+        <>
+          <SectionLabel>Readings</SectionLabel>
+          <div className="grid gap-3 min-[640px]:grid-cols-2 min-[960px]:grid-cols-3">
+            {live.map(id => <TrendCard key={id} sensor={id} title={SENSOR_META[id].label} color={SENSOR_META[id].color} icon={SENSOR_META[id].icon} latest={latest.data?.[id]} height={72} />)}
+          </div>
+          <SectionLabel>Hardware</SectionLabel>
+        </>
+      )}
       {inv && inv.sensors.length === 0 && <Card dashed><p className="text-[13px] text-fg-2">The hardware daemon hasn&apos;t reported its sensors yet.</p></Card>}
       {(inv?.sensors ?? []).map(d => (
         <Card key={`${d.kind}-${d.addr ?? 'gpio'}`} tone={d.status === 'absent' ? 'warn' : undefined}>
@@ -40,9 +54,10 @@ export function SensorsPage() {
           {d.ids.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
               {d.ids.map(id => (
-                <span key={id} className="text-fg-2">
-                  {`${SENSOR_META[id].label} `}
+                <span key={id} className="flex items-baseline gap-1.5 text-fg-2">
+                  {SENSOR_META[id].label}
                   <span className="font-mono text-fg">{formatReading(latest.data?.[id])}</span>
+                  <SensorAge timestamp={latest.data?.[id]?.ts} />
                 </span>
               ))}
             </div>

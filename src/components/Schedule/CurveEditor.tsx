@@ -2,7 +2,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button, GhostIcon } from '@/src/components/ds/core'
 import { DayPicker, TextField, Toggle } from '@/src/components/ds/forms'
-import { fmtClock } from '@/src/components/charts/LineChart'
+import { fmtClock } from '@/src/components/charts/format'
 import { daysToList, listToDays } from '@/src/components/Schedule/days'
 
 interface Curve { id: string, kind: 'light', name: string, enabled: boolean, days: number, spec: { setpoints: { minute: number, level: number }[] } }
