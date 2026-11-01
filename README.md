@@ -45,15 +45,18 @@ A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seed
 
 ## Install
 
-Back up the stock microSD card first, then follow [docs/INSTALLATION.md](docs/INSTALLATION.md). On a fresh Raspberry Pi OS:
+Back up the stock microSD card first, then follow [docs/INSTALLATION.md](docs/INSTALLATION.md). On a fresh Raspberry Pi OS Lite, install the hardware daemon, then core:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
 ```
 
+Both run on the original Pi Zero W that Gardyn ships and on a Pi Zero 2 W. Core prefers Node 24, which needs a 64-bit OS; on a 32-bit Pi, such as the Zero W, the installer uses Node 22 instead. Node 22 gets security fixes until April 2027, so a Zero 2 W (about $15, a drop-in swap) on 64-bit Raspberry Pi OS is the long-term setup. `scripts/install --check` says which Node a machine gets; [Which Pi](docs/INSTALLATION.md#which-pi) has the details.
+
 ## Development
 
-No hardware is needed. `pnpm dev` runs core against a simulated HAL.
+No hardware is needed. `pnpm dev` runs core against a simulated HAL. Use the Node in `.node-version` (24); CI also tests on Node 22, the version 32-bit Pis run, so keep to APIs both have.
 
 ```sh
 pnpm install

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# seedypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit).
+# seedypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit),
+# or any 64-bit Linux box on the LAN.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
-#        scripts/install [--branch dev] [--prefix /opt/seedypod] [--restore <file|url>]
+#        scripts/install [--branch dev] [--prefix /opt/seedypod] [--restore <file|url>] [--check]
 # Installs Node (via the pinned .node-version), unpacks the release tarball,
 # installs production deps, and enables seedypod-core.service on :3000. It also
 # installs the restore helper (/usr/local/sbin/seedypod-restore, ADR-0021) and
 # lets this user run it with sudo, for that one path.
 #   --restore <file|url>  then restore that backup bundle (seedypod-backup-….tar.gz)
 #                         instead of choosing on the Welcome screen
+#   --check               only say whether this machine can run core, and why not
 # The Rust HAL (hald) is installed separately by scripts/install-hal; on a new
 # card, run it first so the restore brings hald's state back too.
 set -euo pipefail
@@ -15,16 +17,55 @@ set -euo pipefail
 BRANCH="${SEEDYPOD_BRANCH:-__BRANCH__}"
 PREFIX="${SEEDYPOD_PREFIX:-/opt/seedypod}"
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
+# ROOT prefixes /proc for tests (tests/scripts/install.board.test.ts).
+ROOT="${SEEDYPOD_ROOT:-}"
 RESTORE=""
+CHECK=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --branch) BRANCH="$2"; shift 2 ;;
     --prefix) PREFIX="$2"; shift 2 ;;
     --restore) RESTORE="$2"; shift 2 ;;
+    --check) CHECK=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# ---- which Node --------------------------------------------------------------
+# Core runs on the Node in .node-version (24) where it ships: 64-bit ARM and x86.
+# Node 24 has no 32-bit ARM build, so there core runs on Node 22, the last line
+# that has one: the official ARMv7 build for a Zero 2 W, 3 or 4 on a 32-bit OS,
+# and unofficial-builds.nodejs.org's ARMv6 build for the original Pi Zero W.
+# Node 22 gets security fixes until April 2027; a Pi Zero 2 W on 64-bit
+# Raspberry Pi OS gets back to 24 (docs/INSTALLATION.md#which-pi).
+NODE_22=22.23.4
+node_plan() {
+  local model arch bits
+  model="$(tr -d '\0' 2>/dev/null < "$ROOT/proc/device-tree/model" || true)"
+  arch="$(uname -m)"
+  bits="$(getconf LONG_BIT 2>/dev/null || echo 64)"
+  NODE_FROM_SOURCE=0
+  case "$arch:$bits" in
+    aarch64:64|arm64:64) NODE_ARCH=arm64; NODE_VERSION=current ;;
+    x86_64:64) NODE_ARCH=x64; NODE_VERSION=current ;;
+    armv7l:*|aarch64:32|armv8l:*) NODE_ARCH=armv7l; NODE_VERSION=$NODE_22 ;;
+    armv6l:*) NODE_ARCH=armv6l; NODE_VERSION=$NODE_22; NODE_FROM_SOURCE=1 ;;
+    *)
+      echo "✗ This ${model:-$arch machine} can't run core: Node has no build for it." >&2
+      return 3 ;;
+  esac
+  if [ "$NODE_VERSION" = current ]; then
+    echo "✓ ${model:-$arch} runs core on Node from .node-version"
+  else
+    echo "✓ ${model:-$arch} runs core on Node $NODE_VERSION ($NODE_ARCH): Node 24 has no 32-bit ARM build."
+    echo "  Node 22 gets security fixes until April 2027.${model:+ }$(case "$model" in *"Zero 2"*|*"Pi 3"*|*"Pi 4"*|*"Pi 5"*) echo "Reflash with 64-bit Raspberry Pi OS Lite to move to Node 24." ;; *) echo "A Pi Zero 2 W on 64-bit Raspberry Pi OS moves to Node 24." ;; esac)"
+  fi
+  [ "$NODE_FROM_SOURCE" = 1 ] && echo "  better-sqlite3 has no ARMv6 build, so it compiles here: allow 20–40 minutes the first time."
+  return 0
+}
+if [ "$CHECK" = 1 ]; then node_plan; exit $?; fi
+node_plan || exit 3
 [ "$BRANCH" = "__BRANCH__" ] && BRANCH=main
 # The installer cd's into $PREFIX, so a local bundle needs its full path.
 case "$RESTORE" in
@@ -49,12 +90,21 @@ curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
 if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf seedypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
 
 cd "$PREFIX"
-NODE_WANT=$(cat .node-version)
+NODE_WANT=$NODE_VERSION
+[ "$NODE_WANT" = current ] && NODE_WANT=$(cat .node-version)
+# ARMv6 builds live on unofficial-builds.nodejs.org; everything else on nodejs.org.
+NODE_DIST=https://nodejs.org/dist
+[ "$NODE_ARCH" = armv6l ] && NODE_DIST=https://unofficial-builds.nodejs.org/download/release
 if ! command -v node >/dev/null || [ "$(node -v)" != "v$NODE_WANT" ]; then
-  echo "→ installing Node $NODE_WANT"
-  curl -fsSL "https://nodejs.org/dist/v$NODE_WANT/node-v$NODE_WANT-linux-$(uname -m | sed 's/aarch64/arm64/;s/armv7l/armv7l/').tar.xz" | sudo tar -xJ -C /usr/local --strip-components=1
+  echo "→ installing Node $NODE_WANT ($NODE_ARCH)"
+  curl -fsSL "$NODE_DIST/v$NODE_WANT/node-v$NODE_WANT-linux-$NODE_ARCH.tar.xz" | sudo tar -xJ -C /usr/local --strip-components=1
 fi
 corepack enable >/dev/null 2>&1 || true
+if [ "$NODE_FROM_SOURCE" = 1 ]; then
+  # better-sqlite3's 32-bit ARM binary is built for ARMv7 and would crash here; build it from source.
+  command -v apt-get >/dev/null 2>&1 && sudo apt-get install -y -q build-essential python3 >/dev/null
+  export npm_config_build_from_source=true
+fi
 pnpm install --prod --frozen-lockfile
 
 # Wi-Fi setup (button held 10 s) drives NetworkManager through nmcli. A system
@@ -68,6 +118,22 @@ polkit.addRule(function (action, subject) {
 RULES
 fi
 
+# Core addresses hald by its unit id (the Pi's serial). With hald on this Pi, ask
+# it; otherwise core runs on the simulator until HAL_MQTT_URL and HAL_UNIT_ID are
+# set in the unit for a hald elsewhere.
+HAL_UNIT_ID="${SEEDYPOD_HAL_UNIT_ID:-}"
+if [ -z "$HAL_UNIT_ID" ] && command -v hald >/dev/null 2>&1; then
+  HAL_UNIT_ID="$(hald --config /etc/seedypod/hal.toml --check 2>/dev/null | sed -n 's/.*"unit_id": *"\([^"]*\)".*/\1/p' | head -1 || true)"
+fi
+if [ -n "$HAL_UNIT_ID" ]; then
+  HAL_ENV="Environment=HAL_MQTT_URL=mqtt://127.0.0.1:1883 HAL_UNIT_ID=$HAL_UNIT_ID"
+  echo "→ talking to hald $HAL_UNIT_ID on this machine"
+else
+  HAL_ENV="# Environment=HAL_MQTT_URL=mqtt://<unit>:1883 HAL_UNIT_ID=<from hald --check> HAL_HTTP_URL=http://<unit>:3001"
+  echo "   no hald on this machine: core starts on the simulator. To drive a unit, set HAL_MQTT_URL and HAL_UNIT_ID" >&2
+  echo "   in /etc/systemd/system/seedypod-core.service (see docs/INSTALLATION.md#which-pi)." >&2
+fi
+
 sudo tee /etc/systemd/system/seedypod-core.service >/dev/null <<UNIT
 [Unit]
 Description=seedypod core (tRPC/MCP/web)
@@ -77,7 +143,7 @@ Wants=network-online.target
 [Service]
 WorkingDirectory=$PREFIX
 Environment=NODE_ENV=production PORT=3000
-Environment=HAL_MQTT_URL=mqtt://127.0.0.1:1883
+$HAL_ENV
 ExecStart=/usr/local/bin/node server/dist/index.js
 Restart=always
 RestartSec=3

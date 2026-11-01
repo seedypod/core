@@ -25,13 +25,14 @@ export function SettingsPage() {
     return () => clearTimeout(t)
   }, [loaded])
   if (!q.data) return null
-  return <SettingsForm key={q.data.updatedAt} s={q.data} coreVersion={info.data?.coreVersion} system={info.data?.system ?? null} onSave={patch => update.mutate(patch)} saving={update.isPending} />
+  return <SettingsForm key={q.data.updatedAt} s={q.data} coreVersion={info.data?.coreVersion} coreHost={info.data?.coreHost ?? undefined} system={info.data?.system ?? null} onSave={patch => update.mutate(patch)} saving={update.isPending} />
 }
 
-function SettingsForm({ s, coreVersion, system, onSave, saving }: {
+function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
   s: SettingsView
   coreVersion?: string
-  system: { halVersion: string, model: string, unitId: string } | null
+  coreHost?: { hostname: string, arch: string }
+  system: { halVersion: string, model: string, unitId: string, board?: string } | null
   onSave: (patch: Record<string, unknown>) => void
   saving: boolean
 }) {
@@ -138,6 +139,8 @@ function SettingsForm({ s, coreVersion, system, onSave, saving }: {
       <Card id="about" className="scroll-mt-4">
         <KeyValue label="Core" value={coreVersion ?? '…'} />
         <KeyValue label="Hardware daemon" value={system ? `${system.halVersion} · ${system.model}` : 'offline'} />
+        <KeyValue label="Board" value={system?.board ?? '—'} />
+        <KeyValue label="Core runs on" value={coreHost ? `${coreHost.hostname} (${coreHost.arch})` : '…'} />
         <KeyValue label="Unit id" value={system?.unitId ?? '—'} />
       </Card>
     </div>

@@ -12,6 +12,49 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 > Phase 1 is not done: nothing here has run on a real Gardyn yet. Follow at your
 > own risk, and **back up the stock card first** so bricking is a 5-minute reflash.
 
+## Which Pi
+
+Open the base and read the board, or on the stock card run
+`cat /proc/device-tree/model`. Gardyn has shipped the original **Pi Zero W**
+(owners' reports; not yet confirmed on every model), and the Pi Zero 2 W is a
+drop-in upgrade. Both run hald and core on the unit; they differ in which Node
+core runs on.
+
+| Board | OS | Node for core |
+|---|---|---|
+| **Pi Zero 2 W** (or Pi 3, 4, 5) | Raspberry Pi OS Lite **64-bit** | the version in `.node-version` (24), preferred |
+| Pi Zero 2 W on a 32-bit OS | Raspberry Pi OS Lite 32-bit | Node 22 (official ARMv7 build) |
+| **Pi Zero W** (original) | Raspberry Pi OS Lite 32-bit | Node 22 (unofficial-builds.nodejs.org ARMv6 build) |
+
+Node 24 ships only for 64-bit ARM and x86, so 32-bit Pis fall back to Node 22,
+the last line with 32-bit ARM builds. CI runs the tests and the build on both.
+Node 22 gets security fixes until **April 2027**; after that a Pi Zero W should
+move to a Pi Zero 2 W on 64-bit Raspberry Pi OS. `scripts/install --check`
+prints which Node a machine gets.
+
+On a Pi Zero W:
+
+- The installer compiles `better-sqlite3` from source (its 32-bit ARM binary is
+  built for ARMv7 and would crash). That takes 20–40 minutes the first time and
+  needs `build-essential`, which the installer adds; run `install-hal` first so
+  swap is on compressed RAM while it compiles.
+- One 1 GHz core runs hald, core and camera analysis. It works, but expect the
+  app to be slower than on a Zero 2 W.
+
+**Upgrading to a Pi Zero 2 W** (about $15, same footprint and pins): the stock
+board's GPIO header is soldered on the underside, so buy one *without* a
+header and solder it on the same way. Flash 64-bit Raspberry Pi OS Lite and
+follow this guide; restore your backup from **Welcome** to keep your garden.
+
+Core can also run on another 64-bit machine on your LAN instead: run
+`install-hal --mqtt-lan` on the unit, install core there and set
+`HAL_MQTT_URL` (`mqtt://<unit>:1884` with the printed user and password),
+`HAL_UNIT_ID` (from `hald --check` on the unit) and
+`HAL_HTTP_URL=http://<unit>:3001` in its `seedypod-core.service`. Wi-Fi setup
+from the app then acts on that machine, not the unit.
+
+**Settings → About** shows the board hald runs on and the machine core runs on.
+
 ## 0. Back up
 
 1. Power off, open the base, remove the Pi's microSD.
@@ -26,7 +69,7 @@ there is. `install-hal` also cuts what the unit writes (below), and
 **Settings → Storage** shows how much it writes a day.
 
 Raspberry Pi Imager → Raspberry Pi OS Lite (64-bit for Zero 2 W / Pi 4 / Pi 5;
-32-bit for the original Zero W). In the advanced options set hostname
+32-bit for the original Zero W, which runs core on Node 22: see [Which Pi](#which-pi)). In the advanced options set hostname
 `seedypod`, enable SSH, add Wi-Fi. Reseat the card, boot, `ssh pi@seedypod.local`.
 
 ## 2. Enable I²C and install the HAL
@@ -43,14 +86,18 @@ fewer writes ([ADR-0021](adr/0021-sd-card-wear-and-recovery.md)). Each change
 is checked and undone if it doesn't take; `--no-wear` skips them. Logs then
 last until reboot; [Debugging](DEBUGGING.md) shows how to keep them longer.
 
-## 3. Install core (same Pi, or any LAN box)
+## 3. Install core (same Pi, or any 64-bit LAN box)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
 ```
 
-Core listens on `:3000`; set `HAL_MQTT_URL` in `/etc/systemd/system/seedypod-core.service`
-if `hald` is elsewhere. Open `http://seedypod.local:3000/`.
+The installer first picks the Node for this machine (24, or 22 on a 32-bit
+Pi; [Which Pi](#which-pi)). With hald on the same Pi it reads the unit id from `hald --check`
+and points core at it; elsewhere, core starts on the simulator until you set
+`HAL_MQTT_URL`, `HAL_UNIT_ID` and `HAL_HTTP_URL` in
+`/etc/systemd/system/seedypod-core.service` ([Which Pi](#which-pi)). Core
+listens on `:3000`. Open `http://seedypod.local:3000/`.
 
 A new install opens on **Welcome**. Choose **Set up a new garden**, or
 **Restore from a backup** if this card replaces one that died

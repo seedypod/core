@@ -30,5 +30,7 @@ export interface Context {
   restore?: RestoreClient
   /** Build info pinned at release time (.git-info) or 'dev'. */
   version: string
+  /** The machine core runs on (the unit's Pi, or a LAN box when the unit has a Pi Zero W); absent in the browser demo. */
+  host?: { hostname: string, arch: string }
   now?: () => Date
 }

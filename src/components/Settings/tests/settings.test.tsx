@@ -155,6 +155,13 @@ describe('Settings: Wi-Fi', () => {
     render(<SettingsPage />)
     expect((screen.getByText('Open Wi-Fi settings') as HTMLAnchorElement).getAttribute('href')).toBe('/wifi')
   })
+
+  it('names the board hald runs on and the machine core runs on', () => {
+    data.set('info', { coreVersion: '1.4.0', coreHost: { hostname: 'nas', arch: 'x64' }, halOnline: true, system: { halVersion: '0.1.0', model: 'gardyn 3.0', unitId: 'gardyn-1a2b', board: 'Raspberry Pi Zero W Rev 1.1' } })
+    render(<SettingsPage />)
+    expect(screen.getByText('Raspberry Pi Zero W Rev 1.1')).toBeTruthy()
+    expect(screen.getByText('nas (x64)')).toBeTruthy()
+  })
 })
 
 describe('Settings: off-device storage and analysis', () => {
