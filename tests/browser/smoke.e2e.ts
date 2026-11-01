@@ -1,9 +1,15 @@
 import { expect, test } from '@playwright/test'
 
-test('dashboard renders live simulator data and the API answers', async ({ page }) => {
+test('home shows the tower with its light, tank and air readings, and the API answers', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('Grow light')).toBeVisible()
+  const tower = page.getByTestId('tower-3d')
+  await expect(tower).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
+  await tower.getByRole('button', { name: /°C/ }).click()
   await expect(page.getByText('Environment')).toBeVisible()
+  await tower.getByRole('button', { name: /%$|off$/ }).first().click()
+  await expect(page.getByText('Grow light')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: /Turn (on|off)/ }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/light')).json()).on).toBeDefined()
   const r = await page.request.get('/api/system')
   expect(r.ok()).toBeTruthy()
   expect((await r.json()).system.model).toContain('sim')
@@ -38,10 +44,12 @@ test('grow: start a cycle and edit a pod', async ({ page }) => {
   await page.goto('/grow')
   await page.getByRole('button', { name: 'Start cycle' }).click()
   await expect(page.getByText('Day 0')).toBeVisible()
+  await page.getByRole('tab', { name: 'Table' }).click()
   await page.getByRole('button', { name: '1', exact: true }).click()
   await page.getByLabel('Plant').fill('Basil')
   await page.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByRole('button', { name: /1 Basil/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Tower' }).click()
 })
 
 test('kiosk route has no shell', async ({ page }) => {
