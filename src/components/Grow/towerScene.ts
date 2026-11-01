@@ -27,28 +27,28 @@ export interface TowerPalette {
 }
 
 export const DARK_PALETTE: TowerPalette = {
-  body: '#2a2a2f',
-  trim: '#3a3a40',
-  cup: '#1c1c20',
+  body: '#2a271f',
+  trim: '#3a362d',
+  cup: '#1d1b15',
   leaf: '#50c878',
   leafDark: '#2f8f55',
   leafSick: '#b8b04a',
-  status: { empty: '#3a3a40', seeded: '#8b8b92', growing: '#a99cf2', harvest: '#e0976a', attention: '#f08cc4' },
-  water: '#7ab5e0',
+  status: { empty: '#3a362d', seeded: '#5b5548', growing: '#96be8e', harvest: '#e5bf6d', attention: '#e2805e' },
+  water: '#8fb4c4',
   ledOn: '#fff1dc',
-  ledOff: '#26262a',
-  highlight: '#ececec',
+  ledOff: '#2a271f',
+  highlight: '#efe8da',
 }
 
 export const LIGHT_PALETTE: TowerPalette = {
   ...DARK_PALETTE,
-  body: '#f2f1ee',
-  trim: '#d9d8d4',
-  cup: '#e6e5e1',
-  status: { empty: '#d9d8d4', seeded: '#8b8b92', growing: '#6a58d6', harvest: '#c8643a', attention: '#c2438c' },
-  water: '#4a90d9',
-  ledOff: '#cfcfcc',
-  highlight: '#17171a',
+  body: '#f1ece1',
+  trim: '#d3cab6',
+  cup: '#e2dbcb',
+  status: { empty: '#d3cab6', seeded: '#b3aa96', growing: '#547e4b', harvest: '#a97416', attention: '#ba5530' },
+  water: '#3f7489',
+  ledOff: '#d3cab6',
+  highlight: '#1c1a14',
 }
 
 /** Parts of the tower that carry a control on Home; `air` is only an anchor for the readings. */

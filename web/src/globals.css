@@ -11,7 +11,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-sans: 'Hanken Grotesk Variable', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
   /* ─── Seedypod design tokens (ported from sleepypod) ─────────────────────── */
@@ -35,6 +35,9 @@
   --color-status: var(--text-status);
   --color-pod-ok: var(--pod-ok);
   --color-pod-attention: var(--pod-attention);
+  --color-pod-ready: var(--pod-ready);
+  --color-pod-empty: var(--pod-empty);
+  --color-meter: var(--meter);
   --color-ok: var(--status-ok);
   --color-warn: var(--status-warn);
   --color-danger: var(--status-danger);
@@ -112,26 +115,29 @@
    Dark is the default. Light applies via [data-theme="light"] on <html>,
    or via prefers-color-scheme when the theme preference is "auto". */
 :root {
-  --lp-ink-0: #0b0b0c;
-  --lp-ink-1: #0f0f11;
-  --lp-ink-2: #17171a;
-  --lp-ink-code: #08080a;
-  --lp-line-1: #1f1f22;
-  --lp-line-2: #26262a;
-  --lp-line-grid: #16161a;
-  --lp-fg-1: #ececec;
-  --lp-fg-2: #8b8b92;
-  --lp-fg-3: #5d5d63;
-  --lp-fg-icon: #b0b0b6;
-  --lp-cool: #7ab5e0;
-  --lp-warm: #e0976a;
-  --lp-neutral: #9ab3c9;
-  --lp-green: #50c878;
-  --lp-amber: #e0b45a;
-  --lp-red: #e06a6a;
-  --lp-violet: #a58be0;
-  --lp-indigo: #4f73c9;
-  --lp-humidity: #4a90d9;
+  /* Warm botanical: dark soil inks, parchment text; plants in sage, wheat and terracotta. */
+  --lp-ink-0: #11100c;
+  --lp-ink-1: #17150f;
+  --lp-ink-2: #25221a;
+  --lp-ink-code: #0c0b08;
+  --lp-line-1: #2a271f;
+  --lp-line-2: #3a362d;
+  --lp-line-grid: #1f1d16;
+  --lp-fg-1: #efe8da;
+  --lp-fg-2: #b8af9c;
+  --lp-fg-3: #847c6b;
+  --lp-fg-icon: #b8af9c;
+  --lp-cool: #8fb4c4;
+  --lp-warm: oklch(0.82 0.11 85);
+  --lp-neutral: #a8a08c;
+  --lp-green: oklch(0.76 0.08 140);
+  --lp-amber: oklch(0.82 0.11 85);
+  --lp-red: oklch(0.7 0.13 40);
+  --lp-violet: oklch(0.72 0.12 290);
+  --lp-indigo: #7f8fb8;
+  --lp-humidity: #8fb4c4;
+  --lp-clay: #5b5548;
+  --lp-meter: #d9cfbb;
 
   --surface-app: var(--lp-ink-0);
   --surface-card: var(--lp-ink-1);
@@ -150,19 +156,22 @@
   --accent-water: var(--lp-cool);
   --accent-light: var(--lp-warm);
   --accent-neutral: var(--lp-neutral);
-  --dial-track: #1f1f23;
-  --pod-ok: #a99cf2;
-  --pod-attention: #f08cc4;
-  --text-status: #c4c4d0;
-  --temp-off-bg: linear-gradient(180deg, #17181d, #121216);
+  --dial-track: var(--lp-line-1);
+  --meter: var(--lp-meter);
+  --pod-ok: var(--lp-green);
+  --pod-ready: var(--lp-amber);
+  --pod-attention: var(--lp-red);
+  --pod-empty: var(--lp-clay);
+  --text-status: #d9cfbb;
+  --temp-off-bg: linear-gradient(180deg, #1d1b15, #17150f);
 
   --status-ok: var(--lp-green);
   --status-warn: var(--lp-amber);
   --status-danger: var(--lp-red);
-  --status-ok-border: #1f3a2a;
-  --status-warn-border: #3a3222;
+  --status-ok-border: #2c3a26;
+  --status-warn-border: #3d3520;
   --status-warn-bg: #2a2414;
-  --status-danger-border: #3a2020;
+  --status-danger-border: #3d2519;
 
   --growth-seed: var(--lp-warm);
   --growth-sprout: var(--lp-violet);
@@ -170,8 +179,8 @@
   --growth-harvest: var(--lp-indigo);
   --chart-temp: var(--lp-red);
   --chart-humidity: var(--lp-humidity);
-  --heat-rgb: 122, 181, 224;
-  --accent-link: #8fc3ec;
+  --heat-rgb: 217, 207, 187;
+  --accent-link: oklch(0.78 0.08 140);
   --chart-ph: #e8877a;
   --chart-phv: #b294e6;
   --chart-water: #6db3e3;
@@ -189,7 +198,7 @@
   --actor-pod-bg: #12261a;
 
   --toggle-off-track: var(--lp-line-2);
-  --toggle-off-knob: #6a6a70;
+  --toggle-off-knob: #847c6b;
   --toggle-on-knob: var(--lp-ink-0);
   --overlay: rgba(0, 0, 0, 0.62);
   --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.35);
@@ -197,37 +206,36 @@
 }
 
 [data-theme="light"] {
-  --lp-ink-0: #f6f6f5;
-  --lp-ink-1: #ffffff;
-  --lp-ink-2: #ececea;
-  --lp-ink-code: #f1f1ee;
-  --lp-line-1: #e2e2df;
-  --lp-line-2: #d6d6d2;
-  --lp-line-grid: #efefec;
-  --lp-fg-1: #111113;
-  --lp-fg-2: #6b6b70;
-  --lp-fg-3: #9a9aa0;
-  --lp-fg-icon: #44444a;
-  --lp-cool: #2f6fb5;
-  --lp-warm: #c8643a;
-  --lp-neutral: #5f7f9c;
-  --lp-green: #2e9d5b;
-  --lp-amber: #b07d1a;
-  --lp-red: #c94444;
-  --lp-violet: #7a5cc4;
-  --lp-indigo: #34509e;
-  --lp-humidity: #2f6fb5;
-  --dial-track: #e8e8e5;
-  --pod-ok: #6a58d6;
-  --pod-attention: #c2438c;
-  --text-status: #4a4a55;
-  --temp-off-bg: linear-gradient(180deg, #f3f3f5, #ececef);
-  --status-ok-border: #bfe0cb;
-  --status-warn-border: #ead9b0;
-  --status-warn-bg: #fbf1dc;
-  --status-danger-border: #f0c8c8;
-  --heat-rgb: 47, 111, 181;
-  --accent-link: #2f6fb5;
+  --lp-ink-0: #f5f1e8;
+  --lp-ink-1: #fdfaf3;
+  --lp-ink-2: #ebe5d8;
+  --lp-ink-code: #efe9dc;
+  --lp-line-1: #e2dbcb;
+  --lp-line-2: #d3cab6;
+  --lp-line-grid: #ece6d9;
+  --lp-fg-1: #1c1a14;
+  --lp-fg-2: #6b6455;
+  --lp-fg-3: #958c78;
+  --lp-fg-icon: #4a4538;
+  --lp-cool: #3f7489;
+  --lp-warm: oklch(0.6 0.12 75);
+  --lp-neutral: #6f6857;
+  --lp-green: oklch(0.55 0.09 140);
+  --lp-amber: oklch(0.6 0.12 75);
+  --lp-red: oklch(0.57 0.14 40);
+  --lp-violet: oklch(0.52 0.13 290);
+  --lp-indigo: #4a5a8a;
+  --lp-humidity: #3f7489;
+  --lp-clay: #b3aa96;
+  --lp-meter: #6b6455;
+  --text-status: #4a4538;
+  --temp-off-bg: linear-gradient(180deg, #f5f1e8, #ebe5d8);
+  --status-ok-border: #c9d9bd;
+  --status-warn-border: #e6d6a8;
+  --status-warn-bg: #f8efd6;
+  --status-danger-border: #ecc9b8;
+  --heat-rgb: 107, 100, 85;
+  --accent-link: oklch(0.5 0.09 140);
   --chart-ph: #c94f40;
   --chart-phv: #7a5cc4;
   --chart-water: #2f7fb8;
@@ -241,10 +249,10 @@
   --actor-you-bg: #e3eef9;
   --actor-pod: #2e8a52;
   --actor-pod-bg: #e2f3e8;
-  --toggle-off-track: #dcdcd8;
+  --toggle-off-track: #ddd5c4;
   --toggle-off-knob: #ffffff;
   --toggle-on-knob: #ffffff;
-  --overlay: rgba(20, 20, 24, 0.32);
+  --overlay: rgba(28, 26, 20, 0.32);
   color-scheme: light;
 }
 

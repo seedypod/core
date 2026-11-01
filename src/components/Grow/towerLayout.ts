@@ -67,10 +67,10 @@ export type PodStatus = 'empty' | 'seeded' | 'growing' | 'harvest' | 'attention'
 export const STATUS_LABEL: Record<PodStatus, string> = { empty: 'Empty', seeded: 'Seeded', growing: 'Growing', harvest: 'Ready to harvest', attention: 'Needs attention' }
 export const STATUS_TOKEN: Record<PodStatus, string> = {
   growing: 'var(--pod-ok)',
-  harvest: 'var(--accent-light)',
+  harvest: 'var(--pod-ready)',
   attention: 'var(--pod-attention)',
-  seeded: 'var(--text-2)',
-  empty: 'var(--text-3)',
+  seeded: 'var(--text-3)',
+  empty: 'var(--pod-empty)',
 }
 
 /**

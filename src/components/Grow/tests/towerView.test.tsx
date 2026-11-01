@@ -198,7 +198,7 @@ describe('PodCallout', () => {
     expect(screen.getByRole('img').getAttribute('aria-label')).toBe('Day 19; harvest window 17–25 days')
     // Today sits 19 days into a scale that runs a little past the window's end (28 d).
     expect(Number.parseFloat(screen.getByTestId('timeline-today').style.left)).toBeCloseTo((19 / 28) * 100, 6)
-    expect(screen.getByText('Ready to harvest').getAttribute('style')).toContain('var(--accent-light)')
+    expect(screen.getByText('Ready to harvest').getAttribute('style')).toContain('var(--pod-ready)')
     // The plant name stays neutral; the state carries the colour.
     expect(screen.getByText('Arugula').className).toContain('text-fg')
     // A camera estimate reads as approximate, and attention leads with the problem.
