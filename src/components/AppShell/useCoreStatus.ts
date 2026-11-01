@@ -1,9 +1,11 @@
 import { trpc } from '@/src/utils/trpc'
 
-/** One-line footer status: core version + HAL identity, like sleepypod's footerStatus. */
-export function useCoreStatus(): string {
+/** The unit's name and a one-line status under it: HAL model, core version, online. */
+export function useCoreStatus(): { name: string, line: string, online: boolean } {
   const info = trpc.system.info.useQuery(undefined, { refetchInterval: 30_000 })
-  if (!info.data) return info.isError ? 'core unreachable' : '…'
+  const settings = trpc.settings.get.useQuery()
+  const name = settings.data?.unitName ?? 'seedypod'
+  if (!info.data) return { name, line: info.isError ? 'core unreachable' : '…', online: false }
   const { coreVersion, halOnline, system } = info.data
-  return `${coreVersion} · ${system?.model ?? 'no HAL'} · ${halOnline ? 'online' : 'offline'}`
+  return { name, line: `${system?.model ?? 'no HAL'} · core ${coreVersion} · ${halOnline ? 'online' : 'offline'}`, online: halOnline }
 }
