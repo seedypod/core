@@ -116,18 +116,55 @@ describe('Home', () => {
     expect(screen.getByLabelText('Humidity, last 24 hours').textContent).toContain('max 55%')
   })
 
-  it('charts the tank in its panel and peeks at it on hover', () => {
-    render(<TowerHome onUnavailable={vi.fn()} />)
-    const tank = chip('64%')
-    fireEvent.pointerEnter(tank.parentElement as HTMLElement, { pointerType: 'mouse' })
-    expect(screen.getByRole('tooltip').textContent).toContain('24h · 64%–80%')
-    fireEvent.pointerLeave(tank.parentElement as HTMLElement)
-    expect(screen.queryByRole('tooltip')).toBeNull()
-    fireEvent.click(tank)
-    expect(screen.getByLabelText('Tank level, last 24 hours').textContent).toContain('min 64%avg 72%max 80%')
+  it('opens a panel on hover, keeps it while the pointer moves into it, and closes it after leaving', () => {
+    vi.useFakeTimers()
+    try {
+      render(<TowerHome onUnavailable={vi.fn()} />)
+      const tank = chip('64%').parentElement as HTMLElement
+      fireEvent.pointerEnter(tank, { pointerType: 'mouse' })
+      const panel = screen.getByRole('dialog', { name: '64%' })
+      expect(within(panel).getByLabelText('Tank level, last 24 hours').textContent).toContain('min 64%avg 72%max 80%')
+      expect(within(panel).getByRole('button', { name: 'Run 5 min' })).toBeTruthy()
+      // Straying off the edge and back in within the grace period keeps it open.
+      fireEvent.pointerLeave(tank, { pointerType: 'mouse' })
+      act(() => vi.advanceTimersByTime(100))
+      fireEvent.pointerEnter(tank, { pointerType: 'mouse' })
+      act(() => vi.advanceTimersByTime(300))
+      expect(screen.getByRole('dialog')).toBeTruthy()
+      fireEvent.pointerLeave(tank, { pointerType: 'mouse' })
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.queryByRole('dialog')).toBeNull()
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 
-  it('closes a panel on a click outside it, and names who holds the light on hover', () => {
+  it('pins a hovered panel once it is used, and shows only the hovered one over a pinned one', () => {
+    vi.useFakeTimers()
+    try {
+      render(<TowerHome onUnavailable={vi.fn()} />)
+      const light = chip('85%').parentElement as HTMLElement
+      fireEvent.pointerEnter(light, { pointerType: 'mouse' })
+      const panel = screen.getByRole('dialog', { name: '85%' })
+      expect(panel.textContent).toContain('Grow light · on schedule')
+      fireEvent.pointerDown(within(panel).getByLabelText('Brightness'))
+      fireEvent.pointerLeave(light, { pointerType: 'mouse' })
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.getByRole('dialog', { name: '85%' })).toBeTruthy()
+      const air = chip('22.5°C · 51%').parentElement as HTMLElement
+      fireEvent.pointerEnter(air, { pointerType: 'mouse' })
+      expect(screen.getAllByRole('dialog').map(d => d.getAttribute('aria-label'))).toEqual(['22.5°C · 51%'])
+      fireEvent.pointerLeave(air, { pointerType: 'mouse' })
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.getByRole('dialog', { name: '85%' })).toBeTruthy()
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('closes a pinned panel on a click outside it, and ignores touch hovers', () => {
     render(<TowerHome onUnavailable={vi.fn()} />)
     fireEvent.click(chip('85%'))
     expect(screen.getByRole('dialog')).toBeTruthy()
@@ -135,7 +172,7 @@ describe('Home', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.pointerEnter(chip('85%').parentElement as HTMLElement, { pointerType: 'mouse' })
-    expect(screen.getByRole('tooltip').textContent).toContain('Grow light · on schedule')
+    fireEvent.pointerEnter(chip('85%').parentElement as HTMLElement, { pointerType: 'touch' })
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

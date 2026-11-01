@@ -1,5 +1,5 @@
 /** Small trend pieces for Home's chips and panels, built on the design system's LineChart. */
-import { LineChart, SensorAge } from '@/src/components/ds/charts'
+import { LineChart } from '@/src/components/ds/charts'
 import { withUnit } from '@/src/lib/sensorMeta'
 
 export interface Point { ts: string, value: number }
@@ -25,22 +25,6 @@ export function Trend({ points, color, unit, label, height = 72 }: { points: Poi
         <span>{`avg ${withUnit(s.avg, unit)}`}</span>
         <span>{`max ${withUnit(s.max, unit)}`}</span>
       </div>
-    </div>
-  )
-}
-
-/** What hovering a chip shows: the reading, how fresh it is, and its last 24 hours at a glance. */
-export function Peek({ title, value, ts, points, color, unit }: { title: string, value: string, ts?: string, points?: Point[], color?: string, unit?: string }) {
-  const s = points ? stats(points) : null
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs text-fg-2">{title}</span>
-        <SensorAge timestamp={ts} />
-      </div>
-      <span className="font-mono text-lg font-light">{value}</span>
-      {points && points.length > 1 && color && <LineChart series={[{ data: points.map(p => p.value), color, fill: true }]} height={34} />}
-      {s && unit !== undefined && <span className="font-mono text-[10px] text-fg-3">{`24h · ${withUnit(s.min, unit)}–${withUnit(s.max, unit)}`}</span>}
     </div>
   )
 }

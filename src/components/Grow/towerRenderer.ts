@@ -91,6 +91,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     if (document.hidden || !compiled) return
     const dt = last ? Math.min(0.1, (time - last) / 1000) : 0
     const moving = tower.tick(dt)
+    room.setLight(tower.light())
     renderer.render(scene, camera)
     if (!ready) {
       ready = true
@@ -213,7 +214,6 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     camera,
     update(state: TowerState) {
       tower.update(state)
-      room.setLight(state.lightLevel / 100)
       requestRender()
     },
     dispose() {

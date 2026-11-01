@@ -120,8 +120,14 @@ describe('tower scene', () => {
     expect(leds.length).toBe(2)
     expect(leds.every(m => m.emissiveIntensity === 0)).toBe(true)
     tower.update({ ...state, waterPct: null, lightLevel: 85 })
+    // The light fades up rather than snapping on.
+    expect(tower.tick(0.1)).toBe(true)
+    expect(leds[0]?.emissiveIntensity).toBeGreaterThan(0)
+    expect(leds[0]?.emissiveIntensity).toBeLessThan(0.85 * 2.2 / 2)
+    expect(tower.light()).toBeLessThan(0.85)
     while (tower.tick(0.1));
     expect(water.visible).toBe(false)
+    expect(tower.light()).toBeCloseTo(0.85)
     expect(leds[0]?.emissiveIntensity).toBeGreaterThan(1)
     tower.dispose()
   })
@@ -137,8 +143,10 @@ describe('tower scene', () => {
     expect(mat.opacity).toBe(0)
     tower.update({ ...state, pumpOn: true })
     const offset = mat.map?.offset.y ?? 0
-    for (let i = 0; i < 20; i++) expect(tower.tick(0.1)).toBe(true)
-    expect(mat.opacity).toBeGreaterThan(0.8)
+    for (let i = 0; i < 40; i++) expect(tower.tick(0.1)).toBe(true)
+    // A faint shimmer, not a bright stripe.
+    expect(mat.opacity).toBeGreaterThan(0.4)
+    expect(mat.opacity).toBeLessThanOrEqual(0.5)
     expect(mat.map?.offset.y).toBeLessThan(offset)
     tower.update({ ...state, pumpOn: false })
     let frames = 0
