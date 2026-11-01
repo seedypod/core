@@ -1,7 +1,7 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlantProfile, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
-import { DEFAULT_SETTINGS } from './types'
+import { DEFAULT_SETTINGS, profileKey } from './types'
 
 /** In-memory Store for tests and the browser demo. Same semantics as SqliteStore. */
 export class MemoryStore implements Store {
@@ -13,6 +13,7 @@ export class MemoryStore implements Store {
   private nextAlertId = 1
   private readonly cycles: GrowCycle[] = []
   private readonly podRows = new Map<number, Pod>()
+  private readonly profileRows = new Map<string, PlantProfile>()
   private readonly captureRows: Capture[] = []
   private readonly points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
@@ -27,7 +28,7 @@ export class MemoryStore implements Store {
   constructor(podCount = 30) {
     const ts = new Date(0).toISOString()
     for (let slot = 1; slot <= podCount; slot++) {
-      this.podRows.set(slot, { slot, plant: null, plantedAt: null, status: 'empty', notes: '', updatedAt: ts })
+      this.podRows.set(slot, { slot, plant: null, plantedAt: null, status: 'empty', notes: '', updatedAt: ts, statusSince: ts, lastHarvestAt: null })
     }
   }
 
@@ -128,13 +129,24 @@ export class MemoryStore implements Store {
 
   pods = {
     list: (): Pod[] => [...this.podRows.values()].sort((a, b) => a.slot - b.slot),
-    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt'>>, ts: string): Pod => {
+    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt' | 'statusSince'>>, ts: string): Pod => {
       const prev = this.podRows.get(slot)
       if (!prev) throw new Error(`no pod ${slot}`)
-      const row = { ...prev, ...patch, updatedAt: ts }
+      const moved = patch.status !== undefined && patch.status !== prev.status
+      const row = { ...prev, ...patch, updatedAt: ts, statusSince: moved ? ts : prev.statusSince }
       this.podRows.set(slot, row)
       return row
     },
+  }
+
+  plants = {
+    list: (): PlantProfile[] => [...this.profileRows.values()].sort((a, b) => a.key.localeCompare(b.key)),
+    upsert: (p: Omit<PlantProfile, 'key' | 'updatedAt'>, ts: string): PlantProfile => {
+      const row = { ...p, key: profileKey(p.name), updatedAt: ts }
+      this.profileRows.set(row.key, row)
+      return row
+    },
+    remove: (name: string): boolean => this.profileRows.delete(profileKey(name)),
   }
 
   captures = {

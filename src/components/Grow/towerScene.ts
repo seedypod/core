@@ -67,6 +67,22 @@ export interface PodState {
   /** The last few green fractions, oldest first. */
   recent?: number[]
   notes?: string
+  /** When the status last changed. */
+  statusSince?: string | null
+  /** Harvest outlook (ADR-0022). */
+  harvest?: PodHarvest | null
+}
+
+/** What the core's harvest outlook says about a pod, as the views use it. */
+export interface PodHarvest {
+  state: 'ready' | 'soon' | 'growing' | 'unknown'
+  /** Days from planting, and whether a plant profile or the camera set it. */
+  window: { start: number, end: number, source: 'profile' | 'camera' } | null
+  cover: number | null
+  targetCover: number
+  daysToReady: number | null
+  daysLeft: number | null
+  reason: string
 }
 
 export interface TowerState {

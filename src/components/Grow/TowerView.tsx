@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type * as RendererModule from './towerRenderer'
 import type { TowerMount } from './towerRenderer'
-import type { PodState, TowerPart, TowerTarget } from './towerScene'
+import type { PodHarvest, PodState, TowerPart, TowerTarget } from './towerScene'
 import { TowerWireframe } from './TowerWireframe'
-import { STATUS_LABEL, STATUS_TOKEN } from './towerLayout'
+import { heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, STATUS_LABEL, STATUS_TOKEN } from './towerLayout'
 import { cn } from '@/lib/utils'
 import { Scissors, TriangleAlert } from 'lucide-react'
 
@@ -21,61 +21,75 @@ let loading: Promise<typeof RendererModule> | null = null
 export const loadRenderer = () => (loading ??= import('./towerRenderer'))
 
 const LEGEND = (['growing', 'harvest', 'attention', 'seeded'] as const).map(status => ({ status, token: STATUS_TOKEN[status] }))
-const VERDICT: Record<'growing' | 'stalled' | 'declining', string> = { growing: '↑ Gaining', stalled: '→ Flat', declining: '↓ Shrinking' }
 /** Room the readout needs beside its leader line before it flips to the other side. */
-const LABEL_W = 200
+const LABEL_W = 280
 /** The right-hand panel's width, and what it takes from the tower's room with its margin. */
 const ASIDE_W = 300
 const ASIDE_RESERVE = ASIDE_W + 24
 const ASIDE_MIN = 900
 
-/** Green area over the last few photos, scaled to its own range so small changes still show. */
-function Spark({ values, color }: { values: number[], color: string }) {
-  if (values.length < 3) return null
-  const lo = Math.min(...values)
-  const span = Math.max(...values) - lo || 1
-  const xy = values.map((v, i) => [(i / (values.length - 1)) * 60 + 2, 16 - ((v - lo) / span) * 13] as const)
-  const [lx, ly] = xy[xy.length - 1]
-  return (
-    <svg width={64} height={18} aria-hidden="true" className="shrink-0">
-      <polyline points={xy.map(p => p.join(',')).join(' ')} fill="none" stroke={color} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={lx} cy={ly} r={2.25} fill={color} />
-    </svg>
-  )
-}
-
-const isFlagged = (p: PodState) => p.status === 'harvest' || p.status === 'attention'
+const isFlagged = (p: PodState) => ['attention', 'ready'].includes(podShown(p))
 /** Where a flag sits beside its pod's collar; a picked flagged pod's callout starts here. */
 const FLAG_OFFSET = { x: 16, y: -16 }
 
 /** A pod that wants doing something about, pinned to it whether or not it's picked; picked, it's ringed and its callout leads from it. */
 function PodFlag({ pod, at, picked, onSelect }: { pod: PodState, at: { x: number, y: number }, picked: boolean, onSelect: (slot: number) => void }) {
-  const color = STATUS_TOKEN[pod.status]
-  const Icon = pod.status === 'harvest' ? Scissors : TriangleAlert
+  const shown = podShown(pod)
+  const color = SHOWN_TOKEN[shown]
+  const Icon = shown === 'ready' ? Scissors : TriangleAlert
   return (
     <button
       type="button"
-      aria-label={`Pod ${pod.slot}: ${STATUS_LABEL[pod.status]}`}
+      aria-label={`Pod ${pod.slot}: ${SHOWN_LABEL[shown]}`}
       aria-pressed={picked}
       onClick={() => onSelect(pod.slot)}
       className={cn('absolute grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-[var(--shadow-dialog)]', picked ? 'z-[7] outline outline-2 outline-offset-2 outline-[var(--text-1)]' : 'z-[4]')}
       style={{ left: at.x + FLAG_OFFSET.x, top: at.y + FLAG_OFFSET.y, background: color }}
     >
-      {pod.status === 'attention' && !picked && <span className="absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping" style={{ background: color }} />}
+      {shown === 'attention' && !picked && <span className="absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping" style={{ background: color }} />}
       <Icon size={11} strokeWidth={2.5} className="relative text-[var(--surface-card)]" />
     </button>
   )
 }
 
 /**
- * The picked pod's readout, pinned to it by a leader line (sleepypod's bed
- * callouts): the plant, its age and green area, the trend when there is one,
- * and its status, marked when it wants doing something about. It sits outward
- * from the tower, on whichever side has room, clear of the `reserve` pixels a
- * panel covers on the right.
+ * Where a pod sits in its grow (layout 1b): seeded at the left, the harvest
+ * window shaded, a tick for today. A window the camera estimated reads "~".
  */
-export function PodCallout({ pod, at: collar, width, height, reserve = 0, action }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, action?: ReactNode }) {
-  const color = STATUS_TOKEN[pod.status]
+export function HarvestTimeline({ window: w, age }: { window: NonNullable<PodHarvest['window']>, age: number }) {
+  const max = Math.max(w.end * 1.12, age * 1.04, 1)
+  const x = (d: number) => `${(Math.max(0, Math.min(d, max)) / max) * 100}%`
+  const about = w.source === 'camera' ? '~' : ''
+  return (
+    <div className="w-full pt-1" role="img" aria-label={`Day ${Math.floor(age)}; harvest window ${about}${Math.round(w.start)}–${Math.round(w.end)} days`}>
+      <div className="relative h-1.5 rounded-full bg-[var(--border-2)]">
+        <div className="absolute inset-y-0 left-0 rounded-l-full" style={{ width: x(w.start), background: 'var(--pod-ok)' }} />
+        <div className="absolute inset-y-0" style={{ left: x(w.start), width: `calc(${x(w.end)} - ${x(w.start)})`, background: 'color-mix(in srgb, var(--accent-light) 60%, transparent)' }} />
+        <div data-testid="timeline-today" className="absolute -top-1 h-3.5 w-0.5 -translate-x-1/2 rounded bg-[var(--text-1)]" style={{ left: x(age) }} />
+      </div>
+      <div className="relative mt-1.5 h-3 text-[10px] text-fg-3">
+        <span className="absolute left-0">seeded</span>
+        <span className="absolute -translate-x-1/2" style={{ left: x(w.start) }}>{`${about}${Math.round(w.start)} d`}</span>
+        <span className="absolute -translate-x-full" style={{ left: x(w.end) }}>{`${about}${Math.round(w.end)} d`}</span>
+      </div>
+    </div>
+  )
+}
+
+const pct = (v: number) => `${Math.round(v * 100)}%`
+
+/**
+ * The picked pod's card, pinned to it by a leader line (sleepypod's bed
+ * callouts). With a harvest window it leads with the timeline, then the state
+ * as one sentence with its reason (1b); without one, the state with how long
+ * it has held, then harvest and leaf cover against their targets (1a). Either
+ * way the plant name is neutral, the state carries the colour, and `action`
+ * (one primary action, then a link) ends it. It sits outward from the tower,
+ * on whichever side has room, clear of the `reserve` pixels a panel covers.
+ */
+export function PodCallout({ pod, at: collar, width, height, reserve = 0, action, now }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, action?: ReactNode, now?: Date }) {
+  const shown = podShown(pod)
+  const color = SHOWN_TOKEN[shown]
   const flagged = isFlagged(pod)
   // A flagged pod's line leads from its flag, which marks it already; any other gets a dot on its collar.
   const at = flagged ? { x: collar.x + FLAG_OFFSET.x, y: collar.y + FLAG_OFFSET.y } : collar
@@ -83,21 +97,19 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, action
   let side = at.x > (width - reserve) / 2 ? 1 : -1
   if (room(side) < LABEL_W && room(-side) > room(side)) side = -side
   const up = at.y > 140 ? -1 : 1
-  // A long arm, so the readout clears the neighbouring pods.
-  const elbow = { x: at.x + side * 36, y: Math.min(height - 160, at.y + up * 48) }
+  // A long arm, so the card clears the neighbouring pods.
+  const elbow = { x: at.x + side * 36, y: Math.min(height - 220, at.y + up * 48) }
   const end = { x: elbow.x + side * 88, y: elbow.y }
-  const trend = pod.verdict && pod.verdict !== 'unknown' ? VERDICT[pod.verdict] : null
-  const stats: { label: string, value: ReactNode }[] = []
-  if (typeof pod.ageDays === 'number') stats.push({ label: 'Age', value: `${Math.floor(pod.ageDays)} d` })
-  if (typeof pod.green === 'number') stats.push({ label: 'Green', value: `${Math.round(pod.green * 100)}%` })
-  if (trend) {
-    stats.push({ label: 'Trend', value: (
-      <span className="flex items-center gap-1.5">
-        <Spark values={pod.recent ?? []} color={color} />
-        {trend}
-      </span>
-    ) })
-  }
+  const h = pod.harvest ?? null
+  const age = typeof pod.ageDays === 'number' ? pod.ageDays : null
+  const cover = h?.cover ?? (typeof pod.green === 'number' ? pod.green : null)
+  const coverNote = cover === null || !h ? '' : `Leaf cover ${pct(cover)}, ${cover >= h.targetCover ? 'above' : 'behind'} the ${pct(h.targetCover)} target.`
+  const note = pod.notes ? (/[.!?]$/.test(pod.notes.trim()) ? pod.notes.trim() : `${pod.notes.trim()}.`) : 'Marked for attention on Grow.'
+  const sentence = shown === 'attention' ? [note, coverNote].filter(Boolean).join(' ') : h?.reason ?? ''
+  const timeline = h?.window && age !== null && shown !== 'empty' ? h.window : null
+  const harvestValue = h?.window ? `${h.window.source === 'camera' ? '~' : ''}${Math.round(h.window.start)}–${Math.round(h.window.end)} d` : typeof h?.daysToReady === 'number' && h.daysToReady > 0 ? `~${Math.round(h.daysToReady)} d` : '—'
+  const harvestSub = h?.state === 'ready' && typeof h.daysLeft === 'number' ? `${Math.round(h.daysLeft)} d left` : typeof h?.daysToReady === 'number' && h.daysToReady > 0 ? `in ${Math.round(h.daysToReady)} d` : null
+  const since = heldFor(pod.statusSince, now)
   return (
     <>
       <svg className="pointer-events-none absolute inset-0 z-[5] size-full" aria-hidden="true">
@@ -106,34 +118,57 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, action
       </svg>
       <div
         data-testid="pod-callout"
+        data-layout={timeline ? 'timeline' : 'stats'}
         role="group"
         aria-label={`Pod ${pod.slot}`}
-        className={cn('absolute z-[6] flex max-w-[300px] flex-col gap-1.5 whitespace-nowrap rounded-xl border border-line-2 bg-surface/60 px-4 py-3 font-mono shadow-[var(--shadow-dialog)] backdrop-blur-xl backdrop-saturate-150', side > 0 ? 'items-start' : 'items-end')}
-        style={side > 0 ? { top: end.y - 40, left: end.x } : { top: end.y - 40, right: width - end.x }}
+        className="absolute z-[6] flex w-[272px] flex-col gap-2 rounded-xl border border-line-2 bg-surface/60 px-4 py-3 font-mono shadow-[var(--shadow-dialog)] backdrop-blur-xl backdrop-saturate-150"
+        style={side > 0 ? { top: end.y - 22, left: end.x } : { top: end.y - 22, right: width - end.x }}
       >
-        {/* Which pod, what's in it and what state it's in; then how it's doing; then what to do. */}
-        <div className="text-[11px] uppercase tracking-wider text-fg-3">{`Pod ${pod.slot}`}</div>
-        <div className="text-[17px] leading-6" style={{ color }}>{pod.plant ?? 'Empty'}</div>
-        {pod.status !== 'empty' && (
-          <span
-            className={cn('rounded-full text-[11px]', flagged ? 'border px-2 py-px' : 'text-fg-2')}
-            style={flagged ? { color, borderColor: color, background: `color-mix(in srgb, ${color} 16%, transparent)` } : undefined}
-          >
-            {STATUS_LABEL[pod.status]}
-          </span>
-        )}
-        {stats.length > 0 && (
-          <dl className={cn('mt-1.5 flex gap-5', side > 0 ? 'text-left' : 'text-right')}>
-            {stats.map(st => (
-              <div key={st.label} className="flex flex-col gap-0.5">
-                <dt className="text-[10px] uppercase tracking-wider text-fg-3">{st.label}</dt>
-                <dd className="text-[14px] text-fg">{st.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        {pod.notes && <div className="mt-0.5 max-w-full truncate text-[12px] text-fg-2">{pod.notes}</div>}
-        {action && <div className="mt-2 w-full border-t border-line-2 pt-2.5 text-[12px]">{action}</div>}
+        {timeline && age !== null
+          ? (
+              <>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-fg-3">{`Pod ${pod.slot}`}</div>
+                  <div className="truncate text-[17px] leading-6 text-fg">{pod.plant ?? 'Empty'}</div>
+                </div>
+                <HarvestTimeline window={timeline} age={age} />
+                <div>
+                  <div className="text-[13px]" style={{ color }}>{SHOWN_LABEL[shown]}</div>
+                  {sentence && <p className="mt-1 text-[12px] leading-snug text-fg-2">{sentence}</p>}
+                </div>
+              </>
+            )
+          : (
+              <>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="truncate text-[17px] leading-6 text-fg">{pod.plant ?? 'Empty'}</span>
+                  <span className="shrink-0 text-[11px] uppercase tracking-wider text-fg-3">{`Pod ${pod.slot}`}</span>
+                </div>
+                {shown !== 'empty' && (
+                  <div className="flex items-center gap-1.5 text-[12px]">
+                    <span className="size-2 rounded-full" style={{ background: color }} />
+                    <span style={{ color }}>{SHOWN_LABEL[shown]}</span>
+                    {since && <span className="text-fg-3">{`· ${since}`}</span>}
+                  </div>
+                )}
+                {shown === 'attention' && pod.notes && <p className="text-[12px] leading-snug text-fg-2">{pod.notes}</p>}
+                {shown !== 'empty' && (
+                  <dl className="grid grid-cols-2 gap-4 border-t border-line-2 pt-2">
+                    <div>
+                      <dt className="text-[10px] uppercase tracking-wider text-fg-3">Harvest</dt>
+                      <dd className="text-[15px] text-fg">{harvestValue}</dd>
+                      {harvestSub && <dd className="text-[11px] text-fg-3">{harvestSub}</dd>}
+                    </div>
+                    <div>
+                      <dt className="text-[10px] uppercase tracking-wider text-fg-3">Leaf cover</dt>
+                      <dd className="text-[15px] text-fg">{cover === null ? '—' : pct(cover)}</dd>
+                      {h && <dd className="text-[11px] text-fg-3">{`target ${pct(h.targetCover)}`}</dd>}
+                    </div>
+                  </dl>
+                )}
+              </>
+            )}
+        {action && <div className="flex flex-col gap-2 pt-1 text-[12px]">{action}</div>}
       </div>
     </>
   )

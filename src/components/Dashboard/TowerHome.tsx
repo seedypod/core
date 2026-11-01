@@ -3,7 +3,7 @@ import { ArrowRight, FlaskConical, Leaf, Power, Sun, Thermometer, TriangleAlert,
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, InlineError, KeyValue } from '@/src/components/ds/core'
 import { TowerView } from '@/src/components/Grow/TowerView'
-import { ageDays, STATUS_LABEL, STATUS_TOKEN, type PodStatus } from '@/src/components/Grow/towerLayout'
+import { ageDays, podShown, SHOWN_TOKEN, type PodShown } from '@/src/components/Grow/towerLayout'
 import type { TowerPart } from '@/src/components/Grow/towerScene'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { cn } from '@/lib/utils'
@@ -111,12 +111,14 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
   const grow = trpc.grow.current.useQuery()
   const pods = trpc.grow.pods.useQuery()
   const trends = trpc.vision.podTrends.useQuery()
+  const harvest = trpc.grow.harvest.useQuery(undefined, { refetchInterval: 10 * 60_000 })
   const owner = trpc.light.owner.useQuery(undefined, { refetchInterval: 30_000 })
   const day = { hours: 24, maxPoints: 96 }
   const every5 = { refetchInterval: 5 * 60_000 }
   const tankHistory = trpc.telemetry.history.useQuery({ sensor: 'water_level_pct', ...day }, every5)
   const airHistory = trpc.telemetry.history.useQuery({ sensor: 'air_temp', ...day }, every5)
   const humidityHistory = trpc.telemetry.history.useQuery({ sensor: 'humidity', ...day }, every5)
+  const markHarvested = trpc.grow.markHarvested.useMutation({ onSuccess: () => Promise.all([pods.refetch(), harvest.refetch()]) })
   const setLight = trpc.light.set.useMutation({ onSuccess: () => lightState.refetch() })
   const runPump = trpc.pump.runOnce.useMutation({ onSuccess: () => pumpState.refetch() })
   const stopPump = trpc.pump.stop.useMutation({ onSuccess: () => pumpState.refetch() })
@@ -154,12 +156,16 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
   const waterLow = active.some(a => a.kind === 'water_low')
   const all = pods.data ?? []
   const green = new Map((trends.data ?? []).map(t => [t.slot, t]))
+  const outlook = new Map((harvest.data ?? []).map(o => [o.slot, o]))
   const towerPods = all.map((x) => {
     const t = green.get(x.slot)
-    return { slot: x.slot, status: x.status, plant: x.plant, green: t?.green ?? null, verdict: t?.verdict, recent: t?.recent, notes: x.notes, ageDays: ageDays(x.plantedAt) }
+    return { slot: x.slot, status: x.status, plant: x.plant, green: t?.green ?? null, verdict: t?.verdict, recent: t?.recent, notes: x.notes, ageDays: ageDays(x.plantedAt), statusSince: x.statusSince, harvest: outlook.get(x.slot) ?? null }
   })
+  const shownOf = new Map(towerPods.map(x => [x.slot, podShown(x)]))
+  // Counted as the tower shows them, so "ready" includes pods the camera calls ready.
+  const counts = [...shownOf.values()].reduce<Partial<Record<PodShown, number>>>((m, v) => ({ ...m, [v]: (m[v] ?? 0) + 1 }), {})
+  const picked = selected === null ? null : towerPods.find(x => x.slot === selected) ?? null
   const cycle = grow.data?.cycle
-  const counts = all.reduce<Record<string, number>>((m, x) => ({ ...m, [x.status]: (m[x.status] ?? 0) + 1 }), {})
   const quality = (system.data?.system?.caps.sensors ?? []).filter(id => SENSOR_META[id].group === 'water-quality')
   const chip = (id: Panel) => ({ id, shown: shown === id, pinned: open === id, onHover: hover, onPin: setOpen })
   const shownLevel = level ?? l?.level ?? 0
@@ -290,7 +296,7 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
           <PanelHead title="Grow cycle" ts={cycle?.startedAt} value={cycle ? `Day ${grow.data?.day} · ${cycle.stage}` : 'No active cycle'} />
           <p className="mt-1 text-xs text-fg-2">{cycle ? cycle.notes : 'Start one on Grow for thinning, root-check, harvest and nutrient reminders.'}</p>
           <p className="mt-2 font-mono text-[11px] text-fg-3" data-testid="home-counts">
-            {`${counts.growing ?? 0} growing · ${counts.harvest ?? 0} ready · ${counts.attention ?? 0} attention`}
+            {`${counts.growing ?? 0} growing · ${counts.ready ?? 0} ready · ${counts.attention ?? 0} attention`}
           </p>
           <Link to="/grow" className="mt-3 flex items-center justify-end gap-1 text-xs text-fg-2 hover:text-fg">
             Grow
@@ -304,9 +310,10 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
     setOpen(null)
     setSelected(slot)
   }
-  const COUNTED: { status: PodStatus, label: string }[] = [
+  const COUNTED: { status: PodShown, label: string }[] = [
     { status: 'growing', label: 'Growing' },
-    { status: 'harvest', label: 'Ready' },
+    { status: 'soon', label: 'Soon' },
+    { status: 'ready', label: 'Ready' },
     { status: 'attention', label: 'Attention' },
     { status: 'seeded', label: 'Seeded' },
     { status: 'empty', label: 'Empty' },
@@ -333,18 +340,18 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
         {COUNTED.map(c => (
           <div key={c.status} className="flex flex-col gap-0.5">
             <dt className="flex items-center gap-1.5 text-[11px] text-fg-3">
-              <span className="size-2 rounded-full" style={{ background: STATUS_TOKEN[c.status] }} />
+              <span className="size-2 rounded-full" style={{ background: SHOWN_TOKEN[c.status] }} />
               {c.label}
             </dt>
             <dd className="font-mono text-[15px]">{counts[c.status] ?? 0}</dd>
           </div>
         ))}
       </dl>
-      {(['harvest', 'attention'] as const).map((status) => {
-        const list = all.filter(x => x.status === status)
+      {([['ready', 'Ready to harvest'], ['attention', 'Needs attention'], ['soon', 'Coming up']] as [PodShown, string][]).map(([shown, title]) => {
+        const list = towerPods.filter(x => shownOf.get(x.slot) === shown)
         return list.length > 0 && (
-          <div key={status} className="flex flex-col gap-1">
-            <h3 className="text-[11px] uppercase tracking-wider text-fg-3">{STATUS_LABEL[status]}</h3>
+          <div key={shown} className="flex flex-col gap-1">
+            <h3 className="text-[11px] uppercase tracking-wider text-fg-3">{title}</h3>
             {list.map(x => (
               <button
                 key={x.slot}
@@ -354,11 +361,13 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
                 className={cn('flex min-w-0 flex-col rounded-ctl px-2 py-1.5 text-left hover:bg-active', selected === x.slot && 'bg-active')}
               >
                 <span className="flex items-center gap-2 text-sm">
-                  <span className="size-2 shrink-0 rounded-full" style={{ background: STATUS_TOKEN[status] }} />
+                  <span className="size-2 shrink-0 rounded-full" style={{ background: SHOWN_TOKEN[shown] }} />
                   <span className="truncate">{x.plant ?? 'Empty'}</span>
                   <span className="ml-auto font-mono text-[11px] text-fg-3">{`Pod ${x.slot}`}</span>
                 </span>
-                {x.notes && <span className="truncate pl-4 text-xs text-fg-2">{x.notes}</span>}
+                {shown === 'attention' && x.notes && <span className="truncate pl-4 text-xs text-fg-2">{x.notes}</span>}
+                {shown === 'soon' && typeof x.harvest?.daysToReady === 'number' && <span className="pl-4 text-xs text-fg-2">{`in about ${Math.max(1, Math.round(x.harvest.daysToReady))} d`}</span>}
+                {shown === 'ready' && typeof x.harvest?.daysLeft === 'number' && <span className="pl-4 text-xs text-fg-2">{x.harvest.daysLeft > 0 ? `best within ${Math.round(x.harvest.daysLeft)} d` : 'past its window'}</span>}
               </button>
             ))}
           </div>
@@ -383,11 +392,21 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
       controls={controls}
       status={status}
       aside={aside}
-      podAction={selected !== null && (
-        <Link to="/grow" search={{ pod: selected }} className="flex items-center gap-1 text-fg-2 hover:text-fg">
-          Edit on Grow
-          <ArrowRight size={12} />
-        </Link>
+      podAction={picked && (
+        <>
+          {shownOf.get(picked.slot) === 'ready' && (
+            <button type="button" disabled={markHarvested.isPending} onClick={() => markHarvested.mutate({ slot: picked.slot })} className="rounded-ctl bg-[var(--accent-light)] px-3 py-2 text-[13px] text-[var(--text-inverse)] hover:opacity-90 disabled:opacity-60">
+              Mark harvested
+            </button>
+          )}
+          {shownOf.get(picked.slot) === 'attention' && (
+            <Link to="/cameras" className="rounded-ctl border border-line-2 px-3 py-2 text-center text-[13px] text-fg hover:bg-active">View on camera</Link>
+          )}
+          <Link to="/grow" search={{ pod: picked.slot }} className="flex items-center gap-1 text-fg-2 hover:text-fg">
+            Edit on Grow
+            <ArrowRight size={12} />
+          </Link>
+        </>
       )}
       onUnavailable={onUnavailable}
     />

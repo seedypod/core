@@ -9,6 +9,7 @@ import { devicesRouter } from './devices'
 import { eventsRouter } from './events'
 import { growRouter } from './grow'
 import { networkRouter } from './network'
+import { plantsRouter } from './plants'
 import { schedulesRouter } from './schedules'
 import { sensorsRouter } from './sensors'
 import { settingsRouter } from './settings'
@@ -29,6 +30,7 @@ export const appRouter = router({
   schedules: schedulesRouter,
   automations: automationsRouter,
   grow: growRouter,
+  plants: plantsRouter,
   camera: cameraRouter,
   vision: visionRouter,
   datasets: datasetsRouter,

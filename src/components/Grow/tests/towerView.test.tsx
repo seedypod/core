@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TowerMountOptions } from '../towerRenderer'
 import type { TowerState } from '../towerScene'
+import type { PodHarvest } from '../towerScene'
 import { PodCallout, TowerView } from '../TowerView'
 
 const { mounted } = vi.hoisted(() => ({ mounted: { opts: null as TowerMountOptions | null, updates: [] as TowerState[], disposed: 0, fail: false, at: null as { x: number, y: number } | null } }))
@@ -70,8 +71,8 @@ describe('TowerView', () => {
     mounted.at = { x: 120.4, y: 300 }
     act(() => mounted.opts?.onRender?.())
     const callout = screen.getByRole('group', { name: 'Pod 1' })
-    expect(callout.textContent).toBe('Pod 1BasilGrowingAge18 dGreen42%Trend↑ Gainingpinch topsEdit on Grow')
-    expect(callout.querySelector('polyline')?.getAttribute('points')).toMatch(/^2,16 /)
+    expect(callout.textContent).toBe('BasilPod 1GrowingHarvest—Leaf cover42%Edit on Grow')
+    expect(callout.dataset.layout).toBe('stats')
     expect(callout.previousElementSibling?.querySelector('circle')?.getAttribute('cx')).toBe('120')
     // The picked pod's hover adds nothing over its callout.
     act(() => mounted.opts?.onHover({ kind: 'pod', slot: 1 }))
@@ -121,6 +122,15 @@ describe('TowerView', () => {
     expect(callout.previousElementSibling?.querySelector('circle')).toBeNull()
   })
 
+  it('flags a pod the harvest outlook calls ready, though its status is still growing', async () => {
+    const ready = [{ slot: 1, status: 'growing' as const, plant: 'Chard', harvest: { state: 'ready' as const, window: null, cover: 0.5, targetCover: 0.4, daysToReady: 0, daysLeft: null, reason: '' } }]
+    render(<TowerView pods={ready} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    mounted.at = { x: 200, y: 300 }
+    act(() => mounted.opts?.onRender?.())
+    expect(screen.getByRole('button', { name: 'Pod 1: Ready to harvest' })).toBeTruthy()
+  })
+
   it('passes pod clicks to onSelect and part clicks to onPart', async () => {
     const onSelect = vi.fn()
     const onPart = vi.fn()
@@ -154,20 +164,21 @@ describe('TowerView', () => {
 
 describe('PodCallout', () => {
   const box = () => screen.getByTestId('pod-callout').style
+  const card = () => screen.getByTestId('pod-callout')
+  const now = new Date('2026-03-01T12:00:00Z')
+  const harvest = (o: Partial<PodHarvest> = {}): PodHarvest => ({ state: 'growing', window: null, cover: 0.3, targetCover: 0.4, daysToReady: null, daysLeft: null, reason: '', ...o })
 
-  it('reads out outward from the tower, above the pod, and flips when that side has no room', () => {
-    const pod = { slot: 4, status: 'attention' as const, plant: 'Kale', green: 0.2, verdict: 'declining' as const, recent: [0.3, 0.25, 0.2] }
-    const { rerender } = render(<PodCallout pod={pod} at={{ x: 600, y: 400 }} width={1000} height={800} />)
-    // Right of centre: the line runs from the flag up and right, and the readout starts where it ends.
+  it('sits outward from the tower, above the pod, and flips when that side has no room', () => {
+    const pod = { slot: 4, status: 'attention' as const, plant: 'Kale', green: 0.2 }
+    const { rerender } = render(<PodCallout pod={pod} at={{ x: 600, y: 400 }} width={1200} height={800} />)
+    // Right of centre: the line runs from the flag up and right, and the card starts where it ends.
     expect(document.querySelector('polyline')?.getAttribute('points')).toBe('616,384 652,336 740,336')
-    expect([box().left, box().top]).toEqual(['740px', '296px'])
-    expect(screen.getByTestId('pod-callout').textContent).toBe('Pod 4KaleNeeds attentionGreen20%Trend↓ Shrinking')
-    expect(screen.getByText('Needs attention').className).toContain('border')
-    // No room on the right: it reads out to the left, anchored by its right edge.
+    expect([box().left, box().top]).toEqual(['740px', '314px'])
+    // No room on the right: it sits to the left, anchored by its right edge.
     rerender(<PodCallout pod={pod} at={{ x: 900, y: 400 }} width={1000} height={800} />)
     expect(document.querySelector('polyline')?.getAttribute('points')).toBe('916,384 880,336 792,336')
     expect([box().right, box().left]).toEqual(['208px', ''])
-    // Near the top, the line runs down so the readout clears the chips.
+    // Near the top, the line runs down so the card clears the chips.
     rerender(<PodCallout pod={pod} at={{ x: 300, y: 80 }} width={1000} height={800} />)
     expect(document.querySelector('polyline')?.getAttribute('points')).toBe('316,64 352,112 440,112')
   })
@@ -179,12 +190,33 @@ describe('PodCallout', () => {
     expect(document.querySelector('polyline')?.getAttribute('points')).toBe('560,400 524,352 436,352')
   })
 
-  it('leaves out what it does not know: an empty pod, a pod without a trend', () => {
-    const { rerender } = render(<PodCallout pod={{ slot: 9, status: 'empty', plant: null, verdict: 'unknown' }} at={{ x: 100, y: 400 }} width={1000} height={800} />)
-    expect(screen.getByTestId('pod-callout').textContent).toBe('Pod 9Empty')
-    rerender(<PodCallout pod={{ slot: 9, status: 'seeded', plant: 'Mint', ageDays: 2.9, verdict: 'stalled', recent: [0.1, 0.1] }} at={{ x: 100, y: 400 }} width={1000} height={800} />)
-    expect(screen.getByTestId('pod-callout').textContent).toBe('Pod 9MintSeededAge2 dTrend→ Flat')
-    expect(screen.getByText('Seeded').className).not.toContain('border')
-    expect(screen.getByTestId('pod-callout').querySelector('svg')).toBeNull()
+  it('leads with the harvest timeline when there is a window (1b): the state in colour, then why', () => {
+    const pod = { slot: 2, status: 'growing' as const, plant: 'Arugula', ageDays: 19, harvest: harvest({ state: 'ready', window: { start: 17, end: 25, source: 'profile' }, cover: 0.43, daysLeft: 6, reason: 'Best within 6 d. Leaf cover 43%, above the 40% target.' }) }
+    const { rerender } = render(<PodCallout pod={pod} at={{ x: 600, y: 400 }} width={1000} height={800} action={<button type="button">Mark harvested</button>} />)
+    expect(card().dataset.layout).toBe('timeline')
+    expect(card().textContent).toBe('Pod 2Arugulaseeded17 d25 dReady to harvestBest within 6 d. Leaf cover 43%, above the 40% target.Mark harvested')
+    expect(screen.getByRole('img').getAttribute('aria-label')).toBe('Day 19; harvest window 17–25 days')
+    // Today sits 19 days into a scale that runs a little past the window's end (28 d).
+    expect(Number.parseFloat(screen.getByTestId('timeline-today').style.left)).toBeCloseTo((19 / 28) * 100, 6)
+    expect(screen.getByText('Ready to harvest').getAttribute('style')).toContain('var(--accent-light)')
+    // The plant name stays neutral; the state carries the colour.
+    expect(screen.getByText('Arugula').className).toContain('text-fg')
+    // A camera estimate reads as approximate, and attention leads with the problem.
+    rerender(<PodCallout pod={{ ...pod, status: 'attention', notes: 'Leaf yellowing seen on camera.', harvest: harvest({ window: { start: 24.4, end: 31.4, source: 'camera' }, cover: 0.22, targetCover: 0.3 }) }} at={{ x: 600, y: 400 }} width={1000} height={800} />)
+    expect(card().textContent).toBe('Pod 2Arugulaseeded~24 d~31 dNeeds attentionLeaf yellowing seen on camera. Leaf cover 22%, behind the 30% target.')
+  })
+
+  it('falls back to the state, harvest and leaf cover with their targets without a window (1a)', () => {
+    const pod = { slot: 11, status: 'growing' as const, plant: 'Basil', statusSince: '2026-02-27T08:00:00Z', harvest: harvest({ state: 'soon', daysToReady: 4.6, cover: 0.22, targetCover: 0.3 }) }
+    render(<PodCallout pod={pod} at={{ x: 600, y: 400 }} width={1000} height={800} now={now} />)
+    expect(card().dataset.layout).toBe('stats')
+    expect(card().textContent).toBe('BasilPod 11Harvest soon· 2 dHarvest~5 din 5 dLeaf cover22%target 30%')
+  })
+
+  it('leaves out what it does not know: an empty pod, a pod with no outlook', () => {
+    const { rerender } = render(<PodCallout pod={{ slot: 9, status: 'empty', plant: null }} at={{ x: 100, y: 400 }} width={1000} height={800} />)
+    expect(card().textContent).toBe('EmptyPod 9')
+    rerender(<PodCallout pod={{ slot: 9, status: 'seeded', plant: 'Mint', ageDays: 2.9 }} at={{ x: 100, y: 400 }} width={1000} height={800} />)
+    expect(card().textContent).toBe('MintPod 9SeededHarvest—Leaf cover—')
   })
 })

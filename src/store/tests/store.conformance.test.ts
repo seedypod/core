@@ -71,6 +71,28 @@ for (const [name, make] of impls) {
       expect(store.grow.current()).toBeNull()
     })
 
+    it('pods: a status change moves statusSince; other edits leave it', () => {
+      store = make()
+      store.pods.update(3, { status: 'growing' }, '2026-02-01T00:00:00Z')
+      expect(store.pods.update(3, { notes: 'pinch tops' }, '2026-02-05T00:00:00Z').statusSince).toBe('2026-02-01T00:00:00Z')
+      expect(store.pods.update(3, { status: 'growing' }, '2026-02-06T00:00:00Z').statusSince).toBe('2026-02-01T00:00:00Z')
+      const cut = store.pods.update(3, { status: 'harvest', lastHarvestAt: '2026-02-07T00:00:00Z' }, '2026-02-07T00:00:00Z')
+      expect(cut).toMatchObject({ statusSince: '2026-02-07T00:00:00Z', lastHarvestAt: '2026-02-07T00:00:00Z' })
+    })
+
+    it('plant profiles upsert by case-folded name, list in key order, and remove', () => {
+      store = make()
+      const p = { harvestMinDays: 21, harvestMaxDays: 35, targetCover: 0.35, notes: '', source: 'agent' as const }
+      store.plants.upsert({ name: 'Kale', ...p }, 't1')
+      store.plants.upsert({ name: 'Basil', ...p, harvestMinDays: 25 }, 't1')
+      const again = store.plants.upsert({ name: ' kale ', ...p, harvestMaxDays: 50, source: 'user' }, 't2')
+      expect(again).toMatchObject({ key: 'kale', name: ' kale ', harvestMaxDays: 50, source: 'user', updatedAt: 't2' })
+      expect(store.plants.list().map(x => [x.key, x.harvestMaxDays])).toEqual([['basil', 35], ['kale', 50]])
+      expect(store.plants.remove('KALE')).toBe(true)
+      expect(store.plants.remove('kale')).toBe(false)
+      expect(store.plants.list().map(x => x.key)).toEqual(['basil'])
+    })
+
     it('pods: 30 slots seeded empty and updatable', () => {
       store = make()
       expect(store.pods.list()).toHaveLength(30)
@@ -230,7 +252,7 @@ describe('SqliteStore on disk', () => {
       const journal = JSON.parse(readFileSync(join(defaultMigrationsFolder(), 'meta/_journal.json'), 'utf8')) as { entries: { tag: string }[] }
       const old = join(root, 'migrations-0006')
       cpSync(defaultMigrationsFolder(), old, { recursive: true })
-      writeFileSync(join(old, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.filter(e => !e.tag.startsWith('0007')) }))
+      writeFileSync(join(old, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.filter(e => e.tag < '0007') }))
       const db = new Database(url)
       migrate(drizzle(db), { migrationsFolder: old })
       db.prepare('INSERT INTO device_settings (id, updatedAt) VALUES (1, ?)').run('2026-10-01T00:00:00Z')

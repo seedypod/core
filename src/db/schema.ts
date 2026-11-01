@@ -99,6 +99,28 @@ export const pods = sqliteTable('pods', {
   status: text({ enum: ['empty', 'seeded', 'growing', 'harvest', 'attention'] }).notNull().default('empty'),
   notes: text().notNull().default(''),
   updatedAt: text().notNull(),
+  /** When the status last changed, for "ready for 2 d". */
+  statusSince: text(),
+  /** The last cut (ADR-0022): camera readiness counts only photos after it. */
+  lastHarvestAt: text(),
+})
+
+/**
+ * Optional per-crop harvest knowledge (ADR-0022), keyed by the plant's name in
+ * lower case. Entered by hand or filled in by an agent over MCP; the camera's
+ * estimate works without any.
+ */
+export const plantProfiles = sqliteTable('plant_profiles', {
+  key: text().primaryKey(),
+  name: text().notNull(),
+  /** Harvest window, days from planting. */
+  harvestMinDays: integer(),
+  harvestMaxDays: integer(),
+  /** Leaf cover (green fraction, 0–1) at which the plant is ready to cut. */
+  targetCover: real(),
+  notes: text().notNull().default(''),
+  source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
+  updatedAt: text().notNull(),
 })
 
 export const captures = sqliteTable('captures', {
