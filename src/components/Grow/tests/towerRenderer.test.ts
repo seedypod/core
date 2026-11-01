@@ -67,13 +67,14 @@ const pointer = (type: string, x: number, y: number, buttons = 0) => {
 }
 
 function mount() {
-  const calls = { hover: [] as (TowerTarget | null)[], select: [] as TowerTarget[], ready: 0, fail: 0 }
+  const calls = { hover: [] as (TowerTarget | null)[], select: [] as TowerTarget[], ready: 0, fail: 0, rendered: 0 }
   const m = mountTower(host, {
     podCount: 30,
     onHover: t => calls.hover.push(t),
     onSelect: t => calls.select.push(t),
     onReady: () => calls.ready++,
     onFail: () => calls.fail++,
+    onRender: () => calls.rendered++,
   })
   return { m, calls, canvas: host.querySelector('canvas') as HTMLCanvasElement }
 }
@@ -126,6 +127,26 @@ describe('mountTower', () => {
     expect(calls.select).toEqual([{ kind: 'pod', slot: 7 }])
     canvas.dispatchEvent(pointer('pointerleave', 0, 0))
     expect(calls.hover.at(-1)).toBeNull()
+    m.dispose()
+  })
+
+  it('reports after each frame where a pod sits on screen, so a callout can follow it', async () => {
+    const { m, calls, canvas } = mount()
+    m.update({ pods: allPods, waterPct: 50, lightLevel: 80, hovered: null, selected: 7 })
+    await tick()
+    expect(calls.rendered).toBeGreaterThan(0)
+    const a = m.anchor(7)
+    const collar = aim(m, o => o.userData.slot === 7 && o.geometry.type === 'TorusGeometry')
+    expect(a?.x).toBeCloseTo(collar.x, 0)
+    expect(a?.y).toBeCloseTo(collar.y, 0)
+    expect(m.anchor(99)).toBeNull()
+    // Behind the camera, or beside the frame, a pod has no anchor.
+    m.camera.position.set(0, 0.8, 3)
+    m.camera.lookAt(0, 0.8, 10)
+    expect(m.anchor(7)).toBeNull()
+    m.camera.lookAt(5, 0.8, 3)
+    expect(m.anchor(7)).toBeNull()
+    expect(canvas).toBeTruthy()
     m.dispose()
   })
 

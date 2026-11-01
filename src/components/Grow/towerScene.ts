@@ -62,6 +62,11 @@ export interface PodState {
   green?: number | null
   /** Days since planting, for the size when there's no measurement. */
   ageDays?: number | null
+  /** Growth verdict from the green-area trend. */
+  verdict?: 'growing' | 'stalled' | 'declining' | 'unknown'
+  /** The last few green fractions, oldest first. */
+  recent?: number[]
+  notes?: string
 }
 
 export interface TowerState {
@@ -305,6 +310,13 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
     root,
     shape,
     pickables,
+    /** Where a pod's collar sits in world space, for pinning a callout to it; false for no such slot. */
+    podAnchor(slot: number, target: T.Vector3): boolean {
+      const pod = pods.get(slot)
+      if (!pod) return false
+      pod.collar.getWorldPosition(target)
+      return true
+    },
     /** Slot under a ray hit, or null. */
     slotOf(object: T.Object3D | null | undefined): number | null {
       const s = object?.userData.slot
