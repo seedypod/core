@@ -5,6 +5,7 @@ import { SegmentedControl, SelectValue, TextField } from '@/src/components/ds/fo
 import { PageHeader } from '@/src/components/ds/layout'
 import { cn } from '@/lib/utils'
 import { trpc } from '@/src/utils/trpc'
+import { ageDays } from './towerLayout'
 import { TowerView } from './TowerView'
 
 type Stage = 'germination' | 'seedling' | 'vegetative' | 'harvest'
@@ -49,7 +50,12 @@ export function GrowPage() {
   const trends = trpc.vision.podTrends.useQuery()
   const sensors = trpc.sensors.latest.useQuery()
   const light = trpc.light.get.useQuery()
-  const [draft, setDraft] = useState<Draft | null>(null)
+  const [edited, setDraft] = useState<Draft | null>(null)
+  // `?pod=N` (from Home) opens that pod until another is picked.
+  const [linked] = useState(() => {
+    const n = Number(new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('pod'))
+    return Number.isInteger(n) && n > 0 ? n : null
+  })
   const [view, setView] = useState<View>(savedView)
   const [noWebGL, setNoWebGL] = useState(false)
   const chooseView = (v: View) => {
@@ -62,12 +68,14 @@ export function GrowPage() {
     }
   }
   const all = pods.data ?? []
-  const select = (slot: number) => {
+  const draftOf = (slot: number): Draft | null => {
     const p = all.find(x => x.slot === slot)
-    if (p) setDraft({ slot: p.slot, plant: p.plant ?? '', status: p.status, notes: p.notes })
+    return p ? { slot: p.slot, plant: p.plant ?? '', status: p.status, notes: p.notes } : null
   }
+  const select = (slot: number) => setDraft(draftOf(slot))
+  const draft = edited ?? (linked === null ? null : draftOf(linked))
   const trendBySlot = new Map((trends.data ?? []).map(t => [t.slot, t]))
-  const towerPods = all.map(p => ({ slot: p.slot, status: p.status, plant: p.plant, green: trendBySlot.get(p.slot)?.green ?? null }))
+  const towerPods = all.map(p => ({ slot: p.slot, status: p.status, plant: p.plant, green: trendBySlot.get(p.slot)?.green ?? null, ageDays: ageDays(p.plantedAt) }))
   const shown: View = noWebGL ? 'table' : view
   const cycle = grow.data?.cycle
   const counts = all.reduce<Record<string, number>>((m, p) => ({ ...m, [p.status]: (m[p.status] ?? 0) + 1 }), {})

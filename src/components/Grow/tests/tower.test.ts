@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { plantScale, podPlaces, towerShape } from '../towerLayout'
+import { ageDays, LEAF_COUNT, plantForm, plantScale, podPlaces, towerShape } from '../towerLayout'
 import { createTower, DARK_PALETTE, LIGHT_PALETTE, type PodState } from '../towerScene'
 
 describe('tower layout', () => {
@@ -23,14 +23,33 @@ describe('tower layout', () => {
     expect(a?.side).toBe(-(b?.side ?? 0))
   })
 
-  it('sizes a plant by its green area, falling back on its status', () => {
+  it('sizes a plant by its green area, then by age, then by status', () => {
     expect(plantScale('empty', 0.9)).toBe(0)
     expect(plantScale('seeded', 0.9)).toBe(0.25)
-    expect(plantScale('growing', null)).toBe(0.5)
-    expect(plantScale('harvest', undefined)).toBe(0.85)
-    expect(plantScale('growing', 0)).toBe(0.3)
-    expect(plantScale('growing', 0.5)).toBeCloseTo(0.75)
+    expect(plantScale('growing', 0)).toBeCloseTo(0.35)
+    expect(plantScale('growing', 0.4)).toBeCloseTo(0.79)
     expect(plantScale('attention', 2)).toBe(1)
+    expect(plantScale('growing', null, 7)).toBeCloseTo(0.43)
+    expect(plantScale('growing', null, 35)).toBeCloseTo(0.95)
+    expect(plantScale('growing', null, 90)).toBe(1)
+    expect(plantScale('harvest', undefined, 3)).toBe(0.95)
+    expect(plantScale('growing', null)).toBe(0.55)
+  })
+
+  it('shapes a plant by stage: seed leaves, a few leaves, a bush, a full head', () => {
+    expect(plantForm('empty', 0)).toBe('none')
+    expect(plantForm('seeded', 0.25)).toBe('sprout')
+    expect(plantForm('growing', 0.45)).toBe('young')
+    expect(plantForm('attention', 0.8)).toBe('bush')
+    expect(plantForm('harvest', 0.95)).toBe('full')
+    expect(LEAF_COUNT.young).toBeLessThan(LEAF_COUNT.bush)
+    expect(LEAF_COUNT.bush).toBeLessThan(LEAF_COUNT.full)
+  })
+
+  it('counts days since planting', () => {
+    expect(ageDays('2026-10-01', new Date('2026-10-11T00:00:00Z'))).toBe(10)
+    expect(ageDays(null)).toBeNull()
+    expect(ageDays('not a date')).toBeNull()
   })
 })
 
@@ -49,10 +68,19 @@ describe('tower scene', () => {
 
   it('builds a cup and plant per slot, every pickable naming its slot', () => {
     const tower = createTower(THREE, 30)
-    const slots = new Set(tower.pickables.map(o => tower.slotOf(o)))
+    const slots = new Set(tower.pickables.map(o => tower.slotOf(o)).filter(s => s !== null))
     expect(slots.size).toBe(30)
     expect(tower.slotOf(null)).toBeNull()
     expect(tower.slotOf(tower.root)).toBeNull()
+    tower.dispose()
+  })
+
+  it('makes the light bars and the tank clickable', () => {
+    const tower = createTower(THREE, 30)
+    const parts = new Set(tower.pickables.map(o => tower.targetOf(o)).filter(t => t?.kind === 'part').map(t => t?.kind === 'part' && t.part))
+    expect([...parts].sort()).toEqual(['light', 'tank'])
+    expect(tower.targetOf(tower.pickables.find(o => tower.slotOf(o) === 3))).toEqual({ kind: 'pod', slot: 3 })
+    expect(tower.targetOf(tower.root)).toBeNull()
     tower.dispose()
   })
 
@@ -64,6 +92,12 @@ describe('tower scene', () => {
     expect(collarColor(tower, 12)).toBe(DARK_PALETTE.status.growing)
     expect(podGroup(tower, 30).children[2]?.visible).toBe(false)
     expect(podGroup(tower, 12).children[2]?.scale.x).toBeCloseTo(plantScale('growing', 0.4))
+    expect(podGroup(tower, 12).children[2]?.userData.form).toBe('bush')
+    expect(podGroup(tower, 1).children[2]?.children.filter(c => c.visible)).toHaveLength(LEAF_COUNT.full)
+    tower.update({ ...state, pods: [{ slot: 3, status: 'seeded', plant: 'Dill' }] })
+    expect(podGroup(tower, 3).children[2]?.visible).toBe(false)
+    expect(podGroup(tower, 3).children[3]?.visible).toBe(true)
+    tower.update(state)
     tower.update({ ...state, selected: 12 })
     expect(collarColor(tower, 12)).toBe(DARK_PALETTE.highlight)
     tower.dispose()

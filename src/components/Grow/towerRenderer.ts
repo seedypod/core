@@ -1,16 +1,17 @@
 /**
  * Renders the tower into a host element (after sleepypod's BedView3D): soft
- * studio lighting, a shadow on a transparent floor, render on demand, and an
+ * studio lighting, the tower standing in a room, render on demand, and an
  * orbit you drag. Loaded with `import()` so three.js stays in its own chunk,
  * served by the unit itself (no CDN: many units sit on LANs without internet).
  */
 import * as THREE from 'three'
-import { createTower, DARK_PALETTE, LIGHT_PALETTE, type TowerState } from './towerScene'
+import { createRoom } from './towerRoom'
+import { createTower, DARK_PALETTE, LIGHT_PALETTE, type TowerState, type TowerTarget } from './towerScene'
 
 export interface TowerMountOptions {
   podCount: number
-  onHover: (slot: number | null) => void
-  onSelect: (slot: number) => void
+  onHover: (target: TowerTarget | null) => void
+  onSelect: (target: TowerTarget) => void
   onReady: () => void
   onFail: () => void
 }
@@ -18,13 +19,14 @@ export interface TowerMountOptions {
 const deg = Math.PI / 180
 export const VIEW = {
   azimuth: -18 * deg,
-  elevation: 8 * deg,
-  distance: 3.3,
+  elevation: 9 * deg,
+  // Far enough for headroom above the tower and a strip of floor in front of it.
+  distance: 3.9,
   maxAzimuth: 70 * deg,
   minElevation: -5 * deg,
   maxElevation: 40 * deg,
   minDistance: 1.6,
-  maxDistance: 4.5,
+  maxDistance: 5,
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
@@ -46,14 +48,8 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   const scene = new THREE.Scene()
   const tower = createTower(THREE, o.podCount, isLight() ? LIGHT_PALETTE : DARK_PALETTE)
   scene.add(tower.root)
-  const lookY = tower.shape.height * 0.47
-
-  const floorGeo = new THREE.PlaneGeometry(8, 8)
-  const floorMat = new THREE.ShadowMaterial({ opacity: 0.3 })
-  const floor = new THREE.Mesh(floorGeo, floorMat)
-  floor.rotation.x = -Math.PI / 2
-  floor.receiveShadow = true
-  scene.add(floor)
+  const lookY = tower.shape.height * 0.5
+  const room = createRoom(THREE, scene, renderer, isLight(), tower.shape.height)
   const hemi = new THREE.HemisphereLight('#fbf7f0', '#55555c', 1.8)
   scene.add(hemi)
   const key = new THREE.DirectionalLight('#fff6ea', 2.2)
@@ -74,6 +70,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     const ground = view.distance * Math.cos(view.elevation)
     camera.position.set(ground * Math.sin(view.azimuth), lookY + view.distance * Math.sin(view.elevation), ground * Math.cos(view.azimuth))
     camera.lookAt(0, lookY, 0)
+    room.follow(view.azimuth)
   }
   place()
 
@@ -107,14 +104,15 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   // Picking: hover highlights a pod, a click that didn't drag selects it.
   const ray = new THREE.Raycaster()
   const pointer = new THREE.Vector2()
-  const pick = (e: PointerEvent | MouseEvent): number | null => {
+  const pick = (e: PointerEvent | MouseEvent): TowerTarget | null => {
     const r = canvas.getBoundingClientRect()
     pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
     ray.setFromCamera(pointer, camera)
-    return tower.slotOf(ray.intersectObjects(tower.pickables, false)[0]?.object)
+    return tower.targetOf(ray.intersectObjects(tower.pickables, false)[0]?.object)
   }
+  const same = (a: TowerTarget | null, b: TowerTarget | null) => JSON.stringify(a) === JSON.stringify(b)
   let drag: { x: number, y: number, moved: boolean } | null = null
-  let hovered: number | null = null
+  let hovered: TowerTarget | null = null
   const onDown = (e: PointerEvent) => {
     drag = { x: e.clientX, y: e.clientY, moved: false }
     canvas.setPointerCapture?.(e.pointerId)
@@ -134,17 +132,17 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
       }
       return
     }
-    const slot = pick(e)
-    if (slot !== hovered) {
-      hovered = slot
-      canvas.style.cursor = slot === null ? 'grab' : 'pointer'
-      o.onHover(slot)
+    const target = pick(e)
+    if (!same(target, hovered)) {
+      hovered = target
+      canvas.style.cursor = target === null ? 'grab' : 'pointer'
+      o.onHover(target)
     }
   }
   const onUp = (e: PointerEvent) => {
     if (drag && !drag.moved) {
-      const slot = pick(e)
-      if (slot !== null) o.onSelect(slot)
+      const target = pick(e)
+      if (target) o.onSelect(target)
     }
     drag = null
   }
@@ -185,7 +183,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   const theme = new MutationObserver(() => {
     const light = isLight()
     tower.recolor(light ? LIGHT_PALETTE : DARK_PALETTE)
-    floorMat.opacity = light ? 0.16 : 0.3
+    room.recolor(light)
     requestRender()
   })
   theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
@@ -194,8 +192,12 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   resize()
 
   return {
+    /** For tests: the scene and camera, to aim the pointer at a pod or part. */
+    scene,
+    camera,
     update(state: TowerState) {
       tower.update(state)
+      room.setLight(state.lightLevel / 100)
       requestRender()
     },
     dispose() {
@@ -205,8 +207,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
       document.removeEventListener('visibilitychange', visibility)
       canvas.removeEventListener('webglcontextlost', lost)
       tower.dispose()
-      floorGeo.dispose()
-      floorMat.dispose()
+      room.dispose()
       renderer.dispose()
       canvas.remove()
       delete host.dataset.ready

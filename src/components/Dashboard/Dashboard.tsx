@@ -1,4 +1,6 @@
 import { Droplets, Sun, Thermometer, Waves, Zap } from 'lucide-react'
+import { useState } from 'react'
+import { TowerHome } from './TowerHome'
 import { Card, CardHeader, GrowBackdrop, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META } from '@/src/lib/sensorMeta'
@@ -12,12 +14,15 @@ function minutesNow(): number {
 
 export function Dashboard() {
   const settings = trpc.settings.get.useQuery()
+  const [noWebGL, setNoWebGL] = useState(false)
   // A fresh database opens on Welcome (ADR-0021) until the owner starts a garden or restores one.
   if (settings.data && !settings.data.setupComplete) return <Welcome />
-  return <Home />
+  // The tower is Home; without WebGL the cards stand in for it.
+  return noWebGL ? <CardsHome /> : <TowerHome onUnavailable={() => setNoWebGL(true)} />
 }
 
-function Home() {
+/** Home without WebGL: the light, water and environment as cards. */
+export function CardsHome() {
   const sensors = trpc.sensors.latest.useQuery()
   const lightState = trpc.light.get.useQuery()
   const pumpState = trpc.pump.get.useQuery()

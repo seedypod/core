@@ -53,7 +53,7 @@ describe('Grow', () => {
     render(<GrowPage />)
     expect(screen.getByTestId('tower')).toBeTruthy()
     expect(tower.props).toMatchObject({ waterPct: 64, lightLevel: 85, selected: null })
-    expect((tower.props?.pods as unknown[])[0]).toEqual({ slot: 1, status: 'growing', plant: 'Basil', green: 0.42 })
+    expect((tower.props?.pods as unknown[])[0]).toEqual({ slot: 1, status: 'growing', plant: 'Basil', green: 0.42, ageDays: expect.any(Number) })
     expect(screen.getByTestId('pod-counts').textContent).toBe('1 growing · 0 ready · 1 attention · 1 empty')
   })
 

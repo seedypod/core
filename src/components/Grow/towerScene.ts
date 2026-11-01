@@ -6,7 +6,7 @@
  */
 import type * as T from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { plantScale, podPlaces, towerShape, type PodStatus } from './towerLayout'
+import { LEAF_COUNT, plantForm, plantScale, podPlaces, towerShape, type PodStatus } from './towerLayout'
 
 export type Three = typeof T
 
@@ -16,6 +16,8 @@ export interface TowerPalette {
   cup: string
   leaf: string
   leafDark: string
+  /** Leaves of a pod that needs attention: yellowing. */
+  leafSick: string
   status: Record<PodStatus, string>
   water: string
   ledOn: string
@@ -29,6 +31,7 @@ export const DARK_PALETTE: TowerPalette = {
   cup: '#1c1c20',
   leaf: '#50c878',
   leafDark: '#2f8f55',
+  leafSick: '#b8b04a',
   status: { empty: '#3a3a40', seeded: '#8b8b92', growing: '#a99cf2', harvest: '#e0976a', attention: '#f08cc4' },
   water: '#7ab5e0',
   ledOn: '#fff1dc',
@@ -47,12 +50,18 @@ export const LIGHT_PALETTE: TowerPalette = {
   highlight: '#17171a',
 }
 
+/** Parts of the tower that carry a control on Home; `air` is only an anchor for the readings. */
+export type TowerPart = 'light' | 'tank' | 'air'
+export type TowerTarget = { kind: 'pod', slot: number } | { kind: 'part', part: TowerPart }
+
 export interface PodState {
   slot: number
   status: PodStatus
   plant: string | null
   /** Latest green fraction from the primary analyser, when there is one. */
   green?: number | null
+  /** Days since planting, for the size when there's no measurement. */
+  ageDays?: number | null
 }
 
 export interface TowerState {
@@ -65,11 +74,16 @@ export interface TowerState {
   selected: number | null
 }
 
+// The order leaves appear in as a plant fills out: the crown first, then around it, then on top.
 const LEAVES = [
   { x: 0, y: 0.03, z: 0, r: 0.032 },
   { x: -0.024, y: 0.018, z: 0.012, r: 0.024 },
   { x: 0.024, y: 0.02, z: 0.01, r: 0.025 },
-  { x: 0.004, y: 0.05, z: -0.006, r: 0.02 },
+  { x: 0.004, y: 0.05, z: -0.006, r: 0.022 },
+  { x: -0.018, y: 0.042, z: -0.016, r: 0.021 },
+  { x: 0.02, y: 0.044, z: 0.016, r: 0.02 },
+  { x: -0.01, y: 0.066, z: 0.008, r: 0.018 },
+  { x: 0.014, y: 0.064, z: -0.012, r: 0.017 },
 ]
 
 /** Builds the tower for `podCount` slots. Every pickable mesh carries `userData.slot`. */
@@ -130,7 +144,10 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
   const cupMat = mat({ color: palette.cup, side: THREE.DoubleSide })
   const leafMat = mat({ color: palette.leaf, roughness: 0.8, flatShading: true })
   const leafDarkMat = mat({ color: palette.leafDark, roughness: 0.85, flatShading: true })
-  const pods = new Map<number, { group: T.Group, collar: T.Mesh, collarMat: T.MeshStandardMaterial, plant: T.Group }>()
+  const leafSickMat = mat({ color: palette.leafSick, roughness: 0.85, flatShading: true })
+  const sproutGeo = geo(new THREE.SphereGeometry(1, 10, 6))
+  const stemGeo = geo(new THREE.CylinderGeometry(0.002, 0.003, 0.03, 6))
+  const pods = new Map<number, { group: T.Group, collar: T.Mesh, collarMat: T.MeshStandardMaterial, plant: T.Group, leaves: T.Mesh[], sprout: T.Group }>()
   const pickables: T.Object3D[] = []
   for (const p of places) {
     const group = new THREE.Group()
@@ -144,21 +161,37 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
     collar.position.y = 0.025
     const plant = new THREE.Group()
     plant.position.y = 0.022
-    LEAVES.forEach((l, i) => {
+    const leaves = LEAVES.map((l, i) => {
       const leaf = new THREE.Mesh(leafGeo, i % 2 ? leafDarkMat : leafMat)
       leaf.position.set(l.x, l.y, l.z)
       leaf.scale.setScalar(l.r)
       leaf.castShadow = true
       plant.add(leaf)
+      return leaf
     })
-    group.add(cup, collar, plant)
+    // A seedling: a stem and two seed leaves.
+    const sprout = new THREE.Group()
+    sprout.position.y = 0.02
+    const stem = new THREE.Mesh(stemGeo, leafDarkMat)
+    stem.position.y = 0.012
+    sprout.add(stem)
+    for (const side of [-1, 1]) {
+      const seedLeaf = new THREE.Mesh(sproutGeo, leafMat)
+      seedLeaf.position.set(side * 0.009, 0.028, 0)
+      seedLeaf.scale.set(0.011, 0.004, 0.007)
+      seedLeaf.rotation.z = side * 0.4
+      sprout.add(seedLeaf)
+    }
+    group.add(cup, collar, plant, sprout)
     group.traverse((o) => {
       o.userData.slot = p.slot
     })
     root.add(group)
-    pickables.push(cup, collar, ...plant.children)
-    pods.set(p.slot, { group, collar, collarMat, plant })
+    pickables.push(cup, collar, ...plant.children, ...sprout.children)
+    pods.set(p.slot, { group, collar, collarMat, plant, leaves, sprout })
   }
+
+  for (const m of [base, lid, tankWindow, water]) m.userData.part = 'tank'
 
   // Light bars on stalks either side, angled in towards the plants.
   const ledMats: T.MeshStandardMaterial[] = []
@@ -179,11 +212,18 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
     led.position.set(-side * 0.0151, 0, 0)
     led.rotation.y = -side * Math.PI / 2
     housing.add(led)
+    for (const m of [stalk, housing, led]) m.userData.part = 'light'
   }
   // What the bars cast on the plants; it follows the light's level.
   const growLight = new THREE.PointLight(palette.ledOn, 0, 1.6, 1.5)
   growLight.position.set(0, shape.baseTop + columnHeight / 2, 0.45)
   root.add(growLight)
+
+  const parts: T.Object3D[] = []
+  root.traverse((o) => {
+    if (o.userData.part) parts.push(o)
+  })
+  pickables.push(...parts)
 
   let current: TowerState | null = null
   let colors = palette
@@ -193,9 +233,16 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
     for (const [slot, pod] of pods) {
       const s = bySlot.get(slot)
       const status = s?.status ?? 'empty'
-      const scale = plantScale(status, s?.green)
-      pod.plant.visible = scale > 0
+      const scale = plantScale(status, s?.green, s?.ageDays)
+      const form = plantForm(status, scale)
+      pod.plant.userData.form = form
+      pod.sprout.visible = form === 'sprout'
+      pod.plant.visible = LEAF_COUNT[form] > 0
       pod.plant.scale.setScalar(scale || 1)
+      pod.leaves.forEach((leaf, i) => {
+        leaf.visible = i < LEAF_COUNT[form]
+        leaf.material = status === 'attention' && i % 2 === 0 ? leafSickMat : i % 2 ? leafDarkMat : leafMat
+      })
       const focus = state.selected === slot || state.hovered === slot
       pod.collarMat.color.set(focus ? colors.highlight : colors.status[status])
       pod.collarMat.emissive.set(colors.status[status])
@@ -223,6 +270,13 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       const s = object?.userData.slot
       return typeof s === 'number' ? s : null
     },
+    /** What a ray hit: a pod, a part with a control, or nothing. */
+    targetOf(object: T.Object3D | null | undefined): TowerTarget | null {
+      const slot = object?.userData.slot
+      if (typeof slot === 'number') return { kind: 'pod', slot }
+      const part = object?.userData.part as TowerPart | undefined
+      return part ? { kind: 'part', part } : null
+    },
     update(state: TowerState) {
       current = state
       paint(state)
@@ -235,6 +289,7 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       windowMat.color.set(next.cup)
       leafMat.color.set(next.leaf)
       leafDarkMat.color.set(next.leafDark)
+      leafSickMat.color.set(next.leafSick)
       waterMat.color.set(next.water)
       waterMat.emissive.set(next.water)
       for (const m of ledMats) m.emissive.set(next.ledOn)
