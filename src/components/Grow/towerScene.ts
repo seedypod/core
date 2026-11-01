@@ -129,16 +129,17 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
 
   // The columns the pods hang on, each with a channel the water climbs while the pump runs.
   const columnHeight = shape.height - shape.baseTop
-  const stripes = new Uint8Array(16 * 4)
-  for (let i = 0; i < 16; i++) stripes.set([255, 255, 255, i % 4 < 2 ? 255 : 90], i * 4)
-  const flowTex = new THREE.DataTexture(stripes, 1, 16)
+  // One soft swell per repeat, so the channel shimmers rather than strobes.
+  const stripes = new Uint8Array(32 * 4)
+  for (let i = 0; i < 32; i++) stripes.set([255, 255, 255, Math.round(120 + 135 * (0.5 + 0.5 * Math.sin((i / 32) * Math.PI * 2)))], i * 4)
+  const flowTex = new THREE.DataTexture(stripes, 1, 32)
   flowTex.wrapT = THREE.RepeatWrapping
-  flowTex.repeat.set(1, columnHeight * 4)
+  flowTex.repeat.set(1, columnHeight * 1.5)
   flowTex.magFilter = THREE.LinearFilter
   flowTex.needsUpdate = true
   const flowMat = new THREE.MeshBasicMaterial({ color: palette.water, map: flowTex, transparent: true, opacity: 0, depthWrite: false })
   materials.push(flowMat)
-  const flowGeo = geo(new THREE.CylinderGeometry(0.013, 0.013, columnHeight, 10, 1, true))
+  const flowGeo = geo(new THREE.CylinderGeometry(0.008, 0.008, columnHeight, 10, 1, true))
   for (const x of shape.columnX) {
     const column = new THREE.Mesh(geo(new RoundedBoxGeometry(0.045, columnHeight, 0.06, 3, 0.015)), bodyMat)
     column.position.set(x, shape.baseTop + columnHeight / 2, 0)
@@ -248,11 +249,24 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
   let waterShown: number | null = null
   let waterTarget = 0
   let pumpOn = false
+  // The light fades between levels the way a dimmed LED driver ramps, rather than snapping.
+  let lightShown: number | null = null
+  let lightTarget = 0
 
   function setWater(level: number) {
     water.visible = level > 0.001
     water.scale.y = Math.max(0.001, windowHeight * 0.96 * level)
     water.position.y = tankWindow.position.y - windowHeight * 0.48 + water.scale.y / 2
+  }
+
+  const ledOn = new THREE.Color()
+  function setLight(level: number) {
+    ledOn.set(colors.ledOn)
+    for (const m of ledMats) {
+      m.emissiveIntensity = level * 2.2
+      m.color.set(colors.ledOff).lerp(ledOn, Math.min(1, level * 4))
+    }
+    growLight.intensity = level * 1.6
   }
 
   function paint(state: TowerState) {
@@ -282,12 +296,9 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       setWater(waterTarget)
     }
     pumpOn = !!state.pumpOn
-    const light = Math.max(0, Math.min(100, state.lightLevel)) / 100
-    for (const m of ledMats) {
-      m.emissiveIntensity = light * 2.2
-      m.color.set(light > 0 ? colors.ledOn : colors.ledOff)
-    }
-    growLight.intensity = light * 1.6
+    lightTarget = Math.max(0, Math.min(100, state.lightLevel)) / 100
+    if (lightShown === null) lightShown = lightTarget
+    setLight(lightShown)
   }
 
   return {
@@ -311,6 +322,8 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       paint(state)
     },
     /** Advances the animations by `dt` seconds; true while anything is still moving. */
+    /** 0–1: the light level as drawn right now, mid-fade included. */
+    light: () => lightShown ?? lightTarget,
     tick(dt: number): boolean {
       let moving = false
       const shown = waterShown ?? waterTarget
@@ -320,14 +333,21 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       }
       else waterShown = waterTarget
       setWater(waterShown)
-      const flowTarget = pumpOn ? 0.95 : 0
+      const light = lightShown ?? lightTarget
+      if (Math.abs(light - lightTarget) > 0.003) {
+        lightShown = light + (lightTarget - light) * Math.min(1, dt * 2.5)
+        moving = true
+      }
+      else lightShown = lightTarget
+      setLight(lightShown)
+      const flowTarget = pumpOn ? 0.45 : 0
       if (Math.abs(flowMat.opacity - flowTarget) > 0.01) {
-        flowMat.opacity += (flowTarget - flowMat.opacity) * Math.min(1, dt * 4)
+        flowMat.opacity += (flowTarget - flowMat.opacity) * Math.min(1, dt * 1.5)
         moving = true
       }
       else flowMat.opacity = flowTarget
       if (pumpOn) {
-        flowTex.offset.y -= dt * 1.2
+        flowTex.offset.y -= dt * 0.3
         moving = true
       }
       return moving
