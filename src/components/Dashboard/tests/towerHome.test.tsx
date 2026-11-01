@@ -6,7 +6,7 @@ import { TowerHome } from '../TowerHome'
 
 const { data, calls, tower } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { setLight: vi.fn(), runOnce: vi.fn(), stop: vi.fn() },
+  calls: { setLight: vi.fn(), runOnce: vi.fn(), stop: vi.fn(), markHarvested: vi.fn() },
   tower: { props: null as null | Record<string, unknown> },
 }))
 
@@ -26,7 +26,7 @@ vi.mock('@/src/utils/trpc', () => {
       pump: { get: query('pump'), runOnce: mutation('runOnce'), stop: mutation('stop') },
       alerts: { list: query('alerts') },
       system: { info: query('system') },
-      grow: { current: query('grow'), pods: query('pods') },
+      grow: { current: query('grow'), pods: query('pods'), harvest: query('harvest'), markHarvested: mutation('markHarvested') },
       vision: { podTrends: query('trends') },
     },
   }
@@ -148,7 +148,7 @@ describe('Home', () => {
     const panel = screen.getByRole('region', { name: 'Grow cycle' })
     expect(panel.textContent).toContain('Day 19')
     expect(panel.textContent).toContain('Vegetative · greens')
-    expect(within(panel).getByTestId('cycle-counts').textContent).toBe('Growing1Ready1Attention1Seeded0Empty1')
+    expect(within(panel).getByTestId('cycle-counts').textContent).toBe('Growing1Soon0Ready1Attention1Seeded0Empty1')
     const kale = within(panel).getByRole('button', { name: /Kale/ })
     expect(kale.textContent).toBe('KalePod 9yellowing leaves')
     expect(within(panel).getByRole('button', { name: /Jalapeño/ }).getAttribute('aria-pressed')).toBe('false')
@@ -157,6 +157,29 @@ describe('Home', () => {
     expect(kale.getAttribute('aria-pressed')).toBe('true')
     // The day chip is for narrow views only.
     expect(chip('Day 19').parentElement?.parentElement?.className).toContain('@min-[900px]:hidden')
+  })
+
+  it('lists pods by the harvest outlook too, and gives the picked one its action: cut it, or see it on camera', () => {
+    data.set('pods', [
+      { slot: 1, plant: 'Basil', status: 'growing', notes: '', plantedAt: null, updatedAt: '', statusSince: null },
+      { slot: 2, plant: 'Arugula', status: 'growing', notes: '', plantedAt: null, updatedAt: '', statusSince: null },
+      { slot: 9, plant: 'Kale', status: 'attention', notes: 'yellowing', plantedAt: null, updatedAt: '', statusSince: null },
+    ])
+    const outlook = (slot: number, state: string, o = {}) => ({ slot, state, window: null, cover: 0.3, targetCover: 0.4, daysToReady: null, daysLeft: null, reason: '', ...o })
+    data.set('harvest', [outlook(1, 'soon', { daysToReady: 4.6 }), outlook(2, 'ready', { daysLeft: 6 }), outlook(9, 'growing')])
+    render(<TowerHome onUnavailable={vi.fn()} />)
+    const panel = screen.getByRole('region', { name: 'Grow cycle' })
+    expect(within(panel).getByText('Ready to harvest').parentElement?.textContent).toBe('Ready to harvestArugulaPod 2best within 6 d')
+    expect(within(panel).getByText('Coming up').parentElement?.textContent).toBe('Coming upBasilPod 1in about 5 d')
+    expect((tower.props?.pods as { harvest: unknown }[])[1]?.harvest).toMatchObject({ state: 'ready' })
+    act(() => (tower.props?.onSelect as (s: number) => void)(2))
+    fireEvent.click(within(screen.getByTestId('pod-action')).getByRole('button', { name: 'Mark harvested' }))
+    expect(calls.markHarvested).toHaveBeenCalledWith({ slot: 2 })
+    act(() => (tower.props?.onSelect as (s: number) => void)(9))
+    expect(within(screen.getByTestId('pod-action')).queryByRole('button', { name: 'Mark harvested' })).toBeNull()
+    expect(within(screen.getByTestId('pod-action')).getByText('View on camera').closest('a')?.getAttribute('href')).toBe('/cameras')
+    act(() => (tower.props?.onSelect as (s: number) => void)(1))
+    expect(screen.getByTestId('pod-action').textContent).toBe('Edit on Grow')
   })
 
   it('gives the tower each pod\'s trend and notes for its callout, links the picked one to Grow, and unpicks it on a second click', () => {

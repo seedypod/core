@@ -73,6 +73,29 @@ export const STATUS_TOKEN: Record<PodStatus, string> = {
   empty: 'var(--text-3)',
 }
 
+/**
+ * What a pod shows as, most urgent first: needing attention, then ready (by
+ * status or the harvest outlook), then due soon, else its status.
+ */
+export type PodShown = 'attention' | 'ready' | 'soon' | 'growing' | 'seeded' | 'empty'
+export function podShown(p: { status: PodStatus, harvest?: { state: string } | null }): PodShown {
+  if (p.status === 'attention') return 'attention'
+  if (p.status === 'empty') return 'empty'
+  if (p.status === 'harvest' || p.harvest?.state === 'ready') return 'ready'
+  if (p.harvest?.state === 'soon') return 'soon'
+  return p.status === 'seeded' ? 'seeded' : 'growing'
+}
+export const SHOWN_LABEL: Record<PodShown, string> = { attention: 'Needs attention', ready: 'Ready to harvest', soon: 'Harvest soon', growing: 'Growing', seeded: 'Seeded', empty: 'Empty' }
+export const SHOWN_TOKEN: Record<PodShown, string> = { attention: STATUS_TOKEN.attention, ready: STATUS_TOKEN.harvest, soon: STATUS_TOKEN.harvest, growing: STATUS_TOKEN.growing, seeded: STATUS_TOKEN.seeded, empty: STATUS_TOKEN.empty }
+
+/** "now", "5 h", "2 d": how long since an ISO time. */
+export function heldFor(since: string | null | undefined, now: Date = new Date()): string | null {
+  const t = since ? Date.parse(since) : Number.NaN
+  if (Number.isNaN(t)) return null
+  const h = (now.getTime() - t) / 3_600_000
+  return h < 1 ? 'now' : h < 24 ? `${Math.floor(h)} h` : `${Math.floor(h / 24)} d`
+}
+
 /** Days a leafy green or herb takes from planting to its first harvest, roughly. */
 const DAYS_TO_HARVEST = 35
 

@@ -33,6 +33,14 @@ export function seedDemo(store: Store, hal: HalClient, now = new Date()): void {
     store.pods.update(slot, { plant, plantedAt: started.toISOString().slice(0, 10), status, notes: slot === 9 ? 'Yellowing lower leaves — check nutrients' : '' }, now.toISOString())
   }
 
+  // Harvest windows for some of the crops, as an agent would fill them in (ADR-0022); the rest lean on the camera.
+  const profile = (name: string, harvestMinDays: number, harvestMaxDays: number, targetCover: number) => store.plants.upsert({ name, harvestMinDays, harvestMaxDays, targetCover, notes: '', source: 'agent' }, now.toISOString())
+  profile('Arugula', 17, 25, 0.4)
+  profile('Basil', 25, 35, 0.35)
+  profile('Kale', 30, 45, 0.45)
+  profile('Bok Choy', 30, 40, 0.45)
+  profile('Cilantro', 21, 30, 0.3)
+
   // A week of telemetry at 15-min resolution with a daily rhythm.
   const pts: TelemetryPoint[] = []
   for (let m = 7 * 1440; m >= 0; m -= 15) {
