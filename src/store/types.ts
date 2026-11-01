@@ -91,6 +91,26 @@ export interface Pod {
   status: PodStatus
   notes: string
   updatedAt: string
+  /** When the status last changed. */
+  statusSince: string | null
+  /** The last time the pod was cut (ADR-0022). */
+  lastHarvestAt: string | null
+}
+
+/** A plant profile's key: its name trimmed and in lower case, so "Basil " and "basil" are one profile. */
+export const profileKey = (name: string): string => name.trim().toLowerCase()
+
+/** Per-crop harvest knowledge (ADR-0022); every field but the name is optional. */
+export interface PlantProfile {
+  /** The name in lower case, trimmed: what pods are matched by. */
+  key: string
+  name: string
+  harvestMinDays: number | null
+  harvestMaxDays: number | null
+  targetCover: number | null
+  notes: string
+  source: 'user' | 'agent'
+  updatedAt: string
 }
 
 export interface Capture { id: string, camera: 'upper' | 'lower', ts: string, path: string, bytes: number }
@@ -157,7 +177,13 @@ export interface Store {
   }
   pods: {
     list(): Pod[]
-    update(slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt'>>, ts: string): Pod
+    /** A changed status also moves `statusSince` to `ts`. */
+    update(slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt' | 'statusSince'>>, ts: string): Pod
+  }
+  plants: {
+    list(): PlantProfile[]
+    upsert(p: Omit<PlantProfile, 'key' | 'updatedAt'>, ts: string): PlantProfile
+    remove(name: string): boolean
   }
   captures: {
     add(c: Capture): void

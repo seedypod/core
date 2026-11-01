@@ -9,8 +9,8 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
-import { DEFAULT_SETTINGS } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import { DEFAULT_SETTINGS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
   /** File path or ':memory:'. */
@@ -56,7 +56,7 @@ export class SqliteStore implements Store {
     const now = new Date().toISOString()
     this.db.insert(t.deviceSettings).values({ id: 1, ...DEFAULT_SETTINGS, updatedAt: now }).onConflictDoNothing().run()
     for (let slot = 1; slot <= podCount; slot++) {
-      this.db.insert(t.pods).values({ slot, status: 'empty', notes: '', updatedAt: now }).onConflictDoNothing().run()
+      this.db.insert(t.pods).values({ slot, status: 'empty', notes: '', updatedAt: now, statusSince: now }).onConflictDoNothing().run()
     }
   }
 
@@ -151,11 +151,24 @@ export class SqliteStore implements Store {
 
   pods = {
     list: (): Pod[] => this.db.select().from(t.pods).orderBy(asc(t.pods.slot)).all(),
-    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt'>>, ts: string): Pod => {
-      const r = this.db.update(t.pods).set({ ...patch, updatedAt: ts }).where(eq(t.pods.slot, slot)).returning().get()
+    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt' | 'statusSince'>>, ts: string): Pod => {
+      const prev = this.db.select().from(t.pods).where(eq(t.pods.slot, slot)).get()
+      if (!prev) throw new Error(`no pod ${slot}`)
+      const moved = patch.status !== undefined && patch.status !== prev.status
+      const r = this.db.update(t.pods).set({ ...patch, updatedAt: ts, ...(moved ? { statusSince: ts } : {}) }).where(eq(t.pods.slot, slot)).returning().get()
       if (!r) throw new Error(`no pod ${slot}`)
       return r
     },
+  }
+
+  plants = {
+    list: (): PlantProfile[] => this.db.select().from(t.plantProfiles).orderBy(asc(t.plantProfiles.key)).all(),
+    upsert: (p: Omit<PlantProfile, 'key' | 'updatedAt'>, ts: string): PlantProfile => {
+      const row = { ...p, key: profileKey(p.name), updatedAt: ts }
+      this.db.insert(t.plantProfiles).values(row).onConflictDoUpdate({ target: t.plantProfiles.key, set: row }).run()
+      return row
+    },
+    remove: (name: string): boolean => this.db.delete(t.plantProfiles).where(eq(t.plantProfiles.key, profileKey(name))).run().changes > 0,
   }
 
   captures = {
