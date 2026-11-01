@@ -3,6 +3,7 @@ type: "Decision record"
 title: "ADR 0022: Harvest outlook from the camera, with optional plant profiles"
 description: "Each planted pod gets a harvest state (ready, soon, growing) led by camera leaf cover against a target and its rate of change; optional per-crop profiles add a window in days and their own target, and agents can fill them in over MCP."
 status: "stable"
+generated: {"by": "claude/opus-5.5", "at": "2026-11-01T06:54:02+00:00"}
 sources: [{"resource": "/adr/0019-pluggable-capture-analysis.md", "title": "ADR 0019: Pluggable capture analysis"}, {"resource": "/adr/0011-mcp-and-mhs.md", "title": "ADR 0011: MCP and the Model Hardware Standard"}]
 ---
 
