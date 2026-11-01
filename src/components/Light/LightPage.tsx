@@ -41,7 +41,8 @@ export function LightPage() {
             label="Brightness"
           />
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-fg-3">
+        {/* On a surface of its own: the backdrop's glow sits right under this line. */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 self-start rounded-ctl bg-surface/75 px-3 py-2 text-[13px] text-fg-2 backdrop-blur-md">
           <span>
             {o?.source === 'manual'
               ? `Your change holds until ${new Date(o.manualUntil ?? '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, then the schedule or Autopilot takes over.`
@@ -49,7 +50,7 @@ export function LightPage() {
                 ? 'Autopilot is setting the light. A change here holds for 30 minutes.'
                 : 'Following the schedule. A change here holds for 30 minutes.'}
           </span>
-          {o?.source === 'manual' && <Button size="sm" variant="ghost" disabled={resume.isPending} onClick={() => resume.mutate()}>Resume</Button>}
+          {o?.source === 'manual' && <Button size="sm" disabled={resume.isPending} onClick={() => resume.mutate()}>Resume</Button>}
         </div>
       </Card>
 
