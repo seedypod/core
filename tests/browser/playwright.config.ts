@@ -13,7 +13,8 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:3218',
     // Local override for machines with a system Chromium; CI installs Playwright's own.
-    ...(process.env.PW_CHROMIUM ? { launchOptions: { executablePath: process.env.PW_CHROMIUM } } : {}),
+    // Software WebGL, so the 3D tower renders headless; PW_CHROMIUM points at a system Chromium.
+    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'], ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}) },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

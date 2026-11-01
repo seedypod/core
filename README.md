@@ -35,7 +35,7 @@ A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seed
 
 - **Light and water:** light curves and pump cycles, with a 30-minute manual hold.
 - **Autopilot:** WHEN/IF/THEN rules over live readings. Rules run as dry-runs until you arm them, and a backtest shows what one would have done.
-- **Grow tracking:** grow cycles with reminders, a 30-pod layout, and camera captures with per-pod growth trends.
+- **Grow tracking:** grow cycles with reminders, the tower in 3D (pods colored by status and sized by measured growth, the tank's water level, the light bars at their level) or as a table, and camera captures with per-pod growth trends.
 - **Probes:** add pH, EC and water-temperature probes from the app, with guided calibration.
 - **Integrations:** Home Assistant over MQTT, MCP for agents, optional capture mirroring to S3-compatible storage, and dataset export.
 - **Wi-Fi setup:** hold the button for 10 seconds to start a setup hotspot.
