@@ -193,6 +193,7 @@
   --toggle-on-knob: var(--lp-ink-0);
   --overlay: rgba(0, 0, 0, 0.62);
   --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
 }
 
 [data-theme="light"] {
@@ -346,17 +347,10 @@ option {
   color: var(--text-1);
 }
 
-/* Dark scrollbar for WebKit browsers */
-.dark ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.dark ::-webkit-scrollbar-track {
-  background: transparent;
-}
-.dark ::-webkit-scrollbar-thumb {
-  background: var(--border-2);
-  border-radius: 3px;
+/* Thin scrollbar on a clear track, so a scrolling panel doesn't get a white gutter */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-3) 60%, transparent) transparent;
 }
 
 /* Autofill dark styling — prevent white flash on autocomplete */

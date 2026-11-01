@@ -103,7 +103,7 @@ describe('TowerView', () => {
     mounted.at = { x: 200, y: 300 }
     act(() => mounted.opts?.onRender?.())
     const harvest = screen.getByRole('button', { name: 'Pod 1: Ready to harvest' })
-    expect(harvest.style.left).toBe('216px')
+    expect(harvest.style.left).toBe('222px')
     expect(screen.getByRole('button', { name: 'Pod 2: Needs attention' }).querySelector('.motion-safe\\:animate-ping')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Pod 3/ })).toBeNull()
     act(() => harvest.click())
@@ -118,7 +118,7 @@ describe('TowerView', () => {
     expect(attention.querySelector('.motion-safe\\:animate-ping')).toBeNull()
     const callout = screen.getByRole('group', { name: 'Pod 2' })
     expect(callout.textContent).toContain('Needs attention')
-    expect(callout.previousElementSibling?.querySelector('polyline')?.getAttribute('points')).toMatch(/^216,284 /)
+    expect(callout.previousElementSibling?.querySelector('polyline')?.getAttribute('points')).toMatch(/^222,278 /)
     expect(callout.previousElementSibling?.querySelector('circle')).toBeNull()
   })
 
@@ -172,15 +172,15 @@ describe('PodCallout', () => {
     const pod = { slot: 4, status: 'attention' as const, plant: 'Kale', green: 0.2 }
     const { rerender } = render(<PodCallout pod={pod} at={{ x: 600, y: 400 }} width={1200} height={800} />)
     // Right of centre: the line runs from the flag up and right, and the card starts where it ends.
-    expect(document.querySelector('polyline')?.getAttribute('points')).toBe('616,384 652,336 740,336')
-    expect([box().left, box().top]).toEqual(['740px', '314px'])
+    expect(document.querySelector('polyline')?.getAttribute('points')).toBe('622,378 658,330 746,330')
+    expect([box().left, box().top]).toEqual(['746px', '308px'])
     // No room on the right: it sits to the left, anchored by its right edge.
     rerender(<PodCallout pod={pod} at={{ x: 900, y: 400 }} width={1000} height={800} />)
-    expect(document.querySelector('polyline')?.getAttribute('points')).toBe('916,384 880,336 792,336')
-    expect([box().right, box().left]).toEqual(['208px', ''])
+    expect(document.querySelector('polyline')?.getAttribute('points')).toBe('922,378 886,330 798,330')
+    expect([box().right, box().left]).toEqual(['202px', ''])
     // Near the top, the line runs down so the card clears the chips.
     rerender(<PodCallout pod={pod} at={{ x: 300, y: 80 }} width={1000} height={800} />)
-    expect(document.querySelector('polyline')?.getAttribute('points')).toBe('316,64 352,112 440,112')
+    expect(document.querySelector('polyline')?.getAttribute('points')).toBe('322,58 358,106 446,106')
   })
 
   it('keeps clear of a panel on the right, centring on the tower in what is left', () => {
