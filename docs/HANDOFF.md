@@ -44,6 +44,7 @@ The repo moved from `ng/leafypod` to `seedypod/core` (GitHub redirects the old U
 
 ```sh
 pnpm install && pnpm dev                 # core :3000 (simulator), web :5173
+pnpm dev:sim                             # the same, seeded with the demo's week of history (./data/sim)
 pnpm test · pnpm tsc · pnpm lint         # TS checks
 pnpm hal:test                            # Rust
 NODE_ENV=production CI=1 pnpm build && pnpm test:browser   # e2e (PW_CHROMIUM=<path> to use a system Chromium)

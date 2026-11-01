@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "concurrently -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "tsx watch server/index.ts",
+    "dev:sim": "SEED_DEMO=1 DATA_DIR=./data/sim SIM_TIME_SCALE=60 pnpm dev",
     "dev:web": "vite --config web/vite.config.ts",
     "build": "pnpm build:web && pnpm build:server",
     "build:web": "vite build --config web/vite.config.ts",

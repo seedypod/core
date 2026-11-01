@@ -26,4 +26,4 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 - `sudo i2cdetect -y 1` — expect 0x40 (INA219), 0x48 (PCT2075), and 0x38 (DHT20, 3.0+). The AM2320 (1.0/2.0, 0x5C) does **not** answer `i2cdetect`.
 - A pump that refuses to start with `fault: "dry-run"` is latched: refill, then acknowledge from the UI, HA, or `POST /api/alerts/{id}/acknowledge` (the id is in `GET /api/alerts`). A doser stuck on `fault: "lockout"` works the same way through the `dose_fault` alert.
 - `mosquitto_sub -t 'seedypod/#' -v` shows everything `hald` publishes.
-- Simulate without hardware: `hald --sim --time-scale 60` and `HAL_MQTT_URL= pnpm dev`.
+- Simulate without hardware: `pnpm dev` runs core against an in-process simulator (no `HAL_MQTT_URL`), with the web UI on :5173. `pnpm dev:sim` does the same with a week of seeded history, pods, a grow cycle and Autopilot rules (`SEED_DEMO=1`, data in `./data/sim`, simulated time at 60×); delete `./data/sim` to start over. For the full chain, run `hald --sim --time-scale 60` and point core at it with `HAL_MQTT_URL`.

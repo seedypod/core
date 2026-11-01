@@ -4,12 +4,12 @@
  * camera frames (SVGs standing in for JPEGs). Deterministic so the demo looks
  * the same every load.
  */
-import type { SimHal } from '../hardware/sim'
+import type { HalClient } from '../hardware/types'
 import type { AnalysisRow, Store, TelemetryPoint } from '../store/types'
 
 const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian Kale', 'Cherry Tomato', 'Thai Basil', 'Mint', 'Swiss Chard', 'Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
 
-export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
+export function seedDemo(store: Store, hal: HalClient, now = new Date()): void {
   const day = 86_400_000
   const started = new Date(now.getTime() - 19 * day)
   store.settings.update({ unitName: 'Kitchen Gardyn', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', captureIntervalMin: 60, setupComplete: true })
@@ -72,6 +72,17 @@ export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
 
   // Put the sim in a state that matches the story.
   void hal.setActuator('light', { on: true, level: 85 })
+}
+
+/**
+ * `SEED_DEMO=1` on the server: the same story in a real database, so the
+ * simulator has history to test against (backups, restores, charts). Only a
+ * database nobody has set up is seeded, so a restart never doubles it.
+ */
+export function seedIfFresh(store: Store, hal: HalClient, now = new Date()): boolean {
+  if (store.settings.get().setupComplete || store.grow.current()) return false
+  seedDemo(store, hal, now)
+  return true
 }
 
 function frameSvg(camera: 'upper' | 'lower', dayAge: number): string {
