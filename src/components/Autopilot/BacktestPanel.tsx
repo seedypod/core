@@ -1,6 +1,6 @@
 import { History } from 'lucide-react'
 import { useState } from 'react'
-import { LineChart } from '@/src/components/charts/LineChart'
+import { TimeChart } from '@/src/components/charts/TimeChart'
 import { Button, Card, CardHeader, InlineError } from '@/src/components/ds/core'
 import { SegmentedControl } from '@/src/components/ds/forms'
 import type { RuleInput } from '@/src/autopilot/schema'
@@ -43,7 +43,7 @@ export function BacktestPanel({ id, rule }: { id?: number, rule?: Omit<RuleInput
           </p>
           {r.summary.disabledAt && <InlineError>{`The runaway guard would have disabled it at ${when(r.summary.disabledAt)}.`}</InlineError>}
           {r.liveOnly.length > 0 && <p className="text-xs text-fg-3">{`Not recorded, so unknown here: ${r.liveOnly.join(', ')}.`}</p>}
-          {series.length > 0 && <LineChart series={series} height={140} formatX={x => new Date(x).toLocaleDateString()} formatY={y => String(Math.round(y * 100) / 100)} />}
+          {series.length > 0 && <TimeChart series={series} height={140} formatX={x => new Date(x).toLocaleDateString()} formatY={y => String(Math.round(y * 100) / 100)} />}
           {fired.size > 0 && (
             <ul className="flex max-h-48 flex-col gap-1 overflow-auto font-mono text-[12px] text-fg-2" aria-label="Backtest fires">
               {r.fires.slice(0, 50).map(f => (

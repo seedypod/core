@@ -1,7 +1,7 @@
 import { Download, RefreshCw, ScanEye, Star } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useState } from 'react'
-import { LineChart } from '@/src/components/charts/LineChart'
+import { TimeChart } from '@/src/components/charts/TimeChart'
 import { Badge, Button, Card, CardHeader, InlineError, SectionLabel } from '@/src/components/ds/core'
 import { SegmentedControl, SelectValue, Toggle } from '@/src/components/ds/forms'
 import { PageHeader, SettingRow } from '@/src/components/ds/layout'
@@ -91,7 +91,7 @@ function ComparePod({ slot }: { slot: number }) {
   const series = (cmp.data ?? []).map(s => ({ name: key(s), points: s.points.map(p => ({ x: Date.parse(p.ts), y: p.value })) }))
   return (
     <Card>
-      <LineChart series={series} height={180} yMin={0} yMax={1} formatY={pct} formatX={x => new Date(x).toLocaleDateString()} />
+      <TimeChart series={series} height={180} yMin={0} yMax={1} formatY={pct} formatX={x => new Date(x).toLocaleDateString()} />
       {series.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           {cmp.data?.map(s => (

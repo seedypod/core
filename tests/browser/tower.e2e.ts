@@ -5,6 +5,7 @@ test('grow: the tower renders in 3D, a pod picked on it opens in the side panel'
   page.on('pageerror', e => errors.push(e.message))
   await page.request.patch('/api/pods/5', { data: { plant: 'Cherry Tomato', status: 'attention', notes: 'leaf curl' } })
   await page.goto('/grow')
+  await page.getByRole('tab', { name: 'Tower' }).click()
   const tower = page.getByTestId('tower-3d')
   await expect(tower).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
   await expect(tower.locator('canvas')).toBeVisible()

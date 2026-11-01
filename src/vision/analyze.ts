@@ -14,7 +14,15 @@ export function decodeJpeg(bytes: Uint8Array): Rgba | null {
   }
 }
 
-export interface PodTrend { slot: number, green: number | null, verdict: 'growing' | 'stalled' | 'declining' | 'unknown', slope: number, samples: number }
+export interface PodTrend {
+  slot: number
+  green: number | null
+  verdict: 'growing' | 'stalled' | 'declining' | 'unknown'
+  slope: number
+  samples: number
+  /** The last dozen measurements, oldest first, for a sparkline. */
+  recent: number[]
+}
 
 /** Growth verdict per pod from one analyser's green fraction (the primary one unless named). */
 export function podTrends(store: Store, slots = 30, analyzer = store.settings.get().primaryAnalyzer): PodTrend[] {
@@ -22,7 +30,7 @@ export function podTrends(store: Store, slots = 30, analyzer = store.settings.ge
   for (let slot = 1; slot <= slots; slot++) {
     const series = store.analyses.series({ analyzer, slot, metric: 'green_fraction', limit: 48 }).map(p => ({ ts: p.ts, slot, green: p.value }))
     const t = growthTrend(series)
-    out.push({ slot, green: series.at(-1)?.green ?? null, verdict: t.verdict, slope: Math.round(t.slope * 1000) / 1000, samples: series.length })
+    out.push({ slot, green: series.at(-1)?.green ?? null, verdict: t.verdict, slope: Math.round(t.slope * 1000) / 1000, samples: series.length, recent: series.slice(-12).map(p => Math.round(p.green * 1000) / 1000) })
   }
   return out
 }

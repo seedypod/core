@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button, Card, CardHeader, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
 import { SegmentedControl } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
-import { fmtDay, LineChart } from '@/src/components/charts/LineChart'
+import { TrendCard } from '@/src/components/charts/TrendCard'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { trpc } from '@/src/utils/trpc'
 
@@ -15,8 +15,6 @@ export function WaterPage() {
   const pump = trpc.pump.get.useQuery()
   const sensors = trpc.sensors.latest.useQuery()
   const system = trpc.system.info.useQuery()
-  const level = trpc.telemetry.history.useQuery({ sensor: 'water_level_pct', hours: 24 * 7, maxPoints: 300 })
-  const power = trpc.telemetry.history.useQuery({ sensor: 'pump_w', hours: 24 * 7, maxPoints: 300 })
   const runs = trpc.schedules.recentRuns.useQuery()
   const runOnce = trpc.pump.runOnce.useMutation({ onSuccess: () => utils.pump.invalidate() })
   const stop = trpc.pump.stop.useMutation({ onSuccess: () => utils.pump.invalidate() })
@@ -46,16 +44,7 @@ export function WaterPage() {
         </div>
         {runOnce.error && <InlineError className="mt-2">{runOnce.error.message}</InlineError>}
         {limits && (
-          <p className="mt-2 text-[12px] text-fg-3">
-            Hardware limits: max run
-            {limits.pumpMaxRunS}
-            s · max duty
-            {limits.pumpMaxDuty}
-            % · low-water refuse at
-            {limits.waterLowCm ?? '—'}
-            {' '}
-            cm.
-          </p>
+          <p className="mt-2 text-[12px] text-fg-3">{`Hardware limits: runs of at most ${limits.pumpMaxRunS} s at up to ${limits.pumpMaxDuty}% duty; the pump won't start below ${limits.waterLowCm ?? '—'} cm of water.`}</p>
         )}
       </Card>
 
@@ -66,10 +55,11 @@ export function WaterPage() {
         <Metric label="Supply" value={fmt(s.pump_v)} icon={Zap} />
       </div>
 
-      <SectionLabel>Tank level, 7 days</SectionLabel>
-      <Card><LineChart height={160} yMin={0} yMax={100} fill formatX={fmtDay} formatY={y => `${Math.round(y)}%`} series={[{ name: 'Tank', color: 'var(--accent-water)', points: (level.data ?? []).map(p => ({ x: Date.parse(p.ts), y: p.value })) }]} /></Card>
-      <SectionLabel>Pump power, 7 days</SectionLabel>
-      <Card><LineChart height={120} yMin={0} formatX={fmtDay} formatY={y => `${y.toFixed(1)} W`} series={[{ name: 'Pump W', color: 'var(--status-ok)', points: (power.data ?? []).map(p => ({ x: Date.parse(p.ts), y: p.value })) }]} /></Card>
+      <SectionLabel>History</SectionLabel>
+      <div className="grid gap-3 min-[900px]:grid-cols-2">
+        <TrendCard sensor="water_level_pct" title="Tank level" color="var(--chart-water)" latest={s.water_level_pct} icon={Droplets} defaultHours="168" yMin={0} yMax={100} />
+        <TrendCard sensor="pump_w" title="Pump power" color="var(--status-ok)" latest={s.pump_w} icon={Zap} defaultHours="24" yMin={0} />
+      </div>
 
       <SectionLabel>Recent scheduled runs</SectionLabel>
       <Card>

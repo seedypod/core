@@ -24,7 +24,7 @@ beforeEach(() => {
   for (const f of Object.values(calls)) f.mockReset()
   data.set('light', { on: true, level: 80, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null })
   data.set('schedules', [])
-  data.set('hours', { hours: 1200, pctUsed: 3 })
+  data.set('hours', { hours: 1200, ratedHours: 25000, pctUsed: 4.8 })
 })
 afterEach(cleanup)
 
@@ -35,7 +35,8 @@ describe('LightPage: who controls the light', () => {
     expect(screen.getByText(/Your change holds until/)).toBeTruthy()
     fireEvent.click(screen.getByText('Resume'))
     expect(calls.resume).toHaveBeenCalled()
-    expect(screen.getByText('LED hours: 1,200 (3% of rated life).')).toBeTruthy()
+    expect(screen.getByTestId('led-hours').textContent).toBe('1,200 of 25,000 rated hours')
+    expect(screen.getByText('95%')).toBeTruthy()
   })
 
   it('says when Autopilot or the schedule is in charge', () => {

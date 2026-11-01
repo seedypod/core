@@ -34,6 +34,7 @@ vi.mock('@/src/utils/trpc', () => ({
     useUtils: () => ({ devices: { invalidate }, system: { invalidate }, sensors: { invalidate } }),
     devices: { list: { useQuery: () => q.devices }, addSensor: { useMutation: useMutation('addSensor') }, removeSensor: { useMutation: useMutation('removeSensor') } },
     sensors: { latest: { useQuery: () => q.latest }, calibrate: { useMutation: useMutation('calibrate') } },
+    telemetry: { history: { useQuery: () => ({ data: [{ ts: '2026-10-31T10:00:00Z', value: 21 }, { ts: '2026-10-31T11:00:00Z', value: 23 }], isLoading: false, error: null }) } },
   },
 }))
 
@@ -83,8 +84,11 @@ describe('SensorsPage', () => {
     expect(screen.getAllByText('Built-in')).toHaveLength(2)
     expect(screen.getAllByText('Added')).toHaveLength(1)
     expect(screen.getByText('no device at 0x40')).toBeTruthy()
-    expect(screen.getByText('6.1')).toBeTruthy()
-    expect(screen.getByText('22.5°C')).toBeTruthy()
+    // Each reading shows in its trend card and on its device.
+    expect(screen.getAllByText('6.1')).toHaveLength(2)
+    expect(screen.getAllByText('22.5°C')).toHaveLength(2)
+    expect(screen.getByText('Readings')).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'pH' })).toBeTruthy()
     // Only app-added probes can be calibrated or removed.
     expect(screen.getAllByText('Remove')).toHaveLength(1)
     expect(screen.getAllByText('Calibrate')).toHaveLength(1)
