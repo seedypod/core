@@ -8,6 +8,7 @@ import { RestoreClient, restoreCommand } from '../src/backup/restore'
 import { BackupService } from '../src/backup/service'
 import { backupPaths, nodeBackupSources } from '../src/backup/sources'
 import { MirroredSink } from '../src/camera/mirrorSink'
+import { seedIfFresh } from '../src/demo/seed'
 import { createHal } from '../src/hardware/factory'
 import { createEventBus } from '../src/lib/eventBus'
 import { connectBridge } from '../src/mqtt/bridge'
@@ -26,6 +27,8 @@ const DATA_DIR = process.env.DATA_DIR ?? './data'
 const events = createEventBus()
 const hal = await createHal({ events })
 const store = new SqliteStore({ url: process.env.DATABASE_URL ?? `${DATA_DIR}/seedypod.db` })
+// SEED_DEMO=1 fills a new database with the browser demo's story, for testing on the simulator.
+if (process.env.SEED_DEMO === '1' && seedIfFresh(store, hal)) console.log('seeded the demo data (SEED_DEMO=1)')
 // Capture analysis runs on a worker thread when the bundled worker sits next to this file (a build);
 // under `tsx watch` it runs inline.
 const workerScript = new URL('./visionWorker.js', import.meta.url)
