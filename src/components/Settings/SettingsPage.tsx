@@ -25,7 +25,7 @@ export function SettingsPage() {
     return () => clearTimeout(t)
   }, [loaded])
   if (!q.data) return null
-  return <SettingsForm key={q.data.updatedAt} s={q.data} coreVersion={info.data?.coreVersion} coreHost={info.data?.coreHost} system={info.data?.system ?? null} onSave={patch => update.mutate(patch)} saving={update.isPending} />
+  return <SettingsForm key={q.data.updatedAt} s={q.data} coreVersion={info.data?.coreVersion} coreHost={info.data?.coreHost ?? undefined} system={info.data?.system ?? null} onSave={patch => update.mutate(patch)} saving={update.isPending} />
 }
 
 function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {

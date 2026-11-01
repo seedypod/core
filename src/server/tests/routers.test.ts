@@ -1,4 +1,3 @@
-import { arch, hostname } from 'node:os'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -51,7 +50,8 @@ describe('routers', () => {
     const info = await c.system.info()
     expect(info.halOnline).toBe(true)
     expect(info.system?.limits.pumpMaxRunS).toBeGreaterThan(0)
-    expect(info.coreHost).toEqual({ hostname: hostname(), arch: arch() })
+    // Off the server entry (tests, the browser demo) there is no host to name.
+    expect(info.coreHost).toBeNull()
   })
 
   it('light.set clamps and broadcasts a mutation event', async () => {

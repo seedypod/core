@@ -1,6 +1,6 @@
 /**
- * scripts/install's board check: which machines can run core (Node ships for
- * 64-bit ARM and x86 only), with uname, getconf and the device-tree model faked.
+ * scripts/install's Node choice: 24 (.node-version) on 64-bit ARM and x86,
+ * 22 on 32-bit ARM, with uname, getconf and the device-tree model faked.
  */
 import { spawnSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -34,25 +34,29 @@ function check(o: { model?: string, arch: string, bits: number }) {
 }
 
 describe('scripts/install --check', () => {
-  it('passes a Pi Zero 2 W on 64-bit Raspberry Pi OS, and a 64-bit LAN box', () => {
-    expect(check({ model: 'Raspberry Pi Zero 2 W Rev 1.0', arch: 'aarch64', bits: 64 })).toEqual({ code: 0, out: '✓ Raspberry Pi Zero 2 W Rev 1.0 can run core', err: '' })
-    expect(check({ arch: 'x86_64', bits: 64 })).toMatchObject({ code: 0, out: '✓ x86_64 can run core' })
+  it('runs core on Node from .node-version where it ships: 64-bit ARM and x86', () => {
+    expect(check({ model: 'Raspberry Pi Zero 2 W Rev 1.0', arch: 'aarch64', bits: 64 })).toEqual({ code: 0, out: '✓ Raspberry Pi Zero 2 W Rev 1.0 runs core on Node from .node-version', err: '' })
+    expect(check({ arch: 'x86_64', bits: 64 })).toMatchObject({ code: 0, out: '✓ x86_64 runs core on Node from .node-version' })
   })
 
-  it('asks a 64-bit-capable Pi on a 32-bit OS to reflash', () => {
+  it('falls back to Node 22 on a 32-bit OS, and says reflashing gets back to 24', () => {
     for (const arch of ['armv7l', 'aarch64']) {
       const r = check({ model: 'Raspberry Pi Zero 2 W Rev 1.0', arch, bits: 32 })
-      expect(r.code).toBe(3)
-      expect(r.err).toContain('is running a 32-bit OS')
-      expect(r.err).toContain('Raspberry Pi OS Lite (64-bit)')
+      expect(r.code).toBe(0)
+      expect(r.out).toContain('runs core on Node 22.23.4 (armv7l): Node 24 has no 32-bit ARM build.')
+      expect(r.out).toContain('Reflash with 64-bit Raspberry Pi OS Lite to move to Node 24.')
     }
   })
 
-  it('turns the original Pi Zero W away, with the two ways forward', () => {
+  it('runs the original Pi Zero W on the ARMv6 build of Node 22, compiling SQLite there', () => {
     const r = check({ model: 'Raspberry Pi Zero W Rev 1.1', arch: 'armv6l', bits: 32 })
-    expect(r.code).toBe(3)
-    expect(r.err).toContain('This Raspberry Pi Zero W Rev 1.1 can\'t run core')
-    expect(r.err).toContain('swap in a Pi Zero 2 W')
-    expect(r.err).toContain('run scripts/install-hal here and core on another machine')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('runs core on Node 22.23.4 (armv6l)')
+    expect(r.out).toContain('A Pi Zero 2 W on 64-bit Raspberry Pi OS moves to Node 24.')
+    expect(r.out).toContain('better-sqlite3 has no ARMv6 build, so it compiles here')
+  })
+
+  it('turns away a CPU Node has no build for', () => {
+    expect(check({ arch: 'mips', bits: 32 })).toMatchObject({ code: 3, err: '✗ This mips machine can\'t run core: Node has no build for it.' })
   })
 })

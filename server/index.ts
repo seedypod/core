@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { arch, hostname } from 'node:os'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FsSink } from '../src/camera/fsSink'
@@ -49,7 +50,7 @@ const backup = new BackupService({
 })
 // Restores go through the root helper scripts/install puts in /usr/local/sbin (ADR-0021).
 const restore = new RestoreClient({ command: restoreCommand(), workDir: process.env.SEEDYPOD_RESTORE_WORK || '/var/lib/seedypod-restore', uploadDir: DATA_DIR })
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource() })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), host: { hostname: hostname(), arch: arch() } })
 
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 let bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {

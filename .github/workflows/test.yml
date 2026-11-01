@@ -28,6 +28,8 @@ jobs:
           - { name: "Lint", cmd: "CHANGED=$(git diff --name-only --diff-filter=d origin/${BASE_REF#refs/heads/}...HEAD -- '*.ts' '*.tsx' | head -200); if [ -n \"$CHANGED\" ]; then echo \"$CHANGED\" | xargs -d '\\n' pnpm eslint --; else echo 'No TS/TSX files changed'; fi" }
           - { name: "Typecheck", cmd: "pnpm build:web >/dev/null && pnpm tsc" }
           - { name: "Unit Tests", cmd: "pnpm test run --coverage --passWithNoTests" }
+          # .node-version (24) is preferred; 32-bit Pis (the original Pi Zero W) run core on Node 22, so it must keep working there.
+          - { name: "Unit Tests (Node 22)", node: "22", cmd: "NODE_ENV=production pnpm build && pnpm test run --passWithNoTests" }
           - { name: "Browser Tests", cmd: "NODE_ENV=production CI=1 pnpm build && pnpm test:browser" }
 
     steps:
@@ -44,6 +46,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
+          node-version: ${{ matrix.task.node }}
           node-version-file: '.node-version'
           cache: 'pnpm'
 
