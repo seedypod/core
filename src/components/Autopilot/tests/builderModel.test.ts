@@ -38,9 +38,9 @@ describe('builder model', () => {
 
   it('reads as a sentence', () => {
     const d: Draft = { ...emptyDraft(), name: 'x', sustainMin: 30, time: { start: '22:00', end: '06:00' }, cooldownMin: 60, actions: [{ kind: 'dose', doser: 'dose_1', durationS: 5 }, { kind: 'setLight', level: 40, holdMinutes: 90 }] }
-    expect(describeRule(toRule(d), labels)).toBe('Every 5 minutes, if pH is above 6.5 for 30 min and it\'s between 22:00 and 06:00, run doser 1 for 5 s, then set the light to 40 %, holding 90 min. At most once every 60 min.')
+    expect(describeRule(toRule(d), labels)).toBe('Every 5 minutes, if pH is above 6.5 for 30 min and it\'s between 22:00 and 06:00, run doser 1 for 5 s, then set the light to 40%, holding 90 min. At most once every 60 min.')
     const hot = toRule({ ...emptyDraft(), name: 'x', trigger: { kind: 'signalChange', signal: 'sensor.air_temp' }, rows: [{ signal: 'sensor.air_temp', agg: 'avg', windowMin: 15, op: '>=', value: 30 }], cooldownMin: null, actions: [{ kind: 'notify', message: 'hot' }, { kind: 'setPodStatus', slot: 7, status: 'attention' }, { kind: 'stopPump' }, { kind: 'runPump', durationS: 20 }] })
-    expect(describeRule(hot, labels)).toBe('When air temperature changes, if the average air temperature over 15 min is at least 30 °C, notify “hot”, then mark pod 7 as attention, then stop the pump, then run the pump for 20 s.')
+    expect(describeRule(hot, labels)).toBe('When air temperature changes, if the average air temperature over 15 min is at least 30°C, notify “hot”, then mark pod 7 as attention, then stop the pump, then run the pump for 20 s.')
     expect(describeRule({ ...toRule({ ...emptyDraft(), name: 'x', rows: [], cooldownMin: null }), trigger: { kind: 'timeOfDay', at: '07:00', days: ['saturday', 'sunday'] } }, labels)).toBe('At 07:00 on Sat, Sun, notify “pH is high”.')
   })
 })

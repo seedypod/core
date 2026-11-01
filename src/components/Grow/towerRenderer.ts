@@ -40,6 +40,8 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   canvas.style.width = '100%'
   canvas.style.height = '100%'
   canvas.style.touchAction = 'pan-y'
+  canvas.style.opacity = '0'
+  canvas.style.transition = 'opacity 450ms ease-out'
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.toneMapping = THREE.NeutralToneMapping
   renderer.shadowMap.enabled = true
@@ -76,15 +78,29 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
 
   let frame = 0
   let ready = false
-  const render = () => {
+  let last = 0
+  // Compile every shader off the main thread where the browser can (KHR_parallel_shader_compile),
+  // so the first frame doesn't freeze the page; the wireframe shows meanwhile.
+  let compiled = false
+  void (renderer.compileAsync?.(scene, camera) ?? Promise.resolve()).catch(() => undefined).then(() => {
+    compiled = true
+    requestRender()
+  })
+  const render = (time: number) => {
     frame = 0
-    if (document.hidden) return
+    if (document.hidden || !compiled) return
+    const dt = last ? Math.min(0.1, (time - last) / 1000) : 0
+    const moving = tower.tick(dt)
     renderer.render(scene, camera)
     if (!ready) {
       ready = true
       host.dataset.ready = 'true'
+      canvas.style.opacity = '1'
       o.onReady()
     }
+    // Keep drawing while the tank eases to its level or the pump runs.
+    last = moving ? time : 0
+    if (moving) requestRender()
   }
   const requestRender = () => {
     if (!frame) frame = requestAnimationFrame(render)

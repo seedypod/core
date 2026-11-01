@@ -1,5 +1,6 @@
 /** Pieces of the Autopilot screen: the mode control, the backtest sparkline, today's timeline and the activity log. */
 import { cn } from '@/lib/utils'
+import { withUnit } from '@/src/lib/sensorMeta'
 import { Card, CardHeader, StatusDot } from '@/src/components/ds/core'
 import { SegmentedControl } from '@/src/components/ds/forms'
 import { History, Sun } from 'lucide-react'
@@ -51,7 +52,7 @@ export function Sparkline({ s, width = 168, height = 36 }: { s: BacktestSummary,
     d += `${d && s.spark[i - 1] !== null ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)} `
   })
   const label = s.watch
-    ? `${s.watch.label} over ${s.days} days against ${s.watch.threshold}${s.watch.unit && s.watch.unit !== '1/0' ? ` ${s.watch.unit}` : ''}; ${s.wouldFire} would fire`
+    ? `${s.watch.label} over ${s.days} days against ${withUnit(s.watch.threshold, s.watch.unit === '1/0' ? '' : s.watch.unit)}; ${s.wouldFire} would fire`
     : `${s.wouldFire} would fire over ${s.days} days`
   return (
     <svg role="img" aria-label={label} width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="shrink-0 overflow-visible">

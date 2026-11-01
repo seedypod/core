@@ -20,15 +20,15 @@ describe('describe', () => {
   it('renders every condition kind with units where they help', () => {
     expect(describeCondition({ kind: 'or', conditions: [{ kind: 'compare', op: '!=', left: sig('alert.water_low'), right: lit(0) }, { kind: 'compare', op: '<=', left: sig('pod.7.green'), right: lit(0.2) }] }, labels)).toBe('alert: water low is not 0 or pod 7 green area is at most 0.2')
     expect(describeCondition({ kind: 'not', condition: { kind: 'onDays', days: ['monday', 'friday'] } }, labels)).toBe('not (it\'s Mon, Fri)')
-    expect(describeCondition({ kind: 'between', subject: sig('sensor.water_temp'), min: lit(18), max: lit(24) }, labels)).toBe('water temperature is between 18 and 24 °C')
+    expect(describeCondition({ kind: 'between', subject: sig('sensor.water_temp'), min: lit(18), max: lit(24) }, labels)).toBe('water temperature is between 18 and 24°C')
     expect(describeCondition({ kind: 'compare', op: '==', left: sig('grow.day'), right: lit(14) }, labels)).toBe('grow-cycle day is 14 days')
   })
 
   it('renders triggers and actions', () => {
     expect(describeTrigger({ kind: 'tick', everyMin: 1 }, labels)).toBe('Every minute')
     expect(describeTrigger({ kind: 'timeOfDay', at: '06:30' }, labels)).toBe('At 06:30')
-    expect(describeAction({ kind: 'setLight', level: lit(30), clamp: { min: 10, max: 60 }, mode: 'one-shot' }, labels)).toBe('set the light to 30 % (kept within 10–60 %), holding 60 min')
-    expect(describeAction({ kind: 'runPump', durationS: lit(20), level: 25 }, labels)).toBe('run the pump for 20 s at 25 %')
+    expect(describeAction({ kind: 'setLight', level: lit(30), clamp: { min: 10, max: 60 }, mode: 'one-shot' }, labels)).toBe('set the light to 30% (kept within 10–60%), holding 60 min')
+    expect(describeAction({ kind: 'runPump', durationS: lit(20), level: 25 }, labels)).toBe('run the pump for 20 s at 25%')
     expect(describeRule({ trigger: { kind: 'tick', everyMin: 1 }, conditions: { kind: 'and', conditions: [] }, actions: [{ kind: 'stopPump' }], cooldownMin: null }, labels)).toBe('Every minute, stop the pump.')
   })
 })

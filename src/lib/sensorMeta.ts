@@ -24,11 +24,17 @@ export const SENSOR_META: Record<SensorId, SensorMeta> = {
   water_temp: { label: 'Water temp', icon: Gauge, group: 'water-quality' },
 }
 
-/** `6.1 pH`, `22.5°C`, `—` when there is no reading. pH is unitless by convention. */
+/** A value and its unit: `22.5°C` and `53%` close up, `7 cm` and `3.1 W` spaced. */
+export function withUnit(value: number | string, unit: string): string {
+  if (!unit) return `${value}`
+  return `${value}${unit.startsWith('°') || unit === '%' ? unit : ` ${unit}`}`
+}
+
+/** `6.1`, `22.5°C`, `53%`, `—` when there is no reading. pH is unitless by convention. */
 export function formatReading(r: Pick<Reading, 'value' | 'unit'> | undefined): string {
   if (!r) return '—'
   if (r.unit === 'pH') return `${r.value}`
-  return `${r.value}${r.unit.startsWith('°') ? r.unit : ` ${r.unit}`}`
+  return withUnit(r.value, r.unit)
 }
 
 export const hexAddr = (a: number | null): string => (a === null ? '—' : `0x${a.toString(16).toUpperCase().padStart(2, '0')}`)

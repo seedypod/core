@@ -37,7 +37,7 @@ let host: HTMLDivElement
 
 beforeEach(() => {
   renders.count = 0
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number)
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16) as unknown as number)
   vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
   vi.stubGlobal('ResizeObserver', class {
     constructor(private cb: () => void) {}
@@ -59,7 +59,7 @@ afterEach(() => {
   delete document.documentElement.dataset.theme
 })
 
-const tick = () => new Promise(r => setTimeout(r, 5))
+const tick = () => new Promise(r => setTimeout(r, 40))
 const pointer = (type: string, x: number, y: number, buttons = 0) => {
   const e = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, buttons })
   Object.assign(e, { pointerId: 1, pointerType: 'mouse' })
@@ -102,7 +102,12 @@ describe('mountTower', () => {
     const before = renders.count
     m.update({ pods: allPods, waterPct: 50, lightLevel: 80, hovered: null, selected: 1 })
     await tick()
-    expect(renders.count).toBe(before + 1)
+    expect(renders.count).toBeGreaterThan(before)
+    // The tank eases to its level, then drawing stops until something changes.
+    await new Promise(r => setTimeout(r, 2500))
+    const settled = renders.count
+    await new Promise(r => setTimeout(r, 50))
+    expect(renders.count).toBe(settled)
     m.dispose()
     expect(host.querySelector('canvas')).toBeNull()
     expect(host.dataset.ready).toBeUndefined()

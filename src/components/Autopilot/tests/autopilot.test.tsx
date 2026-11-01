@@ -68,8 +68,8 @@ describe('AutopilotPage', () => {
   it('shows the status line, who owns the light, every rule in words with its mode', () => {
     render(<AutopilotPage />)
     expect(screen.getByTestId('automations-status').textContent).toBe('3 rules · 1 active · 1 dry-run')
-    expect(screen.getByText('Light: set by Tank low · 40 %')).toBeTruthy()
-    expect(screen.getByText('Every 5 minutes, if tank level is below 30 %, notify “top up”. At most once every 60 min.')).toBeTruthy()
+    expect(screen.getByText('Light: set by Tank low · 40%')).toBeTruthy()
+    expect(screen.getByText('Every 5 minutes, if tank level is below 30%, notify “top up”. At most once every 60 min.')).toBeTruthy()
     const mode = (name: string) => within(screen.getByRole('radiogroup', { name: `${name} mode` })).getAllByRole('radio').find(r => r.getAttribute('aria-checked') === 'true')?.textContent
     expect(mode('Tank low')).toBe('Active')
     expect(mode('Odd one')).toBe('Dry-run')
@@ -81,8 +81,8 @@ describe('AutopilotPage', () => {
 
   it('puts each rule\'s 7-day backtest on the list, with a sparkline of the watched signal', () => {
     render(<AutopilotPage />)
-    expect(screen.getByTestId('backtest-1').textContent).toBe('7-day backtest · 3 would fire · low 22 of 30 %')
-    expect(screen.getByRole('img', { name: 'Tank level over 7 days against 30 %; 3 would fire' })).toBeTruthy()
+    expect(screen.getByTestId('backtest-1').textContent).toBe('7-day backtest · 3 would fire · low 22 of 30%')
+    expect(screen.getByRole('img', { name: 'Tank level over 7 days against 30%; 3 would fire' })).toBeTruthy()
     expect(screen.getByTestId('backtest-2').textContent).toBe('backtesting…')
     expect(screen.getByTestId('backtest-3').textContent).toBe('7-day backtest · 0 would fire · no recorded pH')
   })
@@ -194,7 +194,7 @@ describe('RuleEditor', () => {
     fireEvent.click(dlg.getByText('Action'))
     fireEvent.change(dlg.getAllByLabelText('Action')[1] as HTMLElement, { target: { value: 'dose' } })
     fireEvent.change(dlg.getByLabelText('Seconds'), { target: { value: '4' } })
-    expect(dlg.getByLabelText('Rule preview').textContent).toBe('Every 5 minutes, if pH is above 6.5 or the average air temperature over 20 min is above 30 °C for 10 min and it\'s between 08:00 and 20:00, notify “pH is high”, then run doser 1 for 4 s. At most once every 30 min.')
+    expect(dlg.getByLabelText('Rule preview').textContent).toBe('Every 5 minutes, if pH is above 6.5 or the average air temperature over 20 min is above 30°C for 10 min and it\'s between 08:00 and 20:00, notify “pH is high”, then run doser 1 for 4 s. At most once every 30 min.')
     fireEvent.click(dlg.getByText('Save'))
     expect(calls.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Hot and dry', conditions: expect.objectContaining({ kind: 'and' }) }))
   })
@@ -215,7 +215,7 @@ describe('RuleEditor', () => {
     expect(dlg.getByLabelText('Rule preview').textContent).toMatch(/mark pod 7 as attention/)
     fireEvent.change(dlg.getByLabelText('Action'), { target: { value: 'setLight' } })
     fireEvent.change(dlg.getByLabelText('Hold minutes'), { target: { value: '45' } })
-    expect(dlg.getByLabelText('Rule preview').textContent).toMatch(/set the light to 50 %, holding 45 min/)
+    expect(dlg.getByLabelText('Rule preview').textContent).toMatch(/set the light to 50%, holding 45 min/)
     fireEvent.click(dlg.getByRole('button', { name: 'Remove condition' }))
     fireEvent.click(dlg.getByText('Backtest'))
     fireEvent.click(dlg.getByText('Run backtest'))
