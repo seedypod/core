@@ -47,19 +47,24 @@ function Spark({ values, color }: { values: number[], color: string }) {
   )
 }
 
-/** A pod that wants doing something about, pinned to it before anyone picks it. */
-function PodFlag({ pod, at, onSelect }: { pod: PodState, at: { x: number, y: number }, onSelect: (slot: number) => void }) {
+const isFlagged = (p: PodState) => p.status === 'harvest' || p.status === 'attention'
+/** Where a flag sits beside its pod's collar; a picked flagged pod's callout starts here. */
+const FLAG_OFFSET = { x: 16, y: -16 }
+
+/** A pod that wants doing something about, pinned to it whether or not it's picked; picked, it's ringed and its callout leads from it. */
+function PodFlag({ pod, at, picked, onSelect }: { pod: PodState, at: { x: number, y: number }, picked: boolean, onSelect: (slot: number) => void }) {
   const color = STATUS_TOKEN[pod.status]
   const Icon = pod.status === 'harvest' ? Scissors : TriangleAlert
   return (
     <button
       type="button"
       aria-label={`Pod ${pod.slot}: ${STATUS_LABEL[pod.status]}`}
+      aria-pressed={picked}
       onClick={() => onSelect(pod.slot)}
-      className="absolute z-[4] grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-[var(--shadow-dialog)]"
-      style={{ left: at.x + 16, top: at.y - 16, background: color }}
+      className={cn('absolute grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-[var(--shadow-dialog)]', picked ? 'z-[7] outline outline-2 outline-offset-2 outline-[var(--text-1)]' : 'z-[4]')}
+      style={{ left: at.x + FLAG_OFFSET.x, top: at.y + FLAG_OFFSET.y, background: color }}
     >
-      {pod.status === 'attention' && <span className="absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping" style={{ background: color }} />}
+      {pod.status === 'attention' && !picked && <span className="absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping" style={{ background: color }} />}
       <Icon size={11} strokeWidth={2.5} className="relative text-[var(--surface-card)]" />
     </button>
   )
@@ -71,8 +76,11 @@ function PodFlag({ pod, at, onSelect }: { pod: PodState, at: { x: number, y: num
  * and its status, marked when it wants doing something about. It sits outward
  * from the tower, on whichever side has room.
  */
-export function PodCallout({ pod, at, width, height, action }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, action?: ReactNode }) {
+export function PodCallout({ pod, at: collar, width, height, action }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, action?: ReactNode }) {
   const color = STATUS_TOKEN[pod.status]
+  const flagged = isFlagged(pod)
+  // A flagged pod's line leads from its flag, which marks it already; any other gets a dot on its collar.
+  const at = flagged ? { x: collar.x + FLAG_OFFSET.x, y: collar.y + FLAG_OFFSET.y } : collar
   const room = (side: number) => (side > 0 ? width - at.x : at.x) - 124
   let side = at.x > width / 2 ? 1 : -1
   if (room(side) < LABEL_W && room(-side) > room(side)) side = -side
@@ -85,12 +93,11 @@ export function PodCallout({ pod, at, width, height, action }: { pod: PodState, 
     typeof pod.ageDays === 'number' ? `Day ${Math.floor(pod.ageDays)}` : null,
     typeof pod.green === 'number' ? `${Math.round(pod.green * 100)}% green` : null,
   ].filter(Boolean).join(' · ')
-  const flagged = pod.status === 'harvest' || pod.status === 'attention'
   return (
     <>
       <svg className="pointer-events-none absolute inset-0 z-[5] size-full" aria-hidden="true">
         <polyline points={`${at.x},${at.y} ${elbow.x},${elbow.y} ${end.x},${end.y}`} fill="none" stroke="var(--text-2)" strokeWidth={1.25} />
-        <circle cx={at.x} cy={at.y} r={4.5} fill={color} stroke="var(--surface-card)" strokeWidth={1.5} />
+        {!flagged && <circle cx={at.x} cy={at.y} r={4.5} fill={color} stroke="var(--surface-card)" strokeWidth={1.5} />}
       </svg>
       <div
         data-testid="pod-callout"
@@ -209,7 +216,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   }, [podCount, preloaded])
 
   useEffect(() => {
-    pinned.current = pods.filter(p => p.slot === selected || p.status === 'harvest' || p.status === 'attention').map(p => p.slot)
+    pinned.current = pods.filter(p => p.slot === selected || isFlagged(p)).map(p => p.slot)
     mount.current?.update({ pods, waterPct, lightLevel, pumpOn, hovered, selected })
   }, [pods, waterPct, lightLevel, pumpOn, hovered, selected, ready])
 
@@ -223,9 +230,9 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
       <TowerWireframe pods={pods} podCount={podCount} fading={ready} />
       {!ready && <span className="sr-only" aria-live="polite">Loading the tower…</span>}
       {controls && <div className="absolute left-3 top-3 z-10 flex flex-wrap items-start gap-2">{controls}</div>}
-      {ready && anchors && pods.filter(p => p.slot !== selected && (p.status === 'harvest' || p.status === 'attention')).map((p) => {
+      {ready && anchors && pods.filter(isFlagged).map((p) => {
         const at = anchors.at.get(p.slot)
-        return at && <PodFlag key={p.slot} pod={p} at={at} onSelect={onSelect} />
+        return at && <PodFlag key={p.slot} pod={p} at={at} picked={p.slot === selected} onSelect={onSelect} />
       })}
       {pickedPod && ready && pickedAt && anchors && <PodCallout pod={pickedPod} at={pickedAt} width={anchors.width} height={anchors.height} action={podAction} />}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
