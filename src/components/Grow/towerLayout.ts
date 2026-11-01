@@ -101,9 +101,6 @@ export function plantForm(status: PodStatus, scale: number): PlantForm {
   return scale < 0.6 ? 'young' : 'bush'
 }
 
-/** Leaves shown for each form (the scene builds the most a full plant has). */
-export const LEAF_COUNT: Record<PlantForm, number> = { none: 0, sprout: 0, young: 3, bush: 6, full: 8 }
-
 export function ageDays(plantedAt: string | null | undefined, now: Date = new Date()): number | null {
   if (!plantedAt) return null
   const t = Date.parse(plantedAt)

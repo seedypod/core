@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { ageDays, LEAF_COUNT, plantForm, plantScale, podPlaces, towerShape } from '../towerLayout'
+import { ageDays, plantForm, plantScale, podPlaces, towerShape } from '../towerLayout'
 import { createTower, DARK_PALETTE, LIGHT_PALETTE, type PodState } from '../towerScene'
 
 describe('tower layout', () => {
@@ -42,8 +42,6 @@ describe('tower layout', () => {
     expect(plantForm('growing', 0.45)).toBe('young')
     expect(plantForm('attention', 0.8)).toBe('bush')
     expect(plantForm('harvest', 0.95)).toBe('full')
-    expect(LEAF_COUNT.young).toBeLessThan(LEAF_COUNT.bush)
-    expect(LEAF_COUNT.bush).toBeLessThan(LEAF_COUNT.full)
   })
 
   it('counts days since planting', () => {
@@ -91,15 +89,46 @@ describe('tower scene', () => {
     expect(collarColor(tower, 9)).toBe(DARK_PALETTE.status.attention)
     expect(collarColor(tower, 12)).toBe(DARK_PALETTE.status.growing)
     expect(podGroup(tower, 30).children[2]?.visible).toBe(false)
-    expect(podGroup(tower, 12).children[2]?.scale.x).toBeCloseTo(plantScale('growing', 0.4))
+    // Each stage's model is built to size; a measured plant scales a little around it.
+    expect(podGroup(tower, 12).children[2]?.scale.x).toBeCloseTo(plantScale('growing', 0.4) / 0.75)
     expect(podGroup(tower, 12).children[2]?.userData.form).toBe('bush')
-    expect(podGroup(tower, 1).children[2]?.children.filter(c => c.visible)).toHaveLength(LEAF_COUNT.full)
     tower.update({ ...state, pods: [{ slot: 3, status: 'seeded', plant: 'Dill' }] })
-    expect(podGroup(tower, 3).children[2]?.visible).toBe(false)
-    expect(podGroup(tower, 3).children[3]?.visible).toBe(true)
+    expect(podGroup(tower, 3).children[2]?.userData.form).toBe('sprout')
+    expect(podGroup(tower, 3).children[2]?.visible).toBe(true)
     tower.update(state)
     tower.update({ ...state, selected: 12 })
     expect(collarColor(tower, 12)).toBe(DARK_PALETTE.highlight)
+    tower.dispose()
+  })
+
+  it('grows each crop\'s own model, rebuilds it when the crop or stage changes, and yellows a sick one', () => {
+    const tower = createTower(THREE, 30)
+    const at = (slot: number, plant: string, status: 'seeded' | 'growing' | 'harvest' | 'attention') => ({ ...state, pods: [{ slot, status, plant, green: 0.5 }] })
+    const model = (slot: number) => podGroup(tower, slot).children[2]?.children[0] as THREE.Group
+    const meshes = (o: THREE.Object3D) => {
+      const out: THREE.Mesh[] = []
+      o.traverse(m => m instanceof THREE.Mesh && out.push(m))
+      return out
+    }
+    tower.update(at(5, 'Cherry Tomato', 'harvest'))
+    const tomato = model(5)
+    expect(meshes(tomato).some(m => m.userData.role === 'fruit')).toBe(true)
+    // Every mesh of the model picks its pod, and leaves the pickables when it's replaced.
+    expect(meshes(tomato).every(m => tower.pickables.includes(m) && tower.slotOf(m) === 5)).toBe(true)
+    tower.update(at(5, 'Cherry Tomato', 'harvest'))
+    expect(model(5)).toBe(tomato)
+    tower.update(at(5, 'Basil', 'harvest'))
+    expect(model(5)).not.toBe(tomato)
+    expect(meshes(tomato).some(m => tower.pickables.includes(m))).toBe(false)
+    const leaves = () => meshes(model(5)).filter(m => m.userData.role === 'leaf')
+    const sick = () => leaves().filter(m => (m.material as THREE.MeshStandardMaterial).color.getHexString() === DARK_PALETTE.leafSick.slice(1)).length
+    expect(sick()).toBe(0)
+    tower.update(at(5, 'Basil', 'attention'))
+    expect(sick()).toBe(Math.ceil(leaves().length / 2))
+    tower.update(at(5, 'Basil', 'harvest'))
+    expect(sick()).toBe(0)
+    tower.update({ ...state, pods: [] })
+    expect(model(5)).toBeUndefined()
     tower.dispose()
   })
 
