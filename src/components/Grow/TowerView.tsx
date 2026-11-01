@@ -89,10 +89,17 @@ export function PodCallout({ pod, at: collar, width, height, action }: { pod: Po
   const elbow = { x: at.x + side * 36, y: Math.min(height - 160, at.y + up * 48) }
   const end = { x: elbow.x + side * 88, y: elbow.y }
   const trend = pod.verdict && pod.verdict !== 'unknown' ? VERDICT[pod.verdict] : null
-  const facts = [
-    typeof pod.ageDays === 'number' ? `Day ${Math.floor(pod.ageDays)}` : null,
-    typeof pod.green === 'number' ? `${Math.round(pod.green * 100)}% green` : null,
-  ].filter(Boolean).join(' · ')
+  const stats: { label: string, value: ReactNode }[] = []
+  if (typeof pod.ageDays === 'number') stats.push({ label: 'Age', value: `${Math.floor(pod.ageDays)} d` })
+  if (typeof pod.green === 'number') stats.push({ label: 'Green', value: `${Math.round(pod.green * 100)}%` })
+  if (trend) {
+    stats.push({ label: 'Trend', value: (
+      <span className="flex items-center gap-1.5">
+        <Spark values={pod.recent ?? []} color={color} />
+        {trend}
+      </span>
+    ) })
+  }
   return (
     <>
       <svg className="pointer-events-none absolute inset-0 z-[5] size-full" aria-hidden="true">
@@ -104,29 +111,31 @@ export function PodCallout({ pod, at: collar, width, height, action }: { pod: Po
         role="group"
         aria-label={`Pod ${pod.slot}`}
         className={cn('absolute z-[6] flex max-w-[300px] flex-col gap-1.5 whitespace-nowrap rounded-xl border border-line-2 bg-surface/60 px-4 py-3 font-mono shadow-[var(--shadow-dialog)] backdrop-blur-xl backdrop-saturate-150', side > 0 ? 'items-start' : 'items-end')}
-        style={side > 0 ? { top: end.y - 24, left: end.x } : { top: end.y - 24, right: width - end.x }}
+        style={side > 0 ? { top: end.y - 40, left: end.x } : { top: end.y - 40, right: width - end.x }}
       >
+        {/* Which pod, what's in it and what state it's in; then how it's doing; then what to do. */}
+        <div className="text-[11px] uppercase tracking-wider text-fg-3">{`Pod ${pod.slot}`}</div>
         <div className="text-[17px] leading-6" style={{ color }}>{pod.plant ?? 'Empty'}</div>
-        {facts && <div className="text-[14px] text-fg">{facts}</div>}
-        {trend && (
-          <div className="flex items-center gap-1.5 text-[12px] text-fg-2">
-            <Spark values={pod.recent ?? []} color={color} />
-            {trend}
-          </div>
+        {pod.status !== 'empty' && (
+          <span
+            className={cn('rounded-full text-[11px]', flagged ? 'border px-2 py-px' : 'text-fg-2')}
+            style={flagged ? { color, borderColor: color, background: `color-mix(in srgb, ${color} 16%, transparent)` } : undefined}
+          >
+            {STATUS_LABEL[pod.status]}
+          </span>
         )}
-        <div className="flex items-center gap-2 text-[11px]">
-          {pod.status !== 'empty' && (
-            <span
-              className={cn('rounded-full px-2 py-px', flagged ? 'border' : 'text-fg-2')}
-              style={flagged ? { color, borderColor: color, background: `color-mix(in srgb, ${color} 16%, transparent)` } : undefined}
-            >
-              {STATUS_LABEL[pod.status]}
-            </span>
-          )}
-          <span className="text-fg-3">{`Pod ${pod.slot}`}</span>
-        </div>
-        {pod.notes && <div className="max-w-full truncate text-[12px] text-fg-3">{pod.notes}</div>}
-        {action && <div className="text-[12px]">{action}</div>}
+        {stats.length > 0 && (
+          <dl className={cn('mt-1.5 flex gap-5', side > 0 ? 'text-left' : 'text-right')}>
+            {stats.map(st => (
+              <div key={st.label} className="flex flex-col gap-0.5">
+                <dt className="text-[10px] uppercase tracking-wider text-fg-3">{st.label}</dt>
+                <dd className="text-[14px] text-fg">{st.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {pod.notes && <div className="mt-0.5 max-w-full truncate text-[12px] text-fg-2">{pod.notes}</div>}
+        {action && <div className="mt-2 w-full border-t border-line-2 pt-2.5 text-[12px]">{action}</div>}
       </div>
     </>
   )
@@ -216,14 +225,15 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   }, [podCount, preloaded])
 
   useEffect(() => {
-    pinned.current = pods.filter(p => p.slot === selected || isFlagged(p)).map(p => p.slot)
+    pinned.current = pods.filter(p => p.slot === selected || p.slot === hovered || isFlagged(p)).map(p => p.slot)
     mount.current?.update({ pods, waterPct, lightLevel, pumpOn, hovered, selected })
   }, [pods, waterPct, lightLevel, pumpOn, hovered, selected, ready])
 
   // The picked pod has its callout, so hovering it adds nothing.
-  const pod = hovered === null || hovered === selected ? null : pods.find(p => p.slot === hovered)
-  const pickedPod = selected === null ? null : pods.find(p => p.slot === selected)
-  const pickedAt = pickedPod ? anchors?.at.get(pickedPod.slot) : undefined
+  // Hovering a pod previews its callout, in place of the picked one's until the pointer moves off.
+  const shown = hovered ?? selected
+  const shownPod = shown === null ? null : pods.find(p => p.slot === shown)
+  const shownAt = shownPod ? anchors?.at.get(shownPod.slot) : undefined
   const partLabel = hover?.kind === 'part' && onPart ? partLabels?.[hover.part] : undefined
   return (
     <div ref={host} data-testid="tower-3d" className="relative h-[calc(100dvh-2.5rem)] min-h-[520px] w-full overflow-hidden rounded-xl border border-line bg-surface max-[900px]:h-[70dvh] max-[900px]:min-h-[440px]">
@@ -234,28 +244,13 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         const at = anchors.at.get(p.slot)
         return at && <PodFlag key={p.slot} pod={p} at={at} picked={p.slot === selected} onSelect={onSelect} />
       })}
-      {pickedPod && ready && pickedAt && anchors && <PodCallout pod={pickedPod} at={pickedAt} width={anchors.width} height={anchors.height} action={podAction} />}
+      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} action={shownPod.slot === selected ? podAction : undefined} />}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
         {status && <div className="pointer-events-auto flex flex-wrap items-start justify-end gap-2">{status}</div>}
-        {(pod || partLabel) && (
+        {partLabel && (
           <div className="rounded-ctl border border-line-2 bg-surface/95 px-3 py-2 text-sm shadow-[var(--shadow-dialog)]" role="status">
-            {pod
-              ? (
-                  <>
-                    <div className="font-mono text-[11px] text-fg-3">{`Pod ${pod.slot}`}</div>
-                    <div>{pod.plant ?? 'Empty'}</div>
-                    <div className="text-xs text-fg-2">
-                      {STATUS_LABEL[pod.status]}
-                      {typeof pod.green === 'number' ? ` · ${Math.round(pod.green * 100)}% green` : ''}
-                    </div>
-                  </>
-                )
-              : (
-                  <>
-                    <div>{partLabel}</div>
-                    <div className="text-xs text-fg-2">Click to adjust</div>
-                  </>
-                )}
+            <div>{partLabel}</div>
+            <div className="text-xs text-fg-2">Click to adjust</div>
           </div>
         )}
       </div>

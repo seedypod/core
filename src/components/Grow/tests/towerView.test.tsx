@@ -39,13 +39,22 @@ describe('TowerView', () => {
     await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
   })
 
-  it('names the hovered pod, and a part only where it has a control', async () => {
+  it('previews the hovered pod\'s callout in place of the picked one\'s, and names a part only where it has a control', async () => {
     const onPart = vi.fn()
-    const { rerender } = render(<TowerView pods={pods} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
-    await waitFor(() => expect(mounted.opts).not.toBeNull())
+    const { rerender } = render(<TowerView pods={pods} waterPct={null} lightLevel={0} selected={2} onSelect={vi.fn()} podAction={<a href="/grow">Edit on Grow</a>} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    mounted.at = { x: 200, y: 300 }
+    act(() => mounted.opts?.onRender?.())
+    expect(screen.getByRole('group').getAttribute('aria-label')).toBe('Pod 2')
     act(() => mounted.opts?.onHover({ kind: 'pod', slot: 1 }))
-    expect(screen.getByRole('status').textContent).toBe('Pod 1BasilGrowing · 42% green')
+    act(() => mounted.opts?.onRender?.())
     expect(mounted.updates.at(-1)?.hovered).toBe(1)
+    // One callout at a time, without the picked pod's link; no separate hover card.
+    expect(screen.getAllByRole('group').map(g => g.getAttribute('aria-label'))).toEqual(['Pod 1'])
+    expect(screen.queryByText('Edit on Grow')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+    act(() => mounted.opts?.onHover(null))
+    expect(screen.getByRole('group', { name: 'Pod 2' }).textContent).toContain('Edit on Grow')
     act(() => mounted.opts?.onHover({ kind: 'part', part: 'light' }))
     expect(screen.queryByRole('status')).toBeNull()
     rerender(<TowerView pods={pods} waterPct={null} lightLevel={0} onSelect={vi.fn()} onPart={onPart} partLabels={{ light: 'Grow light · off' }} onUnavailable={vi.fn()} />)
@@ -61,7 +70,7 @@ describe('TowerView', () => {
     mounted.at = { x: 120.4, y: 300 }
     act(() => mounted.opts?.onRender?.())
     const callout = screen.getByRole('group', { name: 'Pod 1' })
-    expect(callout.textContent).toBe('BasilDay 18 · 42% green↑ GainingGrowingPod 1pinch topsEdit on Grow')
+    expect(callout.textContent).toBe('Pod 1BasilGrowingAge18 dGreen42%Trend↑ Gainingpinch topsEdit on Grow')
     expect(callout.querySelector('polyline')?.getAttribute('points')).toMatch(/^2,16 /)
     expect(callout.previousElementSibling?.querySelector('circle')?.getAttribute('cx')).toBe('120')
     // The picked pod's hover adds nothing over its callout.
@@ -70,6 +79,7 @@ describe('TowerView', () => {
     mounted.at = null
     act(() => mounted.opts?.onRender?.())
     expect(screen.queryByTestId('pod-callout')).toBeNull()
+    act(() => mounted.opts?.onHover(null))
     mounted.at = { x: 50, y: 60 }
     rerender(<TowerView pods={trended} waterPct={null} lightLevel={0} selected={null} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
     act(() => mounted.opts?.onRender?.())
@@ -142,8 +152,8 @@ describe('PodCallout', () => {
     const { rerender } = render(<PodCallout pod={pod} at={{ x: 600, y: 400 }} width={1000} height={800} />)
     // Right of centre: the line runs from the flag up and right, and the readout starts where it ends.
     expect(document.querySelector('polyline')?.getAttribute('points')).toBe('616,384 652,336 740,336')
-    expect([box().left, box().top]).toEqual(['740px', '312px'])
-    expect(screen.getByTestId('pod-callout').textContent).toBe('Kale20% green↓ ShrinkingNeeds attentionPod 4')
+    expect([box().left, box().top]).toEqual(['740px', '296px'])
+    expect(screen.getByTestId('pod-callout').textContent).toBe('Pod 4KaleNeeds attentionGreen20%Trend↓ Shrinking')
     expect(screen.getByText('Needs attention').className).toContain('border')
     // No room on the right: it reads out to the left, anchored by its right edge.
     rerender(<PodCallout pod={pod} at={{ x: 900, y: 400 }} width={1000} height={800} />)
@@ -156,9 +166,9 @@ describe('PodCallout', () => {
 
   it('leaves out what it does not know: an empty pod, a pod without a trend', () => {
     const { rerender } = render(<PodCallout pod={{ slot: 9, status: 'empty', plant: null, verdict: 'unknown' }} at={{ x: 100, y: 400 }} width={1000} height={800} />)
-    expect(screen.getByTestId('pod-callout').textContent).toBe('EmptyPod 9')
+    expect(screen.getByTestId('pod-callout').textContent).toBe('Pod 9Empty')
     rerender(<PodCallout pod={{ slot: 9, status: 'seeded', plant: 'Mint', ageDays: 2.9, verdict: 'stalled', recent: [0.1, 0.1] }} at={{ x: 100, y: 400 }} width={1000} height={800} />)
-    expect(screen.getByTestId('pod-callout').textContent).toBe('MintDay 2→ FlatSeededPod 9')
+    expect(screen.getByTestId('pod-callout').textContent).toBe('Pod 9MintSeededAge2 dTrend→ Flat')
     expect(screen.getByText('Seeded').className).not.toContain('border')
     expect(screen.getByTestId('pod-callout').querySelector('svg')).toBeNull()
   })
