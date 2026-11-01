@@ -34,13 +34,14 @@ vi.mock('@/src/utils/trpc', () => {
 
 // The real view needs WebGL; this one renders the chips and pod action it's given and exposes its callbacks.
 vi.mock('@/src/components/Grow/TowerView', () => ({
-  TowerView: (props: { controls: ReactNode, status: ReactNode, podAction: ReactNode }) => {
+  TowerView: (props: { controls: ReactNode, status: ReactNode, podAction: ReactNode, aside: ReactNode }) => {
     tower.props = props
     return (
       <div data-testid="tower">
         {props.controls}
         {props.status}
         <div data-testid="pod-action">{props.podAction}</div>
+        {props.aside}
       </div>
     )
   },
@@ -134,6 +135,28 @@ describe('Home', () => {
     expect(chip('1 alert').className).toMatch(/status-warn/)
     expect(within(screen.getByRole('dialog', { name: '1 alert' })).getByText('tank low')).toBeTruthy()
     expect(screen.getByText('All alerts').closest('a')?.getAttribute('href')).toBe('/alerts')
+  })
+
+  it('lays the cycle down the right: its day and stage, a count per status, and the pods to harvest or see to', () => {
+    data.set('pods', [
+      { slot: 1, plant: 'Basil', status: 'growing', notes: '', plantedAt: null, updatedAt: '' },
+      { slot: 3, plant: 'Jalapeño', status: 'harvest', notes: '', plantedAt: null, updatedAt: '' },
+      { slot: 9, plant: 'Kale', status: 'attention', notes: 'yellowing leaves', plantedAt: null, updatedAt: '' },
+      { slot: 10, plant: null, status: 'empty', notes: '', plantedAt: null, updatedAt: '' },
+    ])
+    render(<TowerHome onUnavailable={vi.fn()} />)
+    const panel = screen.getByRole('region', { name: 'Grow cycle' })
+    expect(panel.textContent).toContain('Day 19')
+    expect(panel.textContent).toContain('Vegetative · greens')
+    expect(within(panel).getByTestId('cycle-counts').textContent).toBe('Growing1Ready1Attention1Seeded0Empty1')
+    const kale = within(panel).getByRole('button', { name: /Kale/ })
+    expect(kale.textContent).toBe('KalePod 9yellowing leaves')
+    expect(within(panel).getByRole('button', { name: /Jalapeño/ }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(kale)
+    expect(tower.props?.selected).toBe(9)
+    expect(kale.getAttribute('aria-pressed')).toBe('true')
+    // The day chip is for narrow views only.
+    expect(chip('Day 19').parentElement?.parentElement?.className).toContain('@min-[900px]:hidden')
   })
 
   it('gives the tower each pod\'s trend and notes for its callout, links the picked one to Grow, and unpicks it on a second click', () => {

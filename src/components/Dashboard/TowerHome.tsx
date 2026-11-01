@@ -3,7 +3,7 @@ import { ArrowRight, FlaskConical, Leaf, Power, Sun, Thermometer, TriangleAlert,
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, InlineError, KeyValue } from '@/src/components/ds/core'
 import { TowerView } from '@/src/components/Grow/TowerView'
-import { ageDays } from '@/src/components/Grow/towerLayout'
+import { ageDays, STATUS_LABEL, STATUS_TOKEN, type PodStatus } from '@/src/components/Grow/towerLayout'
 import type { TowerPart } from '@/src/components/Grow/towerScene'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { cn } from '@/lib/utils'
@@ -284,19 +284,88 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
       </Chip>
     ),
     (
-      <Chip key="cycle" {...chip('cycle')} icon={Leaf} label={cycle ? `Day ${grow.data?.day}` : 'No cycle'} active={!!cycle} align="right">
-        <PanelHead title="Grow cycle" ts={cycle?.startedAt} value={cycle ? `Day ${grow.data?.day} · ${cycle.stage}` : 'No active cycle'} />
-        <p className="mt-1 text-xs text-fg-2">{cycle ? cycle.notes : 'Start one on Grow for thinning, root-check, harvest and nutrient reminders.'}</p>
-        <p className="mt-2 font-mono text-[11px] text-fg-3" data-testid="home-counts">
-          {`${counts.growing ?? 0} growing · ${counts.harvest ?? 0} ready · ${counts.attention ?? 0} attention`}
-        </p>
-        <Link to="/grow" className="mt-3 flex items-center justify-end gap-1 text-xs text-fg-2 hover:text-fg">
+      // On a wide view the cycle has its own panel down the right instead.
+      <div key="cycle" className="@min-[900px]:hidden">
+        <Chip {...chip('cycle')} icon={Leaf} label={cycle ? `Day ${grow.data?.day}` : 'No cycle'} active={!!cycle} align="right">
+          <PanelHead title="Grow cycle" ts={cycle?.startedAt} value={cycle ? `Day ${grow.data?.day} · ${cycle.stage}` : 'No active cycle'} />
+          <p className="mt-1 text-xs text-fg-2">{cycle ? cycle.notes : 'Start one on Grow for thinning, root-check, harvest and nutrient reminders.'}</p>
+          <p className="mt-2 font-mono text-[11px] text-fg-3" data-testid="home-counts">
+            {`${counts.growing ?? 0} growing · ${counts.harvest ?? 0} ready · ${counts.attention ?? 0} attention`}
+          </p>
+          <Link to="/grow" className="mt-3 flex items-center justify-end gap-1 text-xs text-fg-2 hover:text-fg">
+            Grow
+            <ArrowRight size={12} />
+          </Link>
+        </Chip>
+      </div>
+    ),
+  ]
+  const pick = (slot: number) => {
+    setOpen(null)
+    setSelected(slot)
+  }
+  const COUNTED: { status: PodStatus, label: string }[] = [
+    { status: 'growing', label: 'Growing' },
+    { status: 'harvest', label: 'Ready' },
+    { status: 'attention', label: 'Attention' },
+    { status: 'seeded', label: 'Seeded' },
+    { status: 'empty', label: 'Empty' },
+  ]
+  const aside = (
+    <section aria-label="Grow cycle" className="flex max-h-full flex-col gap-4 overflow-y-auto rounded-xl border border-line-2 bg-surface/60 p-4 shadow-[var(--shadow-dialog)] backdrop-blur-xl backdrop-saturate-150">
+      <div className="flex items-center justify-between text-xs text-fg-2">
+        <span className="flex items-center gap-1.5">
+          <Leaf size={13} style={cycle ? { color: 'var(--accent-light)' } : undefined} />
+          Grow cycle
+        </span>
+        <Link to="/grow" className="flex items-center gap-1 hover:text-fg">
           Grow
           <ArrowRight size={12} />
         </Link>
-      </Chip>
-    ),
-  ]
+      </div>
+      <div>
+        <div className="font-mono text-[28px] font-light leading-none">{cycle ? `Day ${grow.data?.day}` : 'No cycle'}</div>
+        <p className="mt-2 text-sm text-fg-2">
+          {cycle ? `${cycle.stage[0]?.toUpperCase()}${cycle.stage.slice(1)}${cycle.notes ? ` · ${cycle.notes}` : ''}` : 'Start one on Grow for thinning, root-check, harvest and nutrient reminders.'}
+        </p>
+      </div>
+      <dl className="grid grid-cols-3 gap-x-3 gap-y-2" data-testid="cycle-counts">
+        {COUNTED.map(c => (
+          <div key={c.status} className="flex flex-col gap-0.5">
+            <dt className="flex items-center gap-1.5 text-[11px] text-fg-3">
+              <span className="size-2 rounded-full" style={{ background: STATUS_TOKEN[c.status] }} />
+              {c.label}
+            </dt>
+            <dd className="font-mono text-[15px]">{counts[c.status] ?? 0}</dd>
+          </div>
+        ))}
+      </dl>
+      {(['harvest', 'attention'] as const).map((status) => {
+        const list = all.filter(x => x.status === status)
+        return list.length > 0 && (
+          <div key={status} className="flex flex-col gap-1">
+            <h3 className="text-[11px] uppercase tracking-wider text-fg-3">{STATUS_LABEL[status]}</h3>
+            {list.map(x => (
+              <button
+                key={x.slot}
+                type="button"
+                aria-pressed={selected === x.slot}
+                onClick={() => pick(x.slot)}
+                className={cn('flex min-w-0 flex-col rounded-ctl px-2 py-1.5 text-left hover:bg-active', selected === x.slot && 'bg-active')}
+              >
+                <span className="flex items-center gap-2 text-sm">
+                  <span className="size-2 shrink-0 rounded-full" style={{ background: STATUS_TOKEN[status] }} />
+                  <span className="truncate">{x.plant ?? 'Empty'}</span>
+                  <span className="ml-auto font-mono text-[11px] text-fg-3">{`Pod ${x.slot}`}</span>
+                </span>
+                {x.notes && <span className="truncate pl-4 text-xs text-fg-2">{x.notes}</span>}
+              </button>
+            ))}
+          </div>
+        )
+      })}
+    </section>
+  )
 
   return (
     <TowerView
@@ -313,6 +382,7 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
       partLabels={partLabels}
       controls={controls}
       status={status}
+      aside={aside}
       podAction={selected !== null && (
         <Link to="/grow" search={{ pod: selected }} className="flex items-center gap-1 text-fg-2 hover:text-fg">
           Edit on Grow

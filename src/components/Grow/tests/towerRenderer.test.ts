@@ -66,7 +66,7 @@ const pointer = (type: string, x: number, y: number, buttons = 0) => {
   return e
 }
 
-function mount() {
+function mount(reserveRight?: (w: number) => number) {
   const calls = { hover: [] as (TowerTarget | null)[], select: [] as TowerTarget[], ready: 0, fail: 0, rendered: 0 }
   const m = mountTower(host, {
     podCount: 30,
@@ -75,6 +75,7 @@ function mount() {
     onReady: () => calls.ready++,
     onFail: () => calls.fail++,
     onRender: () => calls.rendered++,
+    reserveRight,
   })
   return { m, calls, canvas: host.querySelector('canvas') as HTMLCanvasElement }
 }
@@ -147,6 +148,24 @@ describe('mountTower', () => {
     m.camera.lookAt(5, 0.8, 3)
     expect(m.anchor(7)).toBeNull()
     expect(canvas).toBeTruthy()
+    m.dispose()
+  })
+
+  it('moves the tower over by half the width a panel covers on the right, and picking still lands', async () => {
+    const plain = mount()
+    plain.m.update({ pods: allPods, waterPct: 50, lightLevel: 80, hovered: null, selected: null })
+    await tick()
+    const before = plain.m.anchor(7)
+    plain.m.dispose()
+    const { m, calls, canvas } = mount(w => (w >= 500 ? 200 : 0))
+    m.update({ pods: allPods, waterPct: 50, lightLevel: 80, hovered: null, selected: null })
+    await tick()
+    const after = m.anchor(7)
+    expect((before?.x ?? 0) - (after?.x ?? 0)).toBeCloseTo(100, 0)
+    expect(after?.y).toBeCloseTo(before?.y ?? 0, 0)
+    const cup = aim(m, o => o.userData.slot === 7 && o.geometry.type === 'CylinderGeometry')
+    canvas.dispatchEvent(pointer('pointermove', cup.x, cup.y))
+    expect(calls.hover.at(-1)).toEqual({ kind: 'pod', slot: 7 })
     m.dispose()
   })
 

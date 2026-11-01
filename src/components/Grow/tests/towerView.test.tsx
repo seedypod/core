@@ -86,6 +86,14 @@ describe('TowerView', () => {
     expect(screen.queryByTestId('pod-callout')).toBeNull()
   })
 
+  it('puts the aside down the right', async () => {
+    render(<TowerView pods={pods} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} aside={<section aria-label="Cycle">Day 19</section>} />)
+    await waitFor(() => expect(mounted.opts).not.toBeNull())
+    expect(screen.getByRole('region', { name: 'Cycle' }).parentElement?.style.width).toBe('300px')
+    expect(mounted.opts?.reserveRight?.(1200)).toBe(324)
+    expect(mounted.opts?.reserveRight?.(800)).toBe(0)
+  })
+
   it('flags pods to harvest or see to before they are picked, and picks one from its flag', async () => {
     const onSelect = vi.fn()
     const flagged = [{ slot: 1, status: 'harvest' as const, plant: 'Chard' }, { slot: 2, status: 'attention' as const, plant: 'Kale' }, { slot: 3, status: 'growing' as const, plant: 'Basil' }]
@@ -162,6 +170,13 @@ describe('PodCallout', () => {
     // Near the top, the line runs down so the readout clears the chips.
     rerender(<PodCallout pod={pod} at={{ x: 300, y: 80 }} width={1000} height={800} />)
     expect(document.querySelector('polyline')?.getAttribute('points')).toBe('316,64 352,112 440,112')
+  })
+
+  it('keeps clear of a panel on the right, centring on the tower in what is left', () => {
+    const pod = { slot: 4, status: 'growing' as const, plant: 'Kale' }
+    // 560 is right of the whole view's centre but left of the room beside a 324px panel.
+    render(<PodCallout pod={pod} at={{ x: 560, y: 400 }} width={1200} height={800} reserve={324} />)
+    expect(document.querySelector('polyline')?.getAttribute('points')).toBe('560,400 524,352 436,352')
   })
 
   it('leaves out what it does not know: an empty pod, a pod without a trend', () => {

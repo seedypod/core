@@ -16,6 +16,8 @@ export interface TowerMountOptions {
   onFail: () => void
   /** After every frame, so an overlay pinned to the tower can follow it. */
   onRender?: () => void
+  /** Pixels on the right that a panel covers at this width; the tower centres in what's left. */
+  reserveRight?: (width: number) => number
 }
 
 const deg = Math.PI / 180
@@ -117,6 +119,10 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     Object.assign(size, { width, height })
     renderer.setSize(width, height, false)
     camera.aspect = width / height
+    const reserved = o.reserveRight?.(width) ?? 0
+    // Slide the view rather than the camera, so the tower keeps its angle and only moves over.
+    if (reserved > 0) camera.setViewOffset(width, height, reserved / 2, 0, width, height)
+    else camera.clearViewOffset()
     camera.updateProjectionMatrix()
     requestRender()
   }

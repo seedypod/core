@@ -3,6 +3,7 @@ import type * as RendererModule from './towerRenderer'
 import type { TowerMount } from './towerRenderer'
 import type { PodState, TowerPart, TowerTarget } from './towerScene'
 import { TowerWireframe } from './TowerWireframe'
+import { STATUS_LABEL, STATUS_TOKEN } from './towerLayout'
 import { cn } from '@/lib/utils'
 import { Scissors, TriangleAlert } from 'lucide-react'
 
@@ -19,18 +20,14 @@ let loading: Promise<typeof RendererModule> | null = null
 /** Starts fetching the renderer (and three.js) once, without waiting for any data. */
 export const loadRenderer = () => (loading ??= import('./towerRenderer'))
 
-const STATUS_LABEL: Record<PodState['status'], string> = { empty: 'Empty', seeded: 'Seeded', growing: 'Growing', harvest: 'Ready to harvest', attention: 'Needs attention' }
-const STATUS_TOKEN: Record<PodState['status'], string> = {
-  growing: 'var(--pod-ok)',
-  harvest: 'var(--accent-light)',
-  attention: 'var(--pod-attention)',
-  seeded: 'var(--text-2)',
-  empty: 'var(--text-3)',
-}
 const LEGEND = (['growing', 'harvest', 'attention', 'seeded'] as const).map(status => ({ status, token: STATUS_TOKEN[status] }))
 const VERDICT: Record<'growing' | 'stalled' | 'declining', string> = { growing: '↑ Gaining', stalled: '→ Flat', declining: '↓ Shrinking' }
 /** Room the readout needs beside its leader line before it flips to the other side. */
 const LABEL_W = 200
+/** The right-hand panel's width, and what it takes from the tower's room with its margin. */
+const ASIDE_W = 300
+const ASIDE_RESERVE = ASIDE_W + 24
+const ASIDE_MIN = 900
 
 /** Green area over the last few photos, scaled to its own range so small changes still show. */
 function Spark({ values, color }: { values: number[], color: string }) {
@@ -74,15 +71,16 @@ function PodFlag({ pod, at, picked, onSelect }: { pod: PodState, at: { x: number
  * The picked pod's readout, pinned to it by a leader line (sleepypod's bed
  * callouts): the plant, its age and green area, the trend when there is one,
  * and its status, marked when it wants doing something about. It sits outward
- * from the tower, on whichever side has room.
+ * from the tower, on whichever side has room, clear of the `reserve` pixels a
+ * panel covers on the right.
  */
-export function PodCallout({ pod, at: collar, width, height, action }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, action?: ReactNode }) {
+export function PodCallout({ pod, at: collar, width, height, reserve = 0, action }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, action?: ReactNode }) {
   const color = STATUS_TOKEN[pod.status]
   const flagged = isFlagged(pod)
   // A flagged pod's line leads from its flag, which marks it already; any other gets a dot on its collar.
   const at = flagged ? { x: collar.x + FLAG_OFFSET.x, y: collar.y + FLAG_OFFSET.y } : collar
-  const room = (side: number) => (side > 0 ? width - at.x : at.x) - 124
-  let side = at.x > width / 2 ? 1 : -1
+  const room = (side: number) => (side > 0 ? width - reserve - at.x : at.x) - 124
+  let side = at.x > (width - reserve) / 2 ? 1 : -1
   if (room(side) < LABEL_W && room(-side) > room(side)) side = -side
   const up = at.y > 140 ? -1 : 1
   // A long arm, so the readout clears the neighbouring pods.
@@ -148,9 +146,10 @@ export function PodCallout({ pod, at: collar, width, height, action }: { pod: Po
  * names what's under the pointer. The picked pod gets a callout pinned to it,
  * with `podAction` under its readout. `controls` is a row of chips along the
  * top left, `status` along the top right; the legend sits along the bottom.
- * Calls `onUnavailable` without WebGL.
+ * `aside` is a panel down the right on a wide view, with the tower moved over
+ * to centre in the rest. Calls `onUnavailable` without WebGL.
  */
-export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onPart, partLabels, controls, status, podAction, onUnavailable }: {
+export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onPart, partLabels, controls, status, podAction, aside, onUnavailable }: {
   pods: PodState[]
   waterPct: number | null
   lightLevel: number
@@ -163,6 +162,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   controls?: ReactNode
   status?: ReactNode
   podAction?: ReactNode
+  aside?: ReactNode
   onUnavailable: () => void
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -173,10 +173,10 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   // The pods with something pinned to them: the picked one, and any to harvest or seeing to.
   const pinned = useRef<number[]>([])
   const anchorKey = useRef('')
-  const latest = useRef({ onSelect, onPart, onUnavailable })
+  const latest = useRef({ onSelect, onPart, onUnavailable, hasAside: aside != null })
   useEffect(() => {
-    latest.current = { onSelect, onPart, onUnavailable }
-  }, [onSelect, onPart, onUnavailable])
+    latest.current = { onSelect, onPart, onUnavailable, hasAside: aside != null }
+  }, [onSelect, onPart, onUnavailable, aside])
   // A Home's 30 until the pods arrive, so the download and the data load at the same time.
   const podCount = pods.length || 30
   const [preloaded] = useState(() => (hasWebGL() ? loadRenderer().catch(() => null) : null))
@@ -203,6 +203,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         },
         onReady: () => setReady(true),
         onFail: () => latest.current.onUnavailable(),
+        reserveRight: w => (latest.current.hasAside && w >= ASIDE_MIN ? ASIDE_RESERVE : 0),
         // Follow the pinned pods as the tower turns; whole pixels, so a still frame doesn't re-render.
         onRender: () => {
           const at = new Map<number, { x: number, y: number }>()
@@ -236,7 +237,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   const shownAt = shownPod ? anchors?.at.get(shownPod.slot) : undefined
   const partLabel = hover?.kind === 'part' && onPart ? partLabels?.[hover.part] : undefined
   return (
-    <div ref={host} data-testid="tower-3d" className="relative h-[calc(100dvh-2.5rem)] min-h-[520px] w-full overflow-hidden rounded-xl border border-line bg-surface max-[900px]:h-[70dvh] max-[900px]:min-h-[440px]">
+    <div ref={host} data-testid="tower-3d" className="@container relative h-[calc(100dvh-2.5rem)] min-h-[520px] w-full overflow-hidden rounded-xl border border-line bg-surface max-[900px]:h-[70dvh] max-[900px]:min-h-[440px]">
       <TowerWireframe pods={pods} podCount={podCount} fading={ready} />
       {!ready && <span className="sr-only" aria-live="polite">Loading the tower…</span>}
       {controls && <div className="absolute left-3 top-3 z-10 flex flex-wrap items-start gap-2">{controls}</div>}
@@ -244,7 +245,8 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         const at = anchors.at.get(p.slot)
         return at && <PodFlag key={p.slot} pod={p} at={at} picked={p.slot === selected} onSelect={onSelect} />
       })}
-      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} action={shownPod.slot === selected ? podAction : undefined} />}
+      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} action={shownPod.slot === selected ? podAction : undefined} />}
+      {aside != null && <div className="absolute bottom-10 right-3 top-16 z-10 hidden flex-col @min-[900px]:flex" style={{ width: ASIDE_W }}>{aside}</div>}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
         {status && <div className="pointer-events-auto flex flex-wrap items-start justify-end gap-2">{status}</div>}
         {partLabel && (
