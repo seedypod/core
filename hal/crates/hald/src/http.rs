@@ -145,6 +145,7 @@ mod tests {
                 contract: CONTRACT_VERSION,
                 unit_id: "u1".into(),
                 model: "sim".into(),
+                board: None,
                 hal_version: "0.1.0".into(),
                 caps: Caps {
                     sensors: vec![SensorId::AirTemp],

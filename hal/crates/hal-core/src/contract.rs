@@ -110,6 +110,10 @@ pub struct SystemInfo {
     pub contract: u8,
     pub unit_id: String,
     pub model: String,
+    /// The Raspberry Pi hald runs on, from the device tree ("Raspberry Pi Zero 2 W Rev 1.0");
+    /// absent in the simulator and from a hald older than this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
     pub hal_version: String,
     pub caps: Caps,
     pub limits: Limits,
@@ -400,6 +404,10 @@ mod fixture_tests {
     fn fixtures_parse_on_the_rust_side() {
         let s: SystemInfo = serde_json::from_str(&fixture("system")).unwrap();
         assert_eq!(s.limits.pump_max_duty, 30.0);
+        assert_eq!(s.board.as_deref(), Some("Raspberry Pi Zero 2 W Rev 1.0"));
+        let old: SystemInfo = serde_json::from_str(&fixture("system_without_board")).unwrap();
+        assert_eq!(old.board, None);
+        assert!(!serde_json::to_string(&old).unwrap().contains("board"));
         let a: ActuatorState = serde_json::from_str(&fixture("actuator_state")).unwrap();
         assert_eq!(a.remaining_s, Some(19));
         let r: Reading = serde_json::from_str(&fixture("reading")).unwrap();

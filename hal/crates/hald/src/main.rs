@@ -6,6 +6,7 @@
 //!   MQTT with JSON lines for smoke tests and CI.
 //! * `--sim` swaps every driver for `hal-sim` and runs on virtual time.
 
+mod board;
 mod cameras;
 mod config;
 mod devices;
@@ -171,6 +172,7 @@ async fn main() -> anyhow::Result<()> {
         contract: CONTRACT_VERSION,
         unit_id: unit_id.clone(),
         model,
+        board: if cli.sim { None } else { board::read() },
         hal_version: env!("CARGO_PKG_VERSION").into(),
         caps: Caps {
             sensors: built.registry.sensor_ids(),

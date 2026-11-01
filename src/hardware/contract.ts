@@ -68,6 +68,8 @@ export const SystemInfo = z.object({
   contract: z.literal(CONTRACT_VERSION),
   unitId: z.string(),
   model: z.string(),
+  /** The Raspberry Pi hald runs on ("Raspberry Pi Zero 2 W Rev 1.0"); absent in the simulator and from older hald. */
+  board: z.string().optional(),
   halVersion: z.string(),
   caps: z.object({
     sensors: z.array(SensorId),

@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden/blob/main/con
 
 # Gardyn hardware map
 
-The controller is a Raspberry Pi Zero W or Zero 2 W booting from microSD. BCM numbering.
+The controller is a Raspberry Pi Zero W (owners' reports; iot-root recommends a Zero 2 W upgrade) or Zero 2 W booting from microSD. BCM numbering. The stock board's GPIO header is on the underside, so a replacement Zero 2 W needs its header soldered the same way. Only a Zero 2 W (on 64-bit Raspberry Pi OS) can run core; a Zero W runs hald alone (docs/INSTALLATION.md, Which Pi). hald reports the board as `board` in its system info.
 
 | Function | Interface | Pin / address | Note |
 |---|---|---|---|

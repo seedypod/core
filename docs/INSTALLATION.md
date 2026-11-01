@@ -12,6 +12,40 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 > Phase 1 is not done: nothing here has run on a real Gardyn yet. Follow at your
 > own risk, and **back up the stock card first** so bricking is a 5-minute reflash.
 
+## Which Pi
+
+Open the base and read the board, or on the stock card run
+`cat /proc/device-tree/model`. Gardyn has shipped the original **Pi Zero W**
+(owners' reports; not yet confirmed on every model), and the Pi Zero 2 W is a
+drop-in upgrade.
+
+| Board | CPU | hald | core |
+|---|---|---|---|
+| **Pi Zero 2 W** | 4 × Cortex-A53, 64-bit | on the unit | on the unit, with **64-bit** Raspberry Pi OS |
+| **Pi Zero W** (original) | 1 × ARM11 (ARMv6), 32-bit | on the unit | **not on the unit**: on another machine on your LAN |
+
+Core runs on Node.js (the version in `.node-version`), which now ships only for
+64-bit ARM and x86: Node 24 dropped 32-bit ARM, and no current Node builds for
+ARMv6. Pinning an older Node that still does would leave core, which serves
+your LAN, on a runtime past its security support, so seedypod doesn't.
+`scripts/install --check` says whether a machine can run core.
+
+**On a Pi Zero W, either:**
+
+- **Swap in a Pi Zero 2 W** (about $15, same footprint and pins). The stock
+  board's GPIO header is soldered on the underside, so buy one *without* a
+  header and solder it on the same way. Then follow this guide as written.
+- **Or split it:** flash 32-bit Raspberry Pi OS Lite on the unit and run only
+  `install-hal --mqtt-lan`; install core on a 64-bit machine on your LAN (a
+  Home Assistant box, a NAS, another Pi) and set `HAL_MQTT_URL`
+  (`mqtt://<unit>:1884` with the printed user and password),
+  `HAL_UNIT_ID` (from `hald --check` on the unit) and
+  `HAL_HTTP_URL=http://<unit>:3001` in its `seedypod-core.service`.
+  Wi-Fi setup from the app then acts on that machine, not the unit, so set the
+  unit's Wi-Fi in Raspberry Pi Imager instead.
+
+**Settings → About** shows the board hald runs on and the machine core runs on.
+
 ## 0. Back up
 
 1. Power off, open the base, remove the Pi's microSD.
@@ -26,7 +60,7 @@ there is. `install-hal` also cuts what the unit writes (below), and
 **Settings → Storage** shows how much it writes a day.
 
 Raspberry Pi Imager → Raspberry Pi OS Lite (64-bit for Zero 2 W / Pi 4 / Pi 5;
-32-bit for the original Zero W). In the advanced options set hostname
+32-bit for the original Zero W, which then runs only hald: see [Which Pi](#which-pi)). In the advanced options set hostname
 `seedypod`, enable SSH, add Wi-Fi. Reseat the card, boot, `ssh pi@seedypod.local`.
 
 ## 2. Enable I²C and install the HAL
@@ -43,14 +77,18 @@ fewer writes ([ADR-0021](adr/0021-sd-card-wear-and-recovery.md)). Each change
 is checked and undone if it doesn't take; `--no-wear` skips them. Logs then
 last until reboot; [Debugging](DEBUGGING.md) shows how to keep them longer.
 
-## 3. Install core (same Pi, or any LAN box)
+## 3. Install core (same Pi, or any 64-bit LAN box)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
 ```
 
-Core listens on `:3000`; set `HAL_MQTT_URL` in `/etc/systemd/system/seedypod-core.service`
-if `hald` is elsewhere. Open `http://seedypod.local:3000/`.
+The installer first checks the machine can run core and stops with the reason
+if it can't. With hald on the same Pi it reads the unit id from `hald --check`
+and points core at it; elsewhere, core starts on the simulator until you set
+`HAL_MQTT_URL`, `HAL_UNIT_ID` and `HAL_HTTP_URL` in
+`/etc/systemd/system/seedypod-core.service` ([Which Pi](#which-pi)). Core
+listens on `:3000`. Open `http://seedypod.local:3000/`.
 
 A new install opens on **Welcome**. Choose **Set up a new garden**, or
 **Restore from a backup** if this card replaces one that died

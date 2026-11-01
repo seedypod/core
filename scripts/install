@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# seedypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit).
+# seedypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit),
+# or any 64-bit Linux box on the LAN.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
-#        scripts/install [--branch dev] [--prefix /opt/seedypod] [--restore <file|url>]
+#        scripts/install [--branch dev] [--prefix /opt/seedypod] [--restore <file|url>] [--check]
 # Installs Node (via the pinned .node-version), unpacks the release tarball,
 # installs production deps, and enables seedypod-core.service on :3000. It also
 # installs the restore helper (/usr/local/sbin/seedypod-restore, ADR-0021) and
 # lets this user run it with sudo, for that one path.
 #   --restore <file|url>  then restore that backup bundle (seedypod-backup-….tar.gz)
 #                         instead of choosing on the Welcome screen
+#   --check               only say whether this machine can run core, and why not
 # The Rust HAL (hald) is installed separately by scripts/install-hal; on a new
 # card, run it first so the restore brings hald's state back too.
 set -euo pipefail
@@ -15,16 +17,50 @@ set -euo pipefail
 BRANCH="${SEEDYPOD_BRANCH:-__BRANCH__}"
 PREFIX="${SEEDYPOD_PREFIX:-/opt/seedypod}"
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
+# ROOT prefixes /proc for tests (tests/scripts/install.board.test.ts).
+ROOT="${SEEDYPOD_ROOT:-}"
 RESTORE=""
+CHECK=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --branch) BRANCH="$2"; shift 2 ;;
     --prefix) PREFIX="$2"; shift 2 ;;
     --restore) RESTORE="$2"; shift 2 ;;
+    --check) CHECK=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# ---- board check ---------------------------------------------------------------
+# Core runs on the Node in .node-version, which ships for 64-bit ARM and x86
+# only: Node 24 dropped 32-bit ARM, and ARMv6 has no build at all. A Pi Zero 2 W
+# (or a Pi 3, 4 or 5) on 64-bit Raspberry Pi OS runs core; the original Pi Zero
+# W can't, so it runs hald alone and core runs on another machine on the LAN.
+# Pinning an older Node that still builds for ARMv6 would leave core on a
+# runtime past its security support, so this installer doesn't offer it.
+board_check() {
+  local model arch bits
+  model="$(tr -d '\0' < "$ROOT/proc/device-tree/model" 2>/dev/null || true)"
+  arch="$(uname -m)"
+  bits="$(getconf LONG_BIT 2>/dev/null || echo 64)"
+  case "$arch:$bits" in
+    aarch64:64|arm64:64|x86_64:64) echo "✓ ${model:-$arch} can run core"; return 0 ;;
+  esac
+  case "$model" in
+    *"Zero 2"*|*"Pi 3"*|*"Pi 4"*|*"Pi 5"*)
+      echo "✗ This $model is running a 32-bit OS, and core needs 64-bit." >&2
+      echo "  Reflash with Raspberry Pi OS Lite (64-bit), then run install-hal and this installer again." >&2 ;;
+    *)
+      echo "✗ This ${model:-$arch machine} can't run core: core needs a 64-bit CPU, and Node has no build for this one." >&2
+      echo "  On a Gardyn with the original Pi Zero W, either swap in a Pi Zero 2 W (same footprint; solder its header on the" >&2
+      echo "  underside, like the stock board), or run scripts/install-hal here and core on another machine on your LAN." >&2
+      echo "  See docs/INSTALLATION.md#which-pi." >&2 ;;
+  esac
+  return 3
+}
+if [ "$CHECK" = 1 ]; then board_check; exit $?; fi
+board_check >/dev/null || exit 3
 [ "$BRANCH" = "__BRANCH__" ] && BRANCH=main
 # The installer cd's into $PREFIX, so a local bundle needs its full path.
 case "$RESTORE" in
@@ -52,7 +88,7 @@ cd "$PREFIX"
 NODE_WANT=$(cat .node-version)
 if ! command -v node >/dev/null || [ "$(node -v)" != "v$NODE_WANT" ]; then
   echo "→ installing Node $NODE_WANT"
-  curl -fsSL "https://nodejs.org/dist/v$NODE_WANT/node-v$NODE_WANT-linux-$(uname -m | sed 's/aarch64/arm64/;s/armv7l/armv7l/').tar.xz" | sudo tar -xJ -C /usr/local --strip-components=1
+  curl -fsSL "https://nodejs.org/dist/v$NODE_WANT/node-v$NODE_WANT-linux-$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/').tar.xz" | sudo tar -xJ -C /usr/local --strip-components=1
 fi
 corepack enable >/dev/null 2>&1 || true
 pnpm install --prod --frozen-lockfile
@@ -68,6 +104,22 @@ polkit.addRule(function (action, subject) {
 RULES
 fi
 
+# Core addresses hald by its unit id (the Pi's serial). With hald on this Pi, ask
+# it; otherwise core runs on the simulator until HAL_MQTT_URL and HAL_UNIT_ID are
+# set in the unit for a hald elsewhere.
+HAL_UNIT_ID="${SEEDYPOD_HAL_UNIT_ID:-}"
+if [ -z "$HAL_UNIT_ID" ] && command -v hald >/dev/null 2>&1; then
+  HAL_UNIT_ID="$(hald --config /etc/seedypod/hal.toml --check 2>/dev/null | sed -n 's/.*"unit_id": *"\([^"]*\)".*/\1/p' | head -1 || true)"
+fi
+if [ -n "$HAL_UNIT_ID" ]; then
+  HAL_ENV="Environment=HAL_MQTT_URL=mqtt://127.0.0.1:1883 HAL_UNIT_ID=$HAL_UNIT_ID"
+  echo "→ talking to hald $HAL_UNIT_ID on this machine"
+else
+  HAL_ENV="# Environment=HAL_MQTT_URL=mqtt://<unit>:1883 HAL_UNIT_ID=<from hald --check> HAL_HTTP_URL=http://<unit>:3001"
+  echo "   no hald on this machine: core starts on the simulator. To drive a unit, set HAL_MQTT_URL and HAL_UNIT_ID" >&2
+  echo "   in /etc/systemd/system/seedypod-core.service (see docs/INSTALLATION.md#which-pi)." >&2
+fi
+
 sudo tee /etc/systemd/system/seedypod-core.service >/dev/null <<UNIT
 [Unit]
 Description=seedypod core (tRPC/MCP/web)
@@ -77,7 +129,7 @@ Wants=network-online.target
 [Service]
 WorkingDirectory=$PREFIX
 Environment=NODE_ENV=production PORT=3000
-Environment=HAL_MQTT_URL=mqtt://127.0.0.1:1883
+$HAL_ENV
 ExecStart=/usr/local/bin/node server/dist/index.js
 Restart=always
 RestartSec=3
