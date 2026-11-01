@@ -30,7 +30,7 @@ const ASIDE_MIN = 900
 
 const isFlagged = (p: PodState) => ['attention', 'ready'].includes(podShown(p))
 /** Where a flag sits beside its pod's collar; a picked flagged pod's callout starts here. */
-const FLAG_OFFSET = { x: 16, y: -16 }
+const FLAG_OFFSET = { x: 22, y: -22 }
 
 /** A pod that wants doing something about, pinned to it whether or not it's picked; picked, it's ringed and its callout leads from it. */
 function PodFlag({ pod, at, picked, onSelect }: { pod: PodState, at: { x: number, y: number }, picked: boolean, onSelect: (slot: number) => void }) {
@@ -43,7 +43,7 @@ function PodFlag({ pod, at, picked, onSelect }: { pod: PodState, at: { x: number
       aria-label={`Pod ${pod.slot}: ${SHOWN_LABEL[shown]}`}
       aria-pressed={picked}
       onClick={() => onSelect(pod.slot)}
-      className={cn('absolute grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-[var(--shadow-dialog)]', picked ? 'z-[7] outline outline-2 outline-offset-2 outline-[var(--text-1)]' : 'z-[4]')}
+      className={cn('absolute grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-[var(--shadow-dialog)] ring-2 ring-[var(--surface-app)]', picked ? 'z-[7] outline outline-2 outline-offset-2 outline-[var(--text-1)]' : 'z-[4]')}
       style={{ left: at.x + FLAG_OFFSET.x, top: at.y + FLAG_OFFSET.y, background: color }}
     >
       {shown === 'attention' && !picked && <span className="absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping" style={{ background: color }} />}
