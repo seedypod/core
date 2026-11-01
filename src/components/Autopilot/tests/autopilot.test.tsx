@@ -25,7 +25,7 @@ vi.mock('@/src/utils/trpc', () => {
     trpc: {
       useUtils: () => ({ automations: { invalidate: vi.fn() } }),
       automations: {
-        list: query('list'), status: query('status'), runs: query('runs'), catalog: query('catalog'),
+        list: query('list'), status: query('status'), runs: query('runs'), catalog: query('catalog'), backtests: query('backtests'),
         update: mutation('update'), remove: mutation('remove'), setGlobal: mutation('setGlobal'), create: mutation('create'), backtest: mutation('backtest'),
       },
     },
@@ -54,46 +54,71 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+const summary = (id: number, o: Record<string, unknown> = {}) => ({
+  id, days: 7, wouldFire: 3, suppressed: 0, disabledAt: null, liveOnly: [],
+  watch: { key: 'sensor.water_level_pct', label: 'Tank level', unit: '%', op: '<', threshold: 30, extreme: 22 },
+  spark: [60, 45, 28, null, 22, 40], fireAt: [2, 4], ...o,
+})
+
 describe('AutopilotPage', () => {
-  it('shows the kill switch, who owns the light, every rule in words, and the run log', () => {
-    render(<AutopilotPage />)
-    expect(screen.getByText('Light: set by Tank low · 40 %')).toBeTruthy()
-    expect(screen.getByText('Every 5 minutes, if tank level is below 30 %, notify “top up”. At most once every 60 min.')).toBeTruthy()
-    expect(screen.getByText('Armed')).toBeTruthy()
-    expect(screen.getByText('Dry run')).toBeTruthy()
-    expect(screen.getByText('Off')).toBeTruthy()
-    expect(screen.getByText('2 actions this hour')).toBeTruthy()
-    expect(screen.getByText(/cooling down until/)).toBeTruthy()
-    const log = within(screen.getByRole('list', { name: 'Run log' }))
-    expect(log.getByText('dry-run: water below 16 cm, setLight: value-unknown, setLight 40')).toBeTruthy()
-    expect(log.getByText('condition false')).toBeTruthy()
-    expect(log.getByText('rule 7')).toBeTruthy()
-    // A rule made over the API in a shape the form can't show is read-only.
-    expect((screen.getAllByRole('button', { name: /Edit/ })[1] as HTMLButtonElement).disabled).toBe(true)
+  beforeEach(() => {
+    data.set('backtests', [summary(1), summary(3, { wouldFire: 0, watch: { key: 'x', label: 'pH', unit: '', op: '>', threshold: 6.5, extreme: null }, spark: [], fireAt: [] })])
   })
 
-  it('arms, disarms, turns rules off and on, and flips the kill switch', () => {
+  it('shows the status line, who owns the light, every rule in words with its mode', () => {
     render(<AutopilotPage />)
-    fireEvent.click(screen.getAllByText('Back to dry run')[0] as HTMLElement)
-    expect(calls.update).toHaveBeenLastCalledWith({ id: 1, dryRun: true })
-    fireEvent.click(screen.getByText('Arm'))
-    expect(calls.update).toHaveBeenLastCalledWith({ id: 2, dryRun: false })
-    fireEvent.click(screen.getByText('Turn on'))
-    expect(calls.update).toHaveBeenLastCalledWith({ id: 3, enabled: true })
-    fireEvent.click(screen.getByLabelText('Autopilot on'))
+    expect(screen.getByTestId('automations-status').textContent).toBe('3 rules · 1 active · 1 dry-run')
+    expect(screen.getByText('Light: set by Tank low · 40 %')).toBeTruthy()
+    expect(screen.getByText('Every 5 minutes, if tank level is below 30 %, notify “top up”. At most once every 60 min.')).toBeTruthy()
+    const mode = (name: string) => within(screen.getByRole('radiogroup', { name: `${name} mode` })).getAllByRole('radio').find(r => r.getAttribute('aria-checked') === 'true')?.textContent
+    expect(mode('Tank low')).toBe('Active')
+    expect(mode('Odd one')).toBe('Dry-run')
+    expect(mode('Off rule')).toBe('Off')
+    expect(screen.getByText('2 actions this hour')).toBeTruthy()
+    expect(screen.getByText(/cooling down until/)).toBeTruthy()
+    expect(screen.getByText('last run failed')).toBeTruthy()
+  })
+
+  it('puts each rule\'s 7-day backtest on the list, with a sparkline of the watched signal', () => {
+    render(<AutopilotPage />)
+    expect(screen.getByTestId('backtest-1').textContent).toBe('7-day backtest · 3 would fire · low 22 of 30 %')
+    expect(screen.getByRole('img', { name: 'Tank level over 7 days against 30 %; 3 would fire' })).toBeTruthy()
+    expect(screen.getByTestId('backtest-2').textContent).toBe('backtesting…')
+    expect(screen.getByTestId('backtest-3').textContent).toBe('7-day backtest · 0 would fire · no recorded pH')
+  })
+
+  it('sets a rule Off, Dry-run or Active, and flips the kill switch', () => {
+    render(<AutopilotPage />)
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Tank low mode' })).getByRole('radio', { name: 'Dry-run' }))
+    expect(calls.update).toHaveBeenLastCalledWith({ id: 1, enabled: true, dryRun: true })
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Odd one mode' })).getByRole('radio', { name: 'Active' }))
+    expect(calls.update).toHaveBeenLastCalledWith({ id: 2, enabled: true, dryRun: false })
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Tank low mode' })).getByRole('radio', { name: 'Off' }))
+    expect(calls.update).toHaveBeenLastCalledWith({ id: 1, enabled: false })
+    fireEvent.click(screen.getByLabelText('Autopilot enabled'))
     expect(calls.setGlobal).toHaveBeenCalledWith({ enabled: false })
+  })
+
+  it('opens a rule in the editor; one the form can\'t show opens its backtest instead', () => {
+    render(<AutopilotPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Tank low' }))
+    expect(screen.getByRole('dialog', { name: 'Edit rule' })).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Open Odd one' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('Run backtest')).toBeTruthy()
   })
 
   it('deletes after confirmation', () => {
     render(<AutopilotPage />)
-    fireEvent.click(screen.getAllByText('Delete')[0] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Tank low' }))
     const dlg = within(screen.getByRole('dialog', { name: 'Delete Tank low?' }))
     fireEvent.click(dlg.getByText('Delete'))
     expect(calls.remove).toHaveBeenCalledWith({ id: 1 })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('backtests a saved rule and summarises the replay', () => {
+  it('expands the full backtest from the summary and summarises the replay', () => {
     data.set('backtestResult', {
       from: '', to: '', stepMin: 5, liveOnly: ['light.level'],
       times: ['2026-10-31T09:00:00Z', '2026-10-31T09:05:00Z'],
@@ -103,7 +128,7 @@ describe('AutopilotPage', () => {
       summary: { fires: 1, suppressed: 1, unknownSteps: 1, disabledAt: '2026-10-31T09:20:00Z' },
     })
     render(<AutopilotPage />)
-    fireEvent.click(screen.getAllByText('Backtest')[0] as HTMLElement)
+    fireEvent.click(screen.getAllByText('Replay it over any window')[0] as HTMLElement)
     fireEvent.click(screen.getByRole('tab', { name: '7 days' }))
     fireEvent.click(screen.getByText('Run backtest'))
     expect(calls.backtest).toHaveBeenCalledWith({ id: 1, rule: undefined, hours: 168, stepMin: 15 })
@@ -111,20 +136,43 @@ describe('AutopilotPage', () => {
     expect(screen.getByText(/runaway guard would have disabled it/)).toBeTruthy()
     expect(screen.getByText('Not recorded, so unknown here: light.level.')).toBeTruthy()
     expect(screen.getByRole('list', { name: 'Backtest fires' }).textContent).toContain('setLight 70 (clamped)')
-    expect(screen.getByRole('img', { name: 'Tank level (%)' })).toBeTruthy()
-    fireEvent.click(screen.getByText('Hide backtest'))
+    fireEvent.click(screen.getByText('Hide the replay'))
     expect(screen.queryByText('Run backtest')).toBeNull()
   })
 
-  it('explains the empty state and the kill switch being off', () => {
+  it('logs what rules did by default, and every check under All checks', () => {
+    render(<AutopilotPage />)
+    const log = () => within(screen.getByRole('list', { name: 'Run log' }))
+    expect(log().getByText('dry-run: water below 16 cm, setLight: value-unknown, setLight 40')).toBeTruthy()
+    expect(log().queryByText('condition false')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'All checks' }))
+    expect(log().getByText('condition false')).toBeTruthy()
+    expect(log().getByText('rule 7')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Refused' }))
+    expect(log().getAllByRole('listitem')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('tab', { name: 'Would fire' }))
+    expect(screen.getByText('Nothing matches this filter.')).toBeTruthy()
+  })
+
+  it('marks today\'s fires on each rule\'s lane', () => {
+    data.set('runs', [{ id: 5, automationId: 1, firedAt: new Date(Date.now() - 3_600_000).toISOString(), outcome: 'fired', detail: {} }])
+    render(<AutopilotPage />)
+    expect(screen.getByTestId('lane-1').children).toHaveLength(1)
+    expect(screen.getByTestId('lane-2').children).toHaveLength(0)
+  })
+
+  it('offers templates when there are no rules, and says when Autopilot is off', () => {
     data.set('list', [])
     data.set('runs', [])
     data.set('status', { enabled: false, lastTickAt: null, leases: [], rules: [], light: { source: 'manual', level: 90, leaseId: null, manualUntil: '2026-10-31T12:30:00Z', schedule: 40 } })
     render(<AutopilotPage />)
     expect(screen.getByText(/No rules yet/)).toBeTruthy()
-    expect(screen.getByText(/Off: no rule runs/)).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toMatch(/^Autopilot is off/)
     expect(screen.getByText(/held by hand until/)).toBeTruthy()
     expect(screen.getByText(/Nothing yet/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Dim when hot/ }))
+    expect(screen.getByRole('dialog', { name: 'New rule' })).toBeTruthy()
+    expect((screen.getByPlaceholderText('Dim when hot') as HTMLInputElement).value).toBe('Dim when hot')
   })
 })
 
@@ -182,7 +230,7 @@ describe('RuleEditor', () => {
   it('edits an existing rule and shows server errors', () => {
     data.set('updateError', new Error('no automation 1'))
     render(<AutopilotPage />)
-    fireEvent.click(screen.getAllByRole('button', { name: /Edit/ })[0] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Tank low' }))
     const dlg = within(screen.getByRole('dialog', { name: 'Edit rule' }))
     expect((dlg.getByPlaceholderText('Dim when hot') as HTMLInputElement).value).toBe('Tank low')
     fireEvent.click(dlg.getByText('Save'))

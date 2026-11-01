@@ -1,117 +1,159 @@
-import { Pencil, Plus, Trash2, Wand2 } from 'lucide-react'
+import { ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { describeRule } from '@/src/autopilot/describe'
-import { Badge, Button, Card, CardHeader, InlineError, SectionLabel, StatusDot } from '@/src/components/ds/core'
+import type { AutomationRule } from '@/src/autopilot/types'
+import { Button, GhostIcon, InlineError, SectionLabel } from '@/src/components/ds/core'
 import { Modal } from '@/src/components/ds/feedback'
 import { Toggle } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
 import { trpc } from '@/src/utils/trpc'
+import { backtestLine, lightLine, modePatch, ruleMode, statusLine, type BacktestSummary, type LightOwner } from './autopilotLogic'
 import { BacktestPanel } from './BacktestPanel'
 import { fromRule, type Draft } from './builderModel'
+import { ActivityCard, ModeControl, Sparkline, TodayCard } from './parts'
 import { RuleEditor } from './RuleEditor'
 
-const OUTCOME_TONE: Record<string, 'ok' | 'warn' | 'danger' | 'muted'> = { fired: 'ok', clamped: 'ok', dry_run: 'muted', skipped: 'muted', refused: 'warn', error: 'danger' }
-const OUTCOME_LABEL: Record<string, string> = { fired: 'fired', clamped: 'fired (clamped)', dry_run: 'would fire', skipped: 'skipped', refused: 'refused', error: 'error' }
-const ago = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+const lit = (value: number) => ({ kind: 'literal' as const, value })
+const sig = (signal: string) => ({ kind: 'signal' as const, signal })
 
-/** Reasons and refusals from a run's detail, in a line a person can read. */
-function why(detail: unknown): string {
-  const d = (detail ?? {}) as { reason?: string, actions?: Array<{ kind: string, value?: number, refused?: string, error?: string, skipped?: string }> }
-  if (d.reason) return d.reason.replace(/-/g, ' ')
-  return (d.actions ?? []).map(a => a.refused ?? a.error ?? (a.skipped ? `${a.kind}: ${a.skipped}` : `${a.kind}${a.value !== undefined ? ` ${a.value}` : ''}`)).join(', ')
-}
+/** Starters for an empty list; each opens the editor prefilled, in dry run. */
+const TEMPLATES: Array<{ id: string, title: string, description: string, rule: Omit<AutomationRule, 'id' | 'enabled' | 'dryRun'> }> = [
+  { id: 'tank', title: 'Tank getting low', description: 'Tell me when the tank drops below 30 %.', rule: { name: 'Tank getting low', priority: 50, cooldownMin: 240, trigger: { kind: 'tick', everyMin: 15 }, conditions: { kind: 'and', conditions: [{ kind: 'compare', op: '<', left: sig('sensor.water_level_pct'), right: lit(30) }] }, actions: [{ kind: 'notify', message: 'top up the tank' }] } },
+  { id: 'hot', title: 'Dim when hot', description: 'Turn the light down to 60 % when the air is over 29 °C.', rule: { name: 'Dim when hot', priority: 60, cooldownMin: 30, trigger: { kind: 'tick', everyMin: 5 }, conditions: { kind: 'and', conditions: [{ kind: 'compare', op: '>', left: sig('sensor.air_temp'), right: lit(29) }] }, actions: [{ kind: 'setLight', level: lit(60) }] } },
+  { id: 'ph', title: 'pH drifting up', description: 'Dose pH-down for 5 s when pH goes over 6.5.', rule: { name: 'pH drifting up', priority: 50, cooldownMin: 360, trigger: { kind: 'tick', everyMin: 10 }, conditions: { kind: 'and', conditions: [{ kind: 'compare', op: '>', left: sig('sensor.ph'), right: lit(6.5) }] }, actions: [{ kind: 'dose', doser: 'dose_1', durationS: lit(5) }] } },
+]
 
 /**
- * Autopilot (ADR-0020): rules that react to readings. Kill switch, rules with
- * their state and last outcome, the builder, backtests, and the audit log.
+ * Autopilot (ADR-0020), laid out as sleepypod's: the status line and kill
+ * switch, today's timeline, the rules with their mode and a standing 7-day
+ * backtest, and the activity log. A rule opens in the editor.
  */
 export function AutopilotPage() {
   const utils = trpc.useUtils()
   const rules = trpc.automations.list.useQuery()
   const status = trpc.automations.status.useQuery(undefined, { refetchInterval: 15_000 })
-  const runs = trpc.automations.runs.useQuery({ limit: 30 })
+  const runs = trpc.automations.runs.useQuery({ limit: 200 })
+  const backtests = trpc.automations.backtests.useQuery(undefined, { staleTime: 5 * 60_000 })
   const signals = trpc.automations.catalog.useQuery()
   const refresh = { onSuccess: () => void utils.automations.invalidate() }
   const update = trpc.automations.update.useMutation(refresh)
   const remove = trpc.automations.remove.useMutation(refresh)
   const setGlobal = trpc.automations.setGlobal.useMutation(refresh)
   const [editing, setEditing] = useState<{ id: number | null, draft: Draft | null } | null>(null)
-  const [testing, setTesting] = useState<number | null>(null)
+  const [details, setDetails] = useState<number | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
+  const [now] = useState(() => Date.now())
   const info = new Map((signals.data ?? []).map(s => [s.key, s]))
   const labels = (k: string) => info.get(k)
-  const names = new Map((rules.data ?? []).map(r => [r.id, r.name]))
+  const all = rules.data ?? []
+  const names = new Map(all.map(r => [r.id, r.name]))
+  const summaries = new Map((backtests.data ?? []).map(s => [s.id, s as BacktestSummary]))
   const st = status.data
-  const light = st?.light
+  const killed = st?.enabled === false
 
   return (
     <div className="mx-auto flex max-w-[960px] flex-col gap-4">
-      <PageHeader title="Autopilot" right={<Button variant="primary" icon={Plus} onClick={() => setEditing({ id: null, draft: null })}>New rule</Button>} />
-
-      <Card>
-        <CardHeader
-          title="Autopilot"
-          subtitle={st?.enabled === false ? 'Off: no rule runs and the light is back with you and the schedule.' : 'Rules run every minute. The hardware guards still bound every pump run and dose.'}
-          icon={Wand2}
-          right={<Toggle label="Autopilot on" on={st?.enabled ?? true} onChange={on => setGlobal.mutate({ enabled: on })} />}
-        />
-        {light && (
-          <p className="mt-2 text-xs text-fg-3">
-            {`Light: ${light.source === 'manual' ? `held by hand until ${new Date(light.manualUntil ?? '').toLocaleTimeString()}` : light.source === 'autopilot' ? `set by ${names.get(Number(light.leaseId?.split(':')[1])) ?? 'a rule'}` : light.source === 'schedule' ? 'following the schedule' : 'idle'}${light.level !== null ? ` · ${light.level} %` : ''}`}
-          </p>
+      <PageHeader
+        title={(
+          <span className="flex flex-wrap items-baseline gap-x-3">
+            Autopilot
+            {rules.data && <span className="font-mono text-xs font-normal text-fg-2" data-testid="automations-status">{statusLine(all)}</span>}
+          </span>
         )}
-      </Card>
+        right={(
+          <>
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-ctl border border-line px-3 py-1.5 text-[13px]">
+              <Toggle label="Autopilot enabled" on={!killed} onChange={on => setGlobal.mutate({ enabled: on })} />
+              {killed ? 'Autopilot off' : 'Autopilot on'}
+            </label>
+            <Button variant="primary" icon={Plus} onClick={() => setEditing({ id: null, draft: null })}>New rule</Button>
+          </>
+        )}
+      />
 
-      {rules.data?.length === 0 && (
-        <Card dashed><p className="text-[13px] text-fg-2">No rules yet. A rule watches readings (pH, temperature, tank level, how a pod is growing) and acts: notify you, set the light, run the pump or a doser, or flag a pod.</p></Card>
+      {killed && (
+        <div role="status" className="rounded-ctl border border-line-2 bg-active px-4 py-2.5 text-[13px] text-fg-2">
+          Autopilot is off. No rule runs, and the light is back with you and the schedule.
+        </div>
       )}
-      {rules.data?.map((r) => {
+
+      <TodayCard light={st?.light ? lightLine(st.light as LightOwner, names) : null} rules={all.map(r => ({ id: r.id, name: r.name, mode: ruleMode(r) }))} runs={runs.data ?? []} now={now} />
+
+      <SectionLabel>Rules</SectionLabel>
+      {all.length === 0 && rules.data && (
+        <div className="flex flex-col gap-2.5">
+          <p className="text-[13px] text-fg-2">No rules yet. A rule watches readings (pH, temperature, tank level, how a pod is growing) and acts: notify you, set the light, run the pump or a doser, or flag a pod. Start from one of these:</p>
+          <div className="grid gap-2.5 min-[720px]:grid-cols-3">
+            {TEMPLATES.map(t => (
+              <button key={t.id} type="button" onClick={() => setEditing({ id: null, draft: fromRule(t.rule) })} className="flex cursor-pointer flex-col gap-1.5 rounded-card border border-line bg-surface px-4 py-3.5 text-left transition-colors hover:bg-active">
+                <span className="text-sm font-medium text-fg">{t.title}</span>
+                <span className="text-[13px] leading-snug text-fg-2">{t.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {all.map((r) => {
         const draft = fromRule(r)
         const live = st?.rules.find(x => x.id === r.id)
+        const bt = summaries.get(r.id)
+        const open = () => (draft ? setEditing({ id: r.id, draft }) : setDetails(details === r.id ? null : r.id))
         return (
-          <Card key={r.id} tone={r.lastRun?.outcome === 'error' ? 'warn' : undefined}>
-            <CardHeader
-              title={r.name}
-              subtitle={describeRule(r, labels)}
-              right={(
-                <div className="flex items-center gap-2">
-                  {!r.enabled && <Badge variant="paused">Off</Badge>}
-                  {r.enabled && <Badge variant={r.dryRun ? 'dev' : 'active'}>{r.dryRun ? 'Dry run' : 'Armed'}</Badge>}
+          <div key={r.id} className="flex flex-col gap-3 rounded-card border border-line bg-surface px-[18px] py-4" data-testid={`rule-${r.id}`}>
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${r.name}`}
+              onClick={open}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault()
+                  open()
+                }
+              }}
+              className="group grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 rounded-ctl focus:outline-none focus-visible:bg-active max-[720px]:grid-cols-1"
+            >
+              <div className="min-w-0">
+                <div className="mb-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <span className="text-[15px] font-medium text-fg">{r.name}</span>
+                  {r.lastRun?.outcome === 'error' && <span className="font-mono text-[12px] text-[var(--status-danger)]">last run failed</span>}
+                  {live?.cooldownUntil && <span className="font-mono text-[11px] text-fg-3">{`cooling down until ${new Date(live.cooldownUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}</span>}
+                  {live && live.actionsLastHour > 0 && <span className="font-mono text-[11px] text-fg-3">{`${live.actionsLastHour} action${live.actionsLastHour === 1 ? '' : 's'} this hour`}</span>}
                 </div>
-              )}
-            />
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-3">
-              {r.lastRun ? <StatusDot tone={OUTCOME_TONE[r.lastRun.outcome] ?? 'muted'} label={`${OUTCOME_LABEL[r.lastRun.outcome]} · ${ago(r.lastRun.firedAt)}`} /> : <span>Not run yet</span>}
-              {live?.cooldownUntil && <span>{`cooling down until ${new Date(live.cooldownUntil).toLocaleTimeString()}`}</span>}
-              {live && live.actionsLastHour > 0 && <span>{`${live.actionsLastHour} action${live.actionsLastHour === 1 ? '' : 's'} this hour`}</span>}
+                <span className="text-[13px] leading-snug text-fg-2 text-pretty">{describeRule(r, labels)}</span>
+              </div>
+              <div className="flex items-center gap-3 max-[720px]:justify-between">
+                <ModeControl name={r.name} value={ruleMode(r)} onChange={m => update.mutate({ id: r.id, ...modePatch(m) })} />
+                <GhostIcon
+                  icon={Trash2}
+                  label={`Delete ${r.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDeleting(r.id)
+                  }}
+                />
+                <ChevronRight size={16} className="text-fg-3 transition-colors group-hover:text-fg-2" />
+              </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant={r.dryRun ? 'primary' : 'secondary'} disabled={!r.enabled} onClick={() => update.mutate({ id: r.id, dryRun: !r.dryRun })}>{r.dryRun ? 'Arm' : 'Back to dry run'}</Button>
-              <Button size="sm" onClick={() => update.mutate({ id: r.id, enabled: !r.enabled })}>{r.enabled ? 'Turn off' : 'Turn on'}</Button>
-              <Button size="sm" icon={Pencil} disabled={!draft} title={draft ? undefined : 'Made through the API in a shape the form can\'t show'} onClick={() => setEditing({ id: r.id, draft })}>Edit</Button>
-              <Button size="sm" onClick={() => setTesting(testing === r.id ? null : r.id)}>{testing === r.id ? 'Hide backtest' : 'Backtest'}</Button>
-              <Button size="sm" variant="danger" icon={Trash2} onClick={() => setDeleting(r.id)}>Delete</Button>
-            </div>
-            {testing === r.id && <div className="mt-3"><BacktestPanel id={r.id} /></div>}
-          </Card>
+            <button
+              type="button"
+              aria-expanded={details === r.id}
+              onClick={() => setDetails(details === r.id ? null : r.id)}
+              className="flex flex-wrap items-center gap-3 rounded-ctl border border-line px-3 py-2 text-left hover:bg-active"
+            >
+              {bt && <Sparkline s={bt} />}
+              <span className="flex flex-col gap-0.5">
+                <span className="font-mono text-[11px] text-fg-2" data-testid={`backtest-${r.id}`}>{backtestLine(bt)}</span>
+                <span className="text-[11px] text-fg-3">{details === r.id ? 'Hide the replay' : 'Replay it over any window'}</span>
+              </span>
+            </button>
+            {details === r.id && <BacktestPanel id={r.id} />}
+          </div>
         )
       })}
       {(update.error ?? setGlobal.error) && <InlineError>{(update.error ?? setGlobal.error)?.message}</InlineError>}
 
-      <SectionLabel>Run log</SectionLabel>
-      <Card>
-        {runs.data?.length === 0 && <p className="text-[13px] text-fg-2">Nothing yet. Every time a rule&apos;s trigger comes round, its outcome lands here.</p>}
-        <ul className="flex flex-col" aria-label="Run log">
-          {runs.data?.map(run => (
-            <li key={run.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line py-1.5 text-[13px] first:border-t-0">
-              <span className="w-28 shrink-0 font-mono text-xs text-fg-3">{ago(run.firedAt)}</span>
-              <StatusDot tone={OUTCOME_TONE[run.outcome] ?? 'muted'} label={OUTCOME_LABEL[run.outcome] ?? run.outcome} />
-              <span className="text-fg">{names.get(run.automationId) ?? `rule ${run.automationId}`}</span>
-              <span className="text-fg-2">{why(run.detail)}</span>
-            </li>
-          ))}
-        </ul>
-      </Card>
+      <ActivityCard runs={runs.data ?? []} names={names} />
 
       {editing && <RuleEditor id={editing.id} initial={editing.draft} onClose={() => setEditing(null)} />}
       {deleting !== null && (
