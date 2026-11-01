@@ -14,6 +14,10 @@ export interface TowerMountOptions {
   onSelect: (target: TowerTarget) => void
   onReady: () => void
   onFail: () => void
+  /** After every frame, so an overlay pinned to the tower can follow it. */
+  onRender?: () => void
+  /** Pixels on the right that a panel covers at this width; the tower centres in what's left. */
+  reserveRight?: (width: number) => number
 }
 
 const deg = Math.PI / 180
@@ -93,6 +97,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     const moving = tower.tick(dt)
     room.setLight(tower.light())
     renderer.render(scene, camera)
+    o.onRender?.()
     if (!ready) {
       ready = true
       host.dataset.ready = 'true'
@@ -107,11 +112,17 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     if (!frame) frame = requestAnimationFrame(render)
   }
 
+  const size = { width: 0, height: 0 }
   const resize = () => {
     const { width, height } = host.getBoundingClientRect()
     if (!width || !height) return
+    Object.assign(size, { width, height })
     renderer.setSize(width, height, false)
     camera.aspect = width / height
+    const reserved = o.reserveRight?.(width) ?? 0
+    // Slide the view rather than the camera, so the tower keeps its angle and only moves over.
+    if (reserved > 0) camera.setViewOffset(width, height, reserved / 2, 0, width, height)
+    else camera.clearViewOffset()
     camera.updateProjectionMatrix()
     requestRender()
   }
@@ -205,6 +216,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   })
   theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   canvas.style.cursor = 'grab'
+  const anchorAt = new THREE.Vector3()
   host.appendChild(canvas)
   resize()
 
@@ -215,6 +227,14 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     update(state: TowerState) {
       tower.update(state)
       requestRender()
+    },
+    /** Where a pod sits on the host, in pixels from its top left; null when it's off screen or there's no such slot. */
+    anchor(slot: number): { x: number, y: number } | null {
+      if (!tower.podAnchor(slot, anchorAt)) return null
+      camera.updateMatrixWorld()
+      anchorAt.project(camera)
+      if (anchorAt.z > 1 || Math.abs(anchorAt.x) > 1 || Math.abs(anchorAt.y) > 1) return null
+      return { x: (anchorAt.x + 1) / 2 * size.width, y: (1 - anchorAt.y) / 2 * size.height }
     },
     dispose() {
       cancelAnimationFrame(frame)

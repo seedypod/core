@@ -11,14 +11,14 @@ test('grow: the tower renders in 3D, a pod picked on it opens in the side panel'
   await expect(tower.locator('canvas')).toBeVisible()
   await expect(page.getByText('Needs attention')).toBeVisible()
 
-  // Hovering pods shows which one is under the pointer; scan until one answers.
+  // Hovering a pod previews its callout; scan until one answers.
   const box = await tower.boundingBox()
   if (!box) throw new Error('the tower has no size')
   let found = false
   for (let y = 0.1; y < 0.8 && !found; y += 0.03) {
     for (let x = 0.3; x < 0.7 && !found; x += 0.03) {
       await page.mouse.move(box.x + box.width * x, box.y + box.height * y)
-      found = await tower.getByRole('status').isVisible()
+      found = await tower.getByTestId('pod-callout').isVisible()
       if (found) await page.mouse.click(box.x + box.width * x, box.y + box.height * y)
     }
   }

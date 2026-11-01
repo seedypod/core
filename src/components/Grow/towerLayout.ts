@@ -63,6 +63,16 @@ export function podPlaces(podCount: number): PodPlace[] {
 
 export type PodStatus = 'empty' | 'seeded' | 'growing' | 'harvest' | 'attention'
 
+/** What each pod status is called, and its colour token, wherever pods are drawn. */
+export const STATUS_LABEL: Record<PodStatus, string> = { empty: 'Empty', seeded: 'Seeded', growing: 'Growing', harvest: 'Ready to harvest', attention: 'Needs attention' }
+export const STATUS_TOKEN: Record<PodStatus, string> = {
+  growing: 'var(--pod-ok)',
+  harvest: 'var(--accent-light)',
+  attention: 'var(--pod-attention)',
+  seeded: 'var(--text-2)',
+  empty: 'var(--text-3)',
+}
+
 /** Days a leafy green or herb takes from planting to its first harvest, roughly. */
 const DAYS_TO_HARVEST = 35
 

@@ -32,11 +32,18 @@ vi.mock('@/src/utils/trpc', () => {
   }
 })
 
-// The real view needs WebGL; this one renders the chips it's given and exposes its callbacks.
+// The real view needs WebGL; this one renders the chips and pod action it's given and exposes its callbacks.
 vi.mock('@/src/components/Grow/TowerView', () => ({
-  TowerView: (props: { controls: ReactNode }) => {
+  TowerView: (props: { controls: ReactNode, status: ReactNode, podAction: ReactNode, aside: ReactNode }) => {
     tower.props = props
-    return <div data-testid="tower">{props.controls}</div>
+    return (
+      <div data-testid="tower">
+        {props.controls}
+        {props.status}
+        <div data-testid="pod-action">{props.podAction}</div>
+        {props.aside}
+      </div>
+    )
   },
 }))
 
@@ -51,7 +58,7 @@ beforeEach(() => {
   data.set('system', { system: { caps: { sensors: ['air_temp', 'ph'] } } })
   data.set('grow', { cycle: { stage: 'vegetative', notes: 'greens' }, day: 19 })
   data.set('pods', [{ slot: 1, plant: 'Basil', status: 'growing', notes: 'pinch tops', plantedAt: null, updatedAt: '' }, { slot: 2, plant: null, status: 'empty', notes: '', plantedAt: null, updatedAt: '' }])
-  data.set('trends', [{ slot: 1, green: 0.42, verdict: 'growing', slope: 0, samples: 6 }])
+  data.set('trends', [{ slot: 1, green: 0.42, verdict: 'growing', slope: 0, samples: 6, recent: [0.3, 0.42] }])
   data.set('owner', { source: 'schedule', level: 85, leaseId: null, manualUntil: null, schedule: 85 })
   const hist = (vals: number[]) => vals.map((value, i) => ({ ts: new Date(Date.UTC(2026, 9, 31, i)).toISOString(), value }))
   data.set('history:water_level_pct', hist([80, 72, 64]))
@@ -63,15 +70,32 @@ afterEach(cleanup)
 const chip = (label: string) => within(screen.getByTestId('tower')).getByRole('button', { name: label })
 
 describe('Home', () => {
-  it('puts the light, tank and air readings in a row on the tower, and names the parts on hover', () => {
+  it('puts the light, tank, air and water-quality readings in a row on the tower, and names the parts on hover', () => {
+    data.set('sensors', { ...data.get('sensors') as object, ph: r(6.1, 'pH') })
     render(<TowerHome onUnavailable={vi.fn()} />)
     expect(chip('85%')).toBeTruthy()
     expect(chip('64%')).toBeTruthy()
     expect(chip('22.5°C · 51%')).toBeTruthy()
     expect(tower.props?.partLabels).toEqual({ light: 'Grow light · 85%', tank: 'Tank · 64%' })
     expect(tower.props).toMatchObject({ waterPct: 64, lightLevel: 85, selected: null })
+    fireEvent.click(chip('pH 6.1'))
+    const panel = screen.getByRole('dialog', { name: 'pH 6.1' })
+    expect(panel.textContent).toContain('Water quality')
+    expect(within(panel).getByText('pH')).toBeTruthy()
+  })
+
+  it('shows the cycle\'s day on the tower, with the stage and pod counts in its panel', () => {
+    render(<TowerHome onUnavailable={vi.fn()} />)
+    fireEvent.click(chip('Day 19'))
+    const panel = screen.getByRole('dialog', { name: 'Day 19' })
+    expect(panel.textContent).toContain('Day 19 · vegetative')
+    expect(panel.textContent).toContain('greens')
     expect(screen.getByTestId('home-counts').textContent).toBe('1 growing · 0 ready · 0 attention')
-    expect(screen.getByText('Water quality')).toBeTruthy()
+    cleanup()
+    data.set('grow', { cycle: null, day: null })
+    render(<TowerHome onUnavailable={vi.fn()} />)
+    fireEvent.click(chip('No cycle'))
+    expect(screen.getByRole('dialog', { name: 'No cycle' }).textContent).toContain('Start one on Grow')
   })
 
   it('opens the light control in place: on/off, and brightness on release', () => {
@@ -88,6 +112,17 @@ describe('Home', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('turns the tank\'s icon blue and pulses it while the pump runs', () => {
+    const { unmount } = render(<TowerHome onUnavailable={vi.fn()} />)
+    expect(chip('64%').querySelector('svg')?.getAttribute('class')).toContain('text-fg-2')
+    unmount()
+    data.set('pump', { on: true, level: 80, remainingS: 200, fault: null })
+    render(<TowerHome onUnavailable={vi.fn()} />)
+    const icon = chip('64%').querySelector('svg') as SVGElement
+    expect(icon.getAttribute('class')).toContain('motion-safe:animate-pulse')
+    expect(icon.style.color).toBe('var(--accent-water)')
+  })
+
   it('runs and stops the pump from the tank, and flags a low tank', () => {
     data.set('alerts', [{ id: 1, kind: 'water_low', active: true, detail: 'tank low' }])
     render(<TowerHome onUnavailable={vi.fn()} />)
@@ -96,16 +131,43 @@ describe('Home', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run 5 min' }))
     expect(calls.runOnce).toHaveBeenCalledWith({ durationS: 300 })
     expect((screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText('tank low')).toBeTruthy()
+    fireEvent.click(chip('1 alert'))
+    expect(chip('1 alert').className).toMatch(/status-warn/)
+    expect(within(screen.getByRole('dialog', { name: '1 alert' })).getByText('tank low')).toBeTruthy()
+    expect(screen.getByText('All alerts').closest('a')?.getAttribute('href')).toBe('/alerts')
   })
 
-  it('shows the pod picked on the tower, with a link to edit it on Grow', () => {
+  it('lays the cycle down the right: its day and stage, a count per status, and the pods to harvest or see to', () => {
+    data.set('pods', [
+      { slot: 1, plant: 'Basil', status: 'growing', notes: '', plantedAt: null, updatedAt: '' },
+      { slot: 3, plant: 'Jalapeño', status: 'harvest', notes: '', plantedAt: null, updatedAt: '' },
+      { slot: 9, plant: 'Kale', status: 'attention', notes: 'yellowing leaves', plantedAt: null, updatedAt: '' },
+      { slot: 10, plant: null, status: 'empty', notes: '', plantedAt: null, updatedAt: '' },
+    ])
     render(<TowerHome onUnavailable={vi.fn()} />)
+    const panel = screen.getByRole('region', { name: 'Grow cycle' })
+    expect(panel.textContent).toContain('Day 19')
+    expect(panel.textContent).toContain('Vegetative · greens')
+    expect(within(panel).getByTestId('cycle-counts').textContent).toBe('Growing1Ready1Attention1Seeded0Empty1')
+    const kale = within(panel).getByRole('button', { name: /Kale/ })
+    expect(kale.textContent).toBe('KalePod 9yellowing leaves')
+    expect(within(panel).getByRole('button', { name: /Jalapeño/ }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(kale)
+    expect(tower.props?.selected).toBe(9)
+    expect(kale.getAttribute('aria-pressed')).toBe('true')
+    // The day chip is for narrow views only.
+    expect(chip('Day 19').parentElement?.parentElement?.className).toContain('@min-[900px]:hidden')
+  })
+
+  it('gives the tower each pod\'s trend and notes for its callout, links the picked one to Grow, and unpicks it on a second click', () => {
+    render(<TowerHome onUnavailable={vi.fn()} />)
+    expect((tower.props?.pods as unknown[])[0]).toMatchObject({ slot: 1, plant: 'Basil', green: 0.42, verdict: 'growing', recent: [0.3, 0.42], notes: 'pinch tops' })
+    expect(screen.getByTestId('pod-action').textContent).toBe('')
     act(() => (tower.props?.onSelect as (s: number) => void)(1))
-    expect(screen.getByText('Pod 1')).toBeTruthy()
-    expect(screen.getByText('42%')).toBeTruthy()
-    expect(screen.getByText('pinch tops')).toBeTruthy()
+    expect(tower.props?.selected).toBe(1)
     expect(screen.getByText('Edit on Grow').closest('a')?.getAttribute('href')).toBe('/grow?pod=1')
+    act(() => (tower.props?.onSelect as (s: number) => void)(1))
+    expect(tower.props?.selected).toBeNull()
   })
 
   it('charts the last 24 hours of air and humidity, with min, avg and max', () => {
