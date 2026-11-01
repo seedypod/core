@@ -70,6 +70,8 @@ export interface TowerState {
   waterPct: number | null
   /** 0–100; 0 when the light is off. */
   lightLevel: number
+  /** Water flows up the columns while the pump runs. */
+  pumpOn?: boolean
   hovered: number | null
   selected: number | null
 }
@@ -125,13 +127,28 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
   water.position.set(tankWindow.position.x, 0, baseDepth / 2 + 0.002)
   root.add(water)
 
-  // The columns the pods hang on.
+  // The columns the pods hang on, each with a channel the water climbs while the pump runs.
   const columnHeight = shape.height - shape.baseTop
+  const stripes = new Uint8Array(16 * 4)
+  for (let i = 0; i < 16; i++) stripes.set([255, 255, 255, i % 4 < 2 ? 255 : 90], i * 4)
+  const flowTex = new THREE.DataTexture(stripes, 1, 16)
+  flowTex.wrapT = THREE.RepeatWrapping
+  flowTex.repeat.set(1, columnHeight * 4)
+  flowTex.magFilter = THREE.LinearFilter
+  flowTex.needsUpdate = true
+  const flowMat = new THREE.MeshBasicMaterial({ color: palette.water, map: flowTex, transparent: true, opacity: 0, depthWrite: false })
+  materials.push(flowMat)
+  const flowGeo = geo(new THREE.CylinderGeometry(0.013, 0.013, columnHeight, 10, 1, true))
   for (const x of shape.columnX) {
     const column = new THREE.Mesh(geo(new RoundedBoxGeometry(0.045, columnHeight, 0.06, 3, 0.015)), bodyMat)
     column.position.set(x, shape.baseTop + columnHeight / 2, 0)
     column.castShadow = true
     root.add(column)
+    const flow = new THREE.Mesh(flowGeo, flowMat)
+    flow.name = 'flow'
+    flow.position.set(x, shape.baseTop + columnHeight / 2, 0.038)
+    flow.renderOrder = 2
+    root.add(flow)
     const cap = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.03, 0.03, 0.02, 20)), trimMat)
     cap.position.set(x, shape.height + 0.01, 0)
     root.add(cap)
@@ -227,6 +244,16 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
 
   let current: TowerState | null = null
   let colors = palette
+  // Animated: the tank eases to its level; the water channels fade in and flow while the pump runs.
+  let waterShown: number | null = null
+  let waterTarget = 0
+  let pumpOn = false
+
+  function setWater(level: number) {
+    water.visible = level > 0.001
+    water.scale.y = Math.max(0.001, windowHeight * 0.96 * level)
+    water.position.y = tankWindow.position.y - windowHeight * 0.48 + water.scale.y / 2
+  }
 
   function paint(state: TowerState) {
     const bySlot = new Map(state.pods.map(p => [p.slot, p]))
@@ -249,10 +276,12 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       pod.collarMat.emissiveIntensity = focus ? 0.9 : status === 'attention' ? 0.5 : 0.15
       pod.collar.scale.setScalar(focus ? 1.25 : 1)
     }
-    const level = state.waterPct === null ? 0 : Math.max(0, Math.min(100, state.waterPct)) / 100
-    water.visible = level > 0
-    water.scale.y = Math.max(0.001, windowHeight * 0.96 * level)
-    water.position.y = tankWindow.position.y - windowHeight * 0.48 + water.scale.y / 2
+    waterTarget = state.waterPct === null ? 0 : Math.max(0, Math.min(100, state.waterPct)) / 100
+    if (waterShown === null) {
+      waterShown = waterTarget
+      setWater(waterTarget)
+    }
+    pumpOn = !!state.pumpOn
     const light = Math.max(0, Math.min(100, state.lightLevel)) / 100
     for (const m of ledMats) {
       m.emissiveIntensity = light * 2.2
@@ -281,6 +310,28 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       current = state
       paint(state)
     },
+    /** Advances the animations by `dt` seconds; true while anything is still moving. */
+    tick(dt: number): boolean {
+      let moving = false
+      const shown = waterShown ?? waterTarget
+      if (Math.abs(shown - waterTarget) > 0.002) {
+        waterShown = shown + (waterTarget - shown) * Math.min(1, dt * 3)
+        moving = true
+      }
+      else waterShown = waterTarget
+      setWater(waterShown)
+      const flowTarget = pumpOn ? 0.95 : 0
+      if (Math.abs(flowMat.opacity - flowTarget) > 0.01) {
+        flowMat.opacity += (flowTarget - flowMat.opacity) * Math.min(1, dt * 4)
+        moving = true
+      }
+      else flowMat.opacity = flowTarget
+      if (pumpOn) {
+        flowTex.offset.y -= dt * 1.2
+        moving = true
+      }
+      return moving
+    },
     recolor(next: TowerPalette) {
       colors = next
       bodyMat.color.set(next.body)
@@ -292,10 +343,12 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       leafSickMat.color.set(next.leafSick)
       waterMat.color.set(next.water)
       waterMat.emissive.set(next.water)
+      flowMat.color.set(next.water)
       for (const m of ledMats) m.emissive.set(next.ledOn)
       if (current) paint(current)
     },
     dispose() {
+      flowTex.dispose()
       for (const g of geometries) g.dispose()
       for (const m of materials) m.dispose()
     },

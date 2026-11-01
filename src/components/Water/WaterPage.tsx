@@ -1,3 +1,4 @@
+import { withUnit } from '@/src/lib/sensorMeta'
 import { Droplets, Waves, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Card, CardHeader, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
@@ -85,5 +86,5 @@ export function WaterPage() {
 }
 
 function fmt(r: { value: number, unit: string } | undefined): string {
-  return r ? `${r.value}${r.unit.startsWith('°') || r.unit === '%' ? r.unit : ` ${r.unit}`}` : '—'
+  return r ? withUnit(r.value, r.unit) : '—'
 }

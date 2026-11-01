@@ -12,7 +12,7 @@ test('autopilot: build a rule, see it in words, arm it, watch it take the light,
   await dlg.getByLabel('Value').fill('0')
   await dlg.getByLabel('Action', { exact: true }).selectOption('setLight')
   await dlg.getByLabel('Level %').fill('45')
-  await expect(dlg.getByLabel('Rule preview')).toHaveText('Every 5 minutes, if air temperature is above 0 °C, set the light to 45 %. At most once every 30 min.')
+  await expect(dlg.getByLabel('Rule preview')).toHaveText('Every 5 minutes, if air temperature is above 0°C, set the light to 45%. At most once every 30 min.')
   await dlg.getByRole('button', { name: 'Save' }).click()
 
   const row = page.getByTestId(/^rule-/).filter({ hasText: 'Light at 45 while warm' })
@@ -25,7 +25,7 @@ test('autopilot: build a rule, see it in words, arm it, watch it take the light,
 
   await mode.getByRole('radio', { name: 'Active' }).click()
   await expect(mode.getByRole('radio', { name: 'Active' })).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByText(/Light: set by Light at 45 while warm · 45 %/)).toBeVisible()
+  await expect(page.getByText(/Light: set by Light at 45 while warm · 45%/)).toBeVisible()
   await expect(page.getByTestId('automations-status')).toHaveText('1 rule · 1 active')
 
   await page.getByLabel('Autopilot enabled').click()

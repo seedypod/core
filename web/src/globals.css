@@ -621,3 +621,27 @@ html.dark {
   font-size: 14px;
 }
 .lp-btn:disabled { opacity: 0.5; }
+
+/* The tower's wireframe while the 3D view loads: lines draw in, then the pods pop in. */
+@keyframes lp-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes lp-pod-in {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+.lp-wireframe .lp-draw > * {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: lp-draw 900ms ease-out forwards;
+}
+.lp-wireframe .lp-pod-in {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: lp-pod-in 320ms ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-wireframe .lp-draw > *, .lp-wireframe .lp-pod-in { animation: none; opacity: 1; stroke-dashoffset: 0; }
+}

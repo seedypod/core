@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { TowerHome } from './TowerHome'
 import { Card, CardHeader, GrowBackdrop, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
 import type { Reading, SensorId } from '@/src/hardware/contract'
-import { formatReading, SENSOR_META } from '@/src/lib/sensorMeta'
+import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
 import { Welcome } from '@/src/components/Welcome/Welcome'
 import { trpc } from '@/src/utils/trpc'
 
@@ -107,5 +107,5 @@ export function CardsHome() {
 }
 
 function fmt(r: { value: number, unit: string } | undefined): string {
-  return r ? `${r.value}${r.unit.startsWith('°') ? r.unit : ` ${r.unit}`}` : '—'
+  return r ? withUnit(r.value, r.unit) : '—'
 }

@@ -3,6 +3,7 @@
  * rule modes, the header's status line, the backtest line on each rule, the
  * light-owner sentence and run-log copy. Pure, so it's tested without React.
  */
+import { withUnit } from '@/src/lib/sensorMeta'
 
 export type RuleMode = 'off' | 'dryrun' | 'active'
 
@@ -45,7 +46,7 @@ export function backtestLine(s: BacktestSummary | undefined): string {
   if (!s) return 'backtesting…'
   const parts = [`${s.days}-day backtest`, `${s.wouldFire} would fire`]
   const w = s.watch
-  if (w && w.extreme !== null) parts.push(`${HIGH_OPS.has(w.op) ? 'peak' : 'low'} ${num(w.extreme)} of ${num(w.threshold)}${w.unit && w.unit !== '1/0' ? ` ${w.unit}` : ''}`)
+  if (w && w.extreme !== null) parts.push(`${HIGH_OPS.has(w.op) ? 'peak' : 'low'} ${num(w.extreme)} of ${withUnit(num(w.threshold), w.unit === '1/0' ? '' : w.unit)}`)
   else if (w) parts.push(`no recorded ${w.label}`)
   if (s.disabledAt) parts.push('runaway guard would stop it')
   return parts.join(' · ')
@@ -60,7 +61,7 @@ export function lightLine(light: LightOwner, names: Map<number, string>): string
     : light.source === 'autopilot'
       ? `set by ${names.get(Number(light.leaseId?.split(':')[1])) ?? 'a rule'}`
       : light.source === 'schedule' ? 'following the schedule' : 'idle'
-  return `Light: ${who}${light.level !== null ? ` · ${light.level} %` : ''}`
+  return `Light: ${who}${light.level !== null ? ` · ${light.level}%` : ''}`
 }
 
 export type Tone = 'ok' | 'warn' | 'danger' | 'muted'

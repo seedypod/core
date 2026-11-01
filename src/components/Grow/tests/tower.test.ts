@@ -109,14 +109,42 @@ describe('tower scene', () => {
     tower.update(state)
     const half = water.scale.y
     tower.update({ ...state, waterPct: 100, lightLevel: 0 })
+    // The level eases towards a change rather than jumping.
+    expect(tower.tick(0.05)).toBe(true)
+    expect(water.scale.y).toBeGreaterThan(half)
+    expect(water.scale.y).toBeLessThan(half * 2)
+    while (tower.tick(0.1));
     expect(water.scale.y).toBeCloseTo(half * 2)
     const leds: THREE.MeshStandardMaterial[] = []
     tower.root.traverse(o => o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial && o.material.emissiveIntensity >= 0 && o.parent?.type === 'Mesh' && leds.push(o.material))
     expect(leds.length).toBe(2)
     expect(leds.every(m => m.emissiveIntensity === 0)).toBe(true)
     tower.update({ ...state, waterPct: null, lightLevel: 85 })
+    while (tower.tick(0.1));
     expect(water.visible).toBe(false)
     expect(leds[0]?.emissiveIntensity).toBeGreaterThan(1)
+    tower.dispose()
+  })
+
+  it('runs water up the columns while the pump runs, and settles when it stops', () => {
+    const tower = createTower(THREE, 30)
+    const flows: THREE.Mesh[] = []
+    tower.root.traverse(o => o.name === 'flow' && flows.push(o as THREE.Mesh))
+    expect(flows).toHaveLength(3)
+    const mat = flows[0]?.material as THREE.MeshBasicMaterial
+    tower.update(state)
+    expect(tower.tick(0.1)).toBe(false)
+    expect(mat.opacity).toBe(0)
+    tower.update({ ...state, pumpOn: true })
+    const offset = mat.map?.offset.y ?? 0
+    for (let i = 0; i < 20; i++) expect(tower.tick(0.1)).toBe(true)
+    expect(mat.opacity).toBeGreaterThan(0.8)
+    expect(mat.map?.offset.y).toBeLessThan(offset)
+    tower.update({ ...state, pumpOn: false })
+    let frames = 0
+    while (tower.tick(0.1)) frames++
+    expect(frames).toBeGreaterThan(0)
+    expect(mat.opacity).toBe(0)
     tower.dispose()
   })
 

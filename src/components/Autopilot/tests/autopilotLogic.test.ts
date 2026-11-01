@@ -20,19 +20,19 @@ describe('autopilot logic', () => {
   it('writes the backtest line with the peak or low against the threshold', () => {
     const s = { days: 7, wouldFire: 2, suppressed: 0, disabledAt: null, spark: [], fireAt: [], liveOnly: [] }
     expect(backtestLine(undefined)).toBe('backtesting…')
-    expect(backtestLine({ ...s, watch: { label: 'air', unit: '°C', op: '>', threshold: 29, extreme: 31.24 } })).toBe('7-day backtest · 2 would fire · peak 31.2 of 29 °C')
-    expect(backtestLine({ ...s, watch: { label: 'tank', unit: '%', op: '<=', threshold: 30, extreme: 120.4 } })).toBe('7-day backtest · 2 would fire · low 120 of 30 %')
+    expect(backtestLine({ ...s, watch: { label: 'air', unit: '°C', op: '>', threshold: 29, extreme: 31.24 } })).toBe('7-day backtest · 2 would fire · peak 31.2 of 29°C')
+    expect(backtestLine({ ...s, watch: { label: 'tank', unit: '%', op: '<=', threshold: 30, extreme: 120.4 } })).toBe('7-day backtest · 2 would fire · low 120 of 30%')
     expect(backtestLine({ ...s, watch: { label: 'pod', unit: '1/0', op: '==', threshold: 1, extreme: 1 } })).toBe('7-day backtest · 2 would fire · peak 1 of 1')
     expect(backtestLine({ ...s, watch: null, disabledAt: '2026-10-31T00:00:00Z' })).toBe('7-day backtest · 2 would fire · runaway guard would stop it')
   })
 
   it('says who holds the light', () => {
     const names = new Map([[4, 'Dim when hot']])
-    expect(lightLine({ source: 'autopilot', level: 60, leaseId: 'rule:4:1', manualUntil: null }, names)).toBe('Light: set by Dim when hot · 60 %')
+    expect(lightLine({ source: 'autopilot', level: 60, leaseId: 'rule:4:1', manualUntil: null }, names)).toBe('Light: set by Dim when hot · 60%')
     expect(lightLine({ source: 'autopilot', level: null, leaseId: null, manualUntil: null }, names)).toBe('Light: set by a rule')
-    expect(lightLine({ source: 'schedule', level: 30, leaseId: null, manualUntil: null }, names)).toBe('Light: following the schedule · 30 %')
+    expect(lightLine({ source: 'schedule', level: 30, leaseId: null, manualUntil: null }, names)).toBe('Light: following the schedule · 30%')
     expect(lightLine({ source: null, level: null, leaseId: null, manualUntil: null }, names)).toBe('Light: idle')
-    expect(lightLine({ source: 'manual', level: 90, leaseId: null, manualUntil: '2026-10-31T12:30:00Z' }, names)).toMatch(/^Light: held by hand until .+ · 90 %$/)
+    expect(lightLine({ source: 'manual', level: 90, leaseId: null, manualUntil: '2026-10-31T12:30:00Z' }, names)).toMatch(/^Light: held by hand until .+ · 90%$/)
   })
 
   it('filters the log and groups it by day', () => {
