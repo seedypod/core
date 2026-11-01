@@ -1,5 +1,6 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
+import { SidebarSearch } from '@/src/components/Search/CommandPalette'
 import { navItems } from './navItems'
 
 export function Sidebar({ status }: { status: string }) {
@@ -10,6 +11,7 @@ export function Sidebar({ status }: { status: string }) {
         <img src="/favicon.svg" alt="" width={28} height={28} />
         <span className="font-semibold tracking-tight">seedypod</span>
       </div>
+      <div className="mb-3 px-3"><SidebarSearch className="w-full" /></div>
       <nav className="flex flex-col gap-0.5 px-3">
         {navItems.map(({ to, label, icon: Icon }) => {
           const active = to === '/' ? pathname === '/' : pathname.startsWith(to)
