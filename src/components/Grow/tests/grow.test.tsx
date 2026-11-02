@@ -146,6 +146,19 @@ describe('Grow', () => {
     expect(screen.queryByTestId('plant-model')).toBeNull()
   })
 
+  it('gives the picked pod\'s light zone, and where its plant would grow better, as the plant is picked', () => {
+    render(<GrowPage />)
+    fireEvent.click(screen.getByRole('button', { name: '1 Basil' }))
+    expect(screen.getByText('Light zone').nextElementSibling?.textContent).toBe('Medium light')
+    expect(screen.queryByTestId('placement-advice')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Plant'), { target: { value: 'Cherry Tomato' } })
+    expect(screen.getByTestId('placement-advice').textContent).toBe('Red Cherry Tomato grows best in high light; this pod gets medium.')
+    fireEvent.click(screen.getByRole('button', { name: '2 Kale' }))
+    expect(screen.getByTestId('placement-advice').textContent).toBe('Kale grows best in medium light; this pod gets low. Free pods that suit it: 3.')
+    fireEvent.click(screen.getByRole('button', { name: /^3 / }))
+    expect(screen.getByTestId('placement-advice').textContent).toBe('Suits this pod: Basil, Breen Lettuce, Buttercrunch, Butterhead, Celery, Dianthus.')
+  })
+
   it('crops a lower pod from the lower camera, and says when there is no photo or trend yet', () => {
     data.set('pods', Array.from({ length: 30 }, (_, i) => pod(i + 1, { plant: 'Mint', status: 'growing' })))
     data.set('captures', [])

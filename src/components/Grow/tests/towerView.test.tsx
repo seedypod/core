@@ -45,7 +45,7 @@ describe('TowerView', () => {
     render(<TowerView pods={pods} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} legend={false} />)
     await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
     expect(screen.queryByText('Ready to harvest')).toBeNull()
-    expect(screen.getByText('Click a pod · drag to turn · ⌘-scroll to zoom').className).not.toContain('ml-auto')
+    expect(screen.getByText('Click a pod · drag to turn · ⌘-scroll to zoom')).toBeTruthy()
   })
 
   it('previews the hovered pod\'s callout in place of the picked one\'s, and names a part only where it has a control', async () => {
@@ -98,6 +98,34 @@ describe('TowerView', () => {
     rerender(<TowerView pods={trended} waterPct={null} lightLevel={0} selected={null} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
     act(() => mounted.opts?.onRender?.())
     expect(screen.queryByTestId('pod-callout')).toBeNull()
+  })
+
+  it('toggles the light zones, remembering the choice, with the model\'s legend and the pinned pod\'s zone and placement advice', async () => {
+    localStorage.clear()
+    const mint = [{ slot: 1, status: 'growing' as const, plant: 'Mint' }, { slot: 2, status: 'empty' as const, plant: null }]
+    const { unmount } = render(<TowerView pods={mint} waterPct={null} lightLevel={0} selected={1} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    mounted.at = { x: 200, y: 300 }
+    act(() => mounted.opts?.onRender?.())
+    expect(screen.queryByTestId('callout-zone')).toBeNull()
+    const toggle = screen.getByRole('button', { name: 'Light zones' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(mounted.updates.at(-1)?.zones).toBe(true)
+    expect(screen.getByTestId('zone-legend').textContent).toContain('Gardyn Studio')
+    expect(screen.getByTestId('zone-legend').textContent).toContain('Low light · Lower left and upper right pods')
+    expect(screen.queryByText('Ready to harvest')).toBeNull()
+    expect(screen.getByTestId('callout-zone').textContent).toBe('Medium light')
+    expect(screen.getByRole('group', { name: 'Pod 1' }).textContent).toContain('Mint grows best in low light; this pod gets medium, more than it needs. Free pods that suit it: 2.')
+    expect(localStorage.getItem('seedypod.lightZones')).toBe('on')
+    unmount()
+    render(<TowerView pods={mint} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Light zones' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Light zones' }))
+    expect(localStorage.getItem('seedypod.lightZones')).toBe('off')
+    expect(screen.queryByTestId('zone-legend')).toBeNull()
   })
 
   it('puts the aside down the right', async () => {

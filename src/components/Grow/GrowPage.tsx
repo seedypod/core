@@ -13,6 +13,7 @@ import { PlantThumb, podForm } from './PlantThumb'
 import { ageDays, heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
 import { TowerView } from './TowerView'
+import { plantLight, podLight, ZONE_COLOR, ZONE_LABEL, type LightZone, type PodLight } from './lightZones'
 
 type Stage = 'germination' | 'seedling' | 'vegetative' | 'harvest'
 type PodStatus = 'empty' | 'seeded' | 'growing' | 'harvest' | 'attention'
@@ -26,6 +27,8 @@ const VIEWS: { value: View, label: ReactNode }[] = [
   { value: 'tower', label: [<Box key="i" size={16} aria-hidden="true" />, 'Tower'] },
 ]
 const PLANTS = [...new Set(CATALOG.map(e => e.name))].sort()
+/** Catalog plants that grow best in `zone`, for an empty pod. */
+const suitedTo = (zone: LightZone) => PLANTS.filter(p => plantLight(p)?.zone === zone)
 
 function savedView(): View {
   try {
@@ -238,6 +241,7 @@ export function GrowPage() {
                   pod={towerPods.find(p => p.slot === draft.slot) ?? { slot: draft.slot, status: saved.status, plant: saved.plant }}
                   tower={towerName(Math.max(0, towers.findIndex(t => t.some(p => p.slot === draft.slot))))}
                   coverPerDay={outlook.get(draft.slot)?.coverPerDay ?? null}
+                  light={podLight(towerPods, draft.slot, draft.plant.trim() || null)}
                   plantedAt={saved.plantedAt}
                   draft={draft}
                   dirty={dirty}
@@ -337,11 +341,13 @@ function Row({ label, children, last }: { label: string, children: ReactNode, la
 
 const INLINE = 'min-w-0 flex-1 bg-transparent text-right text-fg outline-none placeholder:text-fg-3'
 
-function PodPanel({ pod, tower, coverPerDay, plantedAt, draft, dirty, saving, onChange, onClose, onSave, onRevert, onHarvested, onDismiss }: {
+function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, saving, onChange, onClose, onSave, onRevert, onHarvested, onDismiss }: {
   pod: PodState
   tower: string
   /** Leaf cover gained a day, from the harvest outlook. */
   coverPerDay: number | null
+  /** The pod's light zone, and advice when the plant in the draft would suit another. */
+  light: PodLight | null
   plantedAt: string | null
   draft: Draft
   dirty: boolean
@@ -418,6 +424,16 @@ function PodPanel({ pod, tower, coverPerDay, plantedAt, draft, dirty, saving, on
         <Row label="Notes">
           <input aria-label="Notes" value={draft.notes} onChange={e => onChange({ ...draft, notes: e.target.value })} placeholder="Add a note" className={INLINE} />
         </Row>
+        {light && (
+          <Row label="Light zone">
+            <span className="flex items-center gap-2">
+              <span className="size-[7px] rounded-full" style={{ background: ZONE_COLOR[light.zone] }} />
+              {ZONE_LABEL[light.zone]}
+            </span>
+          </Row>
+        )}
+        {light && !draft.plant.trim() && <p data-testid="placement-advice" className="border-b border-line/70 py-2.5 text-xs leading-normal text-fg-2">{`Suits this pod: ${suitedTo(light.zone).slice(0, 6).join(', ')}.`}</p>}
+        {light?.advice && <p data-testid="placement-advice" className="border-b border-line/70 py-2.5 text-xs leading-normal text-fg-2">{light.advice}</p>}
         <Row label="Seeded"><span className="font-mono">{plantedAt ? shortDate(plantedAt) : '—'}</span></Row>
         <Row label="Harvest window" last><span className="font-mono">{harvestWindow}</span></Row>
       </div>

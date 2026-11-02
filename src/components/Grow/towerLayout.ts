@@ -48,7 +48,8 @@ export function podPlaces(podCount: number): PodPlace[] {
   return Array.from({ length: podCount }, (_, i) => {
     const row = Math.floor(i / shape.columns)
     const column = i % shape.columns
-    const side: -1 | 1 = (row + column) % 2 === 0 ? -1 : 1
+    // Every column starts on the right and alternates, as Gardyn's light-zone diagrams draw them.
+    const side: -1 | 1 = row % 2 === 0 ? 1 : -1
     return {
       slot: i + 1,
       column,

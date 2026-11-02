@@ -6,6 +6,7 @@
  */
 import type * as T from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { podZones, ZONE_COLOR } from './lightZones'
 import { buildPlant, createKit } from './plants'
 import { plantForm, plantScale, podPlaces, towerShape, type PlantForm, type PodStatus } from './towerLayout'
 
@@ -96,6 +97,8 @@ export interface TowerState {
   pumpOn?: boolean
   hovered: number | null
   selected: number | null
+  /** Colour the collars by light zone instead of status. */
+  zones?: boolean
 }
 
 /** The size each stage's model is built at, on plantScale's 0–1; a measured plant scales a little either side of it. */
@@ -105,6 +108,7 @@ const STAGE_SCALE: Record<Exclude<PlantForm, 'none'>, number> = { sprout: 0.25, 
 export function createTower(THREE: Three, podCount: number, palette: TowerPalette = DARK_PALETTE) {
   const shape = towerShape(podCount)
   const places = podPlaces(podCount)
+  const zoneOf = podZones(podCount)
   const root = new THREE.Group()
   root.name = 'tower'
   const geometries: T.BufferGeometry[] = []
@@ -307,9 +311,11 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       // Each stage's model is built to size; a measured plant grows a little either side of it.
       pod.plant.scale.setScalar(form === 'none' ? 1 : Math.max(0.8, Math.min(1.2, scale / STAGE_SCALE[form])))
       const focus = state.selected === slot || state.hovered === slot
-      pod.collarMat.color.set(focus ? colors.highlight : colors.status[status])
-      pod.collarMat.emissive.set(colors.status[status])
-      pod.collarMat.emissiveIntensity = focus ? 0.9 : status === 'attention' ? 0.5 : 0.15
+      const zone = state.zones ? zoneOf.get(slot) : undefined
+      const tint = zone ? ZONE_COLOR[zone] : colors.status[status]
+      pod.collarMat.color.set(focus ? colors.highlight : tint)
+      pod.collarMat.emissive.set(tint)
+      pod.collarMat.emissiveIntensity = focus ? 0.9 : zone ? 0.35 : status === 'attention' ? 0.5 : 0.15
       pod.collar.scale.setScalar(focus ? 1.25 : 1)
     }
     waterTarget = state.waterPct === null ? 0 : Math.max(0, Math.min(100, state.waterPct)) / 100

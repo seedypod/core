@@ -106,38 +106,43 @@ export const CATALOG: CatalogEntry[] = [
 /** Words that narrow a match (a colour, "sweet") without naming the plant. */
 const QUALIFIERS = new Set(['red', 'green', 'purple', 'yellow', 'violet', 'sweet', 'mini', 'italian', 'perpetual', 'holy', 'radio', 'lettuce', 'flower'])
 
-/** Lower case, no accents, singular: "Jalapeños" → ["jalapeno"], "Red Cherry Tomatoes" → ["red", "cherry", "tomato"]. */
+/** Lower case, no accents, singular: "Jalapeños" → ["jalapeno"], "Red Cherry Tomatoes" → ["red", "cherry", "tomato"], "Strawberries" → ["strawberry"]. */
 export function words(name: string): string[] {
   return name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z]+/).filter(Boolean)
-    .map(w => (w.endsWith('oes') ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w))
+    .map(w => (w.endsWith('oes') ? w.slice(0, -2) : w.length > 4 && w.endsWith('ies') ? `${w.slice(0, -3)}y` : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w))
 }
-
-const INDEX = CATALOG.map(e => ({ e, words: words(e.name) }))
 
 /**
- * The catalog entry for a pod's plant name, or null when nothing matches.
- * Words that name the plant score 1, qualifiers 0.3, and each catalog word the
- * name lacks costs 0.1, so "Kale" beats "Kale Lacinato" for "Red Russian Kale".
+ * A matcher from a pod's plant name to the closest of `entries`, or null when
+ * nothing matches. Words that name the plant score 1, qualifiers 0.3, and each
+ * entry word the name lacks costs 0.1, so "Kale" beats "Kale Lacinato" for
+ * "Red Russian Kale".
  */
-export function lookup(plant: string | null | undefined): CatalogEntry | null {
-  if (!plant) return null
-  const have = new Set(words(plant))
-  let best: { e: CatalogEntry, score: number } | null = null
-  for (const { e, words: ws } of INDEX) {
-    let named = 0
-    let score = 0
-    for (const w of ws) {
-      if (have.has(w)) {
-        const q = QUALIFIERS.has(w)
-        score += q ? 0.3 : 1
-        if (!q) named++
+export function nameMatcher<E extends { name: string }>(entries: E[]): (plant: string | null | undefined) => E | null {
+  const index = entries.map(e => ({ e, words: words(e.name) }))
+  return (plant) => {
+    if (!plant) return null
+    const have = new Set(words(plant))
+    let best: { e: E, score: number } | null = null
+    for (const { e, words: ws } of index) {
+      let named = 0
+      let score = 0
+      for (const w of ws) {
+        if (have.has(w)) {
+          const q = QUALIFIERS.has(w)
+          score += q ? 0.3 : 1
+          if (!q) named++
+        }
+        else score -= 0.1
       }
-      else score -= 0.1
+      if (named > 0 && (!best || score > best.score)) best = { e, score }
     }
-    if (named > 0 && (!best || score > best.score)) best = { e, score }
+    return best?.e ?? null
   }
-  return best?.e ?? null
 }
+
+/** The catalog entry for a pod's plant name, or null when nothing matches. */
+export const lookup = nameMatcher(CATALOG)
 
 /** What an unrecognised plant looks like: a generic leafy rosette. */
 export const FALLBACK: CatalogEntry = entry('Unknown', 'rosette', { ...GREEN })
