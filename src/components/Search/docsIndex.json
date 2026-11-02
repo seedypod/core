@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-02T02:19:47.923Z",
+  "generatedAt": "2026-11-02T07:07:28.116Z",
   "base": "https://seedypod.github.io",
   "pages": [
     {
@@ -458,6 +458,10 @@
         {
           "title": "Start here",
           "anchor": "start-here"
+        },
+        {
+          "title": "Clients",
+          "anchor": "clients"
         },
         {
           "title": "Reference",
@@ -999,6 +1003,68 @@
       "keywords": ""
     },
     {
+      "path": "/developers/adr/0022-harvest-outlook/",
+      "title": "ADR 0022: Harvest outlook from the camera, with optional plant profiles",
+      "section": "Developers",
+      "description": "Each planted pod gets a harvest state (ready, soon, growing) led by camera leaf cover against a target and its rate of change; optional per-crop profiles add a window in days and their own target, and…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0023-homekit/",
+      "title": "ADR 0023: HomeKit bridge and per-unit identity",
+      "section": "Developers",
+      "description": "An embedded hap-nodejs bridge, off by default, exposes the grow light, the pump and the sensors to Apple Home through core's own tRPC caller, with a HomeKit identity derived per unit as in sleepypod…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "An embedded bridge, off by default",
+          "anchor": "an-embedded-bridge-off-by-default"
+        },
+        {
+          "title": "Accessories go through core’s tRPC caller",
+          "anchor": "accessories-go-through-cores-trpc-caller"
+        },
+        {
+          "title": "Identity: sleepypod ADR 0020, with a seedypod seed chain",
+          "anchor": "identity-sleepypod-adr-0020-with-a-seedypod-seed-chain"
+        },
+        {
+          "title": "mDNS: ciao, as in sleepypod",
+          "anchor": "mdns-ciao-as-in-sleepypod"
+        },
+        {
+          "title": "Backups carry HomeKit",
+          "anchor": "backups-carry-homekit"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
       "path": "/developers/api/",
       "title": "REST API reference",
       "section": "Developers",
@@ -1195,6 +1261,10 @@
       "description": "Pins, I²C addresses, parts and model detection as documented upstream, with the Phase 1 verification checklist.",
       "headings": [
         {
+          "title": "Tank and pump, from two weeks of stock logs",
+          "anchor": "tank-and-pump-from-two-weeks-of-stock-logs"
+        },
+        {
           "title": "Model detection",
           "anchor": "model-detection"
         },
@@ -1355,6 +1425,67 @@
         }
       ],
       "keywords": ""
+    },
+    {
+      "path": "/ios/",
+      "title": "iPhone app",
+      "section": null,
+      "description": "seedypod for iPhone: your Gardyn tower in 3D, with pods, light, water and alerts, straight from your own network.",
+      "headings": [
+        {
+          "title": "What it does",
+          "anchor": "what-it-does"
+        },
+        {
+          "title": "The tower",
+          "anchor": "the-tower"
+        },
+        {
+          "title": "Pods",
+          "anchor": "pods"
+        },
+        {
+          "title": "Light and water",
+          "anchor": "light-and-water"
+        },
+        {
+          "title": "Alerts",
+          "anchor": "alerts"
+        },
+        {
+          "title": "Settings",
+          "anchor": "settings"
+        },
+        {
+          "title": "Live updates",
+          "anchor": "live-updates"
+        },
+        {
+          "title": "Connect to your unit",
+          "anchor": "connect-to-your-unit"
+        },
+        {
+          "title": "Demo mode",
+          "anchor": "demo-mode"
+        },
+        {
+          "title": "API key",
+          "anchor": "api-key"
+        },
+        {
+          "title": "Build from source",
+          "anchor": "build-from-source"
+        },
+        {
+          "title": "Troubleshooting",
+          "anchor": "troubleshooting"
+        },
+        {
+          "title": "What runs where",
+          "anchor": "what-runs-where"
+        }
+      ],
+      "keywords": "ios iphone app bonjour demo mode api key xcode"
     }
   ]
 }
