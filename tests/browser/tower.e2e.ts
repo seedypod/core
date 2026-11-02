@@ -23,10 +23,12 @@ test('grow: the tower renders in 3D, a pod picked on it opens in the side panel'
     }
   }
   expect(found).toBe(true)
-  // The click picked a pod: the side panel's picker now names one.
-  await expect(page.getByLabel('Pod', { exact: true })).not.toHaveValue('0')
+  // The click picked a pod: the side panel now shows one.
+  await expect(page.getByRole('complementary', { name: /^Pod \d+$/ })).toBeVisible()
 
-  await page.getByLabel('Pod', { exact: true }).selectOption('5')
+  await page.getByRole('tab', { name: 'Pods' }).click()
+  await page.getByRole('button', { name: '5 Cherry Tomato', exact: true }).click()
+  await expect(page.getByRole('complementary', { name: 'Pod 5' })).toBeVisible()
   await expect(page.getByLabel('Notes')).toHaveValue('leaf curl')
   expect(errors).toEqual([])
 })
