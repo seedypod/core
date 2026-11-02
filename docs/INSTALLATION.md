@@ -9,8 +9,8 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 
 # Installation
 
-> Phase 1 is not done: nothing here has run on a real Gardyn yet. Follow at your
-> own risk, and **back up the stock card first** so bricking is a 5-minute reflash.
+**Back up the stock microSD card first** ([step 0](#0-back-up)). With that image,
+a failed install is a 5-minute reflash back to stock.
 
 ## Which Pi
 

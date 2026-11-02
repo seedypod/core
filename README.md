@@ -23,7 +23,7 @@
   <a href="https://github.com/seedypod/core/issues">Issues</a>
 </p>
 
-A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seedypod replaces the cloud with software that runs on that Pi. There's no account and no telemetry, and nothing leaves your LAN unless you turn it on. It's a sibling of [sleepypod](https://github.com/sleepypod).
+A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seedypod replaces the cloud with software that runs on that Pi. There's no account and no telemetry, and nothing leaves your LAN unless you turn it on. It's a sibling of [sleepypod](https://sleepypod.github.io/).
 
 **No Gardyn? [Try the live demo](https://seedypod.vercel.app).** It runs the real web UI against a simulated tower in your browser.
 

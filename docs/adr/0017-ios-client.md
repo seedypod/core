@@ -14,7 +14,7 @@ sources: [{"resource": "https://github.com/sleepypod/ios", "title": "sleepypod/i
 
 ## Context
 
-Handoff step 5 asked whether `sleepypod/ios` (Swift/SwiftUI, AGPL-3.0, 149
+Handoff step 5 asked whether [`sleepypod/ios`](https://sleepypod.github.io/developers/ios/) (Swift/SwiftUI, AGPL-3.0, 149
 Swift files) can be forked as the seedypod app by pointing its networking
 layer at this repo's tRPC router. The relevant pieces of that app:
 

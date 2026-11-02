@@ -14,7 +14,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 
 ## Context
 
-sleepypod uses drizzle + better-sqlite3 (ADR 0010 there). seedypod has the
+[sleepypod](https://sleepypod.github.io/developers/architecture/) uses drizzle + better-sqlite3 (ADR 0010 there). seedypod has the
 same shape of data (settings, schedules, alerts, history) but also needs the
 whole application to run in a browser for the Vercel demo, where native
 SQLite is unavailable.

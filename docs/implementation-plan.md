@@ -12,7 +12,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 **Status:** v3 — Phases 0, 3, 4, 5 and the software half of 7/8 built (2026-10-31); Phase 1 (hardware recon) and the Rust driver validation in Phase 2 need a real unit · **Date:** 2026-10-29 · **Author:** @ng (drafted with Claude)
 **Name:** seedypod (ADR-0001; drafted as leafypod). Repo: `seedypod/core`.
 
-Sibling project to [sleepypod](https://github.com/sleepypod): a sealed consumer appliance (Gardyn hydroponic tower) whose embedded Linux controller (a Raspberry Pi) is re-flashed to run a local, cloud-free control stack. This plan mirrors sleepypod's conventions exactly (branching, CI, Codecov, Stryker, semantic-release, Renovate, Vercel demo, Nextra docs on Pages, ADRs, OKF knowledge bundle) so tooling and muscle memory carry over.
+Sibling project to [sleepypod](https://sleepypod.github.io/): a sealed consumer appliance (Gardyn hydroponic tower) whose embedded Linux controller (a Raspberry Pi) is re-flashed to run a local, cloud-free control stack. This plan mirrors sleepypod's conventions exactly (branching, CI, Codecov, Stryker, semantic-release, Renovate, Vercel demo, Nextra docs on Pages, ADRs, OKF knowledge bundle) so tooling and muscle memory carry over.
 
 Legend: **∥** = can run in parallel with the preceding item(s) in the same phase · **⛔** = hard dependency · **⏱** = rough effort for one person.
 
@@ -46,7 +46,7 @@ Model detection: DHT20 present ⇒ 3.0+; else AM2320 ⇒ 1.0/2.0; Studio is 3.0-
 3. **Median-of-N ultrasonic** in the driver, used identically by guards and alerts (#111).
 4. **Serialized camera access**; validate output size, not exit code (#117, #143, #144).
 5. **Per-unit identity** derived from `/proc/cpuinfo` serial, never a shared default (#130).
-6. **Fail-safe on fault = stay off until a human acknowledges**; auto-recovery is opt-in (sleepypod ADR-0022 pattern).
+6. **Fail-safe on fault = stay off until a human acknowledges**; auto-recovery is opt-in ([sleepypod](https://sleepypod.github.io/developers/hardware/) ADR-0022 pattern).
 7. **Power-loss recovery**: persisted actuator + grow-cycle state restored on boot (#3).
 
 ### 0.3 Upstream roadmap we are superseding
@@ -79,7 +79,7 @@ Model detection: DHT20 present ⇒ 3.0+; else AM2320 ⇒ 1.0/2.0; Studio is 3.0-
 | **B. Split** | Zero 2 W | yes | no — core on a LAN box (home server / HA host) | Multiple units under one core, or if A proves tight |
 | **C. Pi 5 single-box** | Pi 5 (+ ribbon, own PSU) | yes | yes | Only when on-device CV (Phase 7) is wanted |
 
-The lightweight core is what makes A possible: sleepypod's Next.js standalone needed the Pod's 2 GB and a post-processed build (`strip-turbopack-external-hashes`, hand-copied `.next/static`, `rm instrumentation.ts` for the Vercel demo). See ADR-0003. The HAL contract is identical in all three, so a unit can move between topologies by changing one URL.
+The lightweight core is what makes A possible: [sleepypod](https://sleepypod.github.io/developers/architecture/)'s Next.js standalone needed the Pod's 2 GB and a post-processed build (`strip-turbopack-external-hashes`, hand-copied `.next/static`, `rm instrumentation.ts` for the Vercel demo). See ADR-0003. The HAL contract is identical in all three, so a unit can move between topologies by changing one URL.
 
 ### 1.1 Repository layout (single repo, mirrors `sleepypod/core` + its `modules/` multi-language precedent)
 
@@ -128,7 +128,7 @@ Goal: an empty-but-complete repo where `dev → main` already releases, docs dep
 |---|---|---|---|
 | 0.1 | Create GitHub org + repos `core`, `<name>.github.io`; org profile README (`.github/profile`) | | `gh repo create <org>/core --public --license <see ADR-0002>` |
 | 0.2 | ADR-0001 *New repository & naming*, ADR-0002 *License* | ∥ 0.1 | Clean-room ⇒ MIT/Apache-2 possible; GPL only if we vendor upstream code (we won't) |
-| 0.3 | Branch model: `dev` (integration) → `main` (release). Protect both; merge queue on `main`; squash on `main`, merge-commit on `dev` | ⛔ 0.1 | identical to sleepypod |
+| 0.3 | Branch model: `dev` (integration) → `main` (release). Protect both; merge queue on `main`; squash on `main`, merge-commit on `dev` | ⛔ 0.1 | identical to [sleepypod](https://sleepypod.github.io/developers/workflows/) |
 | 0.4 | Scaffold **Hono (Node) + Vite/React 19 + TanStack Router** (file-based routes via `@tanstack/router-plugin`), TS strict, pnpm, `.node-version` 24.x; Tailwind 4; copy eslint, editorconfig, `.githooks` (lint-staged pre-commit; tsc+eslint+drizzle-check+changed-tests pre-push), `prepare` hook. Dev: `vite` proxies `/api` → Hono | ∥ 0.3 | ADR-0003 records Next.js as rejected: needs ≥2 GB, build post-processing, SSR unused |
 | 0.5 | CI `test.yml` (`name: CI`): matrix {Lint (changed files only), Typecheck, Unit (`vitest run --coverage`, Codecov upload), Browser (`NODE_ENV=production CI=1 pnpm build && pnpm test:browser`, Playwright chromium)}; `concurrency` cancel-in-progress; triggers push `dev`, `pull_request`, `merge_group`, `workflow_dispatch`; `CI=1` disables hardware instrumentation at startup | ⛔ 0.4 | no coverage thresholds in vitest — Codecov gates |
 | 0.6 | CI `rust.yml`: fmt, clippy -D warnings, test, `cross` builds for `arm-unknown-linux-gnueabihf` (Zero W), `aarch64-unknown-linux-gnu` (Zero 2 / Pi 4 / Pi 5); upload `hald-<target>` artifacts; `cargo-llvm-cov` → Codecov flag `rust` | ∥ 0.5 | path-filtered to `hal/**`; Codecov `carryforward: true` so TS-only PRs don't zero it |
@@ -144,7 +144,7 @@ Goal: an empty-but-complete repo where `dev → main` already releases, docs dep
 | 0.16 | `.github/SUPPORT.md` (model/version, how to grab + share logs); labels created by hand: `mutation-test`, `dependencies`, `hardware`, `safety`. Sleepypod has **no** issue/PR templates, CODEOWNERS, commitlint or labeler — don't add them | ∥ 0.13 | |
 | 0.17 | ADR-0003 *Core stack* (TS/React/Next/Lingui), ADR-0004 *Two-tier HAL/core split*, ADR-0005 *tRPC*, ADR-0006 *Rust for the HAL*, ADR-0007 *HAL contract: MQTT + HTTP* | ∥ 0.2 | sleepypod ADR format: `docs/adr/NNNN-kebab-title.md`, no frontmatter, `# ADR NNNN: Title`, `**Status:** Proposed` / `**Date:** YYYY-MM-DD`, sections Context / Decision / (Rationale, Alternatives Considered) / Consequences (Positive/Negative/Neutral) / References, amendments appended as `## Amendment (date)`; status Proposed until Phase 2 proves them |
 | 0.0 | **Spike (do first, ~1 h): does Next.js fit?** Build `sleepypod/core` unchanged, run `next start` under `systemd-run -p MemoryMax=512M` on aarch64 (or on the Zero 2 W after Phase 1.4); record idle RSS, boot-to-ready, first-request latency, and the same for a hello-world Hono + Vite SPA. Decide ADR-0003 on the numbers: Next fits ⇒ port `app/` verbatim and keep sleepypod's build; else Hono/Vite. The rest of this plan is written for the Hono/Vite outcome; swapping back touches only 0.4, 0.12, 0.18, 3.7, 3.8, 3.11, 4.3 | | reversible; nothing downstream depends on the answer until 0.4 |
-| 0.18 | OpenAPI + trpc-panel like sleepypod: `trpc-to-openapi` fetch handler mounted in Hono at `/api/*`, spec at `/api/openapi.json`, docs at `/api/docs`, panel at `/panel` | ∥ 0.4 | lands with the first router in Phase 3 but the CI artifact job is Phase 0 |
+| 0.18 | OpenAPI + trpc-panel like [sleepypod](https://sleepypod.github.io/developers/api/): `trpc-to-openapi` fetch handler mounted in Hono at `/api/*`, spec at `/api/openapi.json`, docs at `/api/docs`, panel at `/panel` | ∥ 0.4 | lands with the first router in Phase 3 but the CI artifact job is Phase 0 |
 
 **Exit criteria:** a `feat:` PR dev→main cuts `v0.1.0` with a Release containing an (empty) core tarball and `hald` binaries for both targets; Codecov comments on PRs; `dev` auto-deploys to Vercel; docs site live on Pages.
 
@@ -192,11 +192,11 @@ Core is built against `hal-sim` from day one; real hardware only enters at 3.9.
 | 3.4 | Scheduler: cron-parser + node-schedule; light curves (sunrise/sunset ramps), pump cycles (duration not on/off pairs), capture intervals; schedule compiler clamps to HAL limits | ∥ 3.3 | |
 | 3.5 | Grow-cycle state machine + reminders (thinning d14, root-check d21, harvest d35, nutrients every 7 d — all settings); acknowledge from UI/HA/MCP | ∥ 3.4 | |
 | 3.6 | Alerts module: persisted, dismissible (`water_low`, `pump_fault`, `over_temp`, `camera_missing`, `hal_offline`) | ∥ 3.4 | |
-| 3.7 | MCP server on top of tRPC, sleepypod shape exactly: Hono route `/api/mcp` stateless Streamable HTTP (fresh `McpServer` + `WebStandardStreamableHTTPServerTransport({sessionIdGenerator: undefined, enableJsonResponse: true})` per request, Origin≠Host rejected as DNS-rebinding guard, GET/POST/DELETE), implementation in `src/mcp/{server,caller,schemas,units}.ts` + `tools/{status,control,schedules,grow,maintenance,settings}.ts`; tools = read state, set light/pump within limits, run-once pump, capture still, schedule CRUD, grow actions; resources = latest telemetry, captures; **MHS-shaped**: every capability a named read/write primitive with units + declared limits (ADR-0011 *MCP & MHS alignment*) | ⛔ 3.3 | |
+| 3.7 | MCP server on top of tRPC, [sleepypod](https://sleepypod.github.io/core/mcp/) shape exactly: Hono route `/api/mcp` stateless Streamable HTTP (fresh `McpServer` + `WebStandardStreamableHTTPServerTransport({sessionIdGenerator: undefined, enableJsonResponse: true})` per request, Origin≠Host rejected as DNS-rebinding guard, GET/POST/DELETE), implementation in `src/mcp/{server,caller,schemas,units}.ts` + `tools/{status,control,schedules,grow,maintenance,settings}.ts`; tools = read state, set light/pump within limits, run-once pump, capture still, schedule CRUD, grow actions; resources = latest telemetry, captures; **MHS-shaped**: every capability a named read/write primitive with units + declared limits (ADR-0011 *MCP & MHS alignment*) | ⛔ 3.3 | |
 | 3.8 | Demo mode (`VITE_DEMO=1`): tRPC `demoLink` with in-browser handlers over `hal-sim`-equivalent TS fakes + seeded history; powers Vercel | ⛔ 3.1 | port sleepypod `src/demo/` |
 | 3.9 | Integration against real `hald` on the bench (Topology A); contract tests in `tests/` | ⛔ 2.10, 3.3 | |
 | 3.10 | Stryker shards: `server`, `scheduler`, `hardware`, `grow`, `alerts`, `db` | ∥ 3.9 | |
-| 3.11 | Install/deploy: `scripts/install` (systemd `core.service` :3000 running `node server/dist/index.js` + `web/dist`), `scripts/deploy` (build locally, archive over SSH), update-from-Release via tRPC (sleepypod `sp-update` pattern, `gp-*` bin scripts); LAN-only iptables policy; measure RSS on Zero 2 W (target < 120 MB) | ∥ 3.9 | ADR-0012 *Deployment* |
+| 3.11 | Install/deploy: `scripts/install` (systemd `core.service` :3000 running `node server/dist/index.js` + `web/dist`), `scripts/deploy` (build locally, archive over SSH), update-from-Release via tRPC ([sleepypod](https://sleepypod.github.io/core/installation/) `sp-update` pattern, `gp-*` bin scripts); LAN-only iptables policy; measure RSS on Zero 2 W (target < 120 MB) | ∥ 3.9 | ADR-0012 *Deployment* |
 
 **Exit criteria:** core schedules and drives a real unit via `hald`; MCP client (Claude) can read sensors and run a bounded pump cycle; Vercel demo works without hardware.
 
@@ -209,7 +209,7 @@ Core is built against `hal-sim` from day one; real hardware only enters at 3.9.
 | 4.2 | Screens: Dashboard (live sensors, water gauge, light/pump state), Lights (brightness + curve editor), Water (run-once with countdown, history, tank calibration), Schedule editor, Grow cycle + 30-pod grid, Cameras (latest + timelapse scrubber), Alerts banner, Settings (HAL URL, MQTT, HA, limits, units) | ∥ each other after 4.1 | |
 | 4.3 | Browser tests (playwright `*.e2e.ts` via `tests/browser/run.mjs`, `webServer: node server/dist/index.js` with `CI=1`, temp DBs seeded) in CI "Browser Tests" lane | ⛔ 4.2 | |
 | 4.4 | Wall-display mode (kiosk route, large type, dark) — the "extending displays" lesson | ∥ 4.3 | |
-| 4.5 | Docs `content/core/` user guide, screenshots captured via `capture/` scripts like the sleepypod site | ⛔ 4.2 | |
+| 4.5 | Docs `content/core/` user guide, screenshots captured via `capture/` scripts like the [sleepypod](https://sleepypod.github.io/developers/media/) site | ⛔ 4.2 | |
 
 **Exit criteria:** everything controllable from the UI; demo on Vercel; docs with screenshots.
 
@@ -218,9 +218,9 @@ Core is built against `hal-sim` from day one; real hardware only enters at 3.9.
 | # | Task | Notes |
 |---|---|---|
 | 5.1 | HA: core-level bridge adds what HAL discovery can't (grow-cycle reminders as events, alerts, schedule enable switches, run-once service); `docs/homeassistant/lovelace-example.yaml`; ADR-0013 *MQTT bridge* (copy ADR-0019) | HAL-only HA already works from Phase 2 |
-| 5.2 | HomeKit via `hap-nodejs` (light as Lightbulb, pump as Switch/Fan, sensors) — reuse sleepypod identity derivation ADR-0020 | optional |
+| 5.2 | HomeKit via `hap-nodejs` (light as Lightbulb, pump as Switch/Fan, sensors) — reuse [sleepypod](https://sleepypod.github.io/core/integrations/) identity derivation ADR-0020 | optional |
 | 5.3 | iOS: evaluate forking `sleepypod/ios` shell (tRPC client, networking, mock client pattern) → `seedypod/ios` | optional; separate repo |
-| 5.4 | M5 Dial / small physical controller for light+pump (sleepypod `m5-rotary-dial` pattern, mDNS discovery) | optional |
+| 5.4 | M5 Dial / small physical controller for light+pump ([sleepypod](https://sleepypod.github.io/dial/) `m5-rotary-dial` pattern, mDNS discovery) | optional |
 | 5.5 | Notifications: HA is the delivery channel; no push service of our own | decision in ADR-0013 |
 
 ### Phase 6 — Hardware expansion  ⏱ 1–2 weekends  ⛔ Phase 2 · **∥ Phases 4–5**
@@ -238,7 +238,7 @@ Core is built against `hal-sim` from day one; real hardware only enters at 3.9.
 | # | Task | Notes |
 |---|---|---|
 | 7.1 | Capture pipeline: hourly stills → per-pod crops (fixed camera, fixed pod geometry ⇒ static crop map per model) → timelapse | core |
-| 7.2 | Germination / growth detection per pod: start with classical CV (green-pixel area over time) before any model; evaluation protocol + metrics as OKF concepts (sleepypod `training` pattern) | |
+| 7.2 | Germination / growth detection per pod: start with classical CV (green-pixel area over time) before any model; evaluation protocol + metrics as OKF concepts ([sleepypod](https://sleepypod.github.io/developers/training/) `training` pattern) | |
 | 7.3 | `training/` repo (Python, uv, OKF knowledge base) if/when a learned model is justified; vendor pinned core files with checksums like sleepypod | separate repo |
 | 7.4 | MCP: expose "which pods look unhealthy" as a resource; Claude as the agronomist over MCP | |
 

@@ -14,7 +14,7 @@ Two tiers, one contract (ADR-0004, ADR-0007):
   the mutation/HAL event bus delivered to the UI as a tRPC subscription (SSE).
 - `web/` (Vite + React + TanStack Router): file routes in `web/src/routes/`;
   components in `src/components/`, design system in `src/components/ds/` and
-  `src/ui/`, tokens in `web/src/globals.css` (ported from sleepypod).
+  `src/ui/`, tokens in `web/src/globals.css` (ported from [sleepypod](https://sleepypod.github.io/)).
 
 ## Invariants
 

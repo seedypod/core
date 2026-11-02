@@ -14,7 +14,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 
 ## Context
 
-`iot-root/garden-of-eden` is GPL-3.0. `sleepypod/core` is AGPL-3.0. We want
+`iot-root/garden-of-eden` is GPL-3.0. [`sleepypod/core`](https://sleepypod.github.io/) is AGPL-3.0. We want
 to stay free to choose, and we want the same license across the sleepypod
 family.
 

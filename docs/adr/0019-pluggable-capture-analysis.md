@@ -33,7 +33,7 @@ number per pod in `pod_growth`. It works as a first signal, but:
 - The cell-culture analogy fits: a pod is a well, green fraction is
   confluence, the trend is a growth curve. That field moved from fixed
   thresholds to per-image thresholds to learned segmentation, and each step
-  was justified by comparing outputs on a shared dataset. sleepypod took the
+  was justified by comparing outputs on a shared dataset. [sleepypod](https://sleepypod.github.io/developers/training/) took the
   same route for its sleep-stage classifier: pair device signals with ground
   truth, build a dataset off the device, fit there, run the cheap result on
   the device.

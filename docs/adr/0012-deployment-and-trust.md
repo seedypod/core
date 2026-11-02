@@ -24,5 +24,5 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
   scripts keep working. Core makes no outbound connections except to brokers
   the operator configures.
 - MQTT credentials are stored in plaintext in `device_settings`, for the
-  reasons sleepypod ADR 0019 gives: anyone with the database already owns
+  reasons [sleepypod](https://sleepypod.github.io/core/settings/mqtt/) ADR 0019 gives: anyone with the database already owns
   the unit.

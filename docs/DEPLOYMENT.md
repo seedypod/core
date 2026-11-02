@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 
 # Deployment
 
-How code gets from `dev` to a unit (mirrors sleepypod/core).
+How code gets from `dev` to a unit (mirrors [sleepypod/core](https://sleepypod.github.io/developers/workflows/)).
 
 - **`dev`** → every push builds a tarball (`build.yml`) and re-tags the rolling
   `dev-latest` prerelease (`dev-release.yml`). `scripts/install --branch dev`
