@@ -81,10 +81,10 @@ describe('AutopilotPage', () => {
 
   it('puts each rule\'s 7-day backtest on the list, with a sparkline of the watched signal', () => {
     render(<AutopilotPage />)
-    expect(screen.getByTestId('backtest-1').textContent).toBe('7-day backtest · 3 would fire · low 22 of 30%')
+    expect(screen.getByTestId('backtest-1').textContent).toBe('7-day backtest · 3 would fire · lowest 22% vs 30%')
     expect(screen.getByRole('img', { name: 'Tank level over 7 days against 30%; 3 would fire' })).toBeTruthy()
     expect(screen.getByTestId('backtest-2').textContent).toBe('backtesting…')
-    expect(screen.getByTestId('backtest-3').textContent).toBe('7-day backtest · 0 would fire · no recorded pH')
+    expect(screen.getByTestId('backtest-3').textContent).toBe('7-day backtest · no pH recorded yet, so nothing to replay')
   })
 
   it('sets a rule Off, Dry-run or Active, and flips the kill switch', () => {
@@ -128,7 +128,7 @@ describe('AutopilotPage', () => {
       summary: { fires: 1, suppressed: 1, unknownSteps: 1, disabledAt: '2026-10-31T09:20:00Z' },
     })
     render(<AutopilotPage />)
-    fireEvent.click(screen.getAllByText('Replay it over any window')[0] as HTMLElement)
+    fireEvent.click(screen.getAllByText('Replay window')[0] as HTMLElement)
     fireEvent.click(screen.getByRole('tab', { name: '7 days' }))
     fireEvent.click(screen.getByText('Run backtest'))
     expect(calls.backtest).toHaveBeenCalledWith({ id: 1, rule: undefined, hours: 168, stepMin: 15 })
@@ -136,7 +136,7 @@ describe('AutopilotPage', () => {
     expect(screen.getByText(/runaway guard would have disabled it/)).toBeTruthy()
     expect(screen.getByText('Not recorded, so unknown here: light.level.')).toBeTruthy()
     expect(screen.getByRole('list', { name: 'Backtest fires' }).textContent).toContain('setLight 70 (clamped)')
-    fireEvent.click(screen.getByText('Hide the replay'))
+    fireEvent.click(screen.getByText('Hide replay'))
     expect(screen.queryByText('Run backtest')).toBeNull()
   })
 
@@ -150,15 +150,34 @@ describe('AutopilotPage', () => {
     expect(log().getByText('rule 7')).toBeTruthy()
     fireEvent.click(screen.getByRole('tab', { name: 'Refused' }))
     expect(log().getAllByRole('listitem')).toHaveLength(1)
-    fireEvent.click(screen.getByRole('tab', { name: 'Would fire' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Would act' }))
     expect(screen.getByText('Nothing matches this filter.')).toBeTruthy()
   })
 
-  it('marks today\'s fires on each rule\'s lane', () => {
-    data.set('runs', [{ id: 5, automationId: 1, firedAt: new Date(Date.now() - 3_600_000).toISOString(), outcome: 'fired', detail: {} }])
+  it('marks the last 24 hours on each rule\'s lane, and counts checks and actions', () => {
+    const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    data.set('runs', [
+      { id: 7, automationId: 1, firedAt: ago(1), outcome: 'fired', detail: {} },
+      { id: 6, automationId: 1, firedAt: ago(2), outcome: 'skipped', detail: { reason: 'condition-false' } },
+      { id: 5, automationId: 2, firedAt: ago(3), outcome: 'dry_run', detail: {} },
+      { id: 4, automationId: 2, firedAt: ago(4), outcome: 'refused', detail: {} },
+      { id: 3, automationId: 1, firedAt: ago(30), outcome: 'fired', detail: {} },
+    ])
     render(<AutopilotPage />)
-    expect(screen.getByTestId('lane-1').children).toHaveLength(1)
-    expect(screen.getByTestId('lane-2').children).toHaveLength(0)
+    const outcomes = (id: number) => Array.from(screen.getByTestId(`lane-${id}`).children, c => c.getAttribute('data-outcome'))
+    expect(outcomes(1)).toEqual(['fired', 'skipped'])
+    expect(outcomes(2)).toEqual(['dry_run', 'refused'])
+    expect(outcomes(3)).toEqual([])
+    expect(screen.getByTestId('day-counts').textContent).toBe('4 checks · 1 action')
+  })
+
+  it('says nothing acted in a day of idle checks, and marks counts a floor when the page ends inside the day', () => {
+    const runs = Array.from({ length: 1000 }, (_, i) => ({ id: i, automationId: 1, firedAt: new Date(Date.now() - i * 60_000).toISOString(), outcome: 'skipped', detail: { reason: 'condition-false' } }))
+    data.set('runs', runs)
+    render(<AutopilotPage />)
+    expect(screen.getByTestId('day-counts').textContent).toBe('≥1000 checks · ≥0 actions')
+    expect(screen.getByText('No rule has acted in 24 h. ≥1000 checks found nothing to do.')).toBeTruthy()
+    expect(screen.queryByRole('list', { name: 'Run log' })).toBeNull()
   })
 
   it('offers templates when there are no rules, and says when Autopilot is off', () => {
