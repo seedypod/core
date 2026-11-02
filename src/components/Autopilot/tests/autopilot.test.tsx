@@ -180,6 +180,15 @@ describe('AutopilotPage', () => {
     expect(screen.queryByRole('list', { name: 'Run log' })).toBeNull()
   })
 
+  it('pages a long log 50 at a time', () => {
+    data.set('runs', Array.from({ length: 60 }, (_, i) => ({ id: i, automationId: 1, firedAt: new Date(Date.now() - i * 60_000).toISOString(), outcome: 'fired', detail: {} })))
+    render(<AutopilotPage />)
+    const items = () => within(screen.getByRole('list', { name: 'Run log' })).getAllByRole('listitem')
+    expect(items()).toHaveLength(50)
+    fireEvent.click(screen.getByText('Show more (10)'))
+    expect(items()).toHaveLength(60)
+  })
+
   it('offers templates when there are no rules, and says when Autopilot is off', () => {
     data.set('list', [])
     data.set('runs', [])
