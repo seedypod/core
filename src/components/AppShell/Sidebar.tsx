@@ -1,5 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { Droplets, FlaskConical, Sprout, Sun, Thermometer } from 'lucide-react'
+import { Droplets, FlaskConical, Sun, Thermometer } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { SidebarSearch } from '@/src/components/Search/CommandPalette'
@@ -126,7 +126,7 @@ export function Sidebar({ status }: { status: { name: string, line: string, onli
   return (
     <aside className="sticky top-0 hidden h-dvh w-[244px] shrink-0 flex-col gap-3.5 overflow-y-auto border-r border-line bg-surface px-3 pb-3 pt-[18px] min-[900px]:flex">
       <Link to="/" className="flex items-center gap-2.5 px-2">
-        <span className="grid size-[26px] place-items-center rounded-[7px] bg-pod-ok text-app"><Sprout size={16} /></span>
+        <img src="/brand/icon-64.png" alt="" width={26} height={26} className="size-[26px]" />
         <span className="font-semibold tracking-tight">seedypod</span>
       </Link>
       <SidebarSearch className="w-full" />

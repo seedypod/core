@@ -1,7 +1,10 @@
-<p align="center">
-  <img src="web/public/favicon.svg" width="72" alt="" />
-</p>
-<h1 align="center">seedypod</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/public/brand/dark/horizontal.png" />
+    <source media="(prefers-color-scheme: light)" srcset="web/public/brand/light/horizontal.png" />
+    <img src="web/public/brand/light/horizontal.png" width="320" alt="seedypod" />
+  </picture>
+</h1>
 <p align="center"><strong>Truly own your Gardyn.</strong> Local, cloud-free control for Gardyn hydroponic towers.</p>
 <p align="center">
   <a href="https://github.com/seedypod/core/actions/workflows/test.yml"><img src="https://github.com/seedypod/core/actions/workflows/test.yml/badge.svg?branch=dev" alt="CI" /></a>
@@ -57,6 +60,14 @@ Both run on the original Pi Zero W that Gardyn ships and on a Pi Zero 2 W. Core 
 ## Development
 
 No hardware is needed. `pnpm dev` runs core against a simulated HAL. Use the Node in `.node-version` (24); CI also tests on Node 22, the version 32-bit Pis run, so keep to APIs both have.
+
+The logo and icon PNGs under `web/public/brand/` are stored with [Git LFS](https://git-lfs.com). Install it before you clone, or the images check out as small text pointer files and the app shows broken logos. A unit doesn't need LFS: `scripts/install` downloads a tarball that CI builds with the images in it.
+
+```sh
+brew install git-lfs     # or your package manager
+git lfs install          # once per machine
+git lfs pull             # in a clone made without LFS
+```
 
 ```sh
 pnpm install

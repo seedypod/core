@@ -27,6 +27,13 @@ afterEach(() => {
 })
 
 describe('Sidebar', () => {
+  it('links the brand icon and name home', () => {
+    const { container } = render(<Sidebar status={online} />)
+    const home = screen.getByText('seedypod').closest('a') as HTMLElement
+    expect(home.getAttribute('href')).toBe('/')
+    expect(container.querySelector('a[href="/"] img')?.getAttribute('src')).toBe('/brand/icon-64.png')
+  })
+
   it('shows light, tank and air on every page, each linking to its page', () => {
     data.set('light.get', { on: true, level: 49 })
     data.set('sensors.latest', { water_level_pct: { value: 71, unit: '%' }, air_temp: { value: 25.5, unit: '°C' }, humidity: { value: 55, unit: '%' } })
