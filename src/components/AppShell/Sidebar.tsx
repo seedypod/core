@@ -3,7 +3,8 @@ import { Droplets, FlaskConical, Sun, Thermometer } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { SidebarSearch } from '@/src/components/Search/CommandPalette'
-import { podShown } from '@/src/components/Grow/towerLayout'
+import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
+import { ageDays, podShown } from '@/src/components/Grow/towerLayout'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
 import { trpc } from '@/src/utils/trpc'
@@ -66,7 +67,15 @@ function NeedsYou() {
     <div className="flex flex-col gap-0.5">
       <div className={SECTION}>Needs you</div>
       {attention.map(p => (
-        <NeedRow key={p.slot} to={p.slot} color="var(--pod-attention)" title={p.plant ?? `Pod ${p.slot}`} sub={p.notes.trim() || 'Needs attention'} tag={`P${p.slot}`} />
+        <NeedRow
+          key={p.slot}
+          to={p.slot}
+          color="var(--pod-attention)"
+          thumb={<PlantThumb plant={p.plant} stage={podForm({ status: p.status, green: outlook.get(p.slot)?.cover, ageDays: ageDays(p.plantedAt) })} size={32} />}
+          title={p.plant ?? `Pod ${p.slot}`}
+          sub={p.notes.trim() || 'Needs attention'}
+          tag={`P${p.slot}`}
+        />
       ))}
       {ready.length > 0 && (
         <NeedRow color="var(--pod-ready)" title={`${ready.length} ready to harvest`} sub={names.length > 2 ? `${names.slice(0, 2).join(', ')}, +${names.length - 2}` : names.join(', ')} />
@@ -75,10 +84,18 @@ function NeedsYou() {
   )
 }
 
-function NeedRow({ to, color, title, sub, tag }: { to?: number, color: string, title: string, sub: string, tag?: string }) {
+/** A pod's row; with `thumb` (its plant's picture) the status colour rides on the picture's corner. */
+function NeedRow({ to, color, thumb, title, sub, tag }: { to?: number, color: string, thumb?: ReactNode, title: string, sub: string, tag?: string }) {
   return (
     <Link to="/grow" search={to ? { pod: to } : {}} className="flex gap-2.5 rounded-lg px-2.5 py-2 hover:bg-active/60">
-      <span className="mt-1.5 size-[7px] shrink-0 rounded-full" style={{ background: color }} />
+      {thumb
+        ? (
+            <span className="relative shrink-0 self-center">
+              {thumb}
+              <span className="absolute -bottom-px -right-px size-[9px] rounded-full ring-2 ring-surface" style={{ background: color }} />
+            </span>
+          )
+        : <span className="mt-1.5 size-[7px] shrink-0 rounded-full" style={{ background: color }} />}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-[13px] text-fg">{title}</span>
         <span className="truncate text-xs text-fg-2">{sub}</span>

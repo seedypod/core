@@ -231,6 +231,15 @@ describe('PodCallout', () => {
     expect(card().textContent).toBe('Pod 11BasilReady to harvest· 2 dClick to pin')
   })
 
+  it('leads with a still of the plant at its stage, and a plain ring for an empty pod', () => {
+    const { rerender } = render(<PodCallout pod={{ slot: 3, status: 'growing', plant: 'Basil' }} at={{ x: 600, y: 400 }} width={1000} height={800} />)
+    const thumb = () => card().querySelector<HTMLElement>('[data-testid="plant-thumb"]')
+    expect(thumb()?.style.width).toBe('40px')
+    expect(thumb()?.dataset.kind).not.toBe('empty')
+    rerender(<PodCallout pod={{ slot: 3, status: 'empty', plant: null }} at={{ x: 600, y: 400 }} width={1000} height={800} />)
+    expect(thumb()?.dataset.kind).toBe('empty')
+  })
+
   it('pinned without a window, gives the leaf cover against its target as the reason', () => {
     const pod = { slot: 11, status: 'growing' as const, plant: 'Basil', green: 0.22, harvest: harvest({ cover: 0.22, targetCover: 0.3 }) }
     render(<PodCallout pod={pod} at={{ x: 600, y: 400 }} width={1000} height={800} now={now} />)
