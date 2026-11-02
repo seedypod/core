@@ -19,6 +19,7 @@
   <a href="https://seedypod.vercel.app">Live demo</a> ·
   <a href="https://seedypod.github.io/getting-started/">Get started</a> ·
   <a href="https://seedypod.github.io/core/">User guide</a> ·
+  <a href="https://seedypod.github.io/ios/">iPhone app</a> ·
   <a href="https://seedypod.github.io/developers/">Developer docs</a> ·
   <a href="https://github.com/seedypod/core/issues">Issues</a>
 </p>
@@ -41,6 +42,7 @@ A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seed
 - **Grow tracking:** grow cycles with reminders, the tower in 3D (pods colored by status and sized by measured growth, the tank's water level, the light bars at their level) or as a table, and camera captures with per-pod growth trends.
 - **Probes:** add pH, EC and water-temperature probes from the app, with guided calibration.
 - **Integrations:** Home Assistant over MQTT, MCP for agents, optional capture mirroring to S3-compatible storage, and dataset export.
+- **iPhone app:** the tower in 3D, pod cards, light, water and alerts, from [seedypod/ios](https://github.com/seedypod/ios). It finds core over Bonjour; see [the app's docs](https://seedypod.github.io/ios/).
 - **Wi-Fi setup:** hold the button for 10 seconds to start a setup hotspot.
 - **SD card care:** logs and swap stay in RAM, a meter shows the card's writes per day, and nightly backups go to your bucket. A dead card is a reflash plus **Welcome → Restore from a backup**.
 
