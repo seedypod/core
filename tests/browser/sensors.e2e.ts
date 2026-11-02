@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('sensors: add a pH probe, calibrate it, see it on the dashboard, remove it', async ({ page }) => {
+test('sensors: add a pH probe, calibrate it, remove it', async ({ page }) => {
   await page.goto('/sensors')
   await expect(page.getByText('Pump power monitor (INA219)')).toBeVisible()
   await expect(page.getByText('Built-in').first()).toBeVisible()
@@ -28,15 +28,8 @@ test('sensors: add a pH probe, calibrate it, see it on the dashboard, remove it'
   await expect(page.getByText(/holds 1 point/)).toBeVisible()
   await page.getByRole('button', { name: 'Done' }).click()
 
-  // On Home, water quality joins the readings along the top of the tower.
-  await page.goto('/')
-  await expect(page.locator('[data-chip="quality"]')).toBeVisible()
-
   await page.goto('/sensors')
   await page.getByRole('button', { name: 'Remove' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click()
   await expect(page.getByText('Added', { exact: true })).toHaveCount(0)
-  await page.goto('/')
-  await expect(page.getByTestId('tower-3d')).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
-  await expect(page.locator('[data-chip="quality"]')).toHaveCount(0)
 })

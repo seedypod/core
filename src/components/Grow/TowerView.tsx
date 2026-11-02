@@ -5,7 +5,7 @@ import type { PodHarvest, PodState, TowerPart, TowerTarget } from './towerScene'
 import { TowerWireframe } from './TowerWireframe'
 import { heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, STATUS_LABEL, STATUS_TOKEN } from './towerLayout'
 import { cn } from '@/lib/utils'
-import { Scissors, TriangleAlert } from 'lucide-react'
+import { Scissors, TriangleAlert, X } from 'lucide-react'
 
 /**
  * Whether the browser has WebGL at all. A real probe would create a throwaway
@@ -53,21 +53,22 @@ function PodFlag({ pod, at, picked, onSelect }: { pod: PodState, at: { x: number
 }
 
 /**
- * Where a pod sits in its grow (layout 1b): seeded at the left, the harvest
- * window shaded, a tick for today. A window the camera estimated reads "~".
+ * Where a pod sits in its grow (layout 1b): seeded at the left, grown so far
+ * up to the harvest window, the window shaded, a tick for today. A window the
+ * camera estimated reads "~".
  */
 export function HarvestTimeline({ window: w, age }: { window: NonNullable<PodHarvest['window']>, age: number }) {
-  const max = Math.max(w.end * 1.12, age * 1.04, 1)
+  const max = Math.max(w.end, age, 1)
   const x = (d: number) => `${(Math.max(0, Math.min(d, max)) / max) * 100}%`
   const about = w.source === 'camera' ? '~' : ''
   return (
-    <div className="w-full pt-1" role="img" aria-label={`Day ${Math.floor(age)}; harvest window ${about}${Math.round(w.start)}–${Math.round(w.end)} days`}>
-      <div className="relative h-1.5 rounded-full bg-[var(--border-2)]">
-        <div className="absolute inset-y-0 left-0 rounded-l-full" style={{ width: x(w.start), background: 'var(--pod-ok)' }} />
-        <div className="absolute inset-y-0" style={{ left: x(w.start), width: `calc(${x(w.end)} - ${x(w.start)})`, background: 'color-mix(in srgb, var(--accent-light) 60%, transparent)' }} />
-        <div data-testid="timeline-today" className="absolute -top-1 h-3.5 w-0.5 -translate-x-1/2 rounded bg-[var(--text-1)]" style={{ left: x(age) }} />
+    <div className="flex w-full flex-col gap-[7px]" role="img" aria-label={`Day ${Math.floor(age)}; harvest window ${about}${Math.round(w.start)}–${Math.round(w.end)} days`}>
+      <div className="relative h-1.5 rounded-[3px] bg-line">
+        <div className="absolute inset-y-0 left-0 rounded-l-[3px]" style={{ width: x(w.start), background: 'color-mix(in oklab, var(--pod-ok) 50%, transparent)' }} />
+        <div className="absolute inset-y-0 rounded-r-[3px]" style={{ left: x(w.start), width: `calc(${x(w.end)} - ${x(w.start)})`, background: 'color-mix(in oklab, var(--pod-ready) 35%, transparent)' }} />
+        <div data-testid="timeline-today" className="absolute -top-1 h-3.5 w-0.5 -translate-x-1/2 rounded-[1px] bg-fg" style={{ left: x(age) }} />
       </div>
-      <div className="relative mt-1.5 h-3 text-[10px] text-fg-3">
+      <div className="relative h-3 whitespace-nowrap font-mono text-[10px] text-fg-3">
         <span className="absolute left-0">seeded</span>
         <span className="absolute -translate-x-1/2" style={{ left: x(w.start) }}>{`${about}${Math.round(w.start)} d`}</span>
         <span className="absolute -translate-x-full" style={{ left: x(w.end) }}>{`${about}${Math.round(w.end)} d`}</span>
@@ -79,19 +80,19 @@ export function HarvestTimeline({ window: w, age }: { window: NonNullable<PodHar
 const pct = (v: number) => `${Math.round(v * 100)}%`
 
 /**
- * The picked pod's card, pinned to it by a leader line (sleepypod's bed
- * callouts). With a harvest window it leads with the timeline, then the state
- * as one sentence with its reason (1b); without one, the state with how long
- * it has held, then harvest and leaf cover against their targets (1a). Either
- * way the plant name is neutral, the state carries the colour, and `action`
- * (one primary action, then a link) ends it. It sits outward from the tower,
- * on whichever side has room, clear of the `reserve` pixels a panel covers.
+ * A pod's card, pinned to it by a leader line (sleepypod's bed callouts), in
+ * the Pod Card board's layout 1b. Hovered, it names the pod and its state with
+ * how long it has held, and offers the click to pin it. Pinned (the picked
+ * pod), it adds where the pod sits in its grow, the state's reason as one
+ * sentence, and `action`; `onClose` unpins it. The plant name is neutral and
+ * the state carries the colour. It sits outward from the tower, on whichever
+ * side has room, clear of the `reserve` pixels a panel covers.
  */
-export function PodCallout({ pod, at: collar, width, height, reserve = 0, action, now }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, action?: ReactNode, now?: Date }) {
+export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned = true, onClose, action, now }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, pinned?: boolean, onClose?: () => void, action?: ReactNode, now?: Date }) {
   const shown = podShown(pod)
   const color = SHOWN_TOKEN[shown]
   const flagged = isFlagged(pod)
-  // A flagged pod's line leads from its flag, which marks it already; any other gets a dot on its collar.
+  // A flagged pod's line leads from its flag, which marks it already; any other gets a ring on its collar.
   const at = flagged ? { x: collar.x + FLAG_OFFSET.x, y: collar.y + FLAG_OFFSET.y } : collar
   const room = (side: number) => (side > 0 ? width - reserve - at.x : at.x) - 124
   let side = at.x > (width - reserve) / 2 ? 1 : -1
@@ -105,70 +106,57 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, action
   const cover = h?.cover ?? (typeof pod.green === 'number' ? pod.green : null)
   const coverNote = cover === null || !h ? '' : `Leaf cover ${pct(cover)}, ${cover >= h.targetCover ? 'above' : 'behind'} the ${pct(h.targetCover)} target.`
   const note = pod.notes ? (/[.!?]$/.test(pod.notes.trim()) ? pod.notes.trim() : `${pod.notes.trim()}.`) : 'Marked for attention on Grow.'
-  const sentence = shown === 'attention' ? [note, coverNote].filter(Boolean).join(' ') : h?.reason ?? ''
+  const sentence = shown === 'attention' ? [note, coverNote].filter(Boolean).join(' ') : h?.reason || coverNote
   const timeline = h?.window && age !== null && shown !== 'empty' ? h.window : null
-  const harvestValue = h?.window ? `${h.window.source === 'camera' ? '~' : ''}${Math.round(h.window.start)}–${Math.round(h.window.end)} d` : typeof h?.daysToReady === 'number' && h.daysToReady > 0 ? `~${Math.round(h.daysToReady)} d` : '—'
-  const harvestSub = h?.state === 'ready' && typeof h.daysLeft === 'number' ? `${Math.round(h.daysLeft)} d left` : typeof h?.daysToReady === 'number' && h.daysToReady > 0 ? `in ${Math.round(h.daysToReady)} d` : null
-  const since = heldFor(pod.statusSince, now)
+  // A pod still growing says when it's due; any other, how long it has been as it is.
+  const due = (shown === 'growing' || shown === 'soon') && typeof h?.daysToReady === 'number' && h.daysToReady > 0 ? `harvest in ~${Math.max(1, Math.round(h.daysToReady))} d` : null
+  const timing = due ?? (shown === 'empty' ? null : heldFor(pod.statusSince, now))
+  const details = pinned && (timeline || sentence || action)
   return (
     <>
       <svg className="pointer-events-none absolute inset-0 z-[5] size-full" aria-hidden="true">
-        <polyline points={`${at.x},${at.y} ${elbow.x},${elbow.y} ${end.x},${end.y}`} fill="none" stroke="var(--text-2)" strokeWidth={1.25} />
-        {!flagged && <circle cx={at.x} cy={at.y} r={4.5} fill={color} stroke="var(--surface-card)" strokeWidth={1.5} />}
+        <polyline points={`${at.x},${at.y} ${elbow.x},${elbow.y} ${end.x},${end.y}`} fill="none" stroke="var(--text-3)" strokeWidth={1} />
+        {!flagged && (
+          <>
+            <circle cx={at.x} cy={at.y} r={10} fill="none" stroke="var(--text-1)" strokeWidth={1.5} />
+            <circle cx={at.x} cy={at.y} r={3} fill="var(--text-1)" />
+          </>
+        )}
       </svg>
       <div
         data-testid="pod-callout"
-        data-layout={timeline ? 'timeline' : 'stats'}
+        data-state={pinned ? 'pinned' : 'hover'}
         role="group"
         aria-label={`Pod ${pod.slot}`}
-        className="absolute z-[6] flex w-[272px] flex-col gap-2 rounded-xl border border-line-2 bg-surface/60 px-4 py-3 font-mono shadow-[var(--shadow-dialog)] backdrop-blur-xl backdrop-saturate-150"
+        className="absolute z-[6] flex w-[272px] flex-col gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3.5 shadow-[0_12px_32px_rgba(0,0,0,.4)] backdrop-blur-md"
         style={side > 0 ? { top: end.y - 22, left: end.x } : { top: end.y - 22, right: width - end.x }}
       >
-        {timeline && age !== null
-          ? (
-              <>
-                <div>
-                  <div className="text-[11px] uppercase tracking-wider text-fg-3">{`Pod ${pod.slot}`}</div>
-                  <div className="truncate text-[17px] leading-6 text-fg">{pod.plant ?? 'Empty'}</div>
-                </div>
-                <HarvestTimeline window={timeline} age={age} />
-                <div>
-                  <div className="text-[13px]" style={{ color }}>{SHOWN_LABEL[shown]}</div>
-                  {sentence && <p className="mt-1 text-[12px] leading-snug text-fg-2">{sentence}</p>}
-                </div>
-              </>
-            )
-          : (
-              <>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="truncate text-[17px] leading-6 text-fg">{pod.plant ?? 'Empty'}</span>
-                  <span className="shrink-0 text-[11px] uppercase tracking-wider text-fg-3">{`Pod ${pod.slot}`}</span>
-                </div>
-                {shown !== 'empty' && (
-                  <div className="flex items-center gap-1.5 text-[12px]">
-                    <span className="size-2 rounded-full" style={{ background: color }} />
-                    <span style={{ color }}>{SHOWN_LABEL[shown]}</span>
-                    {since && <span className="text-fg-3">{`· ${since}`}</span>}
-                  </div>
-                )}
-                {shown === 'attention' && pod.notes && <p className="text-[12px] leading-snug text-fg-2">{pod.notes}</p>}
-                {shown !== 'empty' && (
-                  <dl className="grid grid-cols-2 gap-4 border-t border-line-2 pt-2">
-                    <div>
-                      <dt className="text-[10px] uppercase tracking-wider text-fg-3">Harvest</dt>
-                      <dd className="text-[15px] text-fg">{harvestValue}</dd>
-                      {harvestSub && <dd className="text-[11px] text-fg-3">{harvestSub}</dd>}
-                    </div>
-                    <div>
-                      <dt className="text-[10px] uppercase tracking-wider text-fg-3">Leaf cover</dt>
-                      <dd className="text-[15px] text-fg">{cover === null ? '—' : pct(cover)}</dd>
-                      {h && <dd className="text-[11px] text-fg-3">{`target ${pct(h.targetCover)}`}</dd>}
-                    </div>
-                  </dl>
-                )}
-              </>
-            )}
-        {action && <div className="flex flex-col gap-2 pt-1 text-[12px]">{action}</div>}
+        <div className="flex items-start gap-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="font-mono text-[11px] uppercase tracking-[.06em] text-fg-3">{`Pod ${pod.slot}`}</div>
+            <div className="truncate text-[18px] font-medium text-fg">{pod.plant ?? 'Empty'}</div>
+          </div>
+          {pinned && onClose && (
+            <button type="button" aria-label={`Close pod ${pod.slot}`} onClick={onClose} className="p-0.5 text-fg-3 hover:text-fg">
+              <X size={16} strokeWidth={1.75} />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-[13px]">
+          <span className="flex items-center gap-2 font-medium" style={{ color }}>
+            <span className="size-[7px] rounded-full" style={{ background: color }} />
+            {SHOWN_LABEL[shown]}
+          </span>
+          {timing && <span className="font-mono text-[11px] text-fg-3">{`· ${timing}`}</span>}
+        </div>
+        {details && (
+          <div className="flex flex-col gap-3 border-t border-line pt-3">
+            {timeline && age !== null && <HarvestTimeline window={timeline} age={age} />}
+            {sentence && <p className="text-[13px] leading-normal text-pretty text-fg-2">{sentence}</p>}
+            {action && <div className="flex gap-2">{action}</div>}
+          </div>
+        )}
+        {!pinned && <div className="font-mono text-[10px] text-fg-3">Click to pin</div>}
       </div>
     </>
   )
@@ -178,19 +166,22 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, action
  * The tower in 3D (three.js, loaded on demand), filling the viewport's height.
  * Drag to turn it, ⌘/Ctrl-scroll to zoom, double-click to reset; click a pod to
  * pick it, or the light bars or tank to open their control (`onPart`). Hovering
- * names what's under the pointer. The picked pod gets a callout pinned to it,
- * with `podAction` under its readout. `controls` is a row of chips along the
- * top left, `status` along the top right; the legend sits along the bottom.
+ * names what's under the pointer and previews a pod's callout. The picked pod's
+ * callout is pinned to it, with `podAction` under its readout, until `onClose`.
+ * `controls` sits along the top left, `status` along the top right; the legend
+ * (unless `legend` is false) and the hint along the bottom.
  * `aside` is a panel down the right on a wide view, with the tower moved over
  * to centre in the rest. Calls `onUnavailable` without WebGL.
  */
-export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onPart, partLabels, controls, status, podAction, aside, onUnavailable }: {
+export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onClose, onPart, partLabels, controls, status, podAction, aside, legend = true, onUnavailable }: {
   pods: PodState[]
   waterPct: number | null
   lightLevel: number
   pumpOn?: boolean
   selected?: number | null
   onSelect: (slot: number) => void
+  /** Unpins the picked pod's callout; without it the callout has no close button. */
+  onClose?: () => void
   onPart?: (part: TowerPart) => void
   /** What hovering a part says, e.g. "Grow light · 77%". */
   partLabels?: Partial<Record<TowerPart, string>>
@@ -198,6 +189,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   status?: ReactNode
   podAction?: ReactNode
   aside?: ReactNode
+  legend?: boolean
   onUnavailable: () => void
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -280,7 +272,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         const at = anchors.at.get(p.slot)
         return at && <PodFlag key={p.slot} pod={p} at={at} picked={p.slot === selected} onSelect={onSelect} />
       })}
-      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} action={shownPod.slot === selected ? podAction : undefined} />}
+      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} pinned={shownPod.slot === selected} onClose={onClose} action={shownPod.slot === selected ? podAction : undefined} />}
       {aside != null && <div className="absolute bottom-10 right-3 top-16 z-10 hidden flex-col @min-[900px]:flex" style={{ width: ASIDE_W }}>{aside}</div>}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
         {status && <div className="pointer-events-auto flex flex-wrap items-start justify-end gap-2">{status}</div>}
@@ -291,14 +283,14 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
           </div>
         )}
       </div>
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-2">
-        {LEGEND.map(l => (
+      <div className="pointer-events-none absolute inset-x-[22px] bottom-4 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-2">
+        {legend && LEGEND.map(l => (
           <span key={l.status} className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-full" style={{ background: l.token }} />
             {STATUS_LABEL[l.status]}
           </span>
         ))}
-        <span className="ml-auto text-fg-3 max-[600px]:hidden">Plant size follows measured growth · click a pod · drag to turn · ⌘-scroll to zoom</span>
+        <span className={cn('font-mono text-fg-3 max-[600px]:hidden', legend && 'ml-auto')}>Click a pod · drag to turn · ⌘-scroll to zoom</span>
       </div>
     </div>
   )
