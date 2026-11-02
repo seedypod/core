@@ -4,31 +4,44 @@ title: "Gardyn hardware map"
 description: "Pins, I²C addresses, parts and model detection as documented upstream, with the Phase 1 verification checklist."
 status: "draft"
 generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
-sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}]
+sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}, {"resource": "stock microSD of a Gardyn Home 3.0 (firmware master.440)", "title": "Stock Gardyn firmware, read-only inspection 2026-11-01 (proprietary; facts only, no code copied)"}]
 ---
 
 # Gardyn hardware map
 
-**Status: unverified on our unit.** Everything here comes from
+**Status: checked against the stock firmware, not yet probed on the board.**
+Rows marked "upstream" come from
 [iot-root/garden-of-eden](https://github.com/iot-root/garden-of-eden)
-(`config.py`, `app/lib/hardware.py`, README) and is the *hypothesis* Phase 1
-confirms. When confirmed, replace "upstream" with "verified <date>, model X".
+(`config.py`, `app/lib/hardware.py`, README). Rows marked "stock fw" match the
+firmware on a Gardyn Home 3.0's stock card (hardware profile `hw_gh30`,
+version `master.440`, Raspbian 9 on a Pi Zero W), read on 2026-11-01. When a
+row is probed on the board, mark it "verified <date>, model X".
 
 BCM numbering (not header pin numbers).
 
 | Function | Interface | Pin / address | Notes | Source |
 |---|---|---|---|---|
-| Grow light | PWM out | GPIO18 | 8 kHz; hardware PWM channel on every Pi | upstream |
-| Pump | PWM out | GPIO24 | 50 Hz; **not** a hardware PWM pin → software PWM; cap duty at 30 % (board browns out) | upstream |
-| Water level | DYP-A01 ultrasonic | trigger GPIO26, echo GPIO19 | µs timing; use median of 5 | upstream |
-| Button | GPIO in | GPIO13 | single = light, double = pump (upstream behaviour) | upstream |
-| Over-temp alert | GPIO in | GPIO25 | from the PCB thermal monitor | upstream |
-| PCB temperature | I²C | 0x48 PCT2075 | all models | upstream |
-| Pump power | I²C | 0x40 INA219 | V / I / W | upstream |
-| Air temp + humidity | I²C | 0x5C AM2320 (Gardyn 1.0/2.0) · 0x38 DHT20 (3.0, Studio) | AM2320 needs a wake-up write before it ACKs; won't show in `i2cdetect` | upstream |
+| Grow light | PWM out | GPIO18 | 20 kHz hardware PWM (stock); upstream used 8 kHz | stock fw |
+| Pump | GPIO out | GPIO24 | Stock drives it plain on/off (100 %), 5 min runs, ~10.6 W; upstream used 50 Hz software PWM capped at 30 % for brown-outs. See below | stock fw |
+| Water level | DYP-A01 ultrasonic | trigger GPIO26, echo GPIO19 | Stock: 30 µs trigger, 1 s timeout, keeps readings in 3–25 cm and takes the median of the last 6 | stock fw |
+| Button | GPIO in | GPIO13 | pull-up, active low, falling edge, 80 ms debounce (stock) | stock fw |
+| Over-temp alert | GPIO in | GPIO25 | PCT2075 OS output, pull-down; stock sets T<sub>OS</sub> and T<sub>hyst</sub> to 70 °C and only reports it | stock fw |
+| PCB temperature | I²C | 0x48 PCT2075 | reads ~47 °C with the lights at 100 % | stock fw |
+| Pump power | I²C | 0x40 INA219 | 0.08 Ω shunt (stock calibration) | stock fw |
+| Air temp + humidity | I²C | 0x5C AM2320 (Gardyn 1.0/2.0) · 0x38 DHT20 (3.0, Studio) | Stock tries AM2320, then DHT20; our 3.0 uses the DHT20. AM2320 needs a wake-up write before it ACKs | stock fw |
 | Upper camera | USB UVC | `/dev/seedypod/camera-upper` (udev, by USB port; `/dev/video0` fallback) | through an on-board hub; port unverified | upstream |
 | Lower camera | USB UVC | `/dev/seedypod/camera-lower` (udev, by USB port; `/dev/video2` fallback) | port unverified | upstream |
-| Controller | — | Pi Zero W (early) / Zero 2 W | microSD boot; header soldered mirrored | upstream |
+| Controller | — | Pi Zero W (our 3.0) / Zero 2 W | microSD boot; stock runs it at `force_turbo=1`, `over_voltage=6` | stock fw |
+
+## Tank and pump, from two weeks of stock logs
+
+The data is in `tests/fixtures/gardyn-gh30-stock-2024/`.
+
+
+- Water distance runs from ~5.9 cm just after a fill to ~20 cm empty, falling about 1.3 cm a day.
+- The pump draws ~10.6 W while it lifts water. From ~19.6 cm it loses prime and draws ~3.3 W, which makes pump power a usable dry-run signal.
+- Stock schedules, as observed in the logs: lights at 100 % from 09:00 to 23:00; the pump for 5 min at 03:00, 09:00, 15:00 and 21:00.
+- Raw ultrasonic readings below 3 cm (the blind zone) were the common bad reading; 1 % of good ones read under 4.4 cm.
 
 ## Model detection
 

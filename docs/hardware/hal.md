@@ -58,15 +58,15 @@ prints every key with its default; the important ones:
 | top | `telemetry_interval_s` | 10 | Sensors publish on change *and* at least this often. |
 | top | `state_dir` | `/var/lib/seedypod` | `state.json` lives here (`--sim` uses a temp dir). |
 | top | `mdns` | true | Advertise `_seedypod-hal._tcp`. |
-| `[pins]` | `light_pwm`/`light_pwm_channel`/`light_hz` | 18 / 0 / 8000 | Hardware PWM. GPIO18 is channel 2 on a Pi 5. |
+| `[pins]` | `light_pwm`/`light_pwm_channel`/`light_hz` | 18 / 0 / 20000 | Hardware PWM. GPIO18 is channel 2 on a Pi 5. |
 | `[pins]` | `pump_pwm`/`pump_hz` | 24 / 50 | Software PWM on a dedicated thread. |
 | `[pins]` | `distance_trigger`/`distance_echo` | 26 / 19 | DYP-A01. |
 | `[pins]` | `button`, `over_temp_alert` | 13, 25 | |
 | `[i2c]` | `bus`, `pct2075`, `ina219`, `dht20`, `am2320` | 1, 0x48, 0x40, 0x38, 0x5C | |
 | `[i2c]` | `ezo_ph`, `ezo_ec`, `ezo_rtd` | 0x63, 0x64, 0x66 | Only used by explicit `[[sensor]]` entries. |
-| `[i2c]` | `ina219_shunt_ohms`, `ina219_max_amps` | 0.1, 3.2 | Calibration register derived from these. |
+| `[i2c]` | `ina219_shunt_ohms`, `ina219_max_amps` | 0.08, 3.2 | Calibration register derived from these. |
 | `[limits]` | `pump_max_run_s`, `pump_max_duty` | 900, 30 | ADR-0009. |
-| `[limits]` | `water_low_cm`, `over_temp_c` | 16, 36 | Comment out to disable an interlock. |
+| `[limits]` | `water_low_cm`, `over_temp_c` | 16, 65 | Comment out to disable an interlock. |
 | `[limits]` | `distance_samples`, `distance_timeout_ms` | 5, 60 | Median of N pings. |
 | `[tank]` | `full_cm`, `empty_cm` | 5, 20 | Geometry for `water_level_pct`. |
 | `[button]` | `debounce_ms`, `double_window_ms`, `long_press_ms`, `setup_hold_ms`, `active_low`, `pump_run_s` | 30, 400, 1000, 10000, true, 300 | |

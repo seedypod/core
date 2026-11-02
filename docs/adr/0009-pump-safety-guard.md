@@ -32,7 +32,8 @@ only as an explicit opt-in.
    samples ≥ `water_low_cm`; **fail safe**: if the interlock is configured and
    the sensor is unavailable, refuse.
 4. **Over-temperature** — refuse to start and stop a running pump at
-   `over_temp_c` (PCB sensor, default 36 °C).
+   `over_temp_c` (PCB sensor, default 65 °C; raised from 36 °C on 2026-11-01
+   after the stock Gardyn 3.0 board read 47 °C with the lights at 100 %).
 5. **Latched faults** — a stop caused by (3) or (4) while running latches the
    pump off. `acknowledge` clears it; nothing else does. No auto-recovery.
 6. **Stop always works**, latched or not.

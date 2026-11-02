@@ -241,11 +241,12 @@ impl Default for Config {
 
 impl Default for Pins {
     fn default() -> Self {
-        // BCM numbering, from iot-root/garden-of-eden config.py.
+        // BCM numbering, from iot-root/garden-of-eden config.py; pins and the
+        // 20 kHz light PWM match the stock Gardyn 3.0 firmware.
         Self {
             light_pwm: 18,
             light_pwm_channel: 0,
-            light_hz: 8000,
+            light_hz: 20_000,
             pump_pwm: 24,
             pump_hz: 50,
             distance_trigger: 26,
@@ -267,7 +268,8 @@ impl Default for I2c {
             ezo_ph: 0x63,
             ezo_ec: 0x64,
             ezo_rtd: 0x66,
-            ina219_shunt_ohms: 0.1,
+            // The stock Gardyn firmware calibrates against a 0.08 Ω shunt.
+            ina219_shunt_ohms: 0.08,
             ina219_max_amps: 3.2,
         }
     }
@@ -279,7 +281,9 @@ impl Default for Limits {
             pump_max_run_s: 900,
             pump_max_duty: 30.0,
             water_low_cm: Some(16.0),
-            over_temp_c: Some(36.0),
+            // The board runs ~47 °C with the lights at 100 %; stock sets the
+            // PCT2075 alert at 70 °C.
+            over_temp_c: Some(65.0),
             distance_samples: 5,
             distance_timeout_ms: 60,
         }
@@ -559,7 +563,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 [pins]
 # light_pwm = 18          # hardware PWM
 # light_pwm_channel = 0   # 0 on Pi <= 4; GPIO18 is channel 2 on a Pi 5
-# light_hz = 8000
+# light_hz = 20000
 # pump_pwm = 24           # software PWM
 # pump_hz = 50
 # distance_trigger = 26
@@ -576,14 +580,14 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # ezo_ph = 0x63           # Atlas EZO (Phase 6, only with [[sensor]] entries)
 # ezo_ec = 0x64
 # ezo_rtd = 0x66
-# ina219_shunt_ohms = 0.1
+# ina219_shunt_ohms = 0.08
 # ina219_max_amps = 3.2
 
 [limits]
 # pump_max_run_s = 900    # every pump run is bounded (ADR-0009)
 # pump_max_duty = 30.0    # the board browns out above ~30 %
 # water_low_cm = 16.0     # dry-run interlock; comment out to disable
-# over_temp_c = 36.0      # PCB cutoff; comment out to disable
+# over_temp_c = 65.0      # PCB cutoff; comment out to disable
 # distance_samples = 5    # median of N pings
 # distance_timeout_ms = 60
 
