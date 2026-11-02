@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from '../Sidebar'
+import { COLLAPSED_KEY, Sidebar } from '../Sidebar'
 
 const { data, path } = vi.hoisted(() => ({ data: new Map<string, unknown>(), path: { current: '/' } }))
 
@@ -24,7 +24,11 @@ afterEach(() => {
   cleanup()
   data.clear()
   path.current = '/'
+  localStorage.clear()
+  vi.restoreAllMocks()
 })
+
+const aside = () => screen.getByRole('complementary')
 
 describe('Sidebar', () => {
   it('links the brand icon and name home', () => {
@@ -128,5 +132,61 @@ describe('Sidebar', () => {
     expect(screen.queryByLabelText(/checks passing/)).toBeNull()
     expect(screen.getByText('Kitchen Gardyn')).toBeTruthy()
     expect(screen.getByText('core unreachable')).toBeTruthy()
+  })
+
+  it('folds a nav group from its header, and remembers it across a remount', () => {
+    const { unmount } = render(<Sidebar status={online} />)
+    const observe = within(aside()).getByRole('button', { name: 'Observe' })
+    expect(observe.getAttribute('aria-expanded')).toBe('true')
+    expect(observe.getAttribute('aria-controls')).toBe('nav-observe')
+    fireEvent.click(observe)
+    expect(observe.getAttribute('aria-expanded')).toBe('false')
+    expect(within(aside()).queryByRole('link', { name: 'Cameras' })).toBeNull()
+    expect(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')).toEqual(['observe'])
+    unmount()
+    render(<Sidebar status={online} />)
+    expect(within(aside()).getByRole('button', { name: 'Observe' }).getAttribute('aria-expanded')).toBe('false')
+    expect(within(aside()).queryByRole('link', { name: 'Analysis' })).toBeNull()
+    expect(within(aside()).getByRole('link', { name: 'Home' })).toBeTruthy()
+    fireEvent.click(within(aside()).getByRole('button', { name: 'Observe' }))
+    expect(within(aside()).getByRole('link', { name: 'Cameras' })).toBeTruthy()
+    expect(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')).toEqual([])
+  })
+
+  it('keeps the current page visible inside a folded group', () => {
+    path.current = '/analysis'
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(['observe', 7]))
+    render(<Sidebar status={online} />)
+    expect(within(aside()).getByRole('link', { name: 'Analysis' }).getAttribute('aria-current')).toBe('page')
+    expect(within(aside()).queryByRole('link', { name: 'Cameras' })).toBeNull()
+  })
+
+  it('opens every group when the saved choice is unreadable or storage is blocked', () => {
+    localStorage.setItem(COLLAPSED_KEY, '{nope')
+    const { unmount } = render(<Sidebar status={online} />)
+    expect(within(aside()).getByRole('link', { name: 'Cameras' })).toBeTruthy()
+    unmount()
+    localStorage.setItem(COLLAPSED_KEY, '{"observe":true}')
+    const second = render(<Sidebar status={online} />)
+    expect(within(aside()).getByRole('link', { name: 'Cameras' })).toBeTruthy()
+    second.unmount()
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    render(<Sidebar status={online} />)
+    fireEvent.click(within(aside()).getByRole('button', { name: 'Control' }))
+    expect(within(aside()).queryByRole('link', { name: 'Light' })).toBeNull()
+  })
+
+  it('links the docs in a new tab, and the unit row to Status', () => {
+    render(<Sidebar status={online} />)
+    const docs = within(aside()).getByRole('link', { name: 'Docs' })
+    expect(docs.getAttribute('href')).toBe('https://seedypod.github.io')
+    expect(docs.getAttribute('target')).toBe('_blank')
+    expect(docs.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(within(aside()).getByText('Kitchen Gardyn').closest('a')?.getAttribute('href')).toBe('/status')
   })
 })

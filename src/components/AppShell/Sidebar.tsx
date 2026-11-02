@@ -1,8 +1,9 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { Droplets, FlaskConical, Sun, Thermometer } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { ArrowUpRight, BookOpen, ChevronDown, ChevronRight, Droplets, FlaskConical, Sun, Thermometer } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { SidebarSearch } from '@/src/components/Search/CommandPalette'
+import { DOCS_BASE } from '@/src/components/Search/docsIndex'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
 import { ageDays, podShown } from '@/src/components/Grow/towerLayout'
 import type { Reading, SensorId } from '@/src/hardware/contract'
@@ -13,6 +14,19 @@ import { NAV_GROUPS, navItems, type NavItem } from './navItems'
 
 const STAGES = ['germination', 'seedling', 'vegetative', 'harvest'] as const
 const SECTION = 'px-2.5 pb-1 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-fg-3'
+const FOOT_ROW = 'flex items-center gap-2.5 rounded-[7px] px-2.5 py-[7px] text-[14px] leading-5 text-fg-2 hover:text-fg'
+export const COLLAPSED_KEY = 'seedypod.navCollapsed'
+
+/** The nav groups this viewer has folded away; all open when nothing is saved. */
+function savedCollapsed(): Set<string> {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+  }
+  catch {
+    return new Set()
+  }
+}
 
 /** A system reading with a neutral meter under it, linking to its page. */
 function Meter({ to, icon: Icon, label, value, pct }: { to: string, icon: typeof Sun, label: string, value: string, pct: number | null }) {
@@ -136,6 +150,18 @@ export function Sidebar({ status }: { status: { name: string, line: string, onli
   const alertCount = (alerts.data ?? []).filter(a => a.active).length
   const passing = checkSummary(checks.data?.checks ?? [])
   const worst = worstState(checks.data?.checks ?? [])
+  const [collapsed, setCollapsed] = useState(savedCollapsed)
+  const toggle = (id: string) => {
+    const next = new Set(collapsed)
+    if (!next.delete(id)) next.add(id)
+    setCollapsed(next)
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]))
+    }
+    catch {
+      // private window: the choice lasts for this visit
+    }
+  }
 
   const metaFor = (to: string): ReactNode => {
     if (to === '/grow' && cycle) return <span className="font-mono text-[11px] text-fg-3">{`Day ${grow.data?.day}`}</span>
@@ -155,32 +181,54 @@ export function Sidebar({ status }: { status: { name: string, line: string, onli
       <Readings />
       <NeedsYou />
       <nav className="flex flex-col gap-3 border-t border-line pt-3">
-        {NAV_GROUPS.map(g => (
-          <div key={g.id} className="flex flex-col gap-0.5">
-            <div className={SECTION}>{g.label}</div>
-            {navItems.filter(i => i.group === g.id).map(item => (
-              <NavLink key={item.to} item={item} active={isActive(item.to)} meta={metaFor(item.to)}>
-                {item.to === '/grow' && cycle && stage >= 0 && (
-                  <span className="flex h-[3px] gap-0.5 pl-[26px]" aria-label={`Stage: ${cycle.stage}`}>
-                    {STAGES.map((s, i) => <span key={s} className={cn('flex-1 rounded-full', i <= stage ? 'bg-meter' : 'bg-line')} />)}
-                  </span>
-                )}
-              </NavLink>
-            ))}
-          </div>
-        ))}
+        {NAV_GROUPS.map((g) => {
+          const open = !collapsed.has(g.id)
+          // A folded group still shows the current page, so it never disappears.
+          const items = navItems.filter(i => i.group === g.id && (open || isActive(i.to)))
+          return (
+            <div key={g.id} className="flex flex-col gap-0.5">
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-controls={`nav-${g.id}`}
+                onClick={() => toggle(g.id)}
+                className={cn(SECTION, 'flex cursor-pointer items-center border-0 bg-transparent text-left hover:text-fg-2')}
+              >
+                <span className="flex-1">{g.label}</span>
+                <ChevronDown size={12} aria-hidden className={cn('transition-transform', !open && '-rotate-90')} />
+              </button>
+              <div id={`nav-${g.id}`} className="flex flex-col gap-0.5">
+                {items.map(item => (
+                  <NavLink key={item.to} item={item} active={isActive(item.to)} meta={metaFor(item.to)}>
+                    {item.to === '/grow' && cycle && stage >= 0 && (
+                      <span className="flex h-[3px] gap-0.5 pl-[26px]" aria-label={`Stage: ${cycle.stage}`}>
+                        {STAGES.map((s, i) => <span key={s} className={cn('flex-1 rounded-full', i <= stage ? 'bg-meter' : 'bg-line')} />)}
+                      </span>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </nav>
       <div className="mt-auto flex flex-col gap-0.5 pt-2">
+        <a href={DOCS_BASE} target="_blank" rel="noopener noreferrer" className={FOOT_ROW}>
+          <BookOpen size={16} />
+          <span className="flex-1">Docs</span>
+          <ArrowUpRight size={14} aria-hidden className="text-fg-3" />
+        </a>
         {navItems.filter(i => i.group === 'foot').map(item => (
           <NavLink key={item.to} item={item} active={isActive(item.to)} meta={metaFor(item.to)} />
         ))}
-        <div className="mt-1.5 flex items-center gap-2.5 border-t border-line px-2.5 pb-0.5 pt-2.5">
+        <Link to="/status" className="mt-1.5 flex items-center gap-2.5 border-t border-line px-2.5 pb-0.5 pt-2.5 text-fg hover:bg-active/40">
           <span className={cn('size-[7px] shrink-0 rounded-full', status.online ? 'bg-pod-ok shadow-[0_0_0_3px_color-mix(in_srgb,var(--pod-ok)_20%,transparent)]' : 'bg-pod-empty')} />
-          <span className="flex min-w-0 flex-col gap-px">
+          <span className="flex min-w-0 flex-1 flex-col gap-px">
             <span className="truncate text-[13px]">{status.name}</span>
             <span className="font-mono text-[10px] text-fg-3">{status.line}</span>
           </span>
-        </div>
+          <ChevronRight size={14} aria-hidden className="shrink-0 text-fg-3" />
+        </Link>
       </div>
     </aside>
   )
