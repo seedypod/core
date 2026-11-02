@@ -15,7 +15,7 @@ sources: [{"resource": "https://github.com/sleepypod/core/blob/dev/docs/adr/0020
 ## Context
 
 Plan item 5.2 asks for HomeKit: the light as a Lightbulb, the pump as a
-Switch, and the sensors, reusing sleepypod's identity derivation. sleepypod
+Switch, and the sensors, reusing [sleepypod](https://sleepypod.github.io/core/integrations/)'s identity derivation. sleepypod
 embeds a hap-nodejs bridge in its server (`src/homekit/`). It took several PRs
 of field fixes to get right, and those lessons carry over:
 
@@ -143,7 +143,7 @@ change:
   `wasPaired`, which is written on hap-nodejs's `paired` event or on a boot
   that finds pairings, but there are none on disk.
 
-sleepypod polled every 30 s for the `wasPaired` marker. seedypod uses the
+[sleepypod](https://sleepypod.github.io/core/settings/homekit/) polled every 30 s for the `wasPaired` marker. seedypod uses the
 events instead. seedypod has no identities from before ADR 0020, so
 sleepypod's legacy-migration branch isn't ported.
 

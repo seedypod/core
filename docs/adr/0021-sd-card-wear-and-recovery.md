@@ -39,7 +39,7 @@ means a shell session:
 That only works if the owner remembered to stop core and take a backup
 (MAINTENANCE.md). Most won't have one.
 
-sleepypod solved the wear half for the Pod's eMMC:
+[sleepypod](https://sleepypod.github.io/core/system/storage/) solved the wear half for the Pod's eMMC:
 
 - A RAM-only journal (`scripts/lib/journald-helpers`).
 - tmpfs for high-rate data (its ADR 0018).

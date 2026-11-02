@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Format follows sleepypod/core (`# ADR NNNN: Title`, Status/Date, Context, Decision, Consequences, amendments appended) with OKF frontmatter on top. `status: stable` = Accepted, `draft` = Proposed.
+Format follows [sleepypod/core](https://sleepypod.github.io/) (`# ADR NNNN: Title`, Status/Date, Context, Decision, Consequences, amendments appended) with OKF frontmatter on top. `status: stable` = Accepted, `draft` = Proposed.
 
 - [0001 New repository and naming](0001-new-repository.md)
 - [0002 License](0002-license.md)

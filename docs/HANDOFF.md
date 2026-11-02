@@ -18,7 +18,7 @@ Updated 2026-10-31 after the move to `github.com/seedypod/core` (from `ng/leafyp
 | Repo conventions | dev→main, PR title gate, semantic-release, back-merge, dev-latest, Codecov flags, Renovate, Stryker, Vercel workflow, OKF validator | 11 workflows; v1.0.0 released with `hald` binaries + tarball |
 | Rust HAL (`hal/`) | `hal-core` (contract, traits, `PumpGuard`, `DoseGuard`, derived sensors), `hal-drivers` (all documented parts + EZO pH/EC/RTD + dosing, behind `hardware`), `hal-sim`, `hald` (MQTT, HA discovery, HTTP, mDNS, state file, CLI) | 148 tests; end-to-end run against Mosquitto; CI cross-builds armv6 + aarch64 |
 | Core (`server/`, `src/`) | Hono + tRPC + OpenAPI + MCP + WS; `Store` (SQLite/drizzle + memory); scheduler, grow cycle, recorder, captures, vision, HA bridge, API key; `MqttHalClient` | 86 vitest (unit + integration) |
-| Web (`web/`) | 8 screens + `/kiosk` on the sleepypod design system; seeded in-browser demo (`VITE_DEMO=1`) | 6 Playwright e2e over the built server; all routes rendered headlessly with zero console errors |
+| Web (`web/`) | 8 screens + `/kiosk` on the [sleepypod](https://sleepypod.github.io/) design system; seeded in-browser demo (`VITE_DEMO=1`) | 6 Playwright e2e over the built server; all routes rendered headlessly with zero console errors |
 | Docs | `docs/` (OKF concepts: ADRs 0001–0016, guides, HAL reference, HA examples, plan, this handoff) and `knowledge/` (4); published at [seedypod.github.io](https://seedypod.github.io) from `seedypod/seedypod.github.io` | `scripts/validate_knowledge.py` in CI |
 | Org | `seedypod/.github` profile README; avatar source (`assets/avatar.svg`, sleepypod-style render) | — |
 
@@ -58,7 +58,7 @@ On a unit: `scripts/install-hal` then `scripts/install`; set `HAL_MQTT_URL`, `HA
 
 1. **Phase 1 on a real unit** (the simulated run is done) — teardown, `dd` the stock card, flash, `hald --check` + `--features hardware` on the unit, confirm the pin map; file ADR-0008 with the real model/controller; mark `knowledge/hardware/*` and `docs/hardware/pin-map.md` as verified. With EZO probes fitted, run the calibration procedure in `docs/hardware/hal.md`.
 2. Replace the placeholder secrets (`VERCEL_TOKEN` and the `MIRROR_TEST_*` R2 set) — tracked in seedypod/core#6 — and install the Mend Renovate app on the org (github.com/apps/renovate); it reads `renovate.json`, no token. The demo at seedypod.vercel.app was first deployed by hand with the Vercel CLI.
-3. iOS: evaluated in [ADR-0017](adr/0017-ios-client.md) — new `seedypod/ios` app reusing sleepypod's tRPC transport, discovery and stream patterns; first add a `_seedypod._tcp` mDNS advertisement to core.
+3. iOS: evaluated in [ADR-0017](adr/0017-ios-client.md) — new `seedypod/ios` app reusing [sleepypod](https://sleepypod.github.io/developers/ios/)'s tRPC transport, discovery and stream patterns; first add a `_seedypod._tcp` mDNS advertisement to core.
 4. New probe types (dissolved oxygen, ORP, other vendors): one `SensorKind` impl each (ADR-0018); the Sensors screen and calibration wizard pick them up from the descriptor.
 
 Done since the pause: transfer and rename; repo settings; Vercel project; the `dose_fault` alert kind; the EZO calibration topic; the docs site; the org profile; fixing the crash on first boot when the data directory is missing; adding, calibrating and removing pH/EC/temperature probes from the app (ADR-0018).

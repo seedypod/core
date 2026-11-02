@@ -17,7 +17,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 The pump is the one actuator that can damage the hardware: running dry burns
 the pump, and Gardyn's board browns out above ~30 % duty. garden-of-eden's
 issue tracker documents every way its scattered checks were bypassed (#108,
-#109, #111, #114). sleepypod ADR-0022 established the model we want: detect,
+#109, #111, #114). [sleepypod](https://sleepypod.github.io/developers/hardware/) ADR-0022 established the model we want: detect,
 fail safe by de-energising, stay off until a human acknowledges, auto-recovery
 only as an explicit opt-in.
 

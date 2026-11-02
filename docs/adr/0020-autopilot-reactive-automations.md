@@ -29,7 +29,7 @@ Nothing reacts to a reading. Owners want rules like these:
 The signals already exist: sensor telemetry, actuator state, alerts, and since
 ADR 0019, per-pod analysis results.
 
-sleepypod solved the same problem for the Pod with **Autopilot** (its ADR 0023):
+[sleepypod](https://sleepypod.github.io/core/autopilot/) solved the same problem for the Pod with **Autopilot** (its ADR 0023):
 
 - WHEN/IF/THEN rules over live signals.
 - Windowed aggregates (`avg(ph, 60m)`).
@@ -129,7 +129,7 @@ as the run's outcome and never retried by the engine.
 The arbiter writes only when the resolved level changes. While a higher source
 is in charge, the schedule's clock keeps running. That way, when a hold
 expires, the light resolves to the current curve point and doesn't replay old
-ones. This is the precedence sleepypod reached in its revision of ADR 0023,
+ones. This is the precedence [sleepypod](https://sleepypod.github.io/core/autopilot-engine/) reached in its revision of ADR 0023,
 minus run-once sessions, which seedypod doesn't have.
 
 ### Safety

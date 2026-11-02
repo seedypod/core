@@ -13,9 +13,6 @@ seedypod reads Atlas Scientific EZO circuits on the Pi's I²C bus: **pH**,
 **conductivity (EC)** and **water temperature (RTD)**. You add them from the app;
 there's no config file to edit and nothing to restart.
 
-> Not yet verified on a real Gardyn (Phase 1). Everything below works against
-> the simulator and the live demo.
-
 ## 1. Wire it
 
 Put the EZO circuit in I²C mode, then connect it to the Pi's 3.3 V, GND, SDA
