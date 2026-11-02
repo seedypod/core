@@ -25,7 +25,7 @@ BCM numbering (not header pin numbers).
 | Pump | GPIO out | GPIO24 | Stock drives it plain on/off (100 %), 5 min runs, ~10.6 W; upstream used 50 Hz software PWM capped at 30 % for brown-outs. See below | stock fw |
 | Water level | DYP-A01 ultrasonic | trigger GPIO26, echo GPIO19 | Stock: 30 µs trigger, 1 s timeout, keeps readings in 3–25 cm and takes the median of the last 6 | stock fw |
 | Button | GPIO in | GPIO13 | pull-up, active low, falling edge, 80 ms debounce (stock) | stock fw |
-| Over-temp alert | GPIO in | GPIO25 | PCT2075 OS output, pull-down; stock sets T<sub>OS</sub> and T<sub>hyst</sub> to 70 °C and only reports it | stock fw |
+| Over-temp alert | GPIO in | GPIO25 | PCT2075 OS output, pull-down; stock sets the over-temperature and hysteresis thresholds to 70 °C and only reports it | stock fw |
 | PCB temperature | I²C | 0x48 PCT2075 | reads ~47 °C with the lights at 100 % | stock fw |
 | Pump power | I²C | 0x40 INA219 | 0.08 Ω shunt (stock calibration) | stock fw |
 | Air temp + humidity | I²C | 0x5C AM2320 (Gardyn 1.0/2.0) · 0x38 DHT20 (3.0, Studio) | Stock tries AM2320, then DHT20; our 3.0 uses the DHT20. AM2320 needs a wake-up write before it ACKs | stock fw |
