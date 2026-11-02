@@ -35,9 +35,12 @@ BCM numbering (not header pin numbers).
 
 ## Tank and pump, from two weeks of stock logs
 
+The data is in `tests/fixtures/gardyn-gh30-stock-2024/`.
+
+
 - Water distance runs from ~5.9 cm just after a fill to ~20 cm empty, falling about 1.3 cm a day.
 - The pump draws ~10.6 W while it lifts water. From ~19.6 cm it loses prime and draws ~3.3 W, which makes pump power a usable dry-run signal.
-- Stock schedules: lights at 100 % from 06:00 to 20:00; the pump for 5 min at 00:00, 08:00 and 16:00.
+- Stock schedules, as observed in the logs: lights at 100 % from 09:00 to 23:00; the pump for 5 min at 03:00, 09:00, 15:00 and 21:00.
 - Raw ultrasonic readings below 3 cm (the blind zone) were the common bad reading; 1 % of good ones read under 4.4 cm.
 
 ## Model detection
