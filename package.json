@@ -21,6 +21,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
+    "docs:sync-index": "node scripts/sync-docs-index.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "tsc": "tsc --noEmit",
