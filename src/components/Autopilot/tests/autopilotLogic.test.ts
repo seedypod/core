@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backtestLine, byDay, lightLine, matchesFilter, modePatch, ruleMode, statusLine } from '../autopilotLogic'
+import { backtestLine, byDay, lastDay, lightLine, matchesFilter, modePatch, ruleMode, statusLine } from '../autopilotLogic'
 
 describe('autopilot logic', () => {
   it('maps modes both ways', () => {
@@ -20,10 +20,20 @@ describe('autopilot logic', () => {
   it('writes the backtest line with the peak or low against the threshold', () => {
     const s = { days: 7, wouldFire: 2, suppressed: 0, disabledAt: null, spark: [], fireAt: [], liveOnly: [] }
     expect(backtestLine(undefined)).toBe('backtesting…')
-    expect(backtestLine({ ...s, watch: { label: 'air', unit: '°C', op: '>', threshold: 29, extreme: 31.24 } })).toBe('7-day backtest · 2 would fire · peak 31.2 of 29°C')
-    expect(backtestLine({ ...s, watch: { label: 'tank', unit: '%', op: '<=', threshold: 30, extreme: 120.4 } })).toBe('7-day backtest · 2 would fire · low 120 of 30%')
-    expect(backtestLine({ ...s, watch: { label: 'pod', unit: '1/0', op: '==', threshold: 1, extreme: 1 } })).toBe('7-day backtest · 2 would fire · peak 1 of 1')
+    expect(backtestLine({ ...s, watch: { label: 'air', unit: '°C', op: '>', threshold: 29, extreme: 31.24 } })).toBe('7-day backtest · 2 would fire · peak 31.2°C vs 29°C')
+    expect(backtestLine({ ...s, watch: { label: 'tank', unit: '%', op: '<=', threshold: 30, extreme: 120.4 } })).toBe('7-day backtest · 2 would fire · lowest 120% vs 30%')
+    expect(backtestLine({ ...s, watch: { label: 'pod', unit: '1/0', op: '==', threshold: 1, extreme: 1 } })).toBe('7-day backtest · 2 would fire · peak 1 vs 1')
     expect(backtestLine({ ...s, watch: null, disabledAt: '2026-10-31T00:00:00Z' })).toBe('7-day backtest · 2 would fire · runaway guard would stop it')
+    expect(backtestLine({ ...s, watch: { label: 'pH', unit: '', op: '>', threshold: 6.5, extreme: null } })).toBe('7-day backtest · no pH recorded yet, so nothing to replay')
+  })
+
+  it('counts the last 24 hours of checks and actions', () => {
+    const now = Date.parse('2026-11-01T12:00:00Z')
+    const run = (h: number, outcome: string) => ({ firedAt: new Date(now - h * 3_600_000).toISOString(), outcome })
+    const runs = [run(1, 'fired'), run(2, 'clamped'), run(3, 'skipped'), run(4, 'dry_run'), run(30, 'fired')]
+    expect(lastDay(runs, now, 1000)).toEqual({ checks: 4, actions: 2, idle: 1, partial: false })
+    expect(lastDay(runs.slice(0, 4), now, 4)).toEqual({ checks: 4, actions: 2, idle: 1, partial: true })
+    expect(lastDay(runs, now, 5).partial).toBe(false)
   })
 
   it('says who holds the light', () => {

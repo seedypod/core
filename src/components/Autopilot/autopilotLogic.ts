@@ -41,13 +41,14 @@ export interface BacktestSummary {
 const num = (v: number) => (Math.abs(v) >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10))
 const HIGH_OPS = new Set(['>', '>=', '==', '!='])
 
-/** `7-day backtest · 3 would fire · peak 31 of 30 °C`. */
+/** `7-day backtest · 3 would fire · peak 31°C vs 30°C`. */
 export function backtestLine(s: BacktestSummary | undefined): string {
   if (!s) return 'backtesting…'
-  const parts = [`${s.days}-day backtest`, `${s.wouldFire} would fire`]
   const w = s.watch
-  if (w && w.extreme !== null) parts.push(`${HIGH_OPS.has(w.op) ? 'peak' : 'low'} ${num(w.extreme)} of ${withUnit(num(w.threshold), w.unit === '1/0' ? '' : w.unit)}`)
-  else if (w) parts.push(`no recorded ${w.label}`)
+  if (w && w.extreme === null) return `${s.days}-day backtest · no ${w.label} recorded yet, so nothing to replay`
+  const parts = [`${s.days}-day backtest`, `${s.wouldFire} would fire`]
+  const unit = w?.unit === '1/0' ? '' : w?.unit ?? ''
+  if (w && w.extreme !== null) parts.push(`${HIGH_OPS.has(w.op) ? 'peak' : 'lowest'} ${withUnit(num(w.extreme), unit)} vs ${withUnit(num(w.threshold), unit)}`)
   if (s.disabledAt) parts.push('runaway guard would stop it')
   return parts.join(' · ')
 }
@@ -89,6 +90,23 @@ export function why(detail: unknown): string {
   const d = (detail ?? {}) as { reason?: string, actions?: Array<{ kind: string, value?: number, refused?: string, error?: string, skipped?: string }> }
   if (d.reason) return d.reason.replace(/-/g, ' ')
   return (d.actions ?? []).map(a => a.refused ?? a.error ?? (a.skipped ? `${a.kind}: ${a.skipped}` : `${a.kind}${a.value !== undefined ? ` ${a.value}` : ''}`)).join(', ')
+}
+
+const DAY_MS = 24 * 3_600_000
+
+/**
+ * The last 24 hours of the run log: every check, the ones that acted, and the
+ * ones with nothing to do. `partial` when the fetched page (`limit` runs) ends
+ * inside the day, so the counts are a floor.
+ */
+export function lastDay(runs: Array<{ firedAt: string, outcome: string }>, now: number, limit: number): { checks: number, actions: number, idle: number, partial: boolean } {
+  const day = runs.filter(r => Date.parse(r.firedAt) >= now - DAY_MS)
+  return {
+    checks: day.length,
+    actions: day.filter(r => r.outcome === 'fired' || r.outcome === 'clamped').length,
+    idle: day.filter(r => r.outcome === 'skipped').length,
+    partial: runs.length >= limit && day.length === runs.length,
+  }
 }
 
 /** Runs grouped by local day, newest day first, keeping each day's order. */

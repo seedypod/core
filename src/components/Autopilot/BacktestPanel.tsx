@@ -23,7 +23,7 @@ export function BacktestPanel({ id, rule }: { id?: number, rule?: Omit<RuleInput
     points: t.values.flatMap((v, i) => (v === null ? [] : [{ x: Date.parse(r?.times[i] ?? ''), y: v }])),
   }))
   return (
-    <Card>
+    <Card className="rounded-[10px] border-0 bg-field px-3.5 py-3">
       <CardHeader
         title="Backtest"
         subtitle="What this rule would have done, replayed over recorded history. Nothing is sent to the hardware."
