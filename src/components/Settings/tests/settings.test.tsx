@@ -85,7 +85,7 @@ describe('Settings: backup', () => {
     data.set('backup', backup())
     render(<SettingsPage />)
     expect(screen.getByTestId('backup-last').textContent).toBe('none yet')
-    expect(screen.getByText('The file holds your bucket secret and MQTT password. Keep it somewhere private.')).toBeTruthy()
+    expect(screen.getByText('The file holds your bucket secret, MQTT password and HomeKit pairing keys. Keep it somewhere private.')).toBeTruthy()
     const link = () => screen.getByText('Download backup').closest('a') as HTMLAnchorElement
     expect(link().getAttribute('href')).toBe('/api/backup/download')
     fireEvent.click(screen.getByRole('switch', { name: 'Include photos in the download' }))

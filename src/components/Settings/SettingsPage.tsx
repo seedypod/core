@@ -404,7 +404,7 @@ function BackupCard() {
         </div>
       </Row>
       <Row label="Include photos" sub="For downloads; the mirror already keeps them. Makes the file far larger."><Toggle label="Include photos in the download" on={photos} onChange={setPhotos} /></Row>
-      <Row label="Download" sub="The file holds your bucket secret and MQTT password. Keep it somewhere private.">
+      <Row label="Download" sub="The file holds your bucket secret, MQTT password and HomeKit pairing keys. Keep it somewhere private.">
         <a href={`${apiBase()}/api/backup/download${photos ? '?photos=1' : ''}`} download className="inline-flex"><Button size="sm" icon={Download} tabIndex={-1}>Download backup</Button></a>
       </Row>
       <Row label="Restore" sub={info.data?.available === false ? 'Not installed on this core: run scripts/install on the unit' : 'Replace this unit with a backup, from a file or the bucket'}>
