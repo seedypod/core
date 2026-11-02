@@ -1,16 +1,37 @@
 import { Link } from '@tanstack/react-router'
-import { Archive, CloudUpload, Download, HardDrive, Settings } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { Archive, BellRing, Camera, ChevronDown, Cloud, CloudUpload, Download, Droplets, HardDrive, Info, KeyRound, Radio, Ruler, Settings2, Wifi } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { RestorePanel, RestoreProgress } from '@/src/components/Backup/RestorePanel'
-import { Button, Card, CardHeader, KeyValue, SectionLabel } from '@/src/components/ds/core'
+import { Button, KeyValue } from '@/src/components/ds/core'
 import { Alert } from '@/src/components/ds/feedback'
 import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
-import { PageHeader, SettingRow } from '@/src/components/ds/layout'
+import { SettingRow, SubNav } from '@/src/components/ds/layout'
 import type { inferRouterOutputs } from '@trpc/server'
+import { cn } from '@/lib/utils'
 import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
 
 type SettingsView = inferRouterOutputs<AppRouter>['settings']['get']
+type GrowView = inferRouterOutputs<AppRouter>['grow']['current']
+
+type SectionId = 'unit' | 'tank' | 'reminders' | 'cameras' | 'api' | 'off-device' | 'storage' | 'backup' | 'home-assistant' | 'wifi' | 'about'
+
+/** In-page nav, in page order. Anchors are what ⌘K search links to. */
+const SECTIONS: ReadonlyArray<{ id: SectionId, label: string, icon: LucideIcon }> = [
+  { id: 'unit', label: 'Unit', icon: Settings2 },
+  { id: 'tank', label: 'Tank', icon: Droplets },
+  { id: 'reminders', label: 'Reminders', icon: BellRing },
+  { id: 'cameras', label: 'Cameras', icon: Camera },
+  { id: 'api', label: 'API access', icon: KeyRound },
+  { id: 'off-device', label: 'Storage', icon: Cloud },
+  { id: 'storage', label: 'SD card', icon: HardDrive },
+  { id: 'backup', label: 'Backup', icon: Archive },
+  { id: 'home-assistant', label: 'Home Assistant', icon: Radio },
+  { id: 'wifi', label: 'Wi-Fi', icon: Wifi },
+  { id: 'about', label: 'About', icon: Info },
+]
 
 export function SettingsPage() {
   const utils = trpc.useUtils()
@@ -26,6 +47,71 @@ export function SettingsPage() {
   }, [loaded])
   if (!q.data) return null
   return <SettingsForm key={q.data.updatedAt} s={q.data} coreVersion={info.data?.coreVersion} coreHost={info.data?.coreHost ?? undefined} system={info.data?.system ?? null} onSave={patch => update.mutate(patch)} saving={update.isPending} />
+}
+
+/** The section nearest the top of the viewport, for the nav highlight. */
+function useActiveSection(): [SectionId, (id: SectionId) => void] {
+  const [active, setActive] = useState<SectionId>('unit')
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return
+    const visible = new Set<string>()
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) visible.add(e.target.id)
+        else visible.delete(e.target.id)
+      }
+      const first = SECTIONS.find(s => visible.has(s.id))
+      if (first) setActive(first.id)
+    }, { rootMargin: '0px 0px -65% 0px' })
+    for (const s of SECTIONS) {
+      const el = document.getElementById(s.id)
+      if (el) io.observe(el)
+    }
+    return () => io.disconnect()
+  }, [])
+  const go = (id: SectionId) => {
+    setActive(id)
+    document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    history.replaceState(null, '', `#${id}`)
+  }
+  return [active, go]
+}
+
+/** A settings card: title and sub on top, rows with a hairline between. */
+function Section({ id, title, sub, right, tone, className, children }: {
+  id: SectionId
+  title: ReactNode
+  sub?: ReactNode
+  right?: ReactNode
+  tone?: 'warn'
+  className?: string
+  children?: ReactNode
+}) {
+  return (
+    <section id={id} aria-label={typeof title === 'string' ? title : undefined} className={cn('flex scroll-mt-7 flex-col rounded-[14px] border bg-surface px-5', tone === 'warn' ? 'border-warn-line' : 'border-line', className)}>
+      <div className={cn('flex flex-wrap items-center gap-3 pt-3.5', children ? 'pb-2.5' : 'pb-3.5')}>
+        <div className="flex min-w-[200px] flex-1 flex-col gap-[3px]">
+          <h2 className="text-[15px] font-medium">{title}</h2>
+          {sub && <span className="text-xs leading-[1.4] text-fg-3 text-pretty">{sub}</span>}
+        </div>
+        {right}
+      </div>
+      {children}
+      {children && <div className="h-0.5" />}
+    </section>
+  )
+}
+
+/** SettingRow with the card's 12px row rhythm. */
+function Row(props: Parameters<typeof SettingRow>[0]) {
+  return <SettingRow {...props} className={cn('flex-wrap py-3', props.className)} />
+}
+
+const stepper = 'border-line bg-field [&>span]:min-w-16 [&>span]:font-medium [&>span]:text-[13px]'
+
+function timezones(current: string): string[] {
+  const all = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+  return all.includes(current) ? all : [current, ...all]
 }
 
 function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
@@ -49,101 +135,222 @@ function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
     delete rest.updatedAt
     onSave(rest)
   }
-  const dirty = JSON.stringify(d) !== JSON.stringify(s)
-  const [generated, setGenerated] = useState(false)
+  const original = s as Record<string, unknown>
+  const changed = Object.keys(d).filter(k => JSON.stringify(d[k]) !== JSON.stringify(original[k])).length
+  const [generated, setGenerated] = useState<{ api: boolean, ingest: boolean }>({ api: false, ingest: false })
+  const [active, go] = useActiveSection()
+  const sensors = trpc.sensors.latest.useQuery(undefined, { refetchInterval: 30_000 })
+  const grow = trpc.grow.current.useQuery()
+  const distance = sensors.data?.water_distance?.value
+  const level = sensors.data?.water_level_pct?.value
+  const mirrorSaved = !!(s.mirrorEndpoint && s.mirrorBucket)
+  const [bucketOpen, setBucketOpen] = useState(mirrorSaved)
 
   return (
-    <div className="mx-auto flex max-w-[960px] flex-col gap-4">
-      <PageHeader title="Settings" right={<Button variant="primary" disabled={!dirty || saving} onClick={save}>Save</Button>} />
-      <Card id="unit" className="scroll-mt-4">
-        <CardHeader title="Unit" icon={Settings} />
-        <SettingRow label="Name"><TextField mono={false} value={str('unitName')} onChange={v => setD({ ...d, unitName: v })} /></SettingRow>
-        <SettingRow label="Timezone" sub="Schedules run in this zone"><TextField value={str('timezone')} onChange={v => setD({ ...d, timezone: v })} placeholder="America/Los_Angeles" /></SettingRow>
-        <SettingRow label="Temperature unit" divider={false}><SegmentedControl size="sm" value={str('temperatureUnit') as 'C' | 'F'} options={[{ value: 'C', label: '°C' }, { value: 'F', label: '°F' }]} onChange={v => setD({ ...d, temperatureUnit: v })} /></SettingRow>
-      </Card>
+    <div className="mx-auto flex max-w-[1000px] flex-col gap-6 min-[900px]:pt-3">
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="flex min-w-[240px] flex-1 flex-col gap-1">
+          <h1 className="text-2xl font-semibold">Settings</h1>
+          <span className="text-[13px] text-fg-2">{[s.unitName, system?.unitId].filter(Boolean).join(' · ')}</span>
+        </div>
+        {changed > 0 && <span className="text-xs text-fg-3" data-testid="unsaved">{`${changed} unsaved change${changed === 1 ? '' : 's'}`}</span>}
+        <Button variant="primary" disabled={changed === 0 || saving} onClick={save}>Save</Button>
+      </div>
 
-      <Card id="tank" className="scroll-mt-4">
-        <CardHeader title="Tank calibration" subtitle="Ultrasonic distance from the sensor to the water surface" />
-        <SettingRow label="Full" sub="cm when just filled"><Stepper value={num('waterFullCm', 5)} min={1} max={30} step={0.5} onChange={v => setD({ ...d, waterFullCm: v })} format={v => `${v} cm`} /></SettingRow>
-        <SettingRow label="Empty" sub="cm when the pump would run dry"><Stepper value={num('waterEmptyCm', 20)} min={5} max={40} step={0.5} onChange={v => setD({ ...d, waterEmptyCm: v })} format={v => `${v} cm`} /></SettingRow>
-        <SettingRow label="Capacity" divider={false}><Stepper value={num('tankCapacityL', 19)} min={1} max={60} step={1} onChange={v => setD({ ...d, tankCapacityL: v })} format={v => `${v} L`} /></SettingRow>
-      </Card>
+      <div className="flex items-start gap-8">
+        <SubNav items={SECTIONS} active={active} onSelect={go} className="sticky top-7 hidden text-[13px] min-[900px]:flex [&>button]:py-[7px] [&>button]:text-[13px]" />
 
-      <Card id="reminders" className="scroll-mt-4">
-        <CardHeader title="Grow reminders" subtitle="Days after a cycle starts; 0 disables" />
-        <SettingRow label="Thinning"><Stepper value={num('thinningReminderDays', 14)} min={0} max={60} onChange={v => setD({ ...d, thinningReminderDays: v })} format={v => `${v} d`} /></SettingRow>
-        <SettingRow label="Root check"><Stepper value={num('rootCheckReminderDays', 21)} min={0} max={90} onChange={v => setD({ ...d, rootCheckReminderDays: v })} format={v => `${v} d`} /></SettingRow>
-        <SettingRow label="Harvest"><Stepper value={num('harvestReminderDays', 35)} min={0} max={120} onChange={v => setD({ ...d, harvestReminderDays: v })} format={v => `${v} d`} /></SettingRow>
-        <SettingRow label="Nutrients" sub="recurring" divider={false}><Stepper value={num('nutrientReminderDays', 7)} min={0} max={30} onChange={v => setD({ ...d, nutrientReminderDays: v })} format={v => `every ${v} d`} /></SettingRow>
-      </Card>
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <Section id="unit" title="Unit">
+            <Row label="Name"><TextField mono={false} className="w-60" value={str('unitName')} onChange={v => setD({ ...d, unitName: v })} /></Row>
+            <Row label="Timezone" sub="Schedules run in this zone">
+              <span className="relative inline-flex w-60">
+                <select
+                  aria-label="Timezone"
+                  value={str('timezone')}
+                  onChange={e => setD({ ...d, timezone: e.target.value })}
+                  className="w-full cursor-pointer appearance-none rounded-ctl border border-line-2 bg-field py-[9px] pl-3 pr-8 font-mono text-xs text-fg outline-none focus:border-fg-3"
+                >
+                  {timezones(str('timezone')).map(z => <option key={z} value={z}>{z}</option>)}
+                </select>
+                <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-2" />
+              </span>
+            </Row>
+            <Row label="Temperature unit"><SegmentedControl size="sm" ariaLabel="Temperature unit" value={str('temperatureUnit') as 'C' | 'F'} options={[{ value: 'C', label: '°C' }, { value: 'F', label: '°F' }]} onChange={v => setD({ ...d, temperatureUnit: v })} /></Row>
+          </Section>
 
-      <Card id="cameras" className="scroll-mt-4">
-        <CardHeader title="Cameras" />
-        <SettingRow label="Capture interval" sub="0 disables timelapse"><Stepper value={num('captureIntervalMin', 60)} min={0} max={720} step={15} onChange={v => setD({ ...d, captureIntervalMin: v })} format={v => `${v} min`} /></SettingRow>
-        <SettingRow label="Keep analysis masks" sub="About 115 kB per photo; off spares the SD card" divider={false}><Toggle label="Keep analysis masks" on={!!d.analysisArtifacts} onChange={v => setD({ ...d, analysisArtifacts: v })} /></SettingRow>
-      </Card>
+          <Section id="tank" title="Tank" sub="Ultrasonic distance from the sensor to the water surface">
+            <Row label="Full" sub="cm when just filled"><Stepper label="Full" className={stepper} value={num('waterFullCm', 5)} min={1} max={30} step={0.5} onChange={v => setD({ ...d, waterFullCm: v })} format={v => `${v} cm`} /></Row>
+            <Row label="Empty" sub="cm when the pump would run dry"><Stepper label="Empty" className={stepper} value={num('waterEmptyCm', 20)} min={5} max={40} step={0.5} onChange={v => setD({ ...d, waterEmptyCm: v })} format={v => `${v} cm`} /></Row>
+            <Row label="Capacity" sub="Used for litre estimates"><Stepper label="Capacity" className={stepper} value={num('tankCapacityL', 19)} min={1} max={60} step={1} onChange={v => setD({ ...d, tankCapacityL: v })} format={v => `${v} L`} /></Row>
+            {distance !== undefined && (
+              <div className="flex items-center gap-2.5 border-t border-line py-3 text-xs text-fg-2">
+                <Ruler size={16} className="shrink-0" />
+                <span className="flex-1" data-testid="tank-reading">{`Reading now: ${distance} cm${level !== undefined ? `, which is ${Math.round(level)}%` : ''}.`}</span>
+                <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-fg hover:underline" onClick={() => setD({ ...d, waterFullCm: Math.min(30, Math.max(1, Math.round(distance * 2) / 2)) })}>Set as full</button>
+              </div>
+            )}
+          </Section>
 
-      <StorageCard />
+          <Reminders d={d} s={s} grow={grow.data} onChange={(k, v) => setD({ ...d, [k]: v })} />
 
-      <BackupCard />
+          <Section id="cameras" title="Cameras">
+            <Row label="Capture interval" sub="0 turns off timelapse"><Stepper label="Capture interval" className={stepper} value={num('captureIntervalMin', 60)} min={0} max={720} step={15} onChange={v => setD({ ...d, captureIntervalMin: v })} format={v => `${v} min`} /></Row>
+            <Row label="Keep analysis masks" sub="About 115 kB per photo. Off saves SD card space."><Toggle label="Keep analysis masks" on={!!d.analysisArtifacts} onChange={v => setD({ ...d, analysisArtifacts: v })} /></Row>
+          </Section>
 
-      <Card id="home-assistant" className="scroll-mt-4">
-        <CardHeader title="Home Assistant bridge" subtitle="Core-level MQTT bridge for grow events and services. The hardware daemon already publishes discovery for lights, pump and sensors." />
-        <SettingRow label="Broker URL"><TextField value={str('mqttUrl')} onChange={v => setD({ ...d, mqttUrl: v || null })} placeholder="mqtt://homeassistant.local:1883" /></SettingRow>
-        <SettingRow label="Username"><TextField value={str('mqttUsername')} onChange={v => setD({ ...d, mqttUsername: v || null })} /></SettingRow>
-        <SettingRow label="Password" sub={s.hasMqttPassword ? 'set' : 'not set'}><TextField type="password" value={str('mqttPassword')} onChange={v => setD({ ...d, mqttPassword: v || null })} placeholder="••••••" /></SettingRow>
-        <SettingRow label="TLS"><Toggle on={!!d.mqttTlsEnabled} onChange={v => setD({ ...d, mqttTlsEnabled: v })} /></SettingRow>
-        <SettingRow label="Allow self-signed" sub="Off by default (ADR-0013)" divider={false}><Toggle on={!!d.mqttTlsInsecure} onChange={v => setD({ ...d, mqttTlsInsecure: v })} /></SettingRow>
-      </Card>
-
-      <Card id="api" className="scroll-mt-4">
-        <CardHeader title="API access" subtitle="Optional key for non-localhost REST/MCP clients" />
-        <SettingRow label="API key" sub={s.hasApiKey ? 'set' : 'not set — LAN-only trust'} divider={false}><TextField type="password" value={str('apiKey')} onChange={v => setD({ ...d, apiKey: v })} placeholder="leave empty to disable" /></SettingRow>
-      </Card>
-
-      <Card id="off-device" className="scroll-mt-4">
-        <CardHeader title="Off-device storage and analysis" subtitle="Opt-in. Off unless you fill these in; nothing leaves the unit otherwise." icon={CloudUpload} />
-        <SettingRow label="Mirror endpoint" sub="Any S3-compatible service: R2, MinIO, a NAS"><TextField value={str('mirrorEndpoint')} onChange={v => setD({ ...d, mirrorEndpoint: v || null })} placeholder="https://<account>.r2.cloudflarestorage.com" /></SettingRow>
-        <SettingRow label="Bucket"><TextField value={str('mirrorBucket')} onChange={v => setD({ ...d, mirrorBucket: v || null })} placeholder="seedypod" /></SettingRow>
-        <SettingRow label="Region"><TextField value={str('mirrorRegion')} onChange={v => setD({ ...d, mirrorRegion: v || 'auto' })} placeholder="auto" /></SettingRow>
-        <SettingRow label="Key prefix" sub="Folder inside the bucket, e.g. kitchen/"><TextField value={str('mirrorPrefix')} onChange={v => setD({ ...d, mirrorPrefix: v })} /></SettingRow>
-        <SettingRow label="Access key id"><TextField value={str('mirrorAccessKeyId')} onChange={v => setD({ ...d, mirrorAccessKeyId: v || null })} /></SettingRow>
-        <SettingRow label="Secret access key" sub={s.hasMirrorSecret ? 'set' : 'not set'}><TextField type="password" value={str('mirrorSecretAccessKey')} onChange={v => setD({ ...d, mirrorSecretAccessKey: v || null })} placeholder="••••••" /></SettingRow>
-        <MirrorControls />
-        <SettingRow
-          label="Result ingest token"
-          sub={generated ? 'Copy it now: it is hidden once saved' : s.hasAnalysisIngestToken ? 'set — remote workers can post results' : 'not set — POST /api/analyses/results is off'}
-          divider={false}
-        >
-          <div className="flex items-center gap-2">
-            <TextField type={generated ? 'text' : 'password'} value={str('analysisIngestToken')} onChange={v => setD({ ...d, analysisIngestToken: v })} placeholder="leave empty to disable" />
-            <Button
-              size="sm"
-              onClick={() => {
-                setGenerated(true)
-                setD({ ...d, analysisIngestToken: randomToken() })
-              }}
+          <Section id="api" title="API access" sub="Optional key for REST and MCP clients outside localhost">
+            <Row
+              label="API key"
+              sub={generated.api ? 'Copy it now: it is hidden once saved' : s.hasApiKey ? 'Set. Clients off this network must send it.' : 'Not set. Only devices on your network can connect.'}
             >
-              Generate
-            </Button>
-          </div>
-        </SettingRow>
-      </Card>
+              <TextField aria-label="API key" className="w-[180px]" type={generated.api ? 'text' : 'password'} value={str('apiKey')} onChange={v => setD({ ...d, apiKey: v })} placeholder={s.hasApiKey ? '••••••' : 'none'} />
+              <Button
+                aria-label="Generate API key"
+                onClick={() => {
+                  setGenerated({ ...generated, api: true })
+                  setD({ ...d, apiKey: randomToken() })
+                }}
+              >
+                Generate
+              </Button>
+            </Row>
+            <Row
+              label="Result ingest token"
+              sub={generated.ingest ? 'Copy it now: it is hidden once saved' : s.hasAnalysisIngestToken ? 'set — remote workers can post results' : 'not set — POST /api/analyses/results is off'}
+            >
+              <TextField aria-label="Result ingest token" className="w-[180px]" type={generated.ingest ? 'text' : 'password'} value={str('analysisIngestToken')} onChange={v => setD({ ...d, analysisIngestToken: v })} placeholder="leave empty to disable" />
+              <Button
+                aria-label="Generate ingest token"
+                onClick={() => {
+                  setGenerated({ ...generated, ingest: true })
+                  setD({ ...d, analysisIngestToken: randomToken() })
+                }}
+              >
+                Generate
+              </Button>
+            </Row>
+          </Section>
 
-      <Card id="wifi" className="scroll-mt-4">
-        <CardHeader title="Wi-Fi" subtitle="Change networks, or hold the unit's button for 10 s to open a setup hotspot" />
-        <SettingRow label="Network" divider={false}><Link to="/wifi" className="text-sm text-fg underline-offset-2 hover:underline">Open Wi-Fi settings</Link></SettingRow>
-      </Card>
+          <Section
+            id="off-device"
+            title="Off-device storage"
+            sub={mirrorSaved ? `Copying photos to ${s.mirrorBucket}. Backups go there too.` : 'Off. Nothing leaves the unit until you connect an S3-compatible bucket (R2, MinIO, a NAS).'}
+            right={!bucketOpen && <Button icon={CloudUpload} onClick={() => setBucketOpen(true)}>Connect bucket</Button>}
+          >
+            {bucketOpen && (
+              <>
+                <Row label="Mirror endpoint" sub="Any S3-compatible service: R2, MinIO, a NAS"><TextField className="w-60" value={str('mirrorEndpoint')} onChange={v => setD({ ...d, mirrorEndpoint: v || null })} placeholder="https://<account>.r2.cloudflarestorage.com" /></Row>
+                <Row label="Bucket"><TextField className="w-60" value={str('mirrorBucket')} onChange={v => setD({ ...d, mirrorBucket: v || null })} placeholder="seedypod" /></Row>
+                <Row label="Region"><TextField className="w-60" value={str('mirrorRegion')} onChange={v => setD({ ...d, mirrorRegion: v || 'auto' })} placeholder="auto" /></Row>
+                <Row label="Key prefix" sub="Folder inside the bucket, e.g. kitchen/"><TextField className="w-60" value={str('mirrorPrefix')} onChange={v => setD({ ...d, mirrorPrefix: v })} /></Row>
+                <Row label="Access key id"><TextField className="w-60" value={str('mirrorAccessKeyId')} onChange={v => setD({ ...d, mirrorAccessKeyId: v || null })} /></Row>
+                <Row label="Secret access key" sub={s.hasMirrorSecret ? 'set' : 'not set'}><TextField className="w-60" type="password" value={str('mirrorSecretAccessKey')} onChange={v => setD({ ...d, mirrorSecretAccessKey: v || null })} placeholder="••••••" /></Row>
+                <MirrorControls />
+              </>
+            )}
+          </Section>
 
-      <SectionLabel>About</SectionLabel>
-      <Card id="about" className="scroll-mt-4">
-        <KeyValue label="Core" value={coreVersion ?? '…'} />
-        <KeyValue label="Hardware daemon" value={system ? `${system.halVersion} · ${system.model}` : 'offline'} />
-        <KeyValue label="Board" value={system?.board ?? '—'} />
-        <KeyValue label="Core runs on" value={coreHost ? `${coreHost.hostname} (${coreHost.arch})` : '…'} />
-        <KeyValue label="Unit id" value={system?.unitId ?? '—'} />
-      </Card>
+          <StorageCard />
+
+          <BackupCard />
+
+          <Section id="home-assistant" title="Home Assistant bridge" sub="Core-level MQTT bridge for grow events and services. The hardware daemon already publishes discovery for lights, pump and sensors.">
+            <Row label="Broker URL"><TextField className="w-60" value={str('mqttUrl')} onChange={v => setD({ ...d, mqttUrl: v || null })} placeholder="mqtt://homeassistant.local:1883" /></Row>
+            <Row label="Username"><TextField className="w-60" value={str('mqttUsername')} onChange={v => setD({ ...d, mqttUsername: v || null })} /></Row>
+            <Row label="Password" sub={s.hasMqttPassword ? 'set' : 'not set'}><TextField className="w-60" type="password" value={str('mqttPassword')} onChange={v => setD({ ...d, mqttPassword: v || null })} placeholder="••••••" /></Row>
+            <Row label="TLS"><Toggle label="TLS" on={!!d.mqttTlsEnabled} onChange={v => setD({ ...d, mqttTlsEnabled: v })} /></Row>
+            <Row label="Allow self-signed" sub="Off by default (ADR-0013)"><Toggle label="Allow self-signed" on={!!d.mqttTlsInsecure} onChange={v => setD({ ...d, mqttTlsInsecure: v })} /></Row>
+          </Section>
+
+          <Section id="wifi" title="Wi-Fi" sub="Hold the unit's button for 10 s to open a setup hotspot" right={<Link to="/wifi" className="text-[13px] text-fg underline-offset-2 hover:underline">Change network</Link>} />
+
+          <section id="about" aria-label="About" className="grid scroll-mt-7 grid-cols-2 gap-4 min-[600px]:grid-cols-3 rounded-[14px] border border-line bg-surface px-5 py-[18px]">
+            <About label="Core" value={coreVersion ?? '…'} />
+            <About label="Hardware daemon" value={system ? `${system.halVersion} · ${system.model}` : 'offline'} />
+            <About label="Unit id" value={system?.unitId ?? '—'} />
+            <About label="Board" value={system?.board ?? '—'} />
+            <About label="Core runs on" value={coreHost ? `${coreHost.hostname} (${coreHost.arch})` : '…'} />
+          </section>
+        </div>
+      </div>
     </div>
+  )
+}
+
+function About({ label, value }: { label: string, value: string }) {
+  return <KeyValue label={label} value={value} size={13} className="flex flex-col gap-[3px] [&>div:first-child]:text-fg-3" valueClassName="whitespace-normal break-words font-medium" />
+}
+
+const REMINDERS = [
+  { key: 'thinningReminderDays', kind: 'reminder_thinning', label: 'Thinning', max: 60, fallback: 14 },
+  { key: 'rootCheckReminderDays', kind: 'reminder_root_check', label: 'Root check', max: 90, fallback: 21 },
+  { key: 'harvestReminderDays', kind: 'reminder_harvest', label: 'Harvest', max: 120, fallback: 35 },
+] as const
+
+const DAY_MS = 86_400_000
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+
+/** Where a one-shot reminder stands in the current cycle. */
+function reminderHint(days: number, savedDays: number, issued: boolean, day: number | null): string | undefined {
+  if (issued) return `Sent · day ${savedDays}`
+  if (days === 0) return 'Off'
+  if (day === null) return undefined
+  if (day >= days) return 'Due now'
+  return `In ${plural(days - day, 'day')}`
+}
+
+/** Next day a recurring nutrient reminder fires, from the cycle start. */
+function nextNutrients(startedAt: string, day: number, every: number): Date {
+  return new Date(new Date(startedAt).getTime() + (Math.floor(day / every) + 1) * every * DAY_MS)
+}
+
+function Reminders({ d, s, grow, onChange }: {
+  d: Record<string, unknown>
+  s: SettingsView
+  grow?: GrowView
+  onChange: (key: string, v: number) => void
+}) {
+  const val = (k: string, fallback: number) => Number(d[k] ?? fallback)
+  const cycle = grow?.cycle ?? null
+  const day = cycle ? grow?.day ?? null : null
+  const rows = REMINDERS.map(r => ({ ...r, days: val(r.key, r.fallback) }))
+  // Span the timeline a little past the last reminder (or today), in 5-day steps.
+  const span = Math.max(5, Math.ceil(Math.max(day ?? 0, ...rows.map(r => r.days)) * 8 / 7 / 5) * 5)
+  const at = (n: number) => `${Math.min(100, (n / span) * 100)}%`
+  const every = val('nutrientReminderDays', 7)
+  const nutrientSub = every === 0
+    ? 'Off'
+    : cycle && day !== null
+      ? `Recurring · next ${nextNutrients(cycle.startedAt, day, every).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
+      : 'Recurring'
+  return (
+    <Section id="reminders" title="Grow reminders" sub="Days after a cycle starts. 0 turns a reminder off.">
+      {day !== null && (
+        <div className="pb-2" data-testid="reminder-timeline">
+          <div className="relative mb-1 mt-1.5 h-1.5">
+            <div className="absolute inset-x-0 top-0.5 h-0.5 bg-line" />
+            {rows.filter(r => r.days > 0).map(r => (
+              <div key={r.key} title={`${r.label} · day ${r.days}`} className="absolute -top-[3px] -ml-1.5 box-border size-3 rounded-full border-2 border-meter bg-surface" style={{ left: at(r.days) }} />
+            ))}
+            <div className="absolute -top-1.5 h-[18px] w-0.5 bg-ok" style={{ left: at(day) }} />
+          </div>
+          <div className="relative flex h-3.5 justify-between font-mono text-[10px] text-fg-3">
+            <span>day 0</span>
+            <span className="absolute -translate-x-1/2 whitespace-nowrap text-ok" style={{ left: at(day) }}>{`today · ${day}`}</span>
+            <span>{span}</span>
+          </div>
+        </div>
+      )}
+      {rows.map(r => (
+        <Row key={r.key} label={r.label} sub={reminderHint(r.days, Number((s as Record<string, unknown>)[r.key] ?? r.fallback), !!cycle?.issued.includes(r.kind), day)}>
+          <Stepper label={r.label} className={stepper} value={r.days} min={0} max={r.max} onChange={v => onChange(r.key, v)} format={v => `${v} d`} />
+        </Row>
+      ))}
+      <Row label="Nutrients" sub={nutrientSub}>
+        <Stepper label="Nutrients" className={stepper} value={every} min={0} max={30} onChange={v => onChange('nutrientReminderDays', v)} format={v => `every ${v} d`} />
+      </Row>
+    </Section>
   )
 }
 
@@ -165,28 +372,26 @@ function since(s: number): string {
 function StorageCard() {
   const q = trpc.storage.flash.useQuery(undefined, { refetchInterval: 60_000 })
   return (
-    <Card id="storage" className="scroll-mt-4">
-      <CardHeader title="Storage" subtitle="How much this unit writes to its SD card. Logs and swap stay in RAM to keep it low." icon={HardDrive} />
+    <Section id="storage" title="SD card" sub="How much this unit writes to its SD card. Logs and swap stay in RAM to keep it low.">
       {q.data && <FlashRows f={q.data} />}
-    </Card>
+    </Section>
   )
 }
 
 function FlashRows({ f }: { f: inferRouterOutputs<AppRouter>['storage']['flash'] }) {
-  if (!f.available) return <SettingRow label="Flash writes" sub="No SD card counter on this machine" divider={false}><span className="text-sm text-fg-2">—</span></SettingRow>
+  if (!f.available) return <Row label="Flash writes" sub="No SD card counter on this machine"><span className="text-sm text-fg-2">—</span></Row>
   return (
     <>
-      <SettingRow label="Flash writes" sub={f.basis === 'history' ? `${Math.round(f.windowDays ?? 0)}-day average` : `average since boot (${since(f.uptimeS ?? 0)} ago)`}>
+      <Row label="Flash writes" sub={f.basis === 'history' ? `${Math.round(f.windowDays ?? 0)}-day average` : `average since boot (${since(f.uptimeS ?? 0)} ago)`}>
         <span className="font-mono text-sm" data-testid="flash-rate">{f.bytesPerDay === null ? '—' : `${size(f.bytesPerDay)}/day`}</span>
-      </SettingRow>
-      <SettingRow label="Written since boot"><span className="font-mono text-sm">{size(f.sinceBootBytes ?? 0)}</span></SettingRow>
-      <SettingRow
+      </Row>
+      <Row label="Written since boot"><span className="font-mono text-sm">{size(f.sinceBootBytes ?? 0)}</span></Row>
+      <Row
         label="Card"
         sub={f.cardBytes && f.bytesPerDay !== null ? `At this rate, ${(f.bytesPerDay * 365 / f.cardBytes).toFixed(2)} full-card writes a year` : undefined}
-        divider={false}
       >
         <span className="font-mono text-sm">{`${f.device}${f.cardBytes ? ` · ${size(f.cardBytes)}` : ''}`}</span>
-      </SettingRow>
+      </Row>
     </>
   )
 }
@@ -205,32 +410,33 @@ function BackupCard() {
   const [confirmUndo, setConfirmUndo] = useState(false)
   const st = status.data
   const undoInfo = info.data?.undo
-  if (!st?.available) return null
+  if (!st?.available) {
+    return <Section id="backup" title="Backup" sub="Backups are not available on this core." />
+  }
   const last = st.lastSuccess
   const tried = st.lastBucketAttempt
   const nightlySub = st.nightly.enabled
     ? `After ${String(st.nightly.hour).padStart(2, '0')}:00, keeping the last ${st.nightly.keep}${tried && !tried.ok ? ` · last try failed: ${tried.detail}` : ''}`
     : 'Off. Set up the mirror under Off-device storage to back up every night.'
   return (
-    <Card id="backup" className="scroll-mt-4" tone={st.stale ? 'warn' : undefined}>
-      <CardHeader title="Backup" subtitle="A copy of this unit off its SD card, so a dead card is a quick swap: settings, schedules, grow cycle, pods, rules, probes, calibration and history." icon={Archive} />
-      <SettingRow label="Last off-card backup" sub={st.stale ? `None for ${st.staleAfterDays} days or more` : last?.detail || undefined}>
+    <Section id="backup" tone={st.stale ? 'warn' : undefined} title="Backup" sub="A copy of this unit off its SD card, so a dead card is a quick swap: settings, schedules, grow cycle, pods, rules, probes, calibration and history.">
+      <Row label="Last off-card backup" sub={st.stale ? `None for ${st.staleAfterDays} days or more` : last?.detail || undefined}>
         <span className="text-sm" data-testid="backup-last">{last ? `${when(last.ts)} · ${last.destination === 'bucket' ? 'bucket' : 'downloaded'}` : 'none yet'}</span>
-      </SettingRow>
-      <SettingRow label="Nightly to the bucket" sub={nightlySub}>
+      </Row>
+      <Row label="Nightly to the bucket" sub={nightlySub}>
         <div className="flex flex-col items-end gap-1">
           <Button size="sm" disabled={!st.nightly.enabled || run.isPending} onClick={() => run.mutate()}>{run.isPending ? 'Backing up…' : 'Back up now'}</Button>
           {run.data && <span className={`text-xs ${run.data.ok ? 'text-fg-2' : 'text-danger'}`}>{run.data.ok ? `Uploaded ${size(run.data.bytes)}` : run.data.detail}</span>}
           {run.error && <span className="text-xs text-danger">{run.error.message}</span>}
         </div>
-      </SettingRow>
-      <SettingRow label="Include photos" sub="For downloads; the mirror already keeps them. Makes the file far larger."><Toggle label="Include photos in the download" on={photos} onChange={setPhotos} /></SettingRow>
-      <SettingRow label="Download" sub="The file holds your bucket secret and MQTT password. Keep it somewhere private.">
+      </Row>
+      <Row label="Include photos" sub="For downloads; the mirror already keeps them. Makes the file far larger."><Toggle label="Include photos in the download" on={photos} onChange={setPhotos} /></Row>
+      <Row label="Download" sub="The file holds your bucket secret and MQTT password. Keep it somewhere private.">
         <a href={`${apiBase()}/api/backup/download${photos ? '?photos=1' : ''}`} download className="inline-flex"><Button size="sm" icon={Download} tabIndex={-1}>Download backup</Button></a>
-      </SettingRow>
-      <SettingRow label="Restore" sub={info.data?.available === false ? 'Not installed on this core: run scripts/install on the unit' : 'Replace this unit with a backup, from a file or the bucket'} divider={!!undoInfo || restoreOpen}>
+      </Row>
+      <Row label="Restore" sub={info.data?.available === false ? 'Not installed on this core: run scripts/install on the unit' : 'Replace this unit with a backup, from a file or the bucket'}>
         <Button size="sm" disabled={!info.data?.available || restoreOpen} onClick={() => setRestoreOpen(true)}>Restore from a backup…</Button>
-      </SettingRow>
+      </Row>
       {restoreOpen && !restoring && (
         <div className="py-3">
           <RestorePanel savedMirror={st.nightly.enabled} confirm onStarted={() => setRestoring('restore')} />
@@ -238,19 +444,19 @@ function BackupCard() {
         </div>
       )}
       {undoInfo && (
-        <SettingRow
+        <Row
           label={undoInfo.undoneAt ? 'Redo restore' : 'Undo restore'}
           sub={undoInfo.undoneAt
             ? `You undid the restore of the backup from ${when(undoInfo.bundle.createdAt ?? undoInfo.restoredAt)}. This puts it back.`
             : `Restored the backup from ${when(undoInfo.bundle.createdAt ?? undoInfo.restoredAt)} on ${when(undoInfo.restoredAt)}. Undo puts back what it replaced.`}
-          divider={false}
         >
           <Button size="sm" disabled={undo.isPending || !!restoring} onClick={() => setConfirmUndo(true)}>{undoInfo.undoneAt ? 'Redo restore' : 'Undo restore'}</Button>
-        </SettingRow>
+        </Row>
       )}
       {confirmUndo && !restoring && (
         <Alert
           tone="warn"
+          className="mb-3"
           action={(
             <div className="flex gap-2">
               <Button
@@ -270,9 +476,9 @@ function BackupCard() {
           The unit restarts on the files it had before. Anything changed since is swapped out too, and comes back with another undo.
         </Alert>
       )}
-      {undo.error && <span className="text-xs text-danger">{undo.error.message}</span>}
-      {restoring && <div className="pt-3"><RestoreProgress undo={restoring === 'undo'} /></div>}
-    </Card>
+      {undo.error && <span className="pb-3 text-xs text-danger">{undo.error.message}</span>}
+      {restoring && <div className="pb-3 pt-3"><RestoreProgress undo={restoring === 'undo'} /></div>}
+    </Section>
   )
 }
 
@@ -284,7 +490,7 @@ function MirrorControls() {
   const st = status.data
   if (!st?.available) return null
   return (
-    <SettingRow label="Mirror" sub={st.enabled ? `${st.uploaded} copied · ${st.pending} pending · ${st.failed} failed${st.lastError ? ` · ${st.lastError}` : ''}` : 'off — save an endpoint, bucket and keys to turn it on'}>
+    <Row label="Mirror" sub={st.enabled ? `${st.uploaded} copied · ${st.pending} pending · ${st.failed} failed${st.lastError ? ` · ${st.lastError}` : ''}` : 'off — save an endpoint, bucket and keys to turn it on'}>
       <div className="flex flex-col items-end gap-1">
         <div className="flex gap-2">
           <Button size="sm" disabled={!st.enabled || test.isPending} onClick={() => test.mutate()}>{test.isPending ? 'Testing…' : 'Test'}</Button>
@@ -294,6 +500,6 @@ function MirrorControls() {
         {sync.data && <span className="text-xs text-fg-2">{`Queued ${sync.data.queued} files`}</span>}
         {sync.error && <span className="text-xs text-danger">{sync.error.message}</span>}
       </div>
-    </SettingRow>
+    </Row>
   )
 }
