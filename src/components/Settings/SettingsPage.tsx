@@ -1,22 +1,22 @@
 import { Link } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
-import { Archive, BellRing, Camera, ChevronDown, Cloud, CloudUpload, Download, Droplets, HardDrive, Info, KeyRound, Radio, Ruler, Settings2, Wifi } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Archive, BellRing, Camera, ChevronDown, Cloud, CloudUpload, Download, Droplets, HardDrive, House, Info, KeyRound, Radio, Ruler, Settings2, Wifi } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { RestorePanel, RestoreProgress } from '@/src/components/Backup/RestorePanel'
 import { Button, KeyValue } from '@/src/components/ds/core'
 import { Alert } from '@/src/components/ds/feedback'
 import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
-import { SettingRow, SubNav } from '@/src/components/ds/layout'
+import { SubNav } from '@/src/components/ds/layout'
+import { HomeKitSection } from '@/src/components/Settings/HomeKitSection'
+import { Row, Section } from '@/src/components/Settings/Section'
 import type { inferRouterOutputs } from '@trpc/server'
-import { cn } from '@/lib/utils'
 import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
 
 type SettingsView = inferRouterOutputs<AppRouter>['settings']['get']
 type GrowView = inferRouterOutputs<AppRouter>['grow']['current']
 
-type SectionId = 'unit' | 'tank' | 'reminders' | 'cameras' | 'api' | 'off-device' | 'storage' | 'backup' | 'home-assistant' | 'wifi' | 'about'
+type SectionId = 'unit' | 'tank' | 'reminders' | 'cameras' | 'api' | 'off-device' | 'storage' | 'backup' | 'home-assistant' | 'homekit' | 'wifi' | 'about'
 
 /** In-page nav, in page order. Anchors are what ⌘K search links to. */
 const SECTIONS: ReadonlyArray<{ id: SectionId, label: string, icon: LucideIcon }> = [
@@ -29,6 +29,7 @@ const SECTIONS: ReadonlyArray<{ id: SectionId, label: string, icon: LucideIcon }
   { id: 'storage', label: 'SD card', icon: HardDrive },
   { id: 'backup', label: 'Backup', icon: Archive },
   { id: 'home-assistant', label: 'Home Assistant', icon: Radio },
+  { id: 'homekit', label: 'Apple Home', icon: House },
   { id: 'wifi', label: 'Wi-Fi', icon: Wifi },
   { id: 'about', label: 'About', icon: Info },
 ]
@@ -75,36 +76,6 @@ function useActiveSection(): [SectionId, (id: SectionId) => void] {
     history.replaceState(null, '', `#${id}`)
   }
   return [active, go]
-}
-
-/** A settings card: title and sub on top, rows with a hairline between. */
-function Section({ id, title, sub, right, tone, className, children }: {
-  id: SectionId
-  title: ReactNode
-  sub?: ReactNode
-  right?: ReactNode
-  tone?: 'warn'
-  className?: string
-  children?: ReactNode
-}) {
-  return (
-    <section id={id} aria-label={typeof title === 'string' ? title : undefined} className={cn('flex scroll-mt-7 flex-col rounded-[14px] border bg-surface px-5', tone === 'warn' ? 'border-warn-line' : 'border-line', className)}>
-      <div className={cn('flex flex-wrap items-center gap-3 pt-3.5', children ? 'pb-2.5' : 'pb-3.5')}>
-        <div className="flex min-w-[200px] flex-1 flex-col gap-[3px]">
-          <h2 className="text-[15px] font-medium">{title}</h2>
-          {sub && <span className="text-xs leading-[1.4] text-fg-3 text-pretty">{sub}</span>}
-        </div>
-        {right}
-      </div>
-      {children}
-      {children && <div className="h-0.5" />}
-    </section>
-  )
-}
-
-/** SettingRow with the card's 12px row rhythm. */
-function Row(props: Parameters<typeof SettingRow>[0]) {
-  return <SettingRow {...props} className={cn('flex-wrap py-3', props.className)} />
 }
 
 const stepper = 'border-line bg-field [&>span]:min-w-16 [&>span]:font-medium [&>span]:text-[13px]'
@@ -262,6 +233,8 @@ function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
             <Row label="TLS"><Toggle label="TLS" on={!!d.mqttTlsEnabled} onChange={v => setD({ ...d, mqttTlsEnabled: v })} /></Row>
             <Row label="Allow self-signed" sub="Off by default (ADR-0013)"><Toggle label="Allow self-signed" on={!!d.mqttTlsInsecure} onChange={v => setD({ ...d, mqttTlsInsecure: v })} /></Row>
           </Section>
+
+          <HomeKitSection />
 
           <Section id="wifi" title="Wi-Fi" sub="Hold the unit's button for 10 s to open a setup hotspot" right={<Link to="/wifi" className="text-[13px] text-fg underline-offset-2 hover:underline">Change network</Link>} />
 
