@@ -17,6 +17,7 @@ import { Route as CamerasRouteImport } from './routes/cameras'
 import { Route as GrowRouteImport } from './routes/grow'
 import { Route as KioskRouteImport } from './routes/kiosk'
 import { Route as LightRouteImport } from './routes/light'
+import { Route as PlanRouteImport } from './routes/plan'
 import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as SensorsRouteImport } from './routes/sensors'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -64,6 +65,11 @@ const LightRoute = LightRouteImport.update({
   path: '/light',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlanRoute = PlanRouteImport.update({
+  id: '/plan',
+  path: '/plan',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScheduleRoute = ScheduleRouteImport.update({
   id: '/schedule',
   path: '/schedule',
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
+  '/plan': typeof PlanRoute
   '/schedule': typeof ScheduleRoute
   '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
@@ -120,6 +127,7 @@ export interface FileRoutesByTo {
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
+  '/plan': typeof PlanRoute
   '/schedule': typeof ScheduleRoute
   '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
@@ -137,6 +145,7 @@ export interface FileRoutesById {
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
+  '/plan': typeof PlanRoute
   '/schedule': typeof ScheduleRoute
   '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
@@ -155,6 +164,7 @@ export interface FileRouteTypes {
     | '/grow'
     | '/kiosk'
     | '/light'
+    | '/plan'
     | '/schedule'
     | '/sensors'
     | '/settings'
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/grow'
     | '/kiosk'
     | '/light'
+    | '/plan'
     | '/schedule'
     | '/sensors'
     | '/settings'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/grow'
     | '/kiosk'
     | '/light'
+    | '/plan'
     | '/schedule'
     | '/sensors'
     | '/settings'
@@ -204,6 +216,7 @@ export interface RootRouteChildren {
   GrowRoute: typeof GrowRoute
   KioskRoute: typeof KioskRoute
   LightRoute: typeof LightRoute
+  PlanRoute: typeof PlanRoute
   ScheduleRoute: typeof ScheduleRoute
   SensorsRoute: typeof SensorsRoute
   SettingsRoute: typeof SettingsRoute
@@ -270,6 +283,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LightRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/plan': {
+      id: '/plan'
+      path: '/plan'
+      fullPath: '/plan'
+      preLoaderRoute: typeof PlanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schedule': {
       id: '/schedule'
       path: '/schedule'
@@ -324,6 +344,7 @@ const rootRouteChildren: RootRouteChildren = {
   GrowRoute: GrowRoute,
   KioskRoute: KioskRoute,
   LightRoute: LightRoute,
+  PlanRoute: PlanRoute,
   ScheduleRoute: ScheduleRoute,
   SensorsRoute: SensorsRoute,
   SettingsRoute: SettingsRoute,

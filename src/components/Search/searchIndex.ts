@@ -39,6 +39,7 @@ const PAGES: Record<string, { description: string, keywords: string }> = {
   '/water': { description: 'Tank level, running the pump and pump cycles', keywords: 'water tank reservoir pump level refill watering schedule timer cycle program' },
   '/autopilot': { description: 'Rules that react to readings, with backtests', keywords: 'automation automations rules backtest dry run kill switch' },
   '/grow': { description: 'Grow cycle, stages, reminders and the 30 pods', keywords: 'grow cycle pods plants harvest seedling stage tower' },
+  '/plan': { description: 'Lay out pods by light zone and stagger sowing dates', keywords: 'plan planner layout light zone placement sow sowing succession catalog ycube seed' },
   '/cameras': { description: 'Stills from both cameras and the timelapse', keywords: 'camera photo picture still timelapse capture' },
   '/analysis': { description: 'Growth per pod from the photos, analysers and dataset export', keywords: 'analysis vision green growth dataset export analyser analyzer' },
   '/alerts': { description: 'Faults and reminders, and acknowledging them', keywords: 'alerts faults warnings reminders acknowledge latch' },

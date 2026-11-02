@@ -13,6 +13,11 @@ describe('demo seed', () => {
     seedDemo(store, new SimHal({ tickMs: 0 }), new Date('2026-10-31T12:00:00Z'))
     expect(store.grow.current()).not.toBeNull()
     expect(store.captures.list().length).toBe(12)
+    // The saved plan fills exactly the six free pods, each in its light zone.
+    const plan = store.plans.get('demo-refill')
+    expect(plan?.appliedAt).toBeNull()
+    expect(plan?.layout.assignments.map(a => a.slot)).toEqual([25, 26, 27, 28, 29, 30])
+    expect(plan?.layout.assignments.every(a => a.fallback === 0)).toBe(true)
     const rules = store.automations.list()
     expect(rules.map(r => [r.name, r.dryRun])).toEqual([['Tank getting low', false], ['Dim when hot', false], ['pH drifting up', true]])
     const info = new Map(catalog().map(c => [c.key, c]))

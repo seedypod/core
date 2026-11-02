@@ -1,5 +1,9 @@
 # Docs update log
 
+## 2026-11-02
+
+- **Creation**: [ADR 0024](adr/0024-pod-planner.md), the pod planner: a Gardyn-sourced plant catalog, zone-aware layout, staggered sowing and saved plans.
+
 ## 2026-11-01
 
 - **Update**: [ADR 0017](adr/0017-ios-client.md): core now advertises `_seedypod._tcp` over Bonjour; [Installation](INSTALLATION.md) covers the TXT keys and `SEEDYPOD_MDNS=0`.

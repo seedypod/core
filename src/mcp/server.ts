@@ -77,6 +77,31 @@ export function createMcpServer(ctx: Context): McpServer {
     return text(await caller.automations.backtest({ id: i.id, rule, hours: i.hours ?? 24, stepMin: i.step_min ?? 5 }))
   })
 
+  server.registerTool('plant_catalog', {
+    description: 'Search the plant catalog (Gardyn light zone high/medium/low, first-harvest window in months, care level, yield, succession group). Filter by q (name), category (fruiting, vegetable, legume, flower, herb, green, lettuce) or zone.',
+    inputSchema: { q: z.string().optional(), category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']).optional(), zone: z.enum(['high', 'medium', 'low']).optional() },
+  }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, harvestMonths: p.harvestMonths, careLevel: p.careLevel, inStore: p.inStore }))))
+
+  server.registerTool('plan_layout', {
+    description: 'Lay out plants on a Gardyn by light zone using Gardyn\'s rules (ideal zone, else one zone lower; cucumbers bottom-centre; large plants spaced apart), around pods already planted. model: home (30) or studio (16). Returns slot assignments with reasons and anything that did not fit. Read-only; use save_plan to keep it.',
+    inputSchema: { model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })) },
+  }, async i => text(await caller.planner.layout({ model: i.model, plants: i.plants, respectExisting: true })))
+
+  server.registerTool('best_spot', {
+    description: 'Best free slots for adding one plant to the current tower, ranked by light-zone fit and shading.',
+    inputSchema: { model: z.enum(['home', 'studio']), plantId: z.string() },
+  }, async i => text(await caller.planner.bestSpots({ model: i.model, plantId: i.plantId, limit: 5 })))
+
+  server.registerTool('save_plan', {
+    description: 'Compute and save a layout plus a staggered sowing schedule (Gardyn succession guidance). Does not touch the pods until apply_plan.',
+    inputSchema: { id: z.string(), name: z.string(), model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), mode: z.enum(['staggered', 'batch']).optional() },
+  }, async i => text(await caller.planner.savePlan({ id: i.id, name: i.name, model: i.model, plants: i.plants, mode: i.mode ?? 'staggered' })))
+
+  server.registerTool('apply_plan', {
+    description: 'Write a saved plan onto the pods: first-wave pods are marked seeded today, later waves get their sow date and a reminder fires when it arrives. Overwrites the listed pods — confirm with the user first.',
+    inputSchema: { id: z.string() },
+  }, async i => text(await caller.planner.applyPlan(i)))
+
   server.registerTool('pod_health', {
     description: 'Per-pod growth verdicts from camera stills: green-area fraction and trend (growing / stalled / declining / unknown), from the primary analyser (see list_analyses). Use with `pods` to decide which slots need attention.',
     inputSchema: {},

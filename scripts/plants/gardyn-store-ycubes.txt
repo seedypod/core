@@ -1,0 +1,75 @@
+# Gardyn yCube store (mygardyn.com/collections/ycubes + /products/<handle>), read 2026-11-02.
+# name|handle|yield|care level|first harvest. Empty fields were not shown on the product page.
+Arugula|arugula|Light|Expert|1-2 Months
+Banana Peppers|banana-peppers|Bountiful|Expert|3-4 Months
+Basil|basil|Bountiful|Beginner|2-3 Months
+Breen Lettuce|breen-lettuce|Bountiful|Beginner|1-2 Months
+Bunching Onions|bunching-onions|Generous|Intermediate|2-3 Months
+Buttercrunch|buttercrunch|Generous|Beginner|1-2 Months
+Butterhead|butterhead|Generous|Beginner|1-2 Months
+Catnip|catnip|Generous|Beginner|1-2 Months
+Celery|celery|Generous|Intermediate|1-2 Months
+Chives|chives|Generous|Intermediate|2-3 Months
+Cilantro|cilantro|Light|Beginner|1-2 Months
+Cucumbers|cucumbers|Generous|Expert|2-3 Months
+Dianthus|dianthus|Generous|Beginner|2-3 Months
+Dill|dill|Bountiful|Beginner|1-2 Months
+Dragon Beans|dragon-beans|Light|Expert|2-3 Months
+Endive Lettuce|endive-lettuce|Generous|Beginner|1-2 Months
+Fairytale Eggplant|fairytale-eggplant|Generous|Expert|3-4 Months
+Flashy Lettuce|flashy-lettuce|Bountiful|Beginner|1-2 Months
+Green Beans|green-beans|Light|Expert|2-3 Months
+Green Bok Choy|bok-choy|Generous|Beginner|1-2 Months
+Green Cabbage|green-cabbage|Generous|Intermediate|2-3 Months
+Green Mustard|green-mustard|Generous|Beginner|1-2 Months
+Green Salanova|green-salanova|||
+Green Tatsoi|green-tatsoi|Generous|Beginner|1-2 Months
+Holy Basil|holy-basil|Bountiful|Beginner|2-3 Months
+Iceberg Lettuce|iceberg-lettuce|Bountiful|Beginner|2-3 Months
+Italian Parsley|italian-parsley|Bountiful|Intermediate|2-3 Months
+Jalapeños|jalapenos|Bountiful|Expert|3-4 Months
+Kale|kale|Generous|Beginner|1-2 Months
+Kale Lacinato|kale-lacinato|Generous|Beginner|2-3 Months
+Lavender|lavender|Generous|Intermediate|3-4 Months
+Marigold|red-marietta-marigold|Bountiful|Beginner|2-3 Months
+Mini Cauliflower|mini-cauliflower|Light|Beginner|1-2 Months
+Mint|mint|Bountiful|Intermediate|2-3 Months
+Muir Lettuce|muir-lettuce|Bountiful|Beginner|2-3 Months
+Oregano|oregano|Light|Intermediate|2-3 Months
+Peas|peas|Generous|Expert|2-3 Months
+Perpetual Spinach|perpetual-spinach|Generous|Beginner|2-3 Months
+Purple Basil|purple-basil|Bountiful|Beginner|1-2 Months
+Purple Bok Choy|purple-bok-choy|Generous|Beginner|1-2 Months
+Purple Campanula|purple-campanula|Generous|Intermediate|2-3 Months
+Purple Kohlrabi|purple-kohlrabi|Light|Beginner|2-3 Months
+Purple Petunia|purple-petunia|Bountiful|Intermediate|1-2 Months
+Purple Snapdragon|purple-snapdragon|Bountiful|Intermediate|2-3 Months
+Radio Calendula|radio-calendula|Generous|Intermediate|1-2 Months
+Red Amaranth|red-amaranth|Generous|Intermediate|3-4 Months
+Red Cherry Tomatoes|cherry-tomatoes|Bountiful|Expert|3-4 Months
+Red Mini Strawberries|mini-strawberries|Bountiful|Intermediate|3-4 Months
+Red Mustard|red-mustard|Bountiful|Beginner|1-2 Months
+Red Sails|red-sails|Generous|Beginner|
+Red Salad Bowl|red-salad-bowl|Generous|Beginner|1-2 Months
+Red Sorrel|red-sorrel|Bountiful|Beginner|2-3 Months
+Red Swiss Chard|red-swiss-chard|Generous|Beginner|1-2 Months
+Red Tatsoi|red-tatsoi|Generous|Beginner|1-2 Months
+Romaine|romaine|Generous|Beginner|
+Rosemary|rosemary|Light|Beginner|2-3 Months
+Sage|sage|Generous|Intermediate|2-3 Months
+Savory|savory|Generous|Beginner|1-2 Months
+Stevia|stevia|Generous|Beginner|2-3 Months
+Stock Flower|stock-flower|Bountiful|Beginner|3-4 Months
+Sunflower|sunflower|Light|Intermediate|2-3 Months
+Sweet Marjoram|sweet-marjoram|Generous|Beginner|2-3 Months
+Sweet Peppers|sweet-peppers|Bountiful|Expert|
+Sweet Thai Basil|sweet-thai-basil|Generous|Beginner|2-3 Months
+Tarragon|tarragon|Generous|Beginner|2-3 Months
+Thyme|thyme|Bountiful|Intermediate|3-4 Months
+Tokyo Bekana|tokyo-bekana|Bountiful|Beginner|1-2 Months
+Torenia|torenia|Bountiful|Intermediate|2-3 Months
+Violet Impatiens|violet-impatiens|Bountiful|Beginner|2-3 Months
+Watercress|watercress|Generous|Beginner|2-3 Months
+Wheatgrass|wheatgrass|Generous|Beginner|1-2 Months
+Yellow Snapdragon|yellow-snapdragon|Bountiful|Intermediate|
+Yellow Swiss Chard|yellow-swiss-chard|Generous|Beginner|2-3 Months

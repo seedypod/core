@@ -9,7 +9,7 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
@@ -307,6 +307,30 @@ export class SqliteStore implements Store {
     pruneRuns: (beforeTs: string): number => this.db.delete(t.automationRuns).where(lt(t.automationRuns.firedAt, beforeTs)).run().changes,
   }
 
+  plans = {
+    list: (): PlanRow[] => this.db.select().from(t.plans).orderBy(desc(t.plans.updatedAt)).all().map(rowToPlan),
+    get: (id: string): PlanRow | null => {
+      const r = this.db.select().from(t.plans).where(eq(t.plans.id, id)).get()
+      return r ? rowToPlan(r) : null
+    },
+    save: (p: Omit<PlanRow, 'createdAt' | 'updatedAt' | 'appliedAt' | 'issued'>): PlanRow => {
+      const now = new Date().toISOString()
+      const values = { id: p.id, name: p.name, model: p.model, mode: p.mode, request: JSON.stringify(p.request), layout: JSON.stringify(p.layout), sowing: JSON.stringify(p.sowing), createdAt: now, updatedAt: now }
+      this.db.insert(t.plans).values(values).onConflictDoUpdate({ target: t.plans.id, set: { name: values.name, model: values.model, mode: values.mode, request: values.request, layout: values.layout, sowing: values.sowing, updatedAt: now } }).run()
+      return this.plans.get(p.id) as PlanRow
+    },
+    remove: (id: string): boolean => this.db.delete(t.plans).where(eq(t.plans.id, id)).run().changes > 0,
+    markApplied: (id: string, ts: string): PlanRow | null => {
+      const r = this.db.update(t.plans).set({ appliedAt: ts }).where(eq(t.plans.id, id)).returning().get()
+      return r ? rowToPlan(r) : null
+    },
+    markIssued: (id: string, key: string): void => {
+      const p = this.plans.get(id)
+      if (!p || p.issued.includes(key)) return
+      this.db.update(t.plans).set({ issued: JSON.stringify([...p.issued, key]) }).where(eq(t.plans.id, id)).run()
+    },
+  }
+
   close(): void {
     this.sqlite.close()
   }
@@ -314,6 +338,10 @@ export class SqliteStore implements Store {
 
 function rowToSchedule(r: typeof t.schedules.$inferSelect): Schedule {
   return { ...r, spec: JSON.parse(r.spec) as LightSpec | PumpSpec }
+}
+
+function rowToPlan(r: typeof t.plans.$inferSelect): PlanRow {
+  return { ...r, request: JSON.parse(r.request) as PlanRow['request'], layout: JSON.parse(r.layout) as PlanRow['layout'], sowing: JSON.parse(r.sowing) as PlanRow['sowing'], issued: JSON.parse(r.issued) as string[] }
 }
 
 function rowToCycle(r: typeof t.growCycles.$inferSelect): GrowCycle {
