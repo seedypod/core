@@ -70,6 +70,11 @@ describe('Sidebar', () => {
     expect(screen.getByText('P9')).toBeTruthy()
     expect(screen.getByText('4 ready to harvest')).toBeTruthy()
     expect(screen.getByText('Swiss Chard, Arugula, +2')).toBeTruthy()
+    // The pod needing attention carries its plant's picture; the harvest line, which names several, a dot.
+    const thumbs = document.querySelectorAll<HTMLElement>('[data-testid="plant-thumb"]')
+    expect(thumbs).toHaveLength(1)
+    expect(screen.getByText('Red Russian Kale').closest('a')?.contains(thumbs[0] ?? null)).toBe(true)
+    expect(thumbs[0]?.style.width).toBe('32px')
   })
 
   it('says why a pod needs attention when it has no note, and hides the section when nothing needs doing', () => {

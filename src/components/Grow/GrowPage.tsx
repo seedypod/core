@@ -8,6 +8,8 @@ import { apiBase, trpc } from '@/src/utils/trpc'
 import { LineChart } from '@/src/components/ds/charts'
 import { defaultPodRects } from '@/src/vision/greenArea'
 import { CATALOG } from './plants/catalog'
+import { PlantModel } from './PlantModel'
+import { PlantThumb, podForm } from './PlantThumb'
 import { ageDays, heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
 import { TowerView } from './TowerView'
@@ -214,6 +216,7 @@ export function GrowPage() {
                       >
                         <span className="w-4 font-mono text-[10px] text-fg-3">{p.slot}</span>
                         <span className="size-[7px] shrink-0 rounded-full" style={{ background: s === 'empty' ? 'var(--border-2)' : SHOWN_TOKEN[s] }} />
+                        <PlantThumb plant={p.plant} stage={podForm(p)} size={32} />
                         <span className={cn('min-w-0 flex-1 truncate text-[13px]', s === 'empty' ? 'text-pod-empty' : 'text-fg')}>{p.plant ?? (s === 'empty' ? 'Empty · plant' : '')}</span>
                         {s !== 'empty' && cover !== null && <span className="font-mono text-[11px] text-fg-3">{pct(cover)}</span>}
                       </button>
@@ -351,6 +354,7 @@ function PodPanel({ pod, tower, coverPerDay, plantedAt, draft, dirty, saving, on
   onDismiss: () => void
 }) {
   const shown = podShown(pod)
+  const form = podForm(pod)
   const h = pod.harvest ?? null
   const cover = h?.cover ?? pod.green ?? null
   const since = heldFor(pod.statusSince)
@@ -379,6 +383,8 @@ function PodPanel({ pod, tower, coverPerDay, plantedAt, draft, dirty, saving, on
         </div>
         {reason && <p className="text-[13px] leading-normal text-fg-2">{reason}</p>}
       </div>
+
+      {form !== 'none' && <PlantModel key={`${pod.slot}|${pod.plant ?? ''}|${form}`} plant={pod.plant} today={form} seed={pod.slot} />}
 
       {pod.status !== 'empty' && <PodCrop slot={pod.slot} />}
 

@@ -3,6 +3,7 @@ import type * as RendererModule from './towerRenderer'
 import type { TowerMount } from './towerRenderer'
 import type { PodHarvest, PodState, TowerPart, TowerTarget } from './towerScene'
 import { TowerWireframe } from './TowerWireframe'
+import { PlantThumb, podForm } from './PlantThumb'
 import { heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, STATUS_LABEL, STATUS_TOKEN } from './towerLayout'
 import { cn } from '@/lib/utils'
 import { Scissors, TriangleAlert, X } from 'lucide-react'
@@ -132,6 +133,7 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
         style={side > 0 ? { top: end.y - 22, left: end.x } : { top: end.y - 22, right: width - end.x }}
       >
         <div className="flex items-start gap-2">
+          <PlantThumb plant={pod.plant} stage={podForm(pod)} size={40} className="self-center" />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <div className="font-mono text-[11px] uppercase tracking-[.06em] text-fg-3">{`Pod ${pod.slot}`}</div>
             <div className="truncate text-[18px] font-medium text-fg">{pod.plant ?? 'Empty'}</div>

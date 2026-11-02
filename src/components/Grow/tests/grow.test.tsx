@@ -130,6 +130,22 @@ describe('Grow', () => {
     expect(screen.getByRole('link', { name: 'Photos' }).getAttribute('href')).toBe('/cameras')
   })
 
+  it('pictures each pod\'s plant in its row, and the picked one as a model to scrub from seedling to harvest', () => {
+    render(<GrowPage />)
+    const kinds = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-testid="plant-thumb"]')].map(t => t.dataset.kind)
+    // No WebGL in jsdom: a neutral leaf for each planted pod, a ring for the empty one.
+    expect(kinds(screen.getByLabelText('Pods'))).toEqual(['neutral', 'neutral', 'empty'])
+    expect(screen.getByRole('button', { name: '1 Basil' }).querySelector<HTMLElement>('[data-testid="plant-thumb"]')?.style.width).toBe('32px')
+    fireEvent.click(screen.getByRole('button', { name: '1 Basil' }))
+    const stage = screen.getByRole('slider', { name: 'Growth stage' })
+    expect(stage.getAttribute('aria-valuetext')).toBe('bushy (today)')
+    fireEvent.change(stage, { target: { value: '3' } })
+    expect(stage.getAttribute('aria-valuetext')).toBe('harvest')
+    expect(screen.queryByText('generic model')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '3 empty' }))
+    expect(screen.queryByTestId('plant-model')).toBeNull()
+  })
+
   it('crops a lower pod from the lower camera, and says when there is no photo or trend yet', () => {
     data.set('pods', Array.from({ length: 30 }, (_, i) => pod(i + 1, { plant: 'Mint', status: 'growing' })))
     data.set('captures', [])
