@@ -177,6 +177,23 @@ for (const [name, make] of impls) {
       expect(store.settings.update({ homekitEnabled: true }).homekitEnabled).toBe(true)
     })
 
+    it('plans save, update, apply, issue and remove', () => {
+      store = make()
+      const layout = { model: 'home' as const, assignments: [], unplaced: [], free: [1] }
+      const p = store.plans.save({ id: 'p1', name: 'Autumn', model: 'home', mode: 'staggered', request: [{ plantId: 'basil', count: 2 }], layout, sowing: [] })
+      expect(p.appliedAt).toBeNull()
+      store.plans.save({ ...p, name: 'Autumn greens' })
+      expect(store.plans.get('p1')?.name).toBe('Autumn greens')
+      expect(store.plans.get('p1')?.createdAt).toBe(p.createdAt)
+      expect(store.plans.markApplied('p1', '2026-11-02T00:00:00Z')?.appliedAt).toBe('2026-11-02T00:00:00Z')
+      store.plans.markIssued('p1', 'basil:2')
+      store.plans.markIssued('p1', 'basil:2')
+      expect(store.plans.get('p1')?.issued).toEqual(['basil:2'])
+      expect(store.plans.list()).toHaveLength(1)
+      expect(store.plans.remove('p1')).toBe(true)
+      expect(store.plans.get('p1')).toBeNull()
+    })
+
     it('counters accumulate', () => {
       store = make()
       store.counters.add('light_hours', 1.5, 't')

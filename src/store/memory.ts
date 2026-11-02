@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlantProfile, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS, profileKey } from './types'
 
@@ -20,6 +20,7 @@ export class MemoryStore implements Store {
   private flashRows: FlashSample[] = []
   private readonly backupRows: BackupRecord[] = []
   private readonly analysisRows: AnalysisRow[] = []
+  private readonly planRows = new Map<string, PlanRow>()
   private automationRows: Automation[] = []
   private runRows: AutomationRun[] = []
   private nextAutomationId = 1
@@ -280,6 +281,29 @@ export class MemoryStore implements Store {
       const before = this.runRows.length
       this.runRows = this.runRows.filter(r => r.firedAt >= beforeTs)
       return before - this.runRows.length
+    },
+  }
+
+  plans = {
+    list: (): PlanRow[] => [...this.planRows.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    get: (id: string): PlanRow | null => this.planRows.get(id) ?? null,
+    save: (p: Omit<PlanRow, 'createdAt' | 'updatedAt' | 'appliedAt' | 'issued'>): PlanRow => {
+      const now = new Date().toISOString()
+      const prev = this.planRows.get(p.id)
+      const row: PlanRow = { ...p, createdAt: prev?.createdAt ?? now, updatedAt: now, appliedAt: prev?.appliedAt ?? null, issued: prev?.issued ?? [] }
+      this.planRows.set(p.id, row)
+      return row
+    },
+    remove: (id: string): boolean => this.planRows.delete(id),
+    markApplied: (id: string, ts: string): PlanRow | null => {
+      const r = this.planRows.get(id)
+      if (!r) return null
+      r.appliedAt = ts
+      return r
+    },
+    markIssued: (id: string, key: string): void => {
+      const r = this.planRows.get(id)
+      if (r && !r.issued.includes(key)) r.issued.push(key)
     },
   }
 

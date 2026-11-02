@@ -5,6 +5,7 @@
  * the same every load.
  */
 import type { HalClient } from '../hardware/types'
+import { planLayout, sowingPlan } from '../plants/planner'
 import type { AnalysisRow, Store, TelemetryPoint } from '../store/types'
 
 const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian Kale', 'Cherry Tomato', 'Thai Basil', 'Mint', 'Swiss Chard', 'Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
@@ -32,6 +33,11 @@ export function seedDemo(store: Store, hal: HalClient, now = new Date()): void {
     const status = slot === 9 ? 'attention' : slot <= 6 ? 'harvest' : 'growing'
     store.pods.update(slot, { plant, plantedAt: started.toISOString().slice(0, 10), status, notes: slot === 9 ? 'Yellowing lower leaves — check nutrients' : '' }, now.toISOString())
   }
+
+  // A saved plan for the six free pods (bottom rows), not yet applied, so the Plan screen has something to show.
+  const refill = [{ plantId: 'butterhead', count: 3 }, { plantId: 'mint', count: 1 }, { plantId: 'chives', count: 1 }, { plantId: 'oregano', count: 1 }]
+  const taken = Object.fromEntries(store.pods.list().filter(p => p.status !== 'empty').map(p => [p.slot, 'planted']))
+  store.plans.save({ id: 'demo-refill', name: 'Refill the bottom rows', model: 'home', mode: 'staggered', request: refill, layout: planLayout({ model: 'home', plants: refill, occupied: taken }), sowing: sowingPlan(refill, now) })
 
   // Harvest windows for some of the crops, as an agent would fill them in (ADR-0022); the rest lean on the camera.
   const profile = (name: string, harvestMinDays: number, harvestMaxDays: number, targetCover: number) => store.plants.upsert({ name, harvestMinDays, harvestMaxDays, targetCover, notes: '', source: 'agent' }, now.toISOString())

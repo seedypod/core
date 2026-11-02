@@ -5,6 +5,7 @@
  */
 import type { AutomationRule, RunOutcome } from '../autopilot/types'
 import type { SensorId } from '../hardware/contract'
+import type { PlanResult, SowingWave } from '../plants/planner'
 
 export interface DeviceSettings {
   unitName: string
@@ -116,6 +117,22 @@ export interface PlantProfile {
 }
 
 export interface Capture { id: string, camera: 'upper' | 'lower', ts: string, path: string, bytes: number }
+
+/** A saved pod plan: what was asked for, where it goes, and when each wave is sown. */
+export interface PlanRow {
+  id: string
+  name: string
+  model: 'home' | 'studio' | 'nursery'
+  mode: 'staggered' | 'batch'
+  request: { plantId: string, count: number }[]
+  layout: PlanResult
+  sowing: SowingWave[]
+  createdAt: string
+  updatedAt: string
+  appliedAt: string | null
+  /** Sow reminders already raised, so each fires once. */
+  issued: string[]
+}
 /** One measurement of one pod in one capture by one analyser (ADR-0019). */
 export interface AnalysisRow {
   captureId: string
@@ -235,6 +252,14 @@ export interface Store {
     runs(q?: { automationId?: number, limit?: number }): AutomationRun[]
     /** Drop runs older than `beforeTs`; returns how many went. */
     pruneRuns(beforeTs: string): number
+  }
+  plans: {
+    list(): PlanRow[]
+    get(id: string): PlanRow | null
+    save(p: Omit<PlanRow, 'createdAt' | 'updatedAt' | 'appliedAt' | 'issued'>): PlanRow
+    remove(id: string): boolean
+    markApplied(id: string, ts: string): PlanRow | null
+    markIssued(id: string, key: string): void
   }
   close(): void
 }

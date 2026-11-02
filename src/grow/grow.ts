@@ -6,7 +6,7 @@
 import type { EventBus } from '../lib/eventBus'
 import type { DeviceSettings, GrowCycle, Store } from '../store/types'
 
-export type ReminderKind = 'reminder_thinning' | 'reminder_root_check' | 'reminder_harvest' | 'reminder_nutrients'
+export type ReminderKind = 'reminder_thinning' | 'reminder_root_check' | 'reminder_harvest' | 'reminder_nutrients' | 'reminder_sow'
 
 export interface Reminder {
   kind: ReminderKind
@@ -47,8 +47,31 @@ export function dueReminders(cycle: GrowCycle, settings: DeviceSettings, now: Da
 export class GrowEngine {
   constructor(readonly deps: { store: Store, events: EventBus, now?: () => Date }) {}
 
+  /** Sow reminders for later waves of applied plans whose date has come. Idempotent. */
+  sowTick(): string[] {
+    const { store, events } = this.deps
+    const now = (this.deps.now ?? (() => new Date()))()
+    const today = now.toISOString().slice(0, 10)
+    const due: string[] = []
+    for (const plan of store.plans.list()) {
+      if (!plan.appliedAt) continue
+      for (const w of plan.sowing) {
+        const key = `${w.plantId}:${w.wave}:${w.sowOn}`
+        if (w.wave <= 1 || w.sowOn > today || plan.issued.includes(key)) continue
+        due.push(`${w.plantName} (wave ${w.wave})`)
+        store.plans.markIssued(plan.id, key)
+      }
+    }
+    if (due.length) {
+      store.alerts.raise('reminder_sow', `Start new yCubes: ${due.join(', ')}`, now.toISOString())
+      events.emit({ kind: 'mutation', path: 'alerts.reminder_sow' })
+    }
+    return due
+  }
+
   /** Issue any due reminders as alerts. Idempotent. */
   tick(): Reminder[] {
+    this.sowTick()
     const { store, events } = this.deps
     const now = (this.deps.now ?? (() => new Date()))()
     const cycle = store.grow.current()

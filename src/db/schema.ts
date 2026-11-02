@@ -212,3 +212,22 @@ export const automationRuns = sqliteTable('automation_runs', {
   outcome: text({ enum: ['fired', 'skipped', 'clamped', 'dry_run', 'refused', 'error'] }).notNull(),
   detail: text().notNull().default('{}'),
 }, t => [index('automation_runs_rule_time').on(t.automationId, t.firedAt)])
+
+/** Saved pod plans (src/plants/planner.ts): layout and sowing waves as JSON. */
+export const plans = sqliteTable('plans', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  model: text({ enum: ['home', 'studio', 'nursery'] }).notNull(),
+  mode: text({ enum: ['staggered', 'batch'] }).notNull().default('staggered'),
+  /** JSON: { plantId, count }[] */
+  request: text().notNull(),
+  /** JSON: PlanResult */
+  layout: text().notNull(),
+  /** JSON: SowingWave[] */
+  sowing: text().notNull(),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+  appliedAt: text(),
+  /** Sow reminders already raised, JSON string[]. */
+  issued: text().notNull().default('[]'),
+})

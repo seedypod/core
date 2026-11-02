@@ -30,6 +30,7 @@ const REMINDERS = [
   ['reminder_root_check', 'Check roots', 'mdi:source-branch'],
   ['reminder_harvest', 'Harvest window', 'mdi:basket'],
   ['reminder_nutrients', 'Add nutrients', 'mdi:flask'],
+  ['reminder_sow', 'Start new yCubes', 'mdi:seed'],
 ] as const
 
 /** The bridge as System › Status shows it: off with no broker set, else whether it holds a connection and since when. */

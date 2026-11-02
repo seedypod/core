@@ -10,6 +10,7 @@ import { eventsRouter } from './events'
 import { growRouter } from './grow'
 import { homekitRouter } from './homekit'
 import { networkRouter } from './network'
+import { plannerRouter } from './planner'
 import { plantsRouter } from './plants'
 import { schedulesRouter } from './schedules'
 import { sensorsRouter } from './sensors'
@@ -32,6 +33,7 @@ export const appRouter = router({
   automations: automationsRouter,
   grow: growRouter,
   plants: plantsRouter,
+  planner: plannerRouter,
   camera: cameraRouter,
   vision: visionRouter,
   datasets: datasetsRouter,
