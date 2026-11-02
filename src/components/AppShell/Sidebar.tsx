@@ -1,11 +1,11 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { Droplets, Sprout, Sun, Thermometer } from 'lucide-react'
+import { Droplets, FlaskConical, Sprout, Sun, Thermometer } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { SidebarSearch } from '@/src/components/Search/CommandPalette'
 import { podShown } from '@/src/components/Grow/towerLayout'
 import type { Reading, SensorId } from '@/src/hardware/contract'
-import { withUnit } from '@/src/lib/sensorMeta'
+import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
 import { trpc } from '@/src/utils/trpc'
 import { NAV_GROUPS, navItems, type NavItem } from './navItems'
 
@@ -38,11 +38,16 @@ function Readings() {
   const l = light.data
   const tank = s.water_level_pct
   const air = [s.air_temp, s.humidity].filter((r): r is Reading => !!r).map(r => withUnit(r.value, r.unit)).join(' · ')
+  // Water-quality probes are optional, so the line shows only for those installed.
+  const system = trpc.system.info.useQuery()
+  const quality = (system.data?.system?.caps.sensors ?? []).filter(id => SENSOR_META[id].group === 'water-quality')
+  const water = quality.map(id => `${SENSOR_META[id].label} ${formatReading(s[id])}`).join(' · ')
   return (
     <div className="flex flex-col gap-2.5 rounded-[10px] border border-line bg-active/40 p-3 font-mono text-[11px]">
       <Meter to="/light" icon={Sun} label="Light" value={l ? (l.on ? `${l.level}%` : 'off') : '…'} pct={l ? (l.on ? l.level : 0) : null} />
       <Meter to="/water" icon={Droplets} label="Tank" value={tank ? withUnit(tank.value, tank.unit) : '—'} pct={tank ? Number(tank.value) : null} />
       <Meter to="/sensors" icon={Thermometer} label="Air" value={air || '—'} pct={null} />
+      {water && <Meter to="/sensors" icon={FlaskConical} label="Water" value={water} pct={null} />}
     </div>
   )
 }

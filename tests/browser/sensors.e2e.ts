@@ -27,9 +27,12 @@ test('sensors: add a pH probe, calibrate it, remove it', async ({ page }) => {
   await page.getByRole('button', { name: 'Skip' }).click()
   await expect(page.getByText(/holds 1 point/)).toBeVisible()
   await page.getByRole('button', { name: 'Done' }).click()
+  // The sidebar's readings gain a water line for the probe.
+  await expect(page.getByRole('complementary').getByText(/^pH /)).toBeVisible()
 
   await page.goto('/sensors')
   await page.getByRole('button', { name: 'Remove' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click()
   await expect(page.getByText('added', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('complementary').getByText(/^pH /)).toHaveCount(0)
 })
