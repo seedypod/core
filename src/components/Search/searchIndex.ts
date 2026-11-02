@@ -4,7 +4,7 @@
  * guides, ranked with BM25.
  */
 import type { LucideIcon } from 'lucide-react'
-import { Archive, BookOpen, CloudUpload, Code, HardDrive, Info, KeyRound, Monitor, Radio, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
+import { Archive, BookOpen, CloudUpload, Code, HardDrive, House, Info, KeyRound, Monitor, Radio, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
 import { navItems } from '@/src/components/AppShell/navItems'
 import { createBm25Index, tokenize } from '@/src/lib/bm25'
 import { DOCS_BASE, type DocsIndex } from './docsIndex'
@@ -54,6 +54,7 @@ const SETTINGS: ReadonlyArray<Omit<SearchEntry, 'crumbs' | 'href'> & { anchor: s
   { id: 'cameras', anchor: 'cameras', title: 'Capture interval', description: 'How often the cameras take a still, and analysis masks', keywords: 'camera capture interval timelapse masks artifacts photos', icon: Camera },
   { id: 'storage', anchor: 'storage', title: 'Storage', description: 'How much the unit writes to its SD card each day', keywords: 'sd card flash writes wear storage disk endurance', icon: HardDrive },
   { id: 'backup', anchor: 'backup', title: 'Backup', description: 'Download a backup, nightly backups to the bucket, restore and undo', keywords: 'backup restore download nightly bucket undo archive recovery card', icon: Archive },
+  { id: 'homekit', anchor: 'homekit', title: 'Apple Home', description: 'HomeKit: setup code and QR, pairing and reset', keywords: 'homekit apple home siri iphone ios pair pairing setup code qr', icon: House },
   { id: 'ha', anchor: 'home-assistant', title: 'Home Assistant bridge', description: 'MQTT broker for grow events and services', keywords: 'home assistant hass mqtt broker tls integration', icon: Radio },
   { id: 'api', anchor: 'api', title: 'API access', description: 'A key for REST and MCP clients off the unit, and the token for results from other machines', keywords: 'api key token rest mcp auth authentication security ingest results remote worker', icon: KeyRound },
   { id: 'mirror', anchor: 'off-device', title: 'Off-device storage', description: 'Copy photos to an S3 bucket', keywords: 'mirror s3 r2 minio bucket off-device cloud', icon: CloudUpload },

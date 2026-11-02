@@ -25,7 +25,9 @@ const env = {
   SEEDYPOD_ETC_DIR: etc, SEEDYPOD_STATE_DIR: state, SEEDYPOD_MOSQUITTO_PASSWD: join(dataDir, 'no-passwd'),
   // The real restore helper; the specs only reach its checks, so the service commands are a no-op.
   SEEDYPOD_RESTORE_CMD: JSON.stringify([process.execPath, 'scripts/seedypod-restore.cjs']),
-  SEEDYPOD_RESTORE_DB: join(dataDir, 'e2e.db'), SEEDYPOD_RESTORE_CAPTURES: join(dataDir, 'captures'),
+  SEEDYPOD_RESTORE_DB: join(dataDir, 'e2e.db'), SEEDYPOD_RESTORE_CAPTURES: join(dataDir, 'captures'), SEEDYPOD_RESTORE_HOMEKIT: join(dataDir, 'homekit'),
+  // HomeKit's HAP port, off the default so a real bridge on this machine doesn't collide.
+  HOMEKIT_PORT: '51831',
   SEEDYPOD_RESTORE_WORK: join(dataDir, 'restore'), SEEDYPOD_SYSTEMCTL: JSON.stringify(['true']),
 }
 const server = spawn('node', ['server/dist/index.js'], { env, stdio: 'inherit' })

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('settings → backup downloads a bundle and records it as an off-card backup', async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByTestId('backup-last')).toHaveText('none yet')
-  await expect(page.getByText('The file holds your bucket secret and MQTT password. Keep it somewhere private.')).toBeVisible()
+  await expect(page.getByText('The file holds your bucket secret, MQTT password and HomeKit pairing keys. Keep it somewhere private.')).toBeVisible()
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download backup' }).click()])
   expect(download.suggestedFilename()).toMatch(/^seedypod-backup-sim-0001-\d{8}-\d{6}\.tar\.gz$/)
   expect(await download.failure()).toBeNull()

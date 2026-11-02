@@ -173,6 +173,8 @@ for (const [name, make] of impls) {
       expect(store.automations.runs()).toHaveLength(1)
       expect(store.automations.list().map(r => r.name)).toEqual(['other'])
       expect(store.settings.get().autopilotEnabled).toBe(true)
+      expect(store.settings.get().homekitEnabled).toBe(false)
+      expect(store.settings.update({ homekitEnabled: true }).homekitEnabled).toBe(true)
     })
 
     it('counters accumulate', () => {

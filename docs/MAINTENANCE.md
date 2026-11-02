@@ -85,6 +85,7 @@ everything needed to rebuild the unit on a new card:
 | `etc/seedypod/hal.toml` | Pin map, limits and unit id. |
 | `etc/mosquitto/seedypod.passwd` | The Home Assistant broker password, if `--mqtt-lan` made one. |
 | `var/lib/seedypod/*.json` | `hald`'s state: light level, dosing ledgers, probes added in the app (`sensors.json`). |
+| `homekit/*.json` | HomeKit's identity and pairing keys, once HomeKit has been on (ADR 0023). Restored onto the same unit, it stays paired in Home. |
 | `captures/` | Photos, only when you ask for them. |
 | `manifest.json` | Unit, core and `hald` versions, database schema, creation time and a checksum per file. |
 

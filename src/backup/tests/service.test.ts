@@ -80,8 +80,8 @@ describe('bundle names', () => {
 
   it('only allow the paths the restore helper accepts', () => {
     const ok = (p: string) => BUNDLE_NAMES.some(re => re.test(p))
-    expect(['seedypod.db', 'etc/seedypod/hal.toml', 'etc/mosquitto/seedypod.passwd', 'var/lib/seedypod/sensors.json', 'captures/upper-2026-10-31T03-00-00-000Z.jpg'].every(ok)).toBe(true)
-    expect(['etc/passwd', '../seedypod.db', 'captures/../../etc/shadow', 'var/lib/seedypod/x/state.json', 'captures/.hidden'].some(ok)).toBe(false)
+    expect(['seedypod.db', 'etc/seedypod/hal.toml', 'etc/mosquitto/seedypod.passwd', 'var/lib/seedypod/sensors.json', 'homekit/identity.json', 'homekit/AccessoryInfo.B6C26B920340.json', 'captures/upper-2026-10-31T03-00-00-000Z.jpg'].every(ok)).toBe(true)
+    expect(['etc/passwd', '../seedypod.db', 'captures/../../etc/shadow', 'var/lib/seedypod/x/state.json', 'captures/.hidden', 'homekit/../seedypod.json', 'homekit/sub/identity.json', 'homekit/identity.json.tmp'].some(ok)).toBe(false)
   })
 })
 

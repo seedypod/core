@@ -169,7 +169,7 @@ const coreEnv = {
   SEEDYPOD_ETC_DIR: work, SEEDYPOD_STATE_DIR: join(work, 'hal-state'),
   SEEDYPOD_MOSQUITTO_PASSWD: join(mosquittoDir, 'seedypod.passwd'), SEEDYPOD_MOSQUITTO_CONF: join(mosquittoDir, 'seedypod.conf'),
   SEEDYPOD_RESTORE_CMD: JSON.stringify([process.execPath, join(root, 'scripts/seedypod-restore.cjs')]),
-  SEEDYPOD_RESTORE_DB: join(work, 'core/seedypod.db'), SEEDYPOD_RESTORE_CAPTURES: join(work, 'core/captures'),
+  SEEDYPOD_RESTORE_DB: join(work, 'core/seedypod.db'), SEEDYPOD_RESTORE_CAPTURES: join(work, 'core/captures'), SEEDYPOD_RESTORE_HOMEKIT: join(work, 'core/homekit'),
   SEEDYPOD_RESTORE_WORK: join(work, 'restore'), SEEDYPOD_RESTORE_DETACH: 'fork',
   SEEDYPOD_SYSTEMCTL: JSON.stringify([process.execPath, join(root, 'tests/sim/fake-systemctl.mjs')]),
   SIM_CONTROL_URL: `http://127.0.0.1:${controlPort}/`,

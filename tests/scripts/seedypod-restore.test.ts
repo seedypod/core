@@ -35,6 +35,7 @@ beforeEach(() => {
   envs = {
     SEEDYPOD_RESTORE_DB: live('data/seedypod.db'),
     SEEDYPOD_RESTORE_CAPTURES: live('data/captures'),
+    SEEDYPOD_RESTORE_HOMEKIT: live('data/homekit'),
     SEEDYPOD_RESTORE_JOURNAL: live('migrations/meta/_journal.json'),
     SEEDYPOD_ETC_DIR: live('etc'),
     SEEDYPOD_STATE_DIR: live('state'),
@@ -133,6 +134,8 @@ describe('checking a bundle', () => {
     }
     expect(run('--check', write(tarOf('etc/passwd'))).out.error).toBe('unexpected file in the bundle: etc/passwd')
     expect(run('--check', write(tarOf('captures/../../etc/shadow'))).out.error).toBe('unexpected file in the bundle: captures/../../etc/shadow')
+    expect(run('--check', write(tarOf('homekit/../seedypod.json'))).out.error).toBe('unexpected file in the bundle: homekit/../seedypod.json')
+    expect(run('--check', write(tarOf('homekit/sub/identity.json'))).out.error).toBe('unexpected file in the bundle: homekit/sub/identity.json')
     expect(run('--check', write(tarOf('seedypod.db', '2'))).out.error).toBe('seedypod.db is not a regular file (tar type "2")')
     expect(run('--check', write(enc.encode('not a gzip'))).out.error).toMatch(/^not a seedypod backup/)
     expect(run('--check', join(dir, 'missing.tar.gz')).out.error).toMatch(/^no such file/)
@@ -221,6 +224,33 @@ describe('restoring', () => {
     expect(read('data/captures/upper-1.jpg')).toBe('jpeg')
     expect(existsSync(live('data/captures/upper-old.jpg'))).toBe(false)
     expect(readFileSync(join(dir, 'work/pre-restore/data/captures/upper-old.jpg'), 'utf8')).toBe('old')
+  })
+
+  it('restores HomeKit\'s identity and pairings as one directory, so the unit stays paired (ADR 0023)', async () => {
+    mkdirSync(live('data/homekit'))
+    writeFileSync(live('data/homekit/identity.json'), '{"username":"AA:00:00:00:00:01"}')
+    writeFileSync(live('data/homekit/AccessoryInfo.AA0000000001.json'), '{"pairedClients":{}}')
+    const hk = [
+      { name: 'homekit/identity.json', bytes: enc.encode('{"username":"B6:C2:6B:92:03:40"}') },
+      { name: 'homekit/AccessoryInfo.B6C26B920340.json', bytes: enc.encode('{"pairedClients":{"ios":{}}}') },
+      { name: 'homekit/IdentifierCache.B6C26B920340.json', bytes: enc.encode('{}') },
+    ]
+    expect(run(await bundle([...FILES, ...hk])).code).toBe(0)
+    expect(read('data/homekit/identity.json')).toContain('B6:C2:6B:92:03:40')
+    expect(read('data/homekit/AccessoryInfo.B6C26B920340.json')).toContain('ios')
+    // The old identity's pairing file would belong to a bridge that no longer exists.
+    expect(existsSync(live('data/homekit/AccessoryInfo.AA0000000001.json'))).toBe(false)
+    expect(readFileSync(join(dir, 'work/pre-restore/data/homekit/identity.json'), 'utf8')).toContain('AA:00')
+    expect(run('--undo').code).toBe(0)
+    expect(read('data/homekit/identity.json')).toContain('AA:00')
+    expect(existsSync(live('data/homekit/IdentifierCache.B6C26B920340.json'))).toBe(false)
+  })
+
+  it('leaves HomeKit alone when the bundle has none of its files', async () => {
+    mkdirSync(live('data/homekit'))
+    writeFileSync(live('data/homekit/identity.json'), '{"username":"AA:00:00:00:00:01"}')
+    expect(run(await bundle()).code).toBe(0)
+    expect(read('data/homekit/identity.json')).toContain('AA:00')
   })
 
   it('--detach returns at once and finishes in the background', async () => {
