@@ -1,17 +1,22 @@
 /**
  * ⌘K / Ctrl K search (ported from sleepypod's CommandPalette): a sidebar box
- * that opens a dialog with a combobox over every page, the Settings cards and
- * the unit's pods and rules.
+ * that opens a dialog with a combobox over every page, the Settings cards,
+ * the unit's pods and rules, and the docs site's guides.
  */
 import { useNavigate } from '@tanstack/react-router'
-import { Search } from 'lucide-react'
+import { ExternalLink, Search } from 'lucide-react'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 import { Modal } from '@/src/components/ds/feedback'
 import { trpc } from '@/src/utils/trpc'
-import { buildSearchEntries, createSearch, type SearchEntry } from './searchIndex'
+import { loadLiveDocsIndex, type DocsIndex } from './docsIndex'
+import docsSnapshot from './docsIndex.json'
+import { buildDocsEntries, buildSearchEntries, createSearch, type SearchEntry } from './searchIndex'
 
 const MAX_RESULTS = 12
+
+/** Bundled copy of the docs index; `pnpm docs:sync-index` refreshes it. */
+const DOCS_SNAPSHOT = docsSnapshot as DocsIndex
 
 const noopSubscribe = () => () => {}
 const isMacSnapshot = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)
@@ -92,11 +97,26 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  const [docsIndex, setDocsIndex] = useState(DOCS_SNAPSHOT)
+
+  // Units often have no internet: prefer the live docs index when the browser can reach the docs site, keep the snapshot otherwise.
+  useEffect(() => {
+    let alive = true
+    void loadLiveDocsIndex().then((index) => {
+      if (alive && index) setDocsIndex(index)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const { pages, search } = useMemo(() => {
     const entries = buildSearchEntries({ pods: pods.data, rules: rules.data })
-    return { pages: entries.filter(e => e.id.startsWith('page:') && e.crumbs.length === 0 && !e.boost), search: createSearch(entries) }
-  }, [pods.data, rules.data])
+    return {
+      pages: entries.filter(e => e.id.startsWith('page:') && e.crumbs.length === 0 && !e.boost),
+      search: createSearch([...entries, ...buildDocsEntries(docsIndex)]),
+    }
+  }, [pods.data, rules.data, docsIndex])
 
   const q = query.trim()
   const results = useMemo(() => (q ? search(q, MAX_RESULTS) : pages), [q, search, pages])
@@ -130,6 +150,10 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
 
   const go = (entry: SearchEntry) => {
     onClose()
+    if (entry.external) {
+      window.open(entry.href, '_blank', 'noopener,noreferrer')
+      return
+    }
     void navigate({ href: entry.href })
   }
 
@@ -196,6 +220,12 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
               <span className="truncate text-sm text-fg">{r.title}</span>
               <span className="truncate text-xs text-fg-3">{r.crumbs.length > 0 ? r.crumbs.join(' › ') : r.description}</span>
             </span>
+            {r.external && (
+              <>
+                <ExternalLink size={14} className="ml-auto shrink-0 text-fg-3" aria-hidden />
+                <span className="sr-only">Opens the docs in a new tab</span>
+              </>
+            )}
           </li>
         ))}
       </ul>

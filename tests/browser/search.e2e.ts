@@ -20,3 +20,23 @@ test('⌘K search opens from anywhere and jumps to a setting or a plant', async 
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/grow\?pod=12$/)
 })
+
+test('⌘K search finds the bundled docs offline and opens a guide in a new tab', async ({ page, context }) => {
+  // Units often have no internet: the live index fails, so the palette searches its bundled snapshot.
+  await context.route('https://seedypod.github.io/search-index.json', route => route.abort('internetdisconnected'))
+  await context.route('https://seedypod.github.io/core/debugging/', route => route.fulfill({ contentType: 'text/html', body: '<title>Debugging</title>' }))
+  await page.goto('/water')
+  await page.getByRole('button', { name: 'Search' }).click()
+  const palette = page.getByRole('dialog', { name: 'Search' })
+  await palette.getByRole('combobox', { name: 'Search pages, settings, plants and rules' }).fill('debugging')
+  const result = palette.getByRole('option').first()
+  await expect(result).toContainText('Docs › User guide')
+  await expect(result).toContainText('Opens the docs in a new tab')
+  const popupEvent = page.waitForEvent('popup')
+  await page.keyboard.press('Enter')
+  const popup = await popupEvent
+  await expect(popup).toHaveURL('https://seedypod.github.io/core/debugging/')
+  await popup.close()
+  await expect(palette).toBeHidden()
+  await expect(page).toHaveURL(/\/water$/)
+})
