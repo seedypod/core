@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          lfs: true
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -63,6 +65,16 @@ jobs:
             --exclude='.claude' \
             .
           mv /tmp/seedypod-core.tar.gz .
+
+      - name: Check the tarball has no Git LFS pointers
+        # Without lfs: true on checkout, the brand PNGs ship as pointer text and the logo breaks on the unit.
+        run: |
+          mkdir -p "$RUNNER_TEMP/tarball" && tar xzf seedypod-core.tar.gz -C "$RUNNER_TEMP/tarball"
+          if grep -rlx 'version https://git-lfs.github.com/spec/v1' "$RUNNER_TEMP/tarball"; then
+            echo "::error::Git LFS pointer files in seedypod-core.tar.gz; check out with lfs: true"
+            exit 1
+          fi
+          [ "$(file -b --mime-type "$RUNNER_TEMP/tarball/web/dist/brand/icon-64.png")" = image/png ]
 
       - name: Update dev release
         env:
