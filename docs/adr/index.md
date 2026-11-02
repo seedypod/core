@@ -24,3 +24,4 @@ Format follows sleepypod/core (`# ADR NNNN: Title`, Status/Date, Context, Decisi
 - [0020 Autopilot — reactive automations](0020-autopilot-reactive-automations.md)
 - [0021 SD card wear and fast recovery](0021-sd-card-wear-and-recovery.md) — phases 1–3 accepted, phase 4 (SD image) proposed
 - [0022 Harvest outlook from the camera, with optional plant profiles](0022-harvest-outlook.md)
+- [0023 HomeKit bridge and per-unit identity](0023-homekit.md)

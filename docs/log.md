@@ -1,5 +1,9 @@
 # Docs update log
 
+## 2026-11-01
+
+- **Creation**: [ADR 0023](adr/0023-homekit.md), HomeKit: the accessory mapping, the per-unit identity (porting sleepypod ADR 0020), the ciao advertiser and HomeKit in backups. [Maintenance](MAINTENANCE.md) and [Privacy](PRIVACY.md) cover the backup and the local-only pairing.
+
 ## 2026-10-31
 
 - **Update**: ADR 0021 phases 1–3 accepted and built: SD card wear settings and the flash-writes meter, off-card backups with `backup_stale`, and one-step restore with undo. [Maintenance](MAINTENANCE.md) has the new card-replacement steps; [Installation](INSTALLATION.md), [Debugging](DEBUGGING.md), [Privacy](PRIVACY.md) and the [simulated bring-up](hardware/sim-bringup.md) checklist cover the rest.
