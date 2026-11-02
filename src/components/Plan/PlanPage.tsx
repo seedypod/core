@@ -129,8 +129,9 @@ export function PlanPage() {
         <>
           <SectionLabel right={<SegmentedControl size="sm" value={mode} onChange={setMode} options={[{ value: 'staggered', label: 'Staggered' }, { value: 'batch', label: 'All now' }]} />}>Sowing schedule</SectionLabel>
           <Card>
-            {(sowing.data ?? []).map(w => (
-              <div key={`${w.plantId}-${w.wave}-${w.sowOn}`} className="flex items-center justify-between border-b border-line py-1.5 text-[13px] last:border-0">
+            {(sowing.data ?? []).map((w, i) => (
+              // All-now mode gives every pod of a plant the same wave and date, so the index keeps keys unique.
+              <div key={`${w.plantId}-${i}`} className="flex items-center justify-between border-b border-line py-1.5 text-[13px] last:border-0">
                 <span>
                   {w.plantName}
                   {w.wave > 1 && <span className="ml-1 text-fg-3">{`wave ${w.wave}`}</span>}
