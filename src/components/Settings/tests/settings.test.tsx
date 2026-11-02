@@ -347,3 +347,34 @@ describe('Settings: grow reminders', () => {
     expect(screen.getByText('Recurring')).toBeTruthy()
   })
 })
+
+describe('Settings: every field saves', () => {
+  it('collects unit, tank, reminder, camera, key, bucket and MQTT edits into one patch', () => {
+    render(<SettingsPage />)
+    fireEvent.change(field('Name'), { target: { value: 'Kitchen' } })
+    fireEvent.click(screen.getByRole('tab', { name: '°F' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Empty' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease Capacity' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Harvest' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Nutrients' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Capture interval' }))
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'k1' } })
+    fireEvent.change(screen.getByLabelText('Result ingest token'), { target: { value: 't1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Connect bucket' }))
+    fireEvent.change(field('Region'), { target: { value: '' } })
+    fireEvent.change(field('Key prefix'), { target: { value: 'kitchen/' } })
+    fireEvent.change(field('Access key id'), { target: { value: 'AK' } })
+    fireEvent.change(field('Broker URL'), { target: { value: 'mqtt://ha:1883' } })
+    fireEvent.change(field('Username'), { target: { value: 'ha' } })
+    fireEvent.change(field('Password'), { target: { value: 'pw' } })
+    fireEvent.click(screen.getByRole('switch', { name: 'TLS' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Allow self-signed' }))
+    expect(screen.getByTestId('unsaved').textContent).toBe('16 unsaved changes')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.update.mock.calls[0]?.[0]).toMatchObject({
+      unitName: 'Kitchen', temperatureUnit: 'F', waterEmptyCm: 20.5, tankCapacityL: 18, harvestReminderDays: 36, nutrientReminderDays: 8,
+      captureIntervalMin: 75, apiKey: 'k1', analysisIngestToken: 't1', mirrorRegion: 'auto', mirrorPrefix: 'kitchen/', mirrorAccessKeyId: 'AK',
+      mqttUrl: 'mqtt://ha:1883', mqttUsername: 'ha', mqttPassword: 'pw', mqttTlsEnabled: true, mqttTlsInsecure: true,
+    })
+  })
+})
