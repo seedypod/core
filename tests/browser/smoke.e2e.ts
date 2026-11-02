@@ -1,15 +1,11 @@
 import { expect, test } from '@playwright/test'
 
-test('home shows the tower with its light, tank and air readings, and the API answers', async ({ page }) => {
+test('home shows the tower with the cycle and pod counts over it, and the API answers', async ({ page }) => {
   await page.goto('/')
   const tower = page.getByTestId('tower-3d')
   await expect(tower).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
-  await tower.getByRole('button', { name: /°C/ }).click()
-  await expect(page.getByText('Environment')).toBeVisible()
-  await tower.getByRole('button', { name: /%$|off$/ }).first().click()
-  await expect(page.getByText('Grow light')).toBeVisible()
-  await page.getByRole('dialog').getByRole('button', { name: /Turn (on|off)/ }).click()
-  await expect.poll(async () => (await (await page.request.get('/api/light')).json()).on).toBeDefined()
+  await expect(tower.getByTestId('home-counts')).toContainText(/\d+ growing\d+ ready\d+ attention\d+ empty/)
+  await expect(tower.getByText('Click a pod · drag to turn · ⌘-scroll to zoom')).toBeVisible()
   const r = await page.request.get('/api/system')
   expect(r.ok()).toBeTruthy()
   expect((await r.json()).system.model).toContain('sim')

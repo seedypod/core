@@ -31,21 +31,34 @@ test('grow: the tower renders in 3D, a pod picked on it opens in the side panel'
   expect(errors).toEqual([])
 })
 
-test('home: hovering a reading opens its panel, which stays open as the pointer moves into it', async ({ page }) => {
+test('home: hovering a pod previews its callout, a click pins it, and its close button unpins it', async ({ page }) => {
+  await page.request.patch('/api/pods/5', { data: { plant: 'Cherry Tomato', status: 'attention', notes: 'leaf curl' } })
   await page.goto('/')
   const tower = page.getByTestId('tower-3d')
   await expect(tower).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
-  const chip = await page.locator('[data-chip="tank"] button').boundingBox()
-  if (!chip) throw new Error('no tank chip')
-  await page.mouse.move(chip.x + chip.width / 2, chip.y + chip.height / 2)
-  const panel = page.getByRole('dialog')
-  await expect(panel.getByRole('button', { name: 'Run 5 min' })).toBeVisible()
-  // Down across the gap and onto the panel's button, without clicking anything.
-  const run = await panel.getByRole('button', { name: 'Run 5 min' }).boundingBox()
-  if (!run) throw new Error('no run button')
-  await page.mouse.move(run.x + run.width / 2, run.y + run.height / 2, { steps: 12 })
-  await page.waitForTimeout(400)
-  await expect(panel).toBeVisible()
-  await page.mouse.move(chip.x + 600, chip.y + 500)
-  await expect(panel).toBeHidden()
+  const callout = tower.getByTestId('pod-callout')
+  // The pod sits below and left of its flag; search around there until it answers a hover.
+  const flag = await tower.getByRole('button', { name: 'Pod 5: Needs attention' }).boundingBox()
+  if (!flag) throw new Error('no flag on pod 5')
+  const near = { x: flag.x + flag.width / 2 - 22, y: flag.y + flag.height / 2 + 22 }
+  let at: { x: number, y: number } | null = null
+  for (let dy = -12; dy <= 30 && !at; dy += 3) {
+    for (let dx = -18; dx <= 18 && !at; dx += 3) {
+      await page.mouse.move(near.x + dx, near.y + dy)
+      if (await callout.isVisible()) at = { x: near.x + dx, y: near.y + dy }
+    }
+  }
+  if (!at) throw new Error('pod 5 did not answer a hover')
+  await expect(callout).toHaveAttribute('data-state', 'hover')
+  await expect(callout).toContainText('Click to pin')
+  await page.mouse.click(at.x, at.y)
+  // Pinned, it stays once the pointer leaves the pod, with what to do about it.
+  const box = await tower.boundingBox()
+  if (!box) throw new Error('the tower has no size')
+  await page.mouse.move(box.x + 8, box.y + box.height - 8)
+  await expect(callout).toHaveAttribute('data-state', 'pinned')
+  await expect(callout).toContainText('leaf curl')
+  await expect(callout.getByRole('link', { name: 'View photo' })).toHaveAttribute('href', '/cameras')
+  await callout.getByRole('button', { name: 'Close pod 5' }).click()
+  await expect(callout).toBeHidden()
 })
