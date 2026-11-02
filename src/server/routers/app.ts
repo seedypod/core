@@ -8,6 +8,7 @@ import { datasetsRouter } from './datasets'
 import { devicesRouter } from './devices'
 import { eventsRouter } from './events'
 import { growRouter } from './grow'
+import { homekitRouter } from './homekit'
 import { networkRouter } from './network'
 import { plantsRouter } from './plants'
 import { schedulesRouter } from './schedules'
@@ -36,6 +37,7 @@ export const appRouter = router({
   datasets: datasetsRouter,
   storage: storageRouter,
   backup: backupRouter,
+  homekit: homekitRouter,
   alerts: alertsRouter,
   events: eventsRouter,
 })

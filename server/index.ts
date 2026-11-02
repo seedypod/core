@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { arch, hostname } from 'node:os'
-import { relative } from 'node:path'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FsSink } from '../src/camera/fsSink'
 import { RestoreClient, restoreCommand } from '../src/backup/restore'
@@ -11,6 +11,7 @@ import { backupPaths, nodeBackupSources } from '../src/backup/sources'
 import { MirroredSink } from '../src/camera/mirrorSink'
 import { seedIfFresh } from '../src/demo/seed'
 import { createHal } from '../src/hardware/factory'
+import { HomeKitService } from '../src/homekit/service'
 import { createEventBus } from '../src/lib/eventBus'
 import { connectBridge } from '../src/mqtt/bridge'
 import { NmcliWifi } from '../src/network/wifi'
@@ -50,7 +51,9 @@ const backup = new BackupService({
 })
 // Restores go through the root helper scripts/install puts in /usr/local/sbin (ADR-0021).
 const restore = new RestoreClient({ command: restoreCommand(), workDir: process.env.SEEDYPOD_RESTORE_WORK || '/var/lib/seedypod-restore', uploadDir: DATA_DIR })
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), host: { hostname: hostname(), arch: arch() } })
+// HomeKit (ADR 0023): off until turned on in Settings; hap-nodejs loads only then. Its files sit next to the database so backups carry them.
+const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA_DIR, 'homekit') })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), host: { hostname: hostname(), arch: arch() } })
 
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 let bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {
@@ -70,6 +73,7 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) =>
   console.log(`seedypod core ${core.ctx.version} listening on http://${info.address}:${info.port}`)
 })
 injectWebSocket(server)
+void homekit.startIfEnabled()
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {

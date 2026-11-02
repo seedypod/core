@@ -34,6 +34,8 @@ export interface DeviceSettings {
   mirrorAccessKeyId: string | null
   mirrorSecretAccessKey: string | null
   autopilotEnabled: boolean
+  /** HomeKit bridge (ADR 0023); off until turned on in Settings. Changed only through `homekit.setEnabled`. */
+  homekitEnabled: boolean
   /** False until the owner picks Welcome → Set up a new garden, or restores a backup. */
   setupComplete: boolean
   updatedAt: string
@@ -268,5 +270,6 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   mirrorAccessKeyId: null,
   mirrorSecretAccessKey: null,
   autopilotEnabled: true,
+  homekitEnabled: false,
   setupComplete: false,
 }

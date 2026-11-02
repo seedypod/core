@@ -10,6 +10,7 @@ import type { AnalysisService } from '../vision/service'
 import type { FlashMeter } from '../telemetry/flash'
 import type { BackupService } from '../backup/service'
 import type { RestoreClient } from '../backup/restore'
+import type { HomeKitControl } from '../homekit/types'
 
 export interface Context {
   hal: HalClient
@@ -28,6 +29,8 @@ export interface Context {
   backup?: BackupService
   /** Runs the root restore helper; on the unit only. */
   restore?: RestoreClient
+  /** The HomeKit bridge (ADR 0023); node hosts only, off until enabled in Settings. */
+  homekit?: HomeKitControl
   /** Build info pinned at release time (.git-info) or 'dev'. */
   version: string
   /** The machine core runs on (the unit's Pi, or a LAN box when the unit has a Pi Zero W); absent in the browser demo. */

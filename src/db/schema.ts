@@ -43,6 +43,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   mirrorSecretAccessKey: text(),
   /** Autopilot kill switch (ADR-0020): off stops every rule and drops their light leases. */
   autopilotEnabled: integer({ mode: 'boolean' }).notNull().default(true),
+  /** HomeKit bridge (ADR 0023): off by default; set through homekit.setEnabled once the bridge started. */
+  homekitEnabled: integer({ mode: 'boolean' }).notNull().default(false),
   /** Off on a new database so the first run opens on Welcome (ADR-0021); databases from before it migrate as set up. */
   setupComplete: integer({ mode: 'boolean' }).notNull().default(true),
   updatedAt: text().notNull(),
