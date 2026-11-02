@@ -12,3 +12,10 @@ export function daysLabel(mask: number): string {
   const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   return daysToList(mask).map(d => names[d]).join(' ') || 'Never'
 }
+/** Monday-first weekday of a local date (0 = Mon), the index the mask uses. */
+export function weekdayOf(date: Date): number {
+  return (date.getDay() + 6) % 7
+}
+export function dayOn(mask: number, weekday: number): boolean {
+  return (mask & (1 << weekday)) !== 0
+}

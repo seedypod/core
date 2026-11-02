@@ -28,13 +28,24 @@ test('pump run is bounded and reported', async ({ page }) => {
   await expect(page.getByText('pump idle')).toBeVisible()
 })
 
-test('schedule: create, toggle, delete a pump cycle', async ({ page }) => {
+test('water: create, toggle, delete a pump cycle', async ({ page }) => {
+  await page.goto('/water')
+  const main = page.getByRole('main')
+  await main.getByRole('button', { name: 'Add cycle' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
+  await expect(main.getByText('Watering', { exact: true })).toBeVisible()
+  const toggle = main.getByRole('switch', { name: 'Enable Watering' })
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await main.getByRole('button', { name: 'Edit Watering' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  await expect(main.getByText('No pump cycles')).toBeVisible()
+})
+
+test('old /schedule links land on Light, where the curves are', async ({ page }) => {
   await page.goto('/schedule')
-  await page.getByRole('button', { name: 'Pump cycle' }).click()
-  await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByText('Watering')).toBeVisible()
-  await page.getByRole('button', { name: 'Delete' }).first().click()
-  await expect(page.getByText('No pump cycles')).toBeVisible()
+  await expect(page).toHaveURL(/\/light$/)
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Curves' })).toBeVisible()
 })
 
 test('grow: start a cycle and edit a pod', async ({ page }) => {
