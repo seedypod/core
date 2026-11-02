@@ -2,6 +2,7 @@
 
 ## 2026-11-01
 
+- **Update**: [ADR 0017](adr/0017-ios-client.md): core now advertises `_seedypod._tcp` over Bonjour; [Installation](INSTALLATION.md) covers the TXT keys and `SEEDYPOD_MDNS=0`.
 - **Creation**: [ADR 0023](adr/0023-homekit.md), HomeKit: the accessory mapping, the per-unit identity (porting sleepypod ADR 0020), the ciao advertiser and HomeKit in backups. [Maintenance](MAINTENANCE.md) and [Privacy](PRIVACY.md) cover the backup and the local-only pairing.
 
 ## 2026-10-31

@@ -99,6 +99,12 @@ and points core at it; elsewhere, core starts on the simulator until you set
 `/etc/systemd/system/seedypod-core.service` ([Which Pi](#which-pi)). Core
 listens on `:3000`. Open `http://seedypod.local:3000/`.
 
+Core also advertises itself over Bonjour as `_seedypod._tcp` on that port,
+so the iOS app finds it without an address. The TXT record carries `id`
+(the unit id), `v` (core's version) and `auth` (`1` when an API key is set
+in Settings, else `0`). To turn it off, set `SEEDYPOD_MDNS=0` in
+`seedypod-core.service`.
+
 A new install opens on **Welcome**. Choose **Set up a new garden**, or
 **Restore from a backup** if this card replaces one that died
 ([Maintenance → Restoring a backup](MAINTENANCE.md#restoring-a-backup)). From
