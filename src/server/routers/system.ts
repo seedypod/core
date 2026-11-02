@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { SystemInfo } from '../../hardware/contract'
+import { bridgeStatus } from '../../mqtt/bridge'
+import { Check, systemChecks } from '../checks'
 import { publicProcedure, router } from '../trpc'
 
 export const systemRouter = router({
@@ -16,6 +18,14 @@ export const systemRouter = router({
         system: snap.system,
       }
     }),
+  checks: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/system/checks', tags: ['system'], summary: 'One line per part of the unit (daemon, sensors, outputs, cameras, services): ok, idle, stalled or down' } })
+    .output(z.object({ checks: z.array(Check) }))
+    .query(async ({ ctx }) => ({ checks: await systemChecks(ctx) })),
+  bridge: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/system/bridge', tags: ['system'], summary: 'Home Assistant MQTT bridge: off, connected or disconnected, the broker, and the last connect error' } })
+    .output(z.object({ state: z.enum(['off', 'connected', 'disconnected']), broker: z.string().nullable(), since: z.string().nullable(), error: z.string().nullable() }))
+    .query(({ ctx }) => ctx.bridge?.() ?? bridgeStatus(ctx.store.settings.get().mqttUrl, null, null)),
   healthcheck: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/healthcheck', tags: ['system'] } })
     .output(z.object({ ok: z.literal(true), ts: z.string() }))

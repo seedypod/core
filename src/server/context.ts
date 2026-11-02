@@ -11,6 +11,7 @@ import type { FlashMeter } from '../telemetry/flash'
 import type { BackupService } from '../backup/service'
 import type { RestoreClient } from '../backup/restore'
 import type { HomeKitControl } from '../homekit/types'
+import type { BridgeStatus } from '../mqtt/bridge'
 
 export interface Context {
   hal: HalClient
@@ -31,6 +32,8 @@ export interface Context {
   restore?: RestoreClient
   /** The HomeKit bridge (ADR 0023); node hosts only, off until enabled in Settings. */
   homekit?: HomeKitControl
+  /** The Home Assistant MQTT bridge (ADR-0013); node hosts only, where server/index.ts owns it. */
+  bridge?: () => BridgeStatus
   /** Build info pinned at release time (.git-info) or 'dev'. */
   version: string
   /** The machine core runs on (the unit's Pi, or a LAN box when the unit has a Pi Zero W); absent in the browser demo. */
