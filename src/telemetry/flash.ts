@@ -31,6 +31,15 @@ export interface FlashStatus {
   basis: 'history' | 'boot' | null
   windowDays: number | null
   lastSampleAt: string | null
+  /** The filesystem holding DATA_DIR; null where core can't stat it (the browser demo). */
+  usedBytes: number | null
+  freeBytes: number | null
+}
+
+/** Space on the filesystem holding DATA_DIR (`statfs`), from `nodeDiskUsage`. */
+export interface DiskUsage {
+  usedBytes: number
+  freeBytes: number
 }
 
 /** `/sys/block/<dev>/stat`: field 7 is sectors written (Documentation/block/stat.rst). */
@@ -52,6 +61,8 @@ export interface FlashMeterOptions {
   store: Store
   /** Null on machines without an SD card (CI, a laptop, the demo): the meter reports unavailable. */
   source: FlashSource | null
+  /** Used and free space where the data lives; omitted in the browser demo. */
+  disk?: (() => DiskUsage | null) | null
   now?: () => Date
 }
 
@@ -97,8 +108,10 @@ export class FlashMeter {
   status(): FlashStatus {
     const sectors = this.sectors()
     const src = this.o.source
+    const disk = this.o.disk?.() ?? null
+    const space = { usedBytes: disk?.usedBytes ?? null, freeBytes: disk?.freeBytes ?? null }
     if (sectors === null || !src) {
-      return { available: false, device: null, cardBytes: null, sinceBootBytes: null, uptimeS: null, bytesPerDay: null, basis: null, windowDays: null, lastSampleAt: null }
+      return { available: false, device: null, cardBytes: null, sinceBootBytes: null, uptimeS: null, bytesPerDay: null, basis: null, windowDays: null, lastSampleAt: null, ...space }
     }
     const now = this.now()
     const size = Number(src.read(`${parent(src.statPath)}/size`)?.trim())
@@ -131,6 +144,7 @@ export class FlashMeter {
       basis,
       windowDays,
       lastSampleAt: last?.ts ?? null,
+      ...space,
     }
   }
 }

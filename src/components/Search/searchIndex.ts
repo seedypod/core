@@ -42,6 +42,7 @@ const PAGES: Record<string, { description: string, keywords: string }> = {
   '/cameras': { description: 'Stills from both cameras and the timelapse', keywords: 'camera photo picture still timelapse capture' },
   '/analysis': { description: 'Growth per pod from the photos, analysers and dataset export', keywords: 'analysis vision green growth dataset export analyser analyzer' },
   '/alerts': { description: 'Faults and reminders, and acknowledging them', keywords: 'alerts faults warnings reminders acknowledge latch' },
+  '/status': { description: 'Whether each part of the unit is running: daemon, sensors, outputs, cameras and services', keywords: 'status health checks system daemon services uptime ok down stalled bridge mqtt' },
   '/sensors': { description: 'Every sensor, adding probes and calibration', keywords: 'sensors probes ph ec temperature calibrate i2c ezo' },
   '/settings': { description: 'The unit, calibration, integrations and backups', keywords: 'settings preferences configuration options' },
 }

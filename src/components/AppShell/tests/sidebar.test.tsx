@@ -94,7 +94,7 @@ describe('Sidebar', () => {
     data.set('automations.status', { enabled: true })
     data.set('alerts.list', [{ active: true }, { active: true }, { active: false }])
     render(<Sidebar status={online} />)
-    for (const g of ['Garden', 'Control', 'Observe']) expect(screen.getByText(g)).toBeTruthy()
+    for (const g of ['Garden', 'Control', 'Observe', 'System']) expect(screen.getByText(g)).toBeTruthy()
     const grow = screen.getByText('Grow').closest('a') as HTMLElement
     expect(grow.getAttribute('aria-current')).toBe('page')
     expect(within(grow).getByText('Day 19')).toBeTruthy()
@@ -104,11 +104,28 @@ describe('Sidebar', () => {
     expect(within(screen.getByText('Alerts').closest('a') as HTMLElement).getByText('2')).toBeTruthy()
   })
 
+  it('counts the system checks passing on Status, coloured by the worst one', () => {
+    const checks = (states: string[]) => ({ checks: states.map((state, i) => ({ id: `c${i}`, label: '', state, detail: '', since: null })) })
+    data.set('system.checks', checks(['ok', 'idle', 'ok']))
+    const { rerender } = render(<Sidebar status={online} />)
+    const status = screen.getByText('Status').closest('a') as HTMLElement
+    expect(status.getAttribute('href')).toBe('/status')
+    expect(within(status).getByLabelText('3 of 3 checks passing').textContent).toBe('3/3')
+    expect(within(status).getByText('3/3').className).toContain('text-fg-3')
+    data.set('system.checks', checks(['ok', 'stalled', 'ok']))
+    rerender(<Sidebar status={online} />)
+    expect(within(status).getByText('2/3').className).toContain('text-pod-ready')
+    data.set('system.checks', checks(['ok', 'down', 'ok', 'stalled']))
+    rerender(<Sidebar status={online} />)
+    expect(within(status).getByText('2/4').className).toContain('text-pod-attention')
+  })
+
   it('leaves out the cycle, dot and badge when there is none, and names the unit in the footer', () => {
     data.set('automations.status', { enabled: false })
     render(<Sidebar status={{ name: 'Kitchen Gardyn', line: 'core unreachable', online: false }} />)
     expect(screen.queryByText(/^Day /)).toBeNull()
     expect(screen.queryByLabelText('Autopilot on')).toBeNull()
+    expect(screen.queryByLabelText(/checks passing/)).toBeNull()
     expect(screen.getByText('Kitchen Gardyn')).toBeTruthy()
     expect(screen.getByText('core unreachable')).toBeTruthy()
   })

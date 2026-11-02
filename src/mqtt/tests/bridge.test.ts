@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { createEventBus } from '../../lib/eventBus'
 import { MemoryStore } from '../../store/memory'
-import { HaBridge } from '../bridge'
+import { bridgeStatus, HaBridge } from '../bridge'
 import type { MqttLike } from '../../hardware/mqttClient'
 
 class FakeMqtt implements MqttLike {
@@ -80,5 +80,36 @@ describe('HaBridge', () => {
     const { hal, bridge } = setup()
     await bridge.onMessage('seedypod/u1/core/water_now', '120')
     expect(hal.snapshot().actuators.pump).toMatchObject({ on: true, remainingS: 120 })
+  })
+
+  it('tracks the broker link: down on close or offline, back up on connect, since each change', () => {
+    let now = new Date('2026-10-31T00:00:00Z')
+    const mqtt = new FakeMqtt()
+    const bridge = new HaBridge({ mqtt, store: new MemoryStore(), hal: new SimHal({ tickMs: 0 }), events: createEventBus(), unitId: 'u1', now: () => now })
+    expect(bridge.link()).toEqual({ connected: false, since: '2026-10-31T00:00:00.000Z' })
+    now = new Date('2026-10-31T00:01:00Z')
+    mqtt.fire('connect')
+    expect(bridge.link()).toEqual({ connected: true, since: '2026-10-31T00:01:00.000Z' })
+    now = new Date('2026-10-31T00:02:00Z')
+    mqtt.fire('offline')
+    mqtt.fire('close')
+    expect(bridge.link()).toEqual({ connected: false, since: '2026-10-31T00:02:00.000Z' })
+  })
+})
+
+describe('bridgeStatus', () => {
+  it('is off without a broker URL', () => {
+    expect(bridgeStatus(null, null, 'stale error')).toEqual({ state: 'off', broker: null, since: null, error: null })
+  })
+
+  it('names the broker without credentials, and carries the connect error while down', () => {
+    expect(bridgeStatus('mqtt://ha:secret@192.168.1.5:1883', null, 'ECONNREFUSED')).toEqual({ state: 'disconnected', broker: '192.168.1.5:1883', since: null, error: 'ECONNREFUSED' })
+    expect(bridgeStatus('not a url', null, null)).toMatchObject({ broker: 'not a url' })
+  })
+
+  it('follows the running bridge', () => {
+    const { mqtt, bridge } = setup()
+    mqtt.fire('connect')
+    expect(bridgeStatus('mqtt://broker.local', bridge, 'old')).toEqual({ state: 'connected', broker: 'broker.local', since: '2026-10-31T00:00:00.000Z', error: null })
   })
 })

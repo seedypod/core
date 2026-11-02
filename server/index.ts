@@ -13,11 +13,11 @@ import { seedIfFresh } from '../src/demo/seed'
 import { createHal } from '../src/hardware/factory'
 import { HomeKitService } from '../src/homekit/service'
 import { createEventBus } from '../src/lib/eventBus'
-import { connectBridge } from '../src/mqtt/bridge'
+import { bridgeStatus, connectBridge, type HaBridge } from '../src/mqtt/bridge'
 import { NmcliWifi } from '../src/network/wifi'
 import { createCore } from '../src/server/bootstrap'
 import { defaultMigrationsFolder, SqliteStore } from '../src/store/sqlite'
-import { nodeFlashSource } from '../src/telemetry/flashSource'
+import { nodeDiskUsage, nodeFlashSource } from '../src/telemetry/flashSource'
 import { createWorkerExecutor } from '../src/vision/workerExecutor'
 import { createApp } from './app'
 import { readVersion } from './version'
@@ -53,17 +53,29 @@ const backup = new BackupService({
 const restore = new RestoreClient({ command: restoreCommand(), workDir: process.env.SEEDYPOD_RESTORE_WORK || '/var/lib/seedypod-restore', uploadDir: DATA_DIR })
 // HomeKit (ADR 0023): off until turned on in Settings; hap-nodejs loads only then. Its files sit next to the database so backups carry them.
 const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA_DIR, 'homekit') })
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), host: { hostname: hostname(), arch: arch() } })
-
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
-let bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {
+// System › Status reads its state, and the last connect error, through the context.
+let bridge: HaBridge | null = null
+let bridgeError: string | null = null
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, bridge, bridgeError), host: { hostname: hostname(), arch: arch() } })
+
+const bridgeUp = (b: HaBridge | null) => {
+  bridge = b
+  bridgeError = null
+}
+bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {
   console.warn(`HA bridge not started: ${e.message}`)
+  bridgeError = e.message
   return null
 })
 events.subscribe((e) => {
   if (e.kind === 'mutation' && e.path === 'settings') {
     bridge?.stop()
-    void connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? 'sim' }).then(b => (bridge = b)).catch((err: Error) => console.warn(`HA bridge: ${err.message}`))
+    bridge = null
+    void connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? 'sim' }).then(bridgeUp).catch((err: Error) => {
+      console.warn(`HA bridge: ${err.message}`)
+      bridgeError = err.message
+    })
   }
 })
 

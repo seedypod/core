@@ -14,10 +14,11 @@ import { GrowEngine } from '../grow/grow'
 import type { HalClient } from '../hardware/types'
 import type { HomeKitControl } from '../homekit/types'
 import { createEventBus, type EventBus } from '../lib/eventBus'
+import type { BridgeStatus } from '../mqtt/bridge'
 import { SimWifi, type Wifi } from '../network/wifi'
 import { Scheduler } from '../scheduler/scheduler'
 import type { Store } from '../store/types'
-import { FlashMeter, type FlashSource } from '../telemetry/flash'
+import { FlashMeter, type DiskUsage, type FlashSource } from '../telemetry/flash'
 import { Recorder } from '../telemetry/recorder'
 import type { Executor } from '../vision/execute'
 import { AnalysisService } from '../vision/service'
@@ -45,6 +46,10 @@ export interface CoreOptions {
   restore?: RestoreClient
   /** The SD card's write counter (ADR-0021); omitted off a Pi. */
   flashSource?: FlashSource | null
+  /** Used and free space where DATA_DIR lives; node hosts only. */
+  disk?: () => DiskUsage | null
+  /** The Home Assistant bridge's state; node hosts only. */
+  bridge?: () => BridgeStatus
   host?: Context['host']
   /** HomeKit (ADR 0023); node hosts only. Attached to the context here, unpublished on stop. */
   homekit?: HomeKitControl & { attach(ctx: Context): void, shutdown(): Promise<void> }
@@ -76,8 +81,8 @@ export function createCore(o: CoreOptions): Core {
   // The light's single owner: manual > Autopilot > schedule (ADR-0020).
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, log: m => console.warn(m) })
-  const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, flash, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now })

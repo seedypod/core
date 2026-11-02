@@ -22,12 +22,14 @@ const Flash = z.object({
   basis: z.enum(['history', 'boot']).nullable(),
   windowDays: z.number().nullable(),
   lastSampleAt: z.string().nullable(),
+  usedBytes: z.number().nullable(),
+  freeBytes: z.number().nullable(),
 })
 
 /** The SD card's write meter (ADR-0021) and the opt-in off-device mirror (ADR-0019), configured in settings and driven from here. */
 export const storageRouter = router({
   flash: publicProcedure
-    .meta({ openapi: { method: 'GET', path: '/storage/flash', tags: ['storage'], summary: 'SD card writes: bytes per day (7-day average, or since boot until a day of samples exists), written since boot, card size' } })
+    .meta({ openapi: { method: 'GET', path: '/storage/flash', tags: ['storage'], summary: 'SD card writes: bytes per day (7-day average, or since boot until a day of samples exists), written since boot, card size, and used/free space where the data lives' } })
     .output(Flash)
     .query(({ ctx }) => ctx.flash.status()),
   mirror: publicProcedure

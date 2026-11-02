@@ -7,6 +7,7 @@ import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
 import { ageDays, podShown } from '@/src/components/Grow/towerLayout'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
+import { checkSummary, STATE_TEXT, worstState } from '@/src/components/System/checkState'
 import { trpc } from '@/src/utils/trpc'
 import { NAV_GROUPS, navItems, type NavItem } from './navItems'
 
@@ -128,14 +129,18 @@ export function Sidebar({ status }: { status: { name: string, line: string, onli
   const grow = trpc.grow.current.useQuery()
   const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
   const autopilot = trpc.automations.status.useQuery(undefined, { refetchInterval: 60_000 })
+  const checks = trpc.system.checks.useQuery(undefined, { refetchInterval: 60_000 })
   const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname.startsWith(to))
   const cycle = grow.data?.cycle
   const stage = cycle ? STAGES.indexOf(cycle.stage as typeof STAGES[number]) : -1
   const alertCount = (alerts.data ?? []).filter(a => a.active).length
+  const passing = checkSummary(checks.data?.checks ?? [])
+  const worst = worstState(checks.data?.checks ?? [])
 
   const metaFor = (to: string): ReactNode => {
     if (to === '/grow' && cycle) return <span className="font-mono text-[11px] text-fg-3">{`Day ${grow.data?.day}`}</span>
     if (to === '/autopilot' && autopilot.data?.enabled) return <span aria-label="Autopilot on" className="size-1.5 rounded-full bg-pod-ok" />
+    if (to === '/status' && passing) return <span aria-label={`${passing.passing} of ${passing.total} checks passing`} className={cn('font-mono text-[11px]', worst === 'down' || worst === 'stalled' ? STATE_TEXT[worst] : 'text-fg-3')}>{`${passing.passing}/${passing.total}`}</span>
     if (to === '/alerts' && alertCount > 0) return <span className="rounded-full bg-pod-attention px-[7px] py-px font-mono text-[11px] font-medium text-inverse">{alertCount}</span>
     return null
   }
@@ -166,7 +171,7 @@ export function Sidebar({ status }: { status: { name: string, line: string, onli
         ))}
       </nav>
       <div className="mt-auto flex flex-col gap-0.5 pt-2">
-        {navItems.filter(i => i.group === 'system').map(item => (
+        {navItems.filter(i => i.group === 'foot').map(item => (
           <NavLink key={item.to} item={item} active={isActive(item.to)} meta={metaFor(item.to)} />
         ))}
         <div className="mt-1.5 flex items-center gap-2.5 border-t border-line px-2.5 pb-0.5 pt-2.5">
