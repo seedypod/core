@@ -14,6 +14,7 @@ import { createHal } from '../src/hardware/factory'
 import { HomeKitService } from '../src/homekit/service'
 import { createEventBus } from '../src/lib/eventBus'
 import { bridgeStatus, connectBridge, type HaBridge } from '../src/mqtt/bridge'
+import { CoreAdvertiser } from '../src/network/mdns'
 import { NmcliWifi } from '../src/network/wifi'
 import { createCore } from '../src/server/bootstrap'
 import { defaultMigrationsFolder, SqliteStore } from '../src/store/sqlite'
@@ -86,11 +87,14 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) =>
 })
 injectWebSocket(server)
 void homekit.startIfEnabled()
+// Bonjour `_seedypod._tcp` for the iOS app (ADR-0017); SEEDYPOD_MDNS=0 turns it off.
+const mdns = new CoreAdvertiser({ store, hal, events, version, port: PORT, host: HOST, hostname: hostname() })
+void mdns.start()
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     bridge?.stop()
-    void core.stop().then(() => vision?.close()).finally(() => {
+    void mdns.stop().then(() => core.stop()).then(() => vision?.close()).finally(() => {
       server.close()
       process.exit(0)
     })
