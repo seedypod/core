@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AnalysisPage } from '../AnalysisPage'
+import { AnalysisPage, gapSummary } from '../AnalysisPage'
 
 const { data, calls, invalidate, demo } = vi.hoisted(() => ({
   demo: { on: false },
@@ -33,6 +33,7 @@ vi.mock('@/src/utils/trpc', () => {
       useUtils: () => ({ vision: { invalidate } }),
       vision: { analyzers: query('analyzers'), status: query('status'), compare: query('compare'), capture: query('capture'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun') },
       camera: { list: query('frames') },
+      grow: { pods: query('pods') },
       datasets: { summary: query('summary') },
     },
   }
@@ -57,27 +58,31 @@ beforeEach(() => {
     { analyzer: 'exg-otsu', version: 1, source: 'device', points: [{ ts: '2026-01-02T00:00:00Z', value: 0.52, captureId: 'b' }] },
   ])
   data.set('frames', [{ id: 'upper-1', camera: 'upper', ts: '2026-01-02T00:00:00Z', path: 'x.jpg', bytes: 1, url: '/api/captures/upper-1.jpg' }])
-  data.set('capture', [row('green-threshold', 1, 0.4), row('exg-otsu', 1, 0.45), row('green-threshold', 2, 0.1), { ...row('exg-otsu', 2, 3), metric: 'leaf_count' }])
+  data.set('capture', [row('exg-otsu', 1, 0.45), row('green-threshold', 1, 0.4), row('green-threshold', 2, 0.1), { ...row('exg-otsu', 2, 3), metric: 'leaf_count' }])
+  data.set('pods', [{ slot: 1, plant: 'Swiss Chard' }])
 })
+
+const openExport = () => fireEvent.click(screen.getByText('Export dataset'))
 afterEach(cleanup)
 
 describe('AnalysisPage', () => {
   it('lists analysers with their source, primary flag and totals', () => {
     render(<AnalysisPage />)
     expect(screen.getByText('Fixed green threshold')).toBeTruthy()
-    expect(screen.getAllByText('Primary')).toHaveLength(1)
-    expect(screen.getAllByText('On device')).toHaveLength(2)
-    expect(screen.getByText('Remote')).toBeTruthy()
+    expect(screen.getAllByText('PRIMARY')).toHaveLength(1)
+    expect(screen.getByText('green-threshold@1 · on device')).toBeTruthy()
+    expect(screen.getByText('leaf-unet@2 · remote')).toBeTruthy()
+    expect(screen.getAllByText('2 captures · 30 results')).toHaveLength(2)
     expect(screen.getByText('No results yet')).toBeTruthy()
     // Re-run is offered only for analysers that run here.
-    expect(screen.getAllByText('Re-run on stored photos')).toHaveLength(2)
+    expect(screen.getAllByText('Re-run')).toHaveLength(2)
   })
 
   it('makes an analyser primary and starts a re-run', () => {
     render(<AnalysisPage />)
     fireEvent.click(screen.getAllByText('Make primary')[0] as HTMLElement)
     expect(calls.setPrimary).toHaveBeenCalledWith({ analyzer: 'exg-otsu' })
-    fireEvent.click(screen.getAllByText('Re-run on stored photos')[1] as HTMLElement)
+    fireEvent.click(screen.getAllByText('Re-run')[1] as HTMLElement)
     expect(calls.rerun).toHaveBeenCalledWith({ analyzer: 'exg-otsu', limit: 2000 })
     expect(invalidate).toHaveBeenCalled()
   })
@@ -90,14 +95,27 @@ describe('AnalysisPage', () => {
     expect(calls.compare).toHaveBeenLastCalledWith({ slot: 7, metric: 'green_fraction', limit: 200 })
   })
 
-  it('shows the latest photo with every analyser\'s green fraction per pod', () => {
+  it('shows every analyser\'s green fraction per pod on the latest photo, in listing order', () => {
     render(<AnalysisPage />)
     const table = screen.getByRole('table')
-    expect(table.textContent).toContain('green-threshold@1')
-    expect(table.textContent).toContain('exg-otsu@1')
+    const heads = [...table.querySelectorAll('th')].map(th => th.textContent)
+    expect(heads).toEqual(['POD', 'PLANT', 'LEAF COVER', 'THRESHOLD', 'OTSU'])
     expect(table.querySelectorAll('tbody tr')).toHaveLength(2)
+    expect(table.textContent).toContain('Swiss Chard')
     expect(table.textContent).toContain('—')
     expect(table.textContent).not.toContain('300%')
+    expect(screen.getByText('Excess green + Otsu reads 5 points higher than Fixed green threshold on every pod.')).toBeTruthy()
+    expect(screen.getByAltText('upper camera at 2026-01-02T00:00:00Z')).toBeTruthy()
+  })
+
+  it('lists ten pods until asked for all of them', () => {
+    data.set('capture', Array.from({ length: 15 }, (_, i) => row('green-threshold', i + 1, 0.3)))
+    render(<AnalysisPage />)
+    expect(screen.getByRole('table').querySelectorAll('tbody tr')).toHaveLength(10)
+    fireEvent.click(screen.getByText('Show all 15 pods'))
+    expect(screen.getByRole('table').querySelectorAll('tbody tr')).toHaveLength(15)
+    fireEvent.click(screen.getByText('Show fewer'))
+    expect(screen.getByRole('table').querySelectorAll('tbody tr')).toHaveLength(10)
   })
 
   it('reports progress, failures and empty states', () => {
@@ -120,6 +138,8 @@ describe('AnalysisPage', () => {
   it('offers a dataset download for the chosen window, with or without photos', () => {
     data.set('summary', { from: '', to: '', images: true, captures: 12, analyses: 360, telemetry: 900, imageBytes: 2_400_000 })
     render(<AnalysisPage />)
+    expect(screen.queryByText('Download')).toBeNull()
+    openExport()
     expect(screen.getByText('12 photos · 360 results · 900 readings · about 2.4 MB')).toBeTruthy()
     const link = screen.getByText('Download').closest('a') as HTMLAnchorElement
     const q = new URL(link.href, 'http://unit').searchParams
@@ -136,7 +156,24 @@ describe('AnalysisPage', () => {
   it('explains that the demo cannot download', () => {
     demo.on = true
     render(<AnalysisPage />)
+    openExport()
     expect(screen.getByText(/Downloads need a real unit/)).toBeTruthy()
     expect(screen.queryByText('Download')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Close'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('gapSummary', () => {
+  const labels = { 'a@1': 'A', 'b@1': 'B' }
+  const r = (analyzer: string, slot: number, value: number) => row(analyzer, slot, value) as Parameters<typeof gapSummary>[0][number]
+  it('says which way and by how much the second analyser reads', () => {
+    expect(gapSummary([r('a', 1, 0.5), r('b', 1, 0.53), r('a', 2, 0.4), r('b', 2, 0.46)], ['a@1', 'b@1'], labels)).toBe('B reads 3–6 points higher than A on every pod.')
+    expect(gapSummary([r('a', 1, 0.5), r('b', 1, 0.4)], ['a@1', 'b@1'], labels)).toBe('B reads 10 points lower than A on every pod.')
+    expect(gapSummary([r('a', 1, 0.5), r('b', 1, 0.4), r('a', 2, 0.1), r('b', 2, 0.3)], ['a@1', 'b@1'], labels)).toBe('B and A differ by up to 20 points.')
+  })
+  it('stays quiet with one analyser or no shared pods', () => {
+    expect(gapSummary([r('a', 1, 0.5)], ['a@1'], labels)).toBeNull()
+    expect(gapSummary([r('a', 1, 0.5), r('b', 2, 0.4)], ['a@1', 'b@1'], {})).toBeNull()
   })
 })
