@@ -5,8 +5,9 @@ import type { PodHarvest, PodState, TowerPart, TowerTarget } from './towerScene'
 import { TowerWireframe } from './TowerWireframe'
 import { PlantThumb, podForm } from './PlantThumb'
 import { heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, STATUS_LABEL, STATUS_TOKEN } from './towerLayout'
+import { MODEL_NAME, podLight, towerModel, ZONE_COLOR, ZONE_LABEL, ZONE_WHERE, ZONES, type PodLight } from './lightZones'
 import { cn } from '@/lib/utils'
-import { Scissors, TriangleAlert, X } from 'lucide-react'
+import { Scissors, Sun, TriangleAlert, X } from 'lucide-react'
 
 /**
  * Whether the browser has WebGL at all. A real probe would create a throwaway
@@ -28,6 +29,16 @@ const LABEL_W = 280
 const ASIDE_W = 300
 const ASIDE_RESERVE = ASIDE_W + 24
 const ASIDE_MIN = 900
+
+const ZONES_KEY = 'seedypod.lightZones'
+function savedZones(): boolean {
+  try {
+    return localStorage.getItem(ZONES_KEY) === 'on'
+  }
+  catch {
+    return false
+  }
+}
 
 const isFlagged = (p: PodState) => ['attention', 'ready'].includes(podShown(p))
 /** Where a flag sits beside its pod's collar; a picked flagged pod's callout starts here. */
@@ -89,7 +100,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`
  * the state carries the colour. It sits outward from the tower, on whichever
  * side has room, clear of the `reserve` pixels a panel covers.
  */
-export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned = true, onClose, action, now }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, pinned?: boolean, onClose?: () => void, action?: ReactNode, now?: Date }) {
+export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned = true, onClose, action, now, light }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, pinned?: boolean, onClose?: () => void, action?: ReactNode, now?: Date, light?: PodLight | null }) {
   const shown = podShown(pod)
   const color = SHOWN_TOKEN[shown]
   const flagged = isFlagged(pod)
@@ -112,7 +123,7 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
   // A pod still growing says when it's due; any other, how long it has been as it is.
   const due = (shown === 'growing' || shown === 'soon') && typeof h?.daysToReady === 'number' && h.daysToReady > 0 ? `harvest in ~${Math.max(1, Math.round(h.daysToReady))} d` : null
   const timing = due ?? (shown === 'empty' ? null : heldFor(pod.statusSince, now))
-  const details = pinned && (timeline || sentence || action)
+  const details = pinned && (timeline || sentence || action || light?.advice)
   return (
     <>
       <svg className="pointer-events-none absolute inset-0 z-[5] size-full" aria-hidden="true">
@@ -151,10 +162,17 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
           </span>
           {timing && <span className="font-mono text-[11px] text-fg-3">{`· ${timing}`}</span>}
         </div>
+        {light && (
+          <div data-testid="callout-zone" className="flex items-center gap-2 text-xs text-fg-2">
+            <span className="size-[7px] rounded-full" style={{ background: ZONE_COLOR[light.zone] }} />
+            {ZONE_LABEL[light.zone]}
+          </div>
+        )}
         {details && (
           <div className="flex flex-col gap-3 border-t border-line pt-3">
             {timeline && age !== null && <HarvestTimeline window={timeline} age={age} />}
             {sentence && <p className="text-[13px] leading-normal text-pretty text-fg-2">{sentence}</p>}
+            {light?.advice && <p className="text-[13px] leading-normal text-pretty text-fg-2">{light.advice}</p>}
             {action && <div className="flex gap-2">{action}</div>}
           </div>
         )}
@@ -173,7 +191,9 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
  * `controls` sits along the top left, `status` along the top right; the legend
  * (unless `legend` is false) and the hint along the bottom.
  * `aside` is a panel down the right on a wide view, with the tower moved over
- * to centre in the rest. Calls `onUnavailable` without WebGL.
+ * to centre in the rest. The light-zone toggle by the legend colours the pods
+ * by how much light they get, for placing plants. Calls `onUnavailable`
+ * without WebGL.
  */
 export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onClose, onPart, partLabels, controls, status, podAction, aside, legend = true, onUnavailable }: {
   pods: PodState[]
@@ -210,6 +230,17 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   const podCount = pods.length || 30
   const [preloaded] = useState(() => (hasWebGL() ? loadRenderer().catch(() => null) : null))
   const hovered = hover?.kind === 'pod' ? hover.slot : null
+  const [zones, setZones] = useState(savedZones)
+  const toggleZones = () => {
+    setZones(!zones)
+    try {
+      localStorage.setItem(ZONES_KEY, zones ? 'off' : 'on')
+    }
+    catch {
+      // private window: the choice lasts for this visit
+    }
+  }
+  const model = towerModel(podCount)
 
   useEffect(() => {
     if (!hasWebGL()) {
@@ -256,8 +287,8 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
 
   useEffect(() => {
     pinned.current = pods.filter(p => p.slot === selected || p.slot === hovered || isFlagged(p)).map(p => p.slot)
-    mount.current?.update({ pods, waterPct, lightLevel, pumpOn, hovered, selected })
-  }, [pods, waterPct, lightLevel, pumpOn, hovered, selected, ready])
+    mount.current?.update({ pods, waterPct, lightLevel, pumpOn, hovered, selected, zones })
+  }, [pods, waterPct, lightLevel, pumpOn, hovered, selected, zones, ready])
 
   // The picked pod has its callout, so hovering it adds nothing.
   // Hovering a pod previews its callout, in place of the picked one's until the pointer moves off.
@@ -274,7 +305,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         const at = anchors.at.get(p.slot)
         return at && <PodFlag key={p.slot} pod={p} at={at} picked={p.slot === selected} onSelect={onSelect} />
       })}
-      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} pinned={shownPod.slot === selected} onClose={onClose} action={shownPod.slot === selected ? podAction : undefined} />}
+      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} pinned={shownPod.slot === selected} onClose={onClose} action={shownPod.slot === selected ? podAction : undefined} light={zones ? podLight(pods, shownPod.slot) : null} />}
       {aside != null && <div className="absolute bottom-10 right-3 top-16 z-10 hidden flex-col @min-[900px]:flex" style={{ width: ASIDE_W }}>{aside}</div>}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
         {status && <div className="pointer-events-auto flex flex-wrap items-start justify-end gap-2">{status}</div>}
@@ -286,13 +317,33 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         )}
       </div>
       <div className="pointer-events-none absolute inset-x-[22px] bottom-4 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-2">
-        {legend && LEGEND.map(l => (
+        <button
+          type="button"
+          aria-pressed={zones}
+          onClick={toggleZones}
+          className={cn('pointer-events-auto flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]', zones ? 'border-fg-2 bg-active text-fg' : 'border-line-2 bg-surface/80 text-fg-2 hover:text-fg')}
+        >
+          <Sun size={12} aria-hidden="true" />
+          Light zones
+        </button>
+        {zones && (
+          <span data-testid="zone-legend" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-fg-3">{MODEL_NAME[model]}</span>
+            {ZONES.map(z => (
+              <span key={z} className="flex items-center gap-1.5" title={ZONE_WHERE[model][z]}>
+                <span className="size-2.5 rounded-full" style={{ background: ZONE_COLOR[z] }} />
+                {`${ZONE_LABEL[z]} · ${ZONE_WHERE[model][z]}`}
+              </span>
+            ))}
+          </span>
+        )}
+        {!zones && legend && LEGEND.map(l => (
           <span key={l.status} className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-full" style={{ background: l.token }} />
             {STATUS_LABEL[l.status]}
           </span>
         ))}
-        <span className={cn('font-mono text-fg-3 max-[600px]:hidden', legend && 'ml-auto')}>Click a pod · drag to turn · ⌘-scroll to zoom</span>
+        <span className="ml-auto font-mono text-fg-3 max-[600px]:hidden">Click a pod · drag to turn · ⌘-scroll to zoom</span>
       </div>
     </div>
   )

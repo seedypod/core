@@ -64,3 +64,15 @@ test('home: hovering a pod previews its callout, a click pins it, and its close 
   await callout.getByRole('button', { name: 'Close pod 5' }).click()
   await expect(callout).toBeHidden()
 })
+
+test('home: the light-zone toggle colours the pods by zone and names the model', async ({ page }, info) => {
+  await page.goto('/')
+  const tower = page.getByTestId('tower-3d')
+  await expect(tower).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
+  await tower.getByRole('button', { name: 'Light zones' }).click()
+  await expect(tower.getByTestId('zone-legend')).toContainText('Gardyn Home')
+  await expect(tower.getByTestId('zone-legend')).toContainText('Low light · Top and bottom rows across the columns')
+  await tower.screenshot({ path: info.outputPath('light-zones.png') })
+  await page.reload()
+  await expect(tower.getByRole('button', { name: 'Light zones' })).toHaveAttribute('aria-pressed', 'true')
+})

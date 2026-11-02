@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { ageDays, plantForm, plantScale, podPlaces, towerShape } from '../towerLayout'
 import { createTower, DARK_PALETTE, LIGHT_PALETTE, type PodState } from '../towerScene'
+import { ZONE_COLOR } from '../lightZones'
 
 describe('tower layout', () => {
   it('puts a Home\'s 30 pods on three columns of 10, numbered across then down', () => {
@@ -18,9 +19,10 @@ describe('tower layout', () => {
     expect(towerShape(16)).toMatchObject({ columns: 2, rows: 8 })
   })
 
-  it('alternates pods either side of each column', () => {
+  it('alternates pods either side of each column, every column starting on the right as Gardyn draws them', () => {
     const [a, b] = podPlaces(30).filter(p => p.column === 0)
     expect(a?.side).toBe(-(b?.side ?? 0))
+    expect(podPlaces(30).filter(p => p.row === 0).map(p => p.side)).toEqual([1, 1, 1])
   })
 
   it('sizes a plant by its green area, then by age, then by status', () => {
@@ -98,6 +100,19 @@ describe('tower scene', () => {
     tower.update(state)
     tower.update({ ...state, selected: 12 })
     expect(collarColor(tower, 12)).toBe(DARK_PALETTE.highlight)
+    tower.dispose()
+  })
+
+  it('colours collars by light zone when asked, keeping the highlight on the picked pod', () => {
+    const tower = createTower(THREE, 30)
+    tower.update({ ...state, zones: true })
+    expect(collarColor(tower, 1)).toBe(ZONE_COLOR.low)
+    expect(collarColor(tower, 4)).toBe(ZONE_COLOR.medium)
+    expect(collarColor(tower, 14)).toBe(ZONE_COLOR.high)
+    tower.update({ ...state, zones: true, selected: 14 })
+    expect(collarColor(tower, 14)).toBe(DARK_PALETTE.highlight)
+    tower.update(state)
+    expect(collarColor(tower, 1)).toBe(DARK_PALETTE.status.harvest)
     tower.dispose()
   })
 
