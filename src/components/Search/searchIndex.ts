@@ -51,8 +51,8 @@ const SETTINGS: ReadonlyArray<Omit<SearchEntry, 'crumbs' | 'href'> & { anchor: s
   { id: 'storage', anchor: 'storage', title: 'Storage', description: 'How much the unit writes to its SD card each day', keywords: 'sd card flash writes wear storage disk endurance', icon: HardDrive },
   { id: 'backup', anchor: 'backup', title: 'Backup', description: 'Download a backup, nightly backups to the bucket, restore and undo', keywords: 'backup restore download nightly bucket undo archive recovery card', icon: Archive },
   { id: 'ha', anchor: 'home-assistant', title: 'Home Assistant bridge', description: 'MQTT broker for grow events and services', keywords: 'home assistant hass mqtt broker tls integration', icon: Radio },
-  { id: 'api', anchor: 'api', title: 'API key', description: 'A key for REST and MCP clients off the unit', keywords: 'api key token rest mcp auth authentication security', icon: KeyRound },
-  { id: 'mirror', anchor: 'off-device', title: 'Off-device storage', description: 'Copy photos to an S3 bucket, and accept results from other machines', keywords: 'mirror s3 r2 minio bucket off-device cloud ingest token', icon: CloudUpload },
+  { id: 'api', anchor: 'api', title: 'API access', description: 'A key for REST and MCP clients off the unit, and the token for results from other machines', keywords: 'api key token rest mcp auth authentication security ingest results remote worker', icon: KeyRound },
+  { id: 'mirror', anchor: 'off-device', title: 'Off-device storage', description: 'Copy photos to an S3 bucket', keywords: 'mirror s3 r2 minio bucket off-device cloud', icon: CloudUpload },
   { id: 'about', anchor: 'about', title: 'About', description: 'Core and hardware daemon versions, unit id', keywords: 'version core hald daemon unit id about', icon: Info },
 ]
 
