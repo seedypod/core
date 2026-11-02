@@ -50,6 +50,16 @@ describe('Sidebar', () => {
     expect(screen.getAllByText('—')).toHaveLength(2)
   })
 
+  it('adds a water line for installed water-quality probes only', () => {
+    data.set('sensors.latest', { ph: { value: 6.1, unit: 'pH' }, ec: { value: 1.4, unit: 'mS/cm' } })
+    data.set('system.info', { system: { caps: { sensors: ['air_temp', 'ph', 'ec'] } } })
+    const { rerender } = render(<Sidebar status={online} />)
+    expect(screen.getByText('pH 6.1 · EC 1.4 mS/cm').closest('a')?.getAttribute('href')).toBe('/sensors')
+    data.set('system.info', { system: { caps: { sensors: ['air_temp'] } } })
+    rerender(<Sidebar status={online} />)
+    expect(screen.queryByText(/^pH /)).toBeNull()
+  })
+
   it('lists each pod needing attention, then those ready to harvest as one line', () => {
     data.set('grow.pods', [pod(9, 'attention', 'Red Russian Kale', 'Yellowing lower leaves'), pod(1, 'harvest', 'Swiss Chard'), pod(2, 'growing', 'Arugula'), pod(3, 'growing', 'Dill'), pod(4, 'harvest', null), pod(5, 'growing', 'Mint')])
     data.set('grow.harvest', [{ slot: 2, state: 'ready' }, { slot: 3, state: 'ready' }])

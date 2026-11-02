@@ -1,11 +1,13 @@
 /**
  * What ⌘K searches (after sleepypod's searchIndex): every page, the Settings
- * cards, and the unit's own pods and Autopilot rules, ranked with BM25.
+ * cards, the unit's own pods and Autopilot rules, and the docs site's
+ * guides, ranked with BM25.
  */
 import type { LucideIcon } from 'lucide-react'
-import { Archive, CloudUpload, Code, HardDrive, Info, KeyRound, Monitor, Radio, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
+import { Archive, BookOpen, CloudUpload, Code, HardDrive, Info, KeyRound, Monitor, Radio, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
 import { navItems } from '@/src/components/AppShell/navItems'
 import { createBm25Index, tokenize } from '@/src/lib/bm25'
+import { DOCS_BASE, type DocsIndex } from './docsIndex'
 
 export interface SearchEntry {
   id: string
@@ -15,8 +17,10 @@ export interface SearchEntry {
   description: string
   /** Space-separated synonyms. Searched, never shown. */
   keywords: string
-  /** In-app path, with any query or hash. */
+  /** In-app path, with any query or hash, or an absolute URL when `external`. */
   href: string
+  /** Opens `href` in a new tab instead of navigating the app. */
+  external?: boolean
   icon: LucideIcon
   /** Static rank multiplier. */
   boost?: number
@@ -51,8 +55,8 @@ const SETTINGS: ReadonlyArray<Omit<SearchEntry, 'crumbs' | 'href'> & { anchor: s
   { id: 'storage', anchor: 'storage', title: 'Storage', description: 'How much the unit writes to its SD card each day', keywords: 'sd card flash writes wear storage disk endurance', icon: HardDrive },
   { id: 'backup', anchor: 'backup', title: 'Backup', description: 'Download a backup, nightly backups to the bucket, restore and undo', keywords: 'backup restore download nightly bucket undo archive recovery card', icon: Archive },
   { id: 'ha', anchor: 'home-assistant', title: 'Home Assistant bridge', description: 'MQTT broker for grow events and services', keywords: 'home assistant hass mqtt broker tls integration', icon: Radio },
-  { id: 'api', anchor: 'api', title: 'API key', description: 'A key for REST and MCP clients off the unit', keywords: 'api key token rest mcp auth authentication security', icon: KeyRound },
-  { id: 'mirror', anchor: 'off-device', title: 'Off-device storage', description: 'Copy photos to an S3 bucket, and accept results from other machines', keywords: 'mirror s3 r2 minio bucket off-device cloud ingest token', icon: CloudUpload },
+  { id: 'api', anchor: 'api', title: 'API access', description: 'A key for REST and MCP clients off the unit, and the token for results from other machines', keywords: 'api key token rest mcp auth authentication security ingest results remote worker', icon: KeyRound },
+  { id: 'mirror', anchor: 'off-device', title: 'Off-device storage', description: 'Copy photos to an S3 bucket', keywords: 'mirror s3 r2 minio bucket off-device cloud', icon: CloudUpload },
   { id: 'about', anchor: 'about', title: 'About', description: 'Core and hardware daemon versions, unit id', keywords: 'version core hald daemon unit id about', icon: Info },
 ]
 
@@ -98,6 +102,27 @@ export function buildSearchEntries(live: LiveData = {}): SearchEntry[] {
     icon: Wand2,
   }))
   return [...pages, ...sub, ...settings, ...pods, ...rules]
+}
+
+/** Below Kiosk and REST API: an app page or setting wins an equal match against its docs page. */
+const DOCS_BOOST = 0.6
+
+/**
+ * One entry per docs page. Headings feed the keywords rather than becoming
+ * entries of their own, so they can't bury the app's pages and settings.
+ */
+export function buildDocsEntries(index: DocsIndex): SearchEntry[] {
+  return index.pages.map(page => ({
+    id: `docs:${page.path}`,
+    title: page.title,
+    crumbs: page.section ? ['Docs', page.section] : ['Docs'],
+    description: page.description,
+    keywords: [...page.headings.map(h => h.title), page.keywords].join(' '),
+    href: new URL(page.path, DOCS_BASE).href,
+    external: true,
+    icon: BookOpen,
+    boost: DOCS_BOOST,
+  }))
 }
 
 /** A search function over the entries; the empty query returns nothing. */

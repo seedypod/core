@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Modal } from '@/src/components/ds/feedback'
 import { SidebarSearch } from '../CommandPalette'
+import { DOCS_BASE, DOCS_INDEX_URL, resetLiveDocsIndex } from '../docsIndex'
 
 const { navigate, data } = vi.hoisted(() => ({ navigate: vi.fn(), data: new Map<string, unknown>() }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
@@ -16,14 +17,25 @@ vi.mock('@/src/utils/trpc', () => ({
 const input = () => screen.getByRole('combobox', { name: 'Search pages, settings, plants and rules' })
 const selected = () => screen.getAllByRole('option').find(o => o.getAttribute('aria-selected') === 'true')
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+const docsOptions = () => screen.queryAllByRole('option').filter(o => o.textContent?.includes('Docs › User guide'))
+
+const fetchMock = vi.fn<typeof fetch>()
+const docsPage = (title: string) => ({ path: '/live/', title, section: 'User guide', description: '', headings: [], keywords: '' })
+const respond = (body: unknown) => fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }))
 
 beforeEach(() => {
   navigate.mockClear()
   data.clear()
   data.set('pods', [{ slot: 5, plant: 'Cherry Tomato', status: 'attention', notes: '' }])
   data.set('rules', [{ id: 1, name: 'Tank getting low', enabled: true, dryRun: false }])
+  resetLiveDocsIndex()
+  fetchMock.mockReset().mockRejectedValue(new TypeError('offline'))
+  vi.stubGlobal('fetch', fetchMock)
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 describe('SidebarSearch', () => {
   it('shows the search box with a Ctrl K hint off Apple platforms, and ⌘K on a Mac', () => {
@@ -129,5 +141,79 @@ describe('SidebarSearch', () => {
     expect(document.activeElement).toBe(input())
     fireEvent.keyDown(input(), { key: 'Tab', shiftKey: true })
     expect(document.activeElement).toBe(close)
+  })
+
+  it('searches the bundled docs snapshot offline, with an external-link indicator', async () => {
+    render(<SidebarSearch />)
+    open()
+    fireEvent.change(input(), { target: { value: 'debugging' } })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    const docs = docsOptions()
+    expect(docs[0]?.textContent).toMatch(/^Debugging/)
+    expect(within(docs[0] as HTMLElement).getByText('Opens the docs in a new tab')).toBeTruthy()
+    expect((docs[0] as HTMLElement).querySelectorAll('svg')).toHaveLength(2)
+  })
+
+  it('fetches the live index without credentials and only once per page load', async () => {
+    render(<SidebarSearch />)
+    open()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(DOCS_INDEX_URL)
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer' })
+    fireEvent.keyDown(input(), { key: 'Escape' })
+    open()
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('leaves docs out of the page list before typing', () => {
+    render(<SidebarSearch />)
+    open()
+    expect(screen.getAllByRole('option').some(o => o.textContent?.includes('Docs'))).toBe(false)
+  })
+
+  it('ranks a setting above the docs page that covers it', () => {
+    render(<SidebarSearch />)
+    open()
+    fireEvent.change(input(), { target: { value: 'backup' } })
+    expect(screen.getAllByRole('option')[0]?.textContent).toBe('BackupSettings')
+  })
+
+  it('uses a valid live index for the session', async () => {
+    respond({ version: 1, generatedAt: '2026-11-01T00:00:00Z', base: DOCS_BASE, pages: [docsPage('Zeppelin mooring')] })
+    render(<SidebarSearch />)
+    open()
+    fireEvent.change(input(), { target: { value: 'zeppelin' } })
+    expect(await screen.findByRole('option', { name: /Zeppelin mooring/ })).toBeTruthy()
+  })
+
+  it.each([
+    ['breaks the contract', () => respond({ version: 2, generatedAt: '2026-11-01T00:00:00Z', base: DOCS_BASE, pages: [docsPage('Zeppelin mooring')] })],
+    ['is not found', () => fetchMock.mockResolvedValue(new Response('Not found', { status: 404 }))],
+  ])('keeps the snapshot when the live index %s', async (_, arrange) => {
+    arrange()
+    render(<SidebarSearch />)
+    open()
+    fireEvent.change(input(), { target: { value: 'zeppelin' } })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(screen.queryByRole('option')).toBeNull()
+    fireEvent.change(input(), { target: { value: 'debugging' } })
+    expect(docsOptions().length).toBeGreaterThan(0)
+  })
+
+  it.each(['Enter', 'click'])('opens a docs result in a new tab on %s without navigating the app', (how) => {
+    const openWindow = vi.spyOn(window, 'open').mockReturnValue(null)
+    render(<SidebarSearch />)
+    open()
+    fireEvent.change(input(), { target: { value: 'debugging' } })
+    const option = screen.getAllByRole('option')[0] as HTMLElement
+    expect(option.textContent).toContain('Docs')
+    if (how === 'Enter') fireEvent.keyDown(input(), { key: 'Enter' })
+    else fireEvent.click(option)
+    expect(openWindow).toHaveBeenCalledWith(`${DOCS_BASE}/core/debugging/`, '_blank', 'noopener,noreferrer')
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    openWindow.mockRestore()
   })
 })
