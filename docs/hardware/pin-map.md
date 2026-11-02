@@ -4,7 +4,7 @@ title: "Gardyn hardware map"
 description: "Pins, I²C addresses, parts and model detection as documented upstream, with the Phase 1 verification checklist."
 status: "draft"
 generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
-sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}, {"resource": "stock microSD of a Gardyn Home 3.0 (firmware master.440)", "title": "Stock Gardyn firmware, read-only inspection 2026-11-01 (proprietary; facts only, no code copied)"}]
+sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}, {"resource": "stock microSD of a Gardyn Home 3.0 (firmware master.440)", "title": "Stock Gardyn firmware, read-only inspection 2026-11-01 (proprietary; facts only, no code copied)"}, {"resource": "photos of a Gardyn Home 3.0 controller board and pump, 2026-11-01", "title": "Part labels and silkscreen, photographed by the maintainer"}]
 ---
 
 # Gardyn hardware map
@@ -41,7 +41,12 @@ The data is in `tests/fixtures/gardyn-gh30-stock-2024/`.
 - Water distance runs from ~5.9 cm just after a fill to ~20 cm empty, falling about 1.3 cm a day.
 - The pump draws ~10.6 W while it lifts water. From ~19.6 cm it loses prime and draws ~3.3 W, which makes pump power a usable dry-run signal.
 - Stock schedules, as observed in the logs: lights at 100 % from 09:00 to 23:00; the pump for 5 min at 03:00, 09:00, 15:00 and 21:00.
+- The pump's label reads **TD40A-1248A** brushless DC pump: 12 V DC, 950 mA (11.4 W rated), max head 430 cm, max flow 600 L/h, IPX8. The ~10.6 W measured while lifting sits just under that rating.
 - Raw ultrasonic readings below 3 cm (the blind zone) were the common bad reading; 1 % of good ones read under 4.4 cm.
+
+## Controller board, from a photo
+
+On our Home 3.0 the top board is silkscreened **Rev1.5 PCB 11/2019**. It carries the SoC, the micro-SD slot, a mini-HDMI port, two micro-USB ports labelled `PWR IN` and `USB`, and connectors labelled `H2O IN` (2-pin) and `TEMP IN` (4-pin). It is stacked on a second board through the 40-pin GPIO header. A small daughterboard with two connectors sits beside it; what it does (possibly the camera USB hub) is unverified.
 
 ## Model detection
 
