@@ -31,9 +31,8 @@ export const SEARCH_FIELDS = {
 
 const PAGES: Record<string, { description: string, keywords: string }> = {
   '/': { description: 'The tower at a glance: light, water, air and alerts', keywords: 'dashboard overview status home tower 3d' },
-  '/light': { description: 'Brightness, on and off, and the manual hold', keywords: 'grow light led lamp brightness dim hold' },
-  '/water': { description: 'Tank level, pump runs and pump power', keywords: 'water tank reservoir pump level refill watering' },
-  '/schedule': { description: 'Light curves and pump cycles', keywords: 'schedule timer curve sunrise sunset watering cycle program' },
+  '/light': { description: 'Brightness, on and off, the manual hold and light curves', keywords: 'grow light led lamp brightness dim hold schedule timer curve sunrise sunset program' },
+  '/water': { description: 'Tank level, running the pump and pump cycles', keywords: 'water tank reservoir pump level refill watering schedule timer cycle program' },
   '/autopilot': { description: 'Rules that react to readings, with backtests', keywords: 'automation automations rules backtest dry run kill switch' },
   '/grow': { description: 'Grow cycle, stages, reminders and the 30 pods', keywords: 'grow cycle pods plants harvest seedling stage tower' },
   '/cameras': { description: 'Stills from both cameras and the timelapse', keywords: 'camera photo picture still timelapse capture' },

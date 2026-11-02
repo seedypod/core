@@ -5,7 +5,7 @@ import { Dashboard } from '../Dashboard'
 
 const { data } = vi.hoisted(() => ({ data: new Map<string, unknown>() }))
 
-vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: unknown }) => <a>{children as string}</a> }))
+vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: unknown }) => <a>{children as string}</a>, useNavigate: () => vi.fn() }))
 
 // Every procedure answers useQuery with data keyed by its path, and useMutation with a no-op.
 vi.mock('@/src/utils/trpc', () => {
