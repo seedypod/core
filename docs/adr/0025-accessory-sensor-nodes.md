@@ -4,7 +4,7 @@ title: "ADR 0025: Accessory sensor nodes"
 description: "Add-on probes live on a separate sensors-only hald outside the unit, which names its parent unit and which core merges into that unit behind HalClient. First use: an external pH probe."
 status: "draft"
 generated: {"by": "claude/opus-5.5", "at": "2026-11-05T00:00:00+00:00"}
-sources: [{"resource": "/adr/0004-two-tier-hal-core.md", "title": "ADR 0004: Two tiers — a hardware daemon and a core"}, {"resource": "/adr/0007-hal-contract.md", "title": "ADR 0007: HAL contract v1"}, {"resource": "/adr/0012-deployment-and-trust.md", "title": "ADR 0012: Deployment and trust model"}, {"resource": "/adr/0014-auto-dosing-safety.md", "title": "ADR 0014: Auto-dosing safety"}, {"resource": "/adr/0018-runtime-sensor-inventory.md", "title": "ADR 0018: Runtime sensor inventory"}, {"resource": "/hardware/hal.md", "title": "hald reference"}]
+sources: [{"resource": "/adr/0004-two-tier-hal-core.md", "title": "ADR 0004: Two tiers — a hardware daemon and a core"}, {"resource": "/adr/0007-hal-contract.md", "title": "ADR 0007: HAL contract v1"}, {"resource": "/adr/0012-deployment-and-trust.md", "title": "ADR 0012: Deployment and trust model"}, {"resource": "/adr/0014-auto-dosing-safety.md", "title": "ADR 0014: Auto-dosing safety"}, {"resource": "/adr/0018-runtime-sensor-inventory.md", "title": "ADR 0018: Runtime sensor inventory"}, {"resource": "/hardware/hal.md", "title": "hald reference"}, {"resource": "https://atlas-scientific.com/carrier-boards/electrically-isolated-usb-ezo-carrier-board/", "title": "Atlas Gen 2 Electrically Isolated USB EZO Carrier Board"}]
 ---
 
 # ADR 0025: Accessory sensor nodes
@@ -132,6 +132,40 @@ same `hald` build, so the EZO driver, the calibration flow and HA discovery are
 reused with no new driver work. The isolated carrier isn't strictly needed for
 pH alone, but EC later would need it (implementation plan 6.2).
 
+### Buses
+
+An accessory isn't limited to I²C. It's a separate machine, so it can use any
+bus Linux gives it, including USB. That has two effects:
+
+- **The node doesn't have to be a Pi.** A USB probe needs no GPIO, so any
+  always-on Linux machine within reach of the reservoir can host it, which
+  saves the Pi, SD card, supply and enclosure.
+- **More parts qualify.** Atlas's Gen 2 electrically isolated USB carrier
+  presents an EZO as an FTDI serial port and costs about the same as the I²C
+  one. A microcontroller on USB is the same case: a serial device with its own
+  driver.
+
+The first build stays on I²C, because that driver exists. USB needs:
+
+- A `device` key on `[[sensor]]`, preferring a stable
+  `/dev/serial/by-id/…` path. `hald --check` requires exactly one of `addr` and
+  `device`.
+- A transport split in `hal_drivers::ezo`. `Ezo` is bound to `I2cBus` and to
+  I²C's status-byte framing, while EZO UART uses CR-terminated ASCII with
+  `*OK`/`*ER` replies and continuous readings to switch off. `parse_value` and
+  `calibration_args` are already transport-independent.
+- For a non-Pi host: an x86_64 release target (`release.yml` builds only ARM
+  and `install-hal` refuses anything else) and `dialout` in the service's
+  `SupplementaryGroups`. `hald` opens I²C only when an I²C kind is built, so a
+  serial-only node never touches `rppal`.
+- An explicit `unit_id` off a Pi. Without a Pi serial, `identity::unit_id`
+  falls back to `gardyn-unknown`, which two such nodes would share (upstream
+  #130). `hald --check` rejects that fallback under this role.
+
+The contract doesn't change: `bus` in the kind descriptor is already a string
+and inventory rows already allow a null `addr`. `DeviceCommand.addr` stays I²C,
+which is fine because app add and remove are parent-only.
+
 ## Alternatives considered
 
 - **Wire the probe to the unit's Pi.** Rejected for the reasons in Context.
@@ -202,3 +236,5 @@ Nothing here has run on real hardware:
 5. `install-hal`: an accessory mode and a broker user. Update the Adding a
    probe guide and the hald reference.
 6. Build the box, then mark this ADR accepted.
+7. When a node needs it: the serial transport and non-Pi packaging from
+   *Buses*.
