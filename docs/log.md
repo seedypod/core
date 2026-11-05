@@ -1,5 +1,9 @@
 # Docs update log
 
+## 2026-11-05
+
+- **Creation**: [ADR 0025](adr/0025-accessory-sensor-nodes.md), accessory sensor nodes (proposed): a sensors-only `hald` outside the unit, merged into its parent by core. First use is an external pH probe.
+
 ## 2026-11-02
 
 - **Creation**: [ADR 0024](adr/0024-pod-planner.md), the pod planner: a Gardyn-sourced plant catalog, zone-aware layout, staggered sowing and saved plans.

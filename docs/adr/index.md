@@ -26,3 +26,4 @@ Format follows [sleepypod/core](https://sleepypod.github.io/) (`# ADR NNNN: Titl
 - [0022 Harvest outlook from the camera, with optional plant profiles](0022-harvest-outlook.md)
 - [0023 HomeKit bridge and per-unit identity](0023-homekit.md)
 - [0024 Pod planner and Gardyn plant catalog](0024-pod-planner.md)
+- [0025 Accessory sensor nodes](0025-accessory-sensor-nodes.md) — proposed
