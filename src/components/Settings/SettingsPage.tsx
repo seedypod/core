@@ -347,6 +347,7 @@ function StorageCard() {
   return (
     <Section id="storage" title="SD card" sub="How much this unit writes to its SD card. Logs and swap stay in RAM to keep it low.">
       {q.data && <FlashRows f={q.data} />}
+      <Row label="Database" sub="What's writing to the card, table by table"><Link to="/database" className="text-[13px] text-fg underline-offset-2 hover:underline">Open</Link></Row>
     </Section>
   )
 }

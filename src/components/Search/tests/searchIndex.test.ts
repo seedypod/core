@@ -34,6 +34,7 @@ describe('search index', () => {
     expect(top('hass')[0]?.title).toBe('Home Assistant bridge')
     expect(top('timezone')[0]?.title).toBe('Unit')
     expect(top('wifi')[0]).toMatchObject({ title: 'Wi-Fi', href: '/wifi' })
+    expect(top('database')[0]).toMatchObject({ title: 'Database', href: '/database' })
     expect(top('Wi-Fi')[0]?.title).toBe('Wi-Fi')
   })
 

@@ -2,6 +2,7 @@
 
 ## 2026-11-06
 
+- **Update**: [ADR 0021](adr/0021-sd-card-wear-and-recovery.md) covers the Database view under **Settings → SD card**: what's writing to the card, table by table, from a read-only scan on a worker thread. [Maintenance](MAINTENANCE.md) and [Debugging](DEBUGGING.md) point to it.
 - **Update**: [Installation](INSTALLATION.md) covers the SSH login logo, how to turn it off and how to remove it.
 
 ## 2026-11-05

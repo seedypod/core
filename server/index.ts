@@ -9,6 +9,7 @@ import { RestoreClient, restoreCommand } from '../src/backup/restore'
 import { BackupService } from '../src/backup/service'
 import { backupPaths, nodeBackupSources } from '../src/backup/sources'
 import { MirroredSink } from '../src/camera/mirrorSink'
+import { NodeDatabaseInspector } from '../src/db/inspector'
 import { seedIfFresh } from '../src/demo/seed'
 import { createHal } from '../src/hardware/factory'
 import { HomeKitService } from '../src/homekit/service'
@@ -29,13 +30,17 @@ const DATA_DIR = process.env.DATA_DIR ?? './data'
 
 const events = createEventBus()
 const hal = await createHal({ events })
-const store = new SqliteStore({ url: process.env.DATABASE_URL ?? `${DATA_DIR}/seedypod.db` })
+const dbPath = process.env.DATABASE_URL ?? `${DATA_DIR}/seedypod.db`
+const store = new SqliteStore({ url: dbPath })
 // SEED_DEMO=1 fills a new database with the browser demo's story, for testing on the simulator.
 if (process.env.SEED_DEMO === '1' && seedIfFresh(store, hal)) console.log('seeded the demo data (SEED_DEMO=1)')
 // Capture analysis runs on a worker thread when the bundled worker sits next to this file (a build);
 // under `tsx watch` it runs inline.
 const workerScript = new URL('./visionWorker.js', import.meta.url)
 const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(workerScript) : null
+// The Database view scans read-only on a worker thread, the same way.
+const inspectScript = new URL('./inspectWorker.js', import.meta.url)
+const database = new NodeDatabaseInspector({ path: dbPath, migrationsFolder: defaultMigrationsFolder(), worker: existsSync(fileURLToPath(inspectScript)) ? inspectScript : null })
 // Stills and artifacts live under DATA_DIR/captures; the opt-in mirror copies them off the unit (ADR-0019).
 const capturesDir = `${DATA_DIR}/captures`
 const mirror = new MirroredSink({ local: new FsSink(capturesDir), store, events, keyOf: p => relative(capturesDir, p) })
@@ -58,7 +63,7 @@ const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA
 // System › Status reads its state, and the last connect error, through the context.
 let bridge: HaBridge | null = null
 let bridgeError: string | null = null
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, bridge, bridgeError), host: { hostname: hostname(), arch: arch() } })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), database, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, bridge, bridgeError), host: { hostname: hostname(), arch: arch() } })
 
 const bridgeUp = (b: HaBridge | null) => {
   bridge = b

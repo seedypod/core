@@ -10,6 +10,7 @@ import { createAutopilot } from '../autopilot/instance'
 import { CaptureService, MemorySink, type BlobSink } from '../camera/captures'
 import type { MirroredSink } from '../camera/mirrorSink'
 import { LightArbiter } from '../control/light'
+import type { DatabaseInspector } from '../db/inspect'
 import { GrowEngine } from '../grow/grow'
 import type { HalClient } from '../hardware/types'
 import type { HomeKitControl } from '../homekit/types'
@@ -46,6 +47,8 @@ export interface CoreOptions {
   restore?: RestoreClient
   /** The SD card's write counter (ADR-0021); omitted off a Pi. */
   flashSource?: FlashSource | null
+  /** Metadata about the database for the Database view; a real scan on node hosts, sample data in the demo. */
+  database?: DatabaseInspector
   /** Used and free space where DATA_DIR lives; node hosts only. */
   disk?: () => DiskUsage | null
   /** The Home Assistant bridge's state; node hosts only. */
@@ -82,7 +85,7 @@ export function createCore(o: CoreOptions): Core {
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now })

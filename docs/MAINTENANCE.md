@@ -74,6 +74,11 @@ Expected I²C addresses, with the stock parts and the default probe addresses:
 The **Sensors** screen shows the same inventory, with any part that didn't
 answer at boot marked **not found** and the reason.
 
+**Settings → SD card → Database** shows what's writing to the card: each
+table's rows, size, last write and writes per hour, busiest first, plus an
+integrity check. A scan reads the whole file, so the first one after opening
+the page can take a minute on a unit. It never shows the contents of a row.
+
 ## Backups
 
 A backup is one file, `seedypod-backup-<unit>-<date>.tar.gz`, that holds
