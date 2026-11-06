@@ -30,10 +30,11 @@ export function CardsHome() {
   const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
   const system = trpc.system.info.useQuery()
   const utils = trpc.useUtils()
-  const setLight = trpc.light.set.useMutation({ onSuccess: state => utils.light.get.setData(undefined, state) })
-  const runPump = trpc.pump.runOnce.useMutation({ onSuccess: state => utils.pump.get.setData(undefined, state) })
-  const stopPump = trpc.pump.stop.useMutation({ onSuccess: state => utils.pump.get.setData(undefined, state) })
   const [draft, setDraft] = useState<number | null>(null)
+  // On the hook, not on mutate: a later mutate or an unmount silently drops mutate's own callbacks.
+  const setLight = trpc.light.set.useMutation({ onSuccess: state => utils.light.get.setData(undefined, state), onSettled: () => setDraft(null) })
+  const runPump = trpc.pump.runOnce.useMutation({ onSuccess: () => utils.pump.invalidate() })
+  const stopPump = trpc.pump.stop.useMutation({ onSuccess: () => utils.pump.invalidate() })
 
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const l = lightState.data
@@ -62,7 +63,7 @@ export function CardsHome() {
           <Slider
             value={draft ?? l?.level ?? 0}
             onChange={setDraft}
-            onCommit={v => setLight.mutate({ level: v }, { onSettled: () => setDraft(null) })}
+            onCommit={v => setLight.mutate({ level: v })}
             label="Brightness"
           />
           <button type="button" className="lp-btn" onClick={() => setLight.mutate({ on: !lightOn })}>{lightOn ? 'Turn off' : 'Turn on'}</button>

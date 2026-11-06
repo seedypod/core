@@ -5,7 +5,7 @@ import { WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { runOnce: vi.fn(), stop: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), setPump: vi.fn() },
+  calls: { runOnce: vi.fn(), stop: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
   pumpSuccess: new Map<string, (s: unknown) => void>(),
   state: { runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string } },
 }))
@@ -20,7 +20,7 @@ vi.mock('@/src/utils/trpc', () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ pump: { get: { setData: (_: unknown, s: unknown) => calls.setPump(s) } }, schedules: { invalidate: vi.fn() } }),
+      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() } }),
       pump: { get: query('pump'), runOnce: mutation('runOnce'), stop: mutation('stop') },
       sensors: { latest: query('sensors') },
       system: { info: query('system') },
@@ -64,12 +64,13 @@ afterEach(() => {
 })
 
 describe('WaterPage: tank and pump', () => {
-  it('writes the state a pump command returns into the cache instead of fetching it again', () => {
+  it('asks the server for the pump after each command, since a late reply could be older than the cache', () => {
     render(<WaterPage />)
-    for (const name of ['runOnce', 'stop']) {
-      pumpSuccess.get(name)?.(idle)
-      expect(calls.setPump).toHaveBeenLastCalledWith(idle)
-    }
+    pumpSuccess.get('runOnce')?.({ ...idle, on: true, level: 30, remainingS: 300 })
+    expect(calls.invalidatePump).toHaveBeenCalledTimes(1)
+    pumpSuccess.get('stop')?.({ ...idle, since: '2026-11-01T10:05:00Z' })
+    expect(calls.invalidatePump).toHaveBeenCalledTimes(2)
+    expect(calls.setPump).not.toHaveBeenCalled()
   })
 
   it('sums up the tank, the pump and the next run, against the calibration', () => {

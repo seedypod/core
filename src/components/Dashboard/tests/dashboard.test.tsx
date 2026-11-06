@@ -3,11 +3,14 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Dashboard } from '../Dashboard'
 
-const { data, mutations, setData } = vi.hoisted(() => ({
+interface Hook { onSuccess?: (r: unknown) => void, onSettled?: () => void }
+
+const { data, mutations, setData, invalidatePump } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  /** Per path: the last mutate call's input and callbacks, and what the mutation shows while pending. */
-  mutations: new Map<string, { hook?: { onSuccess?: (r: unknown) => void }, input?: unknown, call?: { onSettled?: () => void }, count: number, pending?: unknown }>(),
+  /** Per path: the hook's callbacks, the last mutate input, and what the mutation shows while pending. */
+  mutations: new Map<string, { hook?: Hook, input?: unknown, count: number, pending?: unknown }>(),
   setData: vi.fn(),
+  invalidatePump: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: unknown }) => <a>{children as string}</a>, useNavigate: () => vi.fn() }))
@@ -16,13 +19,13 @@ vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: unkn
 vi.mock('@/src/utils/trpc', () => {
   const proc = (path: string) => ({
     useQuery: () => ({ data: data.get(path), refetch: vi.fn() }),
-    useMutation: (hook?: { onSuccess?: (r: unknown) => void }) => {
+    useMutation: (hook?: Hook) => {
       const m = mutations.get(path) ?? { count: 0 }
       mutations.set(path, { ...m, hook })
       return {
-        mutate: (input: unknown, call?: { onSettled?: () => void }) => {
+        mutate: (input: unknown) => {
           const now = mutations.get(path)
-          mutations.set(path, { ...now, input, call, count: (now?.count ?? 0) + 1 })
+          mutations.set(path, { ...now, input, count: (now?.count ?? 0) + 1 })
         },
         isPending: m.pending !== undefined,
         variables: m.pending,
@@ -31,7 +34,7 @@ vi.mock('@/src/utils/trpc', () => {
     },
   })
   const router = (prefix: string): unknown => new Proxy({}, { get: (_, k: string) => (k === 'useQuery' || k === 'useMutation' ? proc(prefix)[k] : router(prefix ? `${prefix}.${k}` : k)) })
-  return { apiBase: () => '', trpc: new Proxy({}, { get: (_, k: string) => (k === 'useUtils' ? () => ({ settings: { invalidate: vi.fn() }, light: { get: { setData: (_: unknown, v: unknown) => setData('light', v) } }, pump: { get: { setData: (_: unknown, v: unknown) => setData('pump', v) } } }) : router(k)) }) }
+  return { apiBase: () => '', trpc: new Proxy({}, { get: (_, k: string) => (k === 'useUtils' ? () => ({ settings: { invalidate: vi.fn() }, light: { get: { setData: (_: unknown, v: unknown) => setData('light', v) } }, pump: { invalidate: invalidatePump, get: { setData: (_: unknown, v: unknown) => setData('pump', v) } } }) : router(k)) }) }
 })
 
 afterEach(() => {
@@ -39,6 +42,7 @@ afterEach(() => {
   data.clear()
   mutations.clear()
   setData.mockReset()
+  invalidatePump.mockReset()
 })
 
 describe('Dashboard', () => {
@@ -81,7 +85,7 @@ describe('Dashboard', () => {
       fireEvent.pointerUp(slider)
       expect(slider.value).toBe('60')
       data.set('light.get', { ...lit, level: 60 })
-      act(() => mutations.get('light.set')?.call?.onSettled?.())
+      act(() => mutations.get('light.set')?.hook?.onSettled?.())
       expect(slider.value).toBe('60')
     })
 
@@ -89,7 +93,17 @@ describe('Dashboard', () => {
       const slider = await brightness()
       fireEvent.change(slider, { target: { value: '60' } })
       fireEvent.pointerUp(slider)
-      act(() => mutations.get('light.set')?.call?.onSettled?.())
+      act(() => mutations.get('light.set')?.hook?.onSettled?.())
+      expect(slider.value).toBe('40')
+    })
+
+    it('lets go of the draft even when a power tap replaced the brightness command in flight', async () => {
+      const slider = await brightness()
+      fireEvent.change(slider, { target: { value: '60' } })
+      fireEvent.pointerUp(slider)
+      fireEvent.click(screen.getByText('Turn off'))
+      expect(mutations.get('light.set')).toMatchObject({ count: 2, input: { on: false } })
+      act(() => mutations.get('light.set')?.hook?.onSettled?.())
       expect(slider.value).toBe('40')
     })
 
@@ -107,12 +121,19 @@ describe('Dashboard', () => {
       expect(screen.getByText('Turn off')).toBeTruthy()
     })
 
-    it('writes the state a command returns into the cache instead of fetching it again', async () => {
+    it('writes the light a command returns into the cache instead of fetching it again', async () => {
       await brightness()
-      for (const [path, area] of [['light.set', 'light'], ['pump.runOnce', 'pump'], ['pump.stop', 'pump']] as const) {
-        mutations.get(path)?.hook?.onSuccess?.(lit)
-        expect(setData).toHaveBeenLastCalledWith(area, lit)
-      }
+      mutations.get('light.set')?.hook?.onSuccess?.(lit)
+      expect(setData).toHaveBeenCalledWith('light', lit)
+    })
+
+    it('asks the server for the pump after each command, since a late reply could be older than the cache', async () => {
+      await brightness()
+      mutations.get('pump.runOnce')?.hook?.onSuccess?.({ ...lit, level: 30 })
+      expect(invalidatePump).toHaveBeenCalledTimes(1)
+      mutations.get('pump.stop')?.hook?.onSuccess?.({ ...lit, on: false })
+      expect(invalidatePump).toHaveBeenCalledTimes(2)
+      expect(setData).not.toHaveBeenCalled()
     })
   })
 })

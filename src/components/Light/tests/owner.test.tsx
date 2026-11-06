@@ -6,17 +6,17 @@ import { LightPage } from '../LightPage'
 const { data, calls, setLight } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn() },
-  setLight: { pending: undefined as unknown, setData: vi.fn(), onSuccess: undefined as undefined | ((s: unknown) => void) },
+  setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onSuccess?: (s: unknown) => void, onSettled?: () => void } },
 }))
 
 vi.mock('../CurveEditor', () => ({ CurveEditor: ({ schedule }: { schedule: { name: string } }) => <div>{`editing ${schedule.name}`}</div> }))
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
-  const mutation = (name: keyof typeof calls) => ({ useMutation: () => ({ isPending: false, mutate: (i?: unknown, o?: unknown) => (o ? calls[name](i, o) : calls[name](i)) }) })
+  const mutation = (name: keyof typeof calls) => ({ useMutation: () => ({ isPending: false, mutate: (i?: unknown) => calls[name](i) }) })
   const set = {
-    useMutation: (o: { onSuccess: (s: unknown) => void }) => {
-      setLight.onSuccess = o.onSuccess
-      return { isPending: setLight.pending !== undefined, variables: setLight.pending, mutate: (i?: unknown, c?: unknown) => calls.set(i, c) }
+    useMutation: (hook: typeof setLight.hook) => {
+      setLight.hook = hook
+      return { isPending: setLight.pending !== undefined, variables: setLight.pending, mutate: (i?: unknown) => calls.set(i) }
     },
   }
   return {
@@ -91,15 +91,25 @@ describe('LightPage: who controls the light', () => {
     fireEvent.change(slider, { target: { value: '30' } })
     fireEvent.pointerUp(slider)
     expect(slider.value).toBe('30')
-    const { onSettled } = calls.set.mock.calls[0]?.[1] as { onSettled: () => void }
-    act(() => onSettled())
+    act(() => setLight.hook.onSettled?.())
+    expect(slider.value).toBe('80')
+  })
+
+  it('lets go of the draft even when a power tap replaced the brightness command in flight', () => {
+    render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    fireEvent.change(slider, { target: { value: '30' } })
+    fireEvent.pointerUp(slider)
+    fireEvent.click(screen.getByRole('switch', { name: 'Light power' }))
+    expect(calls.set).toHaveBeenCalledTimes(2)
+    act(() => setLight.hook.onSettled?.())
     expect(slider.value).toBe('80')
   })
 
   it('writes the state a command returns into the cache instead of fetching it again', () => {
     render(<LightPage />)
     const state = { on: true, level: 30, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null }
-    setLight.onSuccess?.(state)
+    setLight.hook.onSuccess?.(state)
     expect(setLight.setData).toHaveBeenCalledWith(undefined, state)
   })
 
@@ -107,11 +117,11 @@ describe('LightPage: who controls the light', () => {
     render(<LightPage />)
     expect(screen.getByText('Lights on')).toBeTruthy()
     fireEvent.click(screen.getByRole('switch', { name: 'Light power' }))
-    expect(calls.set).toHaveBeenCalledWith({ on: false }, undefined)
+    expect(calls.set).toHaveBeenCalledWith({ on: false })
     const slider = screen.getByLabelText('Brightness')
     fireEvent.change(slider, { target: { value: '30' } })
     fireEvent.pointerUp(slider)
-    expect(calls.set).toHaveBeenCalledWith({ level: 30 }, expect.anything())
+    expect(calls.set).toHaveBeenCalledWith({ level: 30 })
     cleanup()
     data.set('light', { on: false, level: 0, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null })
     render(<LightPage />)

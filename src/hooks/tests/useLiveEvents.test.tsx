@@ -55,6 +55,10 @@ describe('touchedBy', () => {
     expect(touchedBy(mutation('something.new'))).toBe('all')
   })
 
+  it('takes a path named like an Object member for an unlisted one', () => {
+    for (const path of ['constructor', 'toString', '__proto__', 'constructor.name']) expect(touchedBy(mutation(path))).toBe('all')
+  })
+
   it('maps schedule and HAL events', () => {
     expect(touchedBy({ kind: 'schedule', action: 'fired', id: 'light-curve' })).toEqual(['schedules', 'light'])
     expect(touchedBy(hal({ type: 'sensor' }))).toEqual(['sensors'])

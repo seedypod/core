@@ -17,13 +17,14 @@ export function LightPage() {
   const light = trpc.light.get.useQuery()
   const schedules = trpc.schedules.list.useQuery()
   const utils = trpc.useUtils()
-  const setLight = trpc.light.set.useMutation({ onSuccess: state => utils.light.get.setData(undefined, state) })
+  const [draft, setDraft] = useState<number | null>(null)
+  // On the hook, not on mutate: a later mutate or an unmount silently drops mutate's own callbacks.
+  const setLight = trpc.light.set.useMutation({ onSuccess: state => utils.light.get.setData(undefined, state), onSettled: () => setDraft(null) })
   const owner = trpc.light.owner.useQuery(undefined, { refetchInterval: 15_000 })
   const resume = trpc.light.resume.useMutation({ onSuccess: () => utils.light.invalidate() })
   const o = owner.data
   const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const lightHours = trpc.telemetry.lightHours.useQuery()
-  const [draft, setDraft] = useState<number | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const l = light.data
   const level = draft ?? l?.level ?? 0
@@ -64,7 +65,7 @@ export function LightPage() {
             <Slider
               value={level}
               onChange={setDraft}
-              onCommit={v => setLight.mutate({ level: v }, { onSettled: () => setDraft(null) })}
+              onCommit={v => setLight.mutate({ level: v })}
               label="Brightness"
             />
             <div className={AXIS} aria-hidden>

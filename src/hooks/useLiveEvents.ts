@@ -14,30 +14,30 @@ type Area = Exclude<keyof AppRouter['_def']['record'], 'events'>
  * `system` is kept off the paths a person fires in quick succession. Its
  * `checks` query is the slowest on the unit, and polls every 30 to 60 s anyway.
  */
-const TOUCHES: Partial<Record<string, readonly Area[]>> = {
-  'actuators': ['light', 'pump'],
-  'actuators.light': ['light'],
-  'actuators.pump': ['pump'],
+const TOUCHES = new Map<string, readonly Area[]>([
+  ['actuators', ['light', 'pump']],
+  ['actuators.light', ['light']],
+  ['actuators.pump', ['pump']],
   // Acknowledging a fault re-enables its actuator.
-  'alerts': ['alerts', 'light', 'pump', 'system'],
-  'analyses': ['vision', 'grow', 'datasets'],
+  ['alerts', ['alerts', 'light', 'pump', 'system']],
+  ['analyses', ['vision', 'grow', 'datasets']],
   // A rule can take or release the light.
-  'automations': ['automations', 'light'],
-  'backup': ['backup', 'system'],
-  'captures': ['camera', 'vision', 'alerts', 'datasets'],
-  'devices': ['devices', 'sensors', 'system'],
-  'grow': ['grow', 'planner', 'vision', 'alerts'],
-  'homekit': ['homekit', 'system'],
-  'network': ['network', 'system'],
-  'plans': ['planner'],
-  'plants': ['plants', 'grow'],
-  'pods': ['grow', 'planner', 'vision'],
-  'sensors': ['sensors', 'devices'],
-}
+  ['automations', ['automations', 'light']],
+  ['backup', ['backup', 'system']],
+  ['captures', ['camera', 'vision', 'alerts', 'datasets']],
+  ['devices', ['devices', 'sensors', 'system']],
+  ['grow', ['grow', 'planner', 'vision', 'alerts']],
+  ['homekit', ['homekit', 'system']],
+  ['network', ['network', 'system']],
+  ['plans', ['planner']],
+  ['plants', ['plants', 'grow']],
+  ['pods', ['grow', 'planner', 'vision']],
+  ['sensors', ['sensors', 'devices']],
+])
 
 /** What an event makes stale. */
 export function touchedBy(e: CoreEvent): readonly Area[] | 'all' {
-  if (e.kind === 'mutation') return TOUCHES[e.path] ?? TOUCHES[e.path.replace(/\..*/, '')] ?? 'all'
+  if (e.kind === 'mutation') return TOUCHES.get(e.path) ?? TOUCHES.get(e.path.replace(/\..*/, '')) ?? 'all'
   if (e.kind === 'schedule') return ['schedules', 'light']
   switch (e.event.type) {
     case 'sensor': return ['sensors']
