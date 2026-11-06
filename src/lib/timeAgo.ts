@@ -7,6 +7,12 @@ export function timeAgo(iso: string, now = Date.now()): string {
   return `${Math.floor(min / 1440)} d ago`
 }
 
+/** `8s ago`, `3m ago`, `2h ago`: how long before `now` a reading was taken, for ages that tick. */
+export function secondsAgo(at: number, now = Date.now()): string {
+  const s = Math.max(0, Math.floor((now - at) / 1000))
+  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`
+}
+
 /** A capture or alert time as day, month and clock (`31 Oct 17:50` in en-GB). */
 export function fmtStamp(iso: string): string {
   const d = new Date(iso)

@@ -196,10 +196,12 @@ export function KeyValue({ label, value, className, valueClassName, size = 14 }:
   )
 }
 
-export function Metric({ label, value, ok, icon: Icon, iconClassName, className }: {
+export function Metric({ label, value, ok, note, icon: Icon, iconClassName, className }: {
   label: ReactNode
   value: ReactNode
   ok?: boolean
+  /** A line under the label, e.g. how old the value is. */
+  note?: ReactNode
   icon?: LucideIcon
   iconClassName?: string
   className?: string
@@ -212,6 +214,7 @@ export function Metric({ label, value, ok, icon: Icon, iconClassName, className 
         {ok !== undefined && <span className={cn('size-1.5 rounded-full', ok ? 'bg-ok' : 'bg-warn')} />}
         {label}
       </span>
+      {note && <span className="order-3">{note}</span>}
     </div>
   )
 }

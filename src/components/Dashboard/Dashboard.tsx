@@ -1,6 +1,7 @@
 import { Droplets, Sun, Thermometer, Waves, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { TowerHome } from './TowerHome'
+import { ReadingAge } from '@/src/components/Sensors/ReadingAge'
 import { Card, CardHeader, GrowBackdrop, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
 import { Slider } from '@/src/components/ds/forms'
 import type { Reading, SensorId } from '@/src/hardware/contract'
@@ -78,10 +79,10 @@ export function CardsHome() {
           right={<StatusDot tone={p?.fault ? 'danger' : p?.on ? 'ok' : 'muted'} label={p?.fault ? 'fault' : p?.on ? 'running' : 'idle'} />}
         />
         <div className="mt-3 grid grid-cols-2 gap-3 min-[600px]:grid-cols-4">
-          <Metric label="Tank" value={fmt(s.water_level_pct)} icon={Waves} />
-          <Metric label="Distance" value={fmt(s.water_distance)} icon={Droplets} />
-          <Metric label="Pump power" value={fmt(s.pump_w)} icon={Zap} />
-          <Metric label="Pump current" value={fmt(s.pump_a)} icon={Zap} />
+          <Metric label="Tank" value={fmt(s.water_level_pct)} icon={Waves} note={<ReadingAge readings={[s.water_level_pct]} />} />
+          <Metric label="Distance" value={fmt(s.water_distance)} icon={Droplets} note={<ReadingAge readings={[s.water_distance]} />} />
+          <Metric label="Pump power" value={fmt(s.pump_w)} icon={Zap} note={<ReadingAge readings={[s.pump_w]} />} />
+          <Metric label="Pump current" value={fmt(s.pump_a)} icon={Zap} note={<ReadingAge readings={[s.pump_a]} />} />
         </div>
         <div className="mt-3 flex gap-2">
           <button type="button" className="lp-btn" disabled={!!p?.on} onClick={() => runPump.mutate({ durationS: 300 })}>Run 5 min</button>
@@ -94,16 +95,16 @@ export function CardsHome() {
         <>
           <SectionLabel>Water quality</SectionLabel>
           <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3">
-            {quality.map(id => <Metric key={id} label={SENSOR_META[id].label} value={formatReading(s[id])} icon={SENSOR_META[id].icon} />)}
+            {quality.map(id => <Metric key={id} label={SENSOR_META[id].label} value={formatReading(s[id])} icon={SENSOR_META[id].icon} note={<ReadingAge readings={[s[id]]} />} />)}
           </div>
         </>
       )}
 
       <SectionLabel>Environment</SectionLabel>
       <div className="grid grid-cols-2 gap-3 min-[600px]:grid-cols-3">
-        <Metric label="Air" value={fmt(s.air_temp)} icon={Thermometer} />
-        <Metric label="Humidity" value={fmt(s.humidity)} icon={Droplets} />
-        <Metric label="Board" value={fmt(s.pcb_temp)} icon={Thermometer} />
+        <Metric label="Air" value={fmt(s.air_temp)} icon={Thermometer} note={<ReadingAge readings={[s.air_temp]} />} />
+        <Metric label="Humidity" value={fmt(s.humidity)} icon={Droplets} note={<ReadingAge readings={[s.humidity]} />} />
+        <Metric label="Board" value={fmt(s.pcb_temp)} icon={Thermometer} note={<ReadingAge readings={[s.pcb_temp]} />} />
       </div>
     </div>
   )

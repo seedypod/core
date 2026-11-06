@@ -47,6 +47,24 @@ describe('Sidebar', () => {
     expect(screen.getByText('25.5°C · 55%').closest('a')?.getAttribute('href')).toBe('/sensors')
   })
 
+  it('says how old the tank and air are, and leaves the light alone', () => {
+    const ts = new Date(Date.now() - 8_000).toISOString()
+    data.set('light.get', { on: true, level: 49 })
+    data.set('sensors.latest', { water_level_pct: { ts, value: 71, unit: '%', quality: 'good' }, air_temp: { ts, value: 25.5, unit: '°C', quality: 'good' } })
+    render(<Sidebar status={online} />)
+    expect(within(screen.getByText('71%').closest('a') as HTMLElement).getByTestId('reading-age').textContent).toMatch(/^updated \ds ago$/)
+    expect(within(screen.getByText('25.5°C').closest('a') as HTMLElement).getByTestId('reading-age').textContent).toMatch(/^updated \ds ago$/)
+    expect(within(screen.getByText('49%').closest('a') as HTMLElement).queryByTestId('reading-age')).toBeNull()
+  })
+
+  it('turns a row amber when its sensor stops reporting', () => {
+    data.set('sensors.latest', { water_level_pct: { ts: new Date(Date.now() - 5 * 60_000).toISOString(), value: 71, unit: '%', quality: 'good' } })
+    render(<Sidebar status={online} />)
+    const age = within(screen.getByText('71%').closest('a') as HTMLElement).getByTestId('reading-age')
+    expect(age.textContent).toBe('stale · updated 5m ago')
+    expect(age.className).toContain('text-warn')
+  })
+
   it('reads the light as off, and dashes for missing readings', () => {
     data.set('light.get', { on: false, level: 80 })
     render(<Sidebar status={online} />)

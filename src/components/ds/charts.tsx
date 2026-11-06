@@ -1,5 +1,6 @@
 import { useEffect, useState, type PointerEvent, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { secondsAgo } from '@/src/lib/timeAgo'
 
 /* Lightweight SVG charts from the design system, ported from sleepypod's
    ds/charts.tsx: line charts that stretch to their card without stretching
@@ -238,7 +239,5 @@ export function SensorAge({ timestamp, className }: { timestamp?: string | numbe
   if (timestamp === undefined) return null
   const at = typeof timestamp === 'number' ? timestamp * 1000 : Date.parse(timestamp)
   if (!Number.isFinite(at)) return null
-  const seconds = Math.max(0, Math.floor((now - at) / 1000))
-  const text = seconds < 60 ? `${seconds}s ago` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : `${Math.floor(seconds / 3600)}h ago`
-  return <span className={cn('font-mono text-[10px] font-normal tracking-normal text-fg-3 normal-case', className)}>{text}</span>
+  return <span className={cn('font-mono text-[10px] font-normal tracking-normal text-fg-3 normal-case', className)}>{secondsAgo(at, now)}</span>
 }
