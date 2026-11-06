@@ -56,7 +56,10 @@ describe('phase 3 routers', () => {
   it('camera capture surfaces a missing camera as SERVICE_UNAVAILABLE and lists captures with URLs', async () => {
     const { c, hal } = caller()
     await expect(c.camera.capture({ camera: 'upper' })).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' })
-    hal.captureStill = async () => new Uint8Array(4096)
+    const still = new Uint8Array(4096)
+    still.set([0xFF, 0xD8])
+    still.set([0xFF, 0xD9], 4094)
+    hal.captureStill = async () => still
     const cap = await c.camera.capture({ camera: 'lower' })
     expect(cap.url).toMatch(/^\/api\/captures\/lower-.*\.jpg$/)
     expect(await c.camera.list({ camera: 'lower', limit: 10 })).toHaveLength(1)

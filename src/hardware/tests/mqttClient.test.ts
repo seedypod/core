@@ -110,6 +110,12 @@ describe('MqttHalClient', () => {
     await expect(slow.removeSensor('ezo_ph', 0x63)).rejects.toThrow(/did not answer the remove ezo_ph request/)
   })
 
+  it('passes on why hald refused a still, or the status if it gave no reason', async () => {
+    const still = (fetchImpl: () => Promise<Response>) => new MqttHalClient({ unitId: U, mqtt: new FakeMqtt(), httpBase: '', fetchImpl: fetchImpl as unknown as typeof fetch }).captureStill('upper')
+    await expect(still(async () => new Response('no good frame in 3 attempts\n', { status: 503 }))).rejects.toThrow(/^no good frame in 3 attempts$/)
+    await expect(still(async () => new Response('', { status: 500 }))).rejects.toThrow('HTTP 500')
+  })
+
   it('acknowledges alerts, fetches stills over HTTP, forwards button events, and drops garbage', async () => {
     const { mqtt, client } = make()
     const events: string[] = []
