@@ -283,6 +283,11 @@ export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1
           keyDown.current = false
           settle()
         }}
+        // Tab moves focus before its keyup, which then lands elsewhere; without this the key stays down for good.
+        onBlur={() => {
+          keyDown.current = false
+          settle()
+        }}
         className="pointer-events-none absolute inset-0 m-0 !min-h-0 w-full opacity-0"
       />
     </div>

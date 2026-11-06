@@ -21,9 +21,14 @@ export function useLightControl() {
     if (level !== null) expiry.current = setTimeout(() => setHeld(null), HOLD_MS)
   }
   useEffect(() => () => clearTimeout(expiry.current), [])
+  const newest = useRef(0)
   // On the hook, not on mutate: a later mutate or an unmount silently drops mutate's own callbacks.
   const setLight = trpc.light.set.useMutation({
-    onSuccess: state => utils.light.get.setData(undefined, state),
+    onMutate: () => ({ command: ++newest.current }),
+    // Only the newest command's answer: an older one arriving late would put the old level back. The live event still refreshes the rest.
+    onSuccess: (state, _, { command }) => {
+      if (command === newest.current) utils.light.get.setData(undefined, state)
+    },
     // Only the level still on show: a refused older command mustn't undo a newer one.
     onError: (_, sent) => setHeld(h => (h === sent.level ? null : h)),
   })

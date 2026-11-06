@@ -178,6 +178,25 @@ describe('Slider by keyboard and screen reader', () => {
     expect(commits).toEqual([])
   })
 
+  it('commits an adjustment still open when focus leaves, once', () => {
+    const { input, commits } = setup()
+    press(input, '41', '42')
+    fireEvent.blur(input)
+    expect(commits).toEqual([42])
+    fireEvent.keyUp(input, { key: 'ArrowRight' })
+    expect(commits).toEqual([42])
+  })
+
+  it('still hears a screen reader after Tab took focus before its keyup', () => {
+    const { input, commits } = setup()
+    fireEvent.keyDown(input, { key: 'Tab' })
+    fireEvent.blur(input)
+    expect(commits).toEqual([])
+    fireEvent.input(input, { target: { value: '45' } })
+    fireEvent.change(input, { target: { value: '45' } })
+    expect(commits).toEqual([45])
+  })
+
   it('commits a screen reader\'s adjustment, which has no key to release', () => {
     const { input, commits } = setup()
     fireEvent.input(input, { target: { value: '45' } })

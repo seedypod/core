@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Dashboard } from '../Dashboard'
 
-interface Hook { onSuccess?: (r: unknown) => void, onError?: (e: Error, sent: unknown) => void, onSettled?: () => void }
+interface Hook { onMutate?: () => unknown, onSuccess?: (r: unknown, sent?: unknown, context?: unknown) => void, onError?: (e: Error, sent: unknown) => void, onSettled?: () => void }
 
 const { data, mutations, setData, invalidatePump } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
@@ -24,6 +24,7 @@ vi.mock('@/src/utils/trpc', () => {
       mutations.set(path, { ...m, hook })
       return {
         mutate: (input: unknown) => {
+          hook?.onMutate?.()
           const now = mutations.get(path)
           mutations.set(path, { ...now, input, count: (now?.count ?? 0) + 1 })
         },
@@ -92,7 +93,7 @@ describe('Dashboard', () => {
       expect(screen.getByText(/^60% since/)).toBeTruthy()
       // The light fades up through 50 on its way.
       data.set('light.get', { ...lit, level: 50 })
-      act(() => mutations.get('light.set')?.hook?.onSuccess?.({ ...lit, level: 50 }))
+      act(() => mutations.get('light.set')?.hook?.onSuccess?.({ ...lit, level: 50 }, { level: 60 }, { command: 1 }))
       expect(slider.value).toBe('60')
     })
 
@@ -129,7 +130,8 @@ describe('Dashboard', () => {
 
     it('writes the light a command returns into the cache instead of fetching it again', async () => {
       await brightness()
-      mutations.get('light.set')?.hook?.onSuccess?.(lit)
+      const context = mutations.get('light.set')?.hook?.onMutate?.()
+      mutations.get('light.set')?.hook?.onSuccess?.(lit, { level: 40 }, context)
       expect(setData).toHaveBeenCalledWith('light', lit)
     })
 

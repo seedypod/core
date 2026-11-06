@@ -7,7 +7,7 @@ import { HOLD_MS } from '../useLightControl'
 const { data, calls, setLight } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn() },
-  setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onSuccess?: (s: unknown) => void, onError?: (e: Error, sent: { level?: number }) => void } },
+  setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onMutate?: () => { command: number }, onSuccess?: (s: unknown, sent: unknown, context: { command: number }) => void, onError?: (e: Error, sent: { level?: number }) => void } },
 }))
 
 vi.mock('../CurveEditor', () => ({ CurveEditor: ({ schedule }: { schedule: { name: string } }) => <div>{`editing ${schedule.name}`}</div> }))
@@ -146,7 +146,7 @@ describe('LightPage: who controls the light', () => {
   it('writes the state a command returns into the cache instead of fetching it again', () => {
     render(<LightPage />)
     const state = { on: true, level: 30, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null }
-    setLight.hook.onSuccess?.(state)
+    setLight.hook.onSuccess?.(state, { level: 30 }, setLight.hook.onMutate?.() as { command: number })
     expect(setLight.setData).toHaveBeenCalledWith(undefined, state)
   })
 
