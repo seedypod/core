@@ -125,9 +125,21 @@ fn camera_rules_are_printed_for_explicit_ports_and_bad_input_is_refused() {
         .output()
         .expect("hald runs");
     assert!(!bad.status.success());
+    let bad = hald()
+        .args(["--camera-rules", "upper=bcm2835-codec"])
+        .output()
+        .expect("hald runs");
+    assert!(!bad.status.success());
     let listed = hald().arg("--list-cameras").output().expect("hald runs");
     assert!(listed.status.success());
     assert!(serde_json::from_slice::<serde_json::Value>(&listed.stdout)
         .unwrap()
         .is_array());
+}
+
+#[test]
+fn syncing_camera_rules_with_no_cameras_changes_nothing() {
+    let out = hald().arg("--sync-camera-rules").output().expect("hald runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("names are pinned when both appear"));
 }

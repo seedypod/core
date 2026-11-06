@@ -8,6 +8,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+/// Where `--sync-camera-rules` keeps the pins.
+pub const RULES_PATH: &str = "/etc/udev/rules.d/70-seedypod-cameras.rules";
+
+const NAMES: [&str; 2] = ["upper", "lower"];
+
 /// A capture node found in sysfs.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Detected {
@@ -74,7 +79,7 @@ fn port_key(port: &str) -> Vec<u32> {
 
 /// Default assignment: the first two cameras by port become `upper` and `lower`.
 pub fn default_assignment(found: &[Detected]) -> Vec<(String, String)> {
-    ["upper", "lower"]
+    NAMES
         .iter()
         .zip(found)
         .map(|(name, d)| ((*name).to_owned(), d.port.clone()))
@@ -92,11 +97,7 @@ pub fn parse_assignment(args: &[String]) -> Result<Vec<(String, String)>, String
                 && name
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-            let ok_port = !port.is_empty()
-                && port
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "-.:".contains(c));
-            if !ok_name || !ok_port {
+            if !ok_name || !is_usb_interface(port) {
                 return Err(format!("bad camera assignment {a:?}"));
             }
             Ok((name.to_owned(), port.to_owned()))
@@ -112,10 +113,101 @@ pub fn rules(assign: &[(String, String)]) -> String {
     );
     for (name, port) in assign {
         s.push_str(&format!(
-            "SUBSYSTEM==\"video4linux\", KERNELS==\"{port}\", ATTR{{index}}==\"0\", SYMLINK+=\"seedypod/camera-{name}\"\n"
+            "SUBSYSTEM==\"video4linux\", SUBSYSTEMS==\"usb\", KERNELS==\"{port}\", ATTR{{index}}==\"0\", SYMLINK+=\"seedypod/camera-{name}\"\n"
         ));
     }
     s
+}
+
+/// The `(name, port)` pins in a rules file, ignoring anything that isn't a USB interface.
+pub fn parse_rules(text: &str) -> Vec<(String, String)> {
+    let between = |line: &'_ str, open: &str, close: char| {
+        let rest = &line[line.find(open)? + open.len()..];
+        Some(rest[..rest.find(close)?].to_owned())
+    };
+    text.lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter_map(|l| {
+            let port = between(l, "KERNELS==\"", '"')?;
+            let name = between(l, "seedypod/camera-", '"')?;
+            is_usb_interface(&port).then_some((name, port))
+        })
+        .collect()
+}
+
+/// The pins to write, or `None` to leave things alone.
+///
+/// Pins already made are kept, so an assignment set by hand survives. A first
+/// assignment waits for both cameras: a lone camera on a half-enumerated hub
+/// could be either one, and naming it `upper` would swap them for good.
+pub fn plan(existing: &[(String, String)], found: &[Detected]) -> Option<Vec<(String, String)>> {
+    if existing.is_empty() && found.len() < NAMES.len() {
+        return None;
+    }
+    let free_names = NAMES
+        .iter()
+        .filter(|n| !existing.iter().any(|(name, _)| name == *n));
+    let free_ports = found
+        .iter()
+        .filter(|d| !existing.iter().any(|(_, port)| *port == d.port));
+    let added = free_names
+        .zip(free_ports)
+        .map(|(name, d)| ((*name).to_owned(), d.port.clone()));
+    let all: Vec<_> = existing.iter().cloned().chain(added).collect();
+    (all.len() > existing.len()).then_some(all)
+}
+
+/// Pin whichever cameras are on the bus now, then let `reload` make udev act on
+/// it. Safe to run on every camera arrival. Says what it did.
+pub fn sync(
+    sysfs: &Path,
+    dev: &Path,
+    rules_path: &Path,
+    reload: impl FnOnce() -> Result<(), String>,
+) -> Result<String, String> {
+    let found = discover(sysfs, dev);
+    let existing = std::fs::read_to_string(rules_path)
+        .map(|t| parse_rules(&t))
+        .unwrap_or_default();
+    let Some(assign) = plan(&existing, &found) else {
+        return Ok(if existing.is_empty() {
+            format!(
+                "{} of {} cameras on the bus; names are pinned when both appear",
+                found.len(),
+                NAMES.len()
+            )
+        } else {
+            "camera names already pinned".to_owned()
+        });
+    };
+    // udev only reads *.rules, and the rename means it never sees half a file.
+    let tmp = rules_path.with_extension("rules.tmp");
+    std::fs::write(&tmp, rules(&assign))
+        .and_then(|()| std::fs::rename(&tmp, rules_path))
+        .map_err(|e| format!("{}: {e}", rules_path.display()))?;
+    reload()?;
+    let pins = assign
+        .iter()
+        .map(|(name, port)| format!("{name} = port {port}"))
+        .collect::<Vec<_>>();
+    Ok(format!("camera names pinned: {}", pins.join(", ")))
+}
+
+/// `--action=add`: a plain trigger is `change`, which doesn't create the links.
+pub fn reload_udev() -> Result<(), String> {
+    for args in [
+        &["control", "--reload"][..],
+        &["trigger", "--action=add", "--subsystem-match=video4linux"][..],
+    ] {
+        let status = std::process::Command::new("udevadm")
+            .args(args)
+            .status()
+            .map_err(|e| format!("udevadm: {e}"))?;
+        if !status.success() {
+            return Err(format!("udevadm {} exited {status}", args[0]));
+        }
+    }
+    Ok(())
 }
 
 /// `/dev/seedypod/camera-<name>`, the stable path the rules create.
@@ -191,7 +283,7 @@ mod tests {
             ("lower".into(), "1-1.3:1.0".into()),
         ]);
         assert!(r.contains(
-            "SUBSYSTEM==\"video4linux\", KERNELS==\"1-1.2:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-upper\"\n"
+            "SUBSYSTEM==\"video4linux\", SUBSYSTEMS==\"usb\", KERNELS==\"1-1.2:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-upper\"\n"
         ));
         assert!(r.contains("KERNELS==\"1-1.3:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-lower\""));
         assert_eq!(r.lines().filter(|l| l.starts_with("SUBSYSTEM")).count(), 2);
@@ -210,5 +302,122 @@ mod tests {
         assert!(parse_assignment(&["upper".into()]).is_err());
         assert!(parse_assignment(&["upper=1-1\"; RUN+=\"/bin/sh".into()]).is_err());
         assert!(parse_assignment(&["=1-1.2:1.0".into()]).is_err());
+        // Rules must only ever match USB interfaces.
+        assert!(parse_assignment(&["upper=bcm2835-codec".into()]).is_err());
+        assert!(parse_assignment(&["upper=1-1.3".into()]).is_err());
+    }
+
+    fn detected(ports: &[&str]) -> Vec<Detected> {
+        ports
+            .iter()
+            .map(|p| Detected {
+                device: "/dev/video0".into(),
+                name: "View Camera".into(),
+                port: (*p).to_owned(),
+            })
+            .collect()
+    }
+
+    fn pins(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(n, p)| ((*n).to_owned(), (*p).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn rules_read_back_as_the_assignment_they_were_written_from() {
+        let assign = pins(&[("upper", "1-1.3:1.0"), ("lower", "1-1.4:1.0")]);
+        assert_eq!(parse_rules(&rules(&assign)), assign);
+        assert!(parse_rules("").is_empty());
+        // The older form, a comment, and a line that doesn't name a USB interface.
+        let old = "# KERNELS==\"1-1.9:1.0\" seedypod/camera-x\"\n\
+                   SUBSYSTEM==\"video4linux\", KERNELS==\"1-1.3:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-upper\"\n\
+                   SUBSYSTEM==\"video4linux\", KERNELS==\"bcm2835-codec\", SYMLINK+=\"seedypod/camera-lower\"\n\
+                   SUBSYSTEM==\"video4linux\", KERNELS==\"1-1.4:1.0\", SYMLINK+=\"other\"\n";
+        assert_eq!(parse_rules(old), pins(&[("upper", "1-1.3:1.0")]));
+    }
+
+    #[test]
+    fn a_first_assignment_waits_for_both_cameras() {
+        assert_eq!(plan(&[], &[]), None);
+        // Only the lower camera made it: it must not become `upper`.
+        assert_eq!(plan(&[], &detected(&["1-1.4:1.0"])), None);
+        assert_eq!(
+            plan(&[], &detected(&["1-1.3:1.0", "1-1.4:1.0"])),
+            Some(pins(&[("upper", "1-1.3:1.0"), ("lower", "1-1.4:1.0")]))
+        );
+    }
+
+    #[test]
+    fn pins_already_made_are_kept() {
+        // Set by hand, the other way round from port order.
+        let swapped = pins(&[("upper", "1-1.4:1.0"), ("lower", "1-1.3:1.0")]);
+        assert_eq!(plan(&swapped, &detected(&["1-1.3:1.0", "1-1.4:1.0"])), None);
+        // A third camera doesn't disturb them.
+        assert_eq!(
+            plan(&swapped, &detected(&["1-1.2:1.0", "1-1.3:1.0", "1-1.4:1.0"])),
+            None
+        );
+        // A partial file from an earlier install gets its other half.
+        assert_eq!(
+            plan(
+                &pins(&[("lower", "1-1.4:1.0")]),
+                &detected(&["1-1.3:1.0", "1-1.4:1.0"])
+            ),
+            Some(pins(&[("lower", "1-1.4:1.0"), ("upper", "1-1.3:1.0")]))
+        );
+        assert_eq!(
+            plan(&pins(&[("lower", "1-1.4:1.0")]), &detected(&["1-1.4:1.0"])),
+            None
+        );
+    }
+
+    #[test]
+    fn sync_pins_both_cameras_once_and_reloads_udev() {
+        let root = fake_sysfs("sync");
+        let path = root.join("70-seedypod-cameras.rules");
+        let mut reloads = 0;
+        let said = sync(&root, Path::new("/dev"), &path, || {
+            reloads += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            said,
+            "camera names pinned: upper = port 1-1.2:1.0, lower = port 1-1.3:1.0"
+        );
+        assert_eq!(reloads, 1);
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(written.lines().filter(|l| l.starts_with("SUBSYSTEM")).count(), 2);
+        assert!(!written.contains("bcm2835"));
+        assert!(!path.with_extension("rules.tmp").exists());
+
+        // The trigger that reload fires brings it back here: nothing to do, so no loop.
+        let said = sync(&root, Path::new("/dev"), &path, || panic!("no reload")).unwrap();
+        assert_eq!(said, "camera names already pinned");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), written);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sync_waits_quietly_and_reports_what_it_cant_do() {
+        let root = fake_sysfs("sync-wait");
+        let path = root.join("rules");
+        let said = sync(&root.join("nope"), Path::new("/dev"), &path, || {
+            panic!("no reload")
+        })
+        .unwrap();
+        assert_eq!(
+            said,
+            "0 of 2 cameras on the bus; names are pinned when both appear"
+        );
+        assert!(!path.exists());
+
+        let unwritable = root.join("nope/rules");
+        assert!(sync(&root, Path::new("/dev"), &unwritable, || Ok(())).is_err());
+        let failed = sync(&root, Path::new("/dev"), &path, || Err("udevadm exited 1".into()));
+        assert_eq!(failed, Err("udevadm exited 1".to_owned()));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

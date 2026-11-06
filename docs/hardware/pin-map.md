@@ -76,6 +76,7 @@ Studio tank ≈ 4 gal, Home ≈ 5 gal / 30 pods.
 4. `sudo i2cdetect -y 1`; run upstream's `distance.py`, `light.py --on`, `pump.py --on --speed 20` (5 s, water present), both cameras — as throwaway probes only. `hald --list-cameras` → record which USB port is the upper camera, so `hald --camera-rules` gets the default right.
 5. Check the install steps on real Raspberry Pi OS, which the simulator and the installer tests can't:
    - **Camera ports:** `hald --list-cameras` names both cameras, and the generated udev rules put upper and lower on the right ports.
+   - **Camera rules on arrival:** with no rules file, boot with the cameras off the bus, then bring them up. `journalctl -u seedypod-camera-rules` shows them pinned, and `/dev/seedypod/` fills without a rerun.
    - **Wi-Fi setup hotspot:** holding the button for 10 s opens `seedypod-setup-xxxx`, and joining a network from `http://10.42.0.1:3000/wifi` works (NetworkManager, polkit rule).
    - **Mosquitto:** `systemctl status mosquitto` is active with `/etc/mosquitto/conf.d/seedypod.conf`; `--mqtt-lan` opens 1884 with the printed password.
    - **SD card wear settings (ADR-0021):** after `install-hal`, `ls /etc/systemd/journald.conf.d/` shows `50-seedypod-volatile.conf` and `journalctl --header | grep -i 'file path'` points under `/run/log/journal`; `swapon --show` lists `/dev/zram0` and no `/var/swap`; `findmnt -no OPTIONS /` includes `noatime`. Reboot, then check all three again, and that `hald` and core come back. **Settings → Storage** shows a writes-per-day figure.

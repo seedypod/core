@@ -66,6 +66,10 @@ struct Cli {
     /// pairs, the first two cameras by port become upper and lower.
     #[arg(long, num_args = 0.., value_name = "NAME=PORT")]
     camera_rules: Option<Vec<String>>,
+    /// Pin both cameras in the udev rules once they're on the bus, keeping any
+    /// pins already made, and exit. Needs root. Runs when a camera appears.
+    #[arg(long)]
+    sync_camera_rules: bool,
 }
 
 const DEFAULT_MQTT_URL: &str = "mqtt://127.0.0.1:1883";
@@ -105,6 +109,17 @@ async fn main() -> anyhow::Result<()> {
             anyhow::bail!("no USB cameras found; plug them in or pass NAME=PORT pairs (see --list-cameras)");
         }
         print!("{}", cameras::rules(&assign));
+        return Ok(());
+    }
+    if cli.sync_camera_rules {
+        let said = cameras::sync(
+            Path::new("/sys"),
+            Path::new("/dev"),
+            Path::new(cameras::RULES_PATH),
+            cameras::reload_udev,
+        )
+        .map_err(anyhow::Error::msg)?;
+        println!("{said}");
         return Ok(());
     }
 
