@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { fmtStamp, timeAgo } from '../timeAgo'
+import { fmtStamp, secondsAgo, timeAgo } from '../timeAgo'
 
 const now = Date.parse('2026-11-01T12:00:00Z')
+
+describe('secondsAgo', () => {
+  it('counts seconds, then minutes, then hours', () => {
+    expect(secondsAgo(now - 8_000, now)).toBe('8s ago')
+    expect(secondsAgo(now - 59_999, now)).toBe('59s ago')
+    expect(secondsAgo(now - 60_000, now)).toBe('1m ago')
+    expect(secondsAgo(now - 3_600_000, now)).toBe('1h ago')
+  })
+
+  it('reads a time ahead of now as this instant', () => {
+    expect(secondsAgo(now + 5_000, now)).toBe('0s ago')
+  })
+})
 
 describe('timeAgo', () => {
   it('rounds down to minutes, hours, then days', () => {

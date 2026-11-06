@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { SidebarSearch } from '@/src/components/Search/CommandPalette'
 import { DOCS_BASE } from '@/src/components/Search/docsIndex'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
+import { ReadingAge } from '@/src/components/Sensors/ReadingAge'
 import { ageDays, podShown } from '@/src/components/Grow/towerLayout'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
@@ -29,7 +30,7 @@ function savedCollapsed(): Set<string> {
 }
 
 /** A system reading with a neutral meter under it, linking to its page. */
-function Meter({ to, icon: Icon, label, value, pct }: { to: string, icon: typeof Sun, label: string, value: string, pct: number | null }) {
+function Meter({ to, icon: Icon, label, value, pct, readings }: { to: string, icon: typeof Sun, label: string, value: string, pct: number | null, readings?: ReadonlyArray<Reading | undefined> }) {
   return (
     <Link to={to} className="flex flex-col gap-1.5 text-fg-2 hover:text-fg">
       <span className="flex items-center gap-1.5">
@@ -42,6 +43,7 @@ function Meter({ to, icon: Icon, label, value, pct }: { to: string, icon: typeof
           <span className="block h-full rounded-full bg-meter" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
         </span>
       )}
+      {readings && <ReadingAge readings={readings} className="text-right" />}
     </Link>
   )
 }
@@ -61,9 +63,9 @@ function Readings() {
   return (
     <div className="flex flex-col gap-2.5 rounded-[10px] border border-line bg-active/40 p-3 font-mono text-[11px]">
       <Meter to="/light" icon={Sun} label="Light" value={l ? (l.on ? `${l.level}%` : 'off') : '…'} pct={l ? (l.on ? l.level : 0) : null} />
-      <Meter to="/water" icon={Droplets} label="Tank" value={tank ? withUnit(tank.value, tank.unit) : '—'} pct={tank ? Number(tank.value) : null} />
-      <Meter to="/sensors" icon={Thermometer} label="Air" value={air || '—'} pct={null} />
-      {water && <Meter to="/sensors" icon={FlaskConical} label="Water" value={water} pct={null} />}
+      <Meter to="/water" icon={Droplets} label="Tank" value={tank ? withUnit(tank.value, tank.unit) : '—'} pct={tank ? Number(tank.value) : null} readings={[tank]} />
+      <Meter to="/sensors" icon={Thermometer} label="Air" value={air || '—'} pct={null} readings={[s.air_temp, s.humidity]} />
+      {water && <Meter to="/sensors" icon={FlaskConical} label="Water" value={water} pct={null} readings={quality.map(id => s[id])} />}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Dashboard } from '../Dashboard'
+import { CardsHome, Dashboard } from '../Dashboard'
 
 interface Hook { onMutate?: () => unknown, onSuccess?: (r: unknown, sent?: unknown, context?: unknown) => void, onError?: (e: Error, sent: unknown) => void, onSettled?: () => void }
 
@@ -36,6 +36,28 @@ vi.mock('@/src/utils/trpc', () => {
   })
   const router = (prefix: string): unknown => new Proxy({}, { get: (_, k: string) => (k === 'useQuery' || k === 'useMutation' ? proc(prefix)[k] : router(prefix ? `${prefix}.${k}` : k)) })
   return { apiBase: () => '', trpc: new Proxy({}, { get: (_, k: string) => (k === 'useUtils' ? () => ({ settings: { invalidate: vi.fn() }, light: { get: { setData: (_: unknown, v: unknown) => setData('light', v) } }, pump: { invalidate: invalidatePump, get: { setData: (_: unknown, v: unknown) => setData('pump', v) } } }) : router(k)) }) }
+})
+
+describe('readings on the cards Home', () => {
+  const at = (msAgo: number, quality = 'good') => ({ ts: new Date(Date.now() - msAgo).toISOString(), value: 7, unit: 'cm', quality })
+  const age = (label: string) => within(screen.getByText(label).parentElement as HTMLElement).getByTestId('reading-age')
+
+  it('shows each reading\'s age, and says when there is none', () => {
+    data.set('sensors.latest', { water_distance: at(8_000) })
+    render(<CardsHome />)
+    expect(age('Distance').textContent).toMatch(/^updated \ds ago$/)
+    expect(age('Tank').textContent).toBe('no reading')
+    expect(age('Tank').className).not.toContain('text-warn')
+  })
+
+  it('marks a reading that stopped arriving, and one hald flagged as suspect', () => {
+    data.set('sensors.latest', { water_distance: at(90_000), air_temp: at(1_000, 'suspect') })
+    render(<CardsHome />)
+    expect(age('Distance').textContent).toBe('stale · updated 1m ago')
+    expect(age('Distance').className).toContain('text-warn')
+    expect(age('Air').textContent).toMatch(/^suspect · updated \ds ago$/)
+    expect(age('Air').className).toContain('text-warn')
+  })
 })
 
 afterEach(() => {
