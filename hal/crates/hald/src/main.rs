@@ -250,6 +250,7 @@ async fn main() -> anyhow::Result<()> {
         system: system.clone(),
         snapshot,
         cameras: Arc::new(built.cameras),
+        camera_health: http::CameraHealth::default(),
         started: Instant::now(),
         mqtt_connected: mqtt_connected.clone(),
         inbound: inbound_tx.clone(),

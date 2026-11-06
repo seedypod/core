@@ -52,7 +52,7 @@ On our Home 3.0 the top board is silkscreened **Rev1.5 PCB 11/2019**. It carries
 
 On our 3.0 the upper camera (hub port `1-1.3`) gave torn frames: horizontal bands, split images and a solid green or grey block. It gave 0 good frames in 7 at 1280x960 and 2592x1944, and also failed at 320x240, 640x480 and 1920x1080. The lower camera passed 7 of 7 with the same settings on the same hub. The kernel logged `Failed to set UVC probe control : -71` for that port only, and basic control transfers failed too.
 
-This looks like hardware: the cable, connector or camera. It isn't settled. Lower resolutions didn't help in these tests, and neither did `uvcvideo quirks=128` or removing `snd_usb_audio`, but stock falls back through lower resolutions and retries 5 times, so it may have been working around the same fault. Reseating the connectors on the daughterboard is the next test. A torn frame is still a normal-looking JPEG on disk, and the `green-threshold` analyzer scored 7-13% green on empty pods from one.
+This looks like hardware: the cable, connector or camera. It isn't settled. Lower resolutions didn't help in these tests, and neither did `uvcvideo quirks=128` or removing `snd_usb_audio`, but stock falls back through lower resolutions and retries 5 times, so it may have been working around the same fault. Reseating the connectors on the daughterboard is the next test. A torn frame is still a normal-looking JPEG on disk, and the `green-threshold` analyzer scored 7-13% green on empty pods from one. `fswebcam` re-encodes every frame, so the file can't show the damage; `hald` now checks the raw frame and refuses it ([Stills](hal.md#stills)).
 
 ## Model detection
 

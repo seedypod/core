@@ -293,7 +293,12 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
             let mut ucfg = hal_drivers::uvc::UvcConfig::new(c.device.clone());
             ucfg.fallback = c.fallback.clone();
             ucfg.resolution = c.resolution.clone();
+            ucfg.palette = c.palette.clone();
             ucfg.skip_frames = c.skip_frames;
+            ucfg.attempts = c.capture_attempts;
+            ucfg.retry_delay = std::time::Duration::from_millis(c.capture_retry_ms);
+            ucfg.attempt_timeout = std::time::Duration::from_secs(c.capture_timeout_s);
+            ucfg.inspect_frames = c.inspect_frames;
             let cam: SharedCamera = Arc::new(Mutex::new(Box::new(hal_drivers::uvc::UvcCamera::new(
                 &c.name,
                 ucfg,

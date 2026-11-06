@@ -1,7 +1,9 @@
 //! HTTP (axum): health, system info, the state snapshot and camera stills.
 //! Stills go through one mutex per camera (upstream #117) and the capture
 //! runs on a blocking thread; every result is reported to the engine so
-//! `camera_missing` reflects reality.
+//! `camera_missing` reflects reality. That alert covers all the cameras, so
+//! [`CameraHealth`] keeps it up until none is failing: a good frame from one
+//! camera must not clear another's failure.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,11 +23,44 @@ use crate::engine::{Inbound, SharedSnapshot};
 
 pub type SharedCamera = Arc<Mutex<Box<dyn Camera>>>;
 
+/// Why each failing camera's last capture failed.
+#[derive(Clone, Default)]
+pub struct CameraHealth(Arc<Mutex<BTreeMap<String, String>>>);
+
+impl CameraHealth {
+    /// Record one capture and return what the engine should now show. Names
+    /// read `upper camera`: core and the app go by that prefix.
+    fn report(&self, name: &str, failure: Option<String>) -> Inbound {
+        let mut failing = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        match failure {
+            Some(detail) => failing.insert(name.to_owned(), detail),
+            None => failing.remove(name),
+        };
+        let mut all = failing.iter().map(|(n, d)| (format!("{n} camera"), d.clone()));
+        match all.next() {
+            Some((first, detail)) => Inbound::CameraResult {
+                name: first,
+                ok: false,
+                detail: std::iter::once(detail)
+                    .chain(all.map(|(n, d)| format!("{n}: {d}")))
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            },
+            None => Inbound::CameraResult {
+                name: format!("{name} camera"),
+                ok: true,
+                detail: String::new(),
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub system: SystemInfo,
     pub snapshot: SharedSnapshot,
     pub cameras: Arc<BTreeMap<String, SharedCamera>>,
+    pub camera_health: CameraHealth,
     pub started: Instant,
     pub mqtt_connected: Arc<AtomicBool>,
     pub inbound: Sender<Inbound>,
@@ -85,11 +120,7 @@ async fn camera(State(s): State<AppState>, Path(file): Path<String>) -> Response
     .await;
     match captured {
         Ok(Ok(bytes)) => {
-            let _ = s.inbound.send(Inbound::CameraResult {
-                name,
-                ok: true,
-                detail: String::new(),
-            });
+            let _ = s.inbound.send(s.camera_health.report(&name, None));
             (
                 [
                     (header::CONTENT_TYPE, "image/jpeg".to_owned()),
@@ -100,11 +131,7 @@ async fn camera(State(s): State<AppState>, Path(file): Path<String>) -> Response
                 .into_response()
         }
         Ok(Err(e)) => {
-            let _ = s.inbound.send(Inbound::CameraResult {
-                name,
-                ok: false,
-                detail: e.to_string(),
-            });
+            let _ = s.inbound.send(s.camera_health.report(&name, Some(e.to_string())));
             (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -160,6 +187,7 @@ mod tests {
             },
             snapshot,
             cameras: Arc::new(cameras),
+            camera_health: CameraHealth::default(),
             started: Instant::now(),
             mqtt_connected: connected.clone(),
             inbound: tx,
@@ -231,17 +259,62 @@ mod tests {
         assert_eq!(st, StatusCode::SERVICE_UNAVAILABLE);
         match rx.try_recv() {
             Ok(Inbound::CameraResult { name, ok, detail }) => {
-                assert_eq!((name.as_str(), ok), ("lower", false));
+                assert_eq!((name.as_str(), ok), ("lower camera", false));
                 assert!(detail.contains("not present"));
             }
             other => panic!("{other:?}"),
         }
+
+        // One camera working doesn't hide the other's failure.
+        let (st, _, _) = get_path(&app, "/camera/upper.jpg").await;
+        assert_eq!(st, StatusCode::OK);
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(Inbound::CameraResult { ok: false, name, .. }) if name == "lower camera"
+        ));
 
         let (st, _, _) = get_path(&app, "/camera/side.jpg").await;
         assert_eq!(st, StatusCode::NOT_FOUND);
         let (st, _, _) = get_path(&app, "/camera/upper.png").await;
         assert_eq!(st, StatusCode::NOT_FOUND);
         assert!(rx.try_recv().is_err());
+    }
+
+    fn expect_failure(result: Inbound) -> (String, String) {
+        match result {
+            Inbound::CameraResult {
+                name,
+                ok: false,
+                detail,
+            } => (name, detail),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn camera_missing_stays_up_until_every_camera_has_recovered() {
+        let health = CameraHealth::default();
+        let (name, detail) = expect_failure(health.report("upper", Some("torn".into())));
+        assert_eq!((name.as_str(), detail.as_str()), ("upper camera", "torn"));
+
+        // The other camera's good frame leaves it standing, unchanged.
+        let (name, detail) = expect_failure(health.report("lower", None));
+        assert_eq!((name.as_str(), detail.as_str()), ("upper camera", "torn"));
+
+        // Both failing: the alert names both.
+        let (name, detail) = expect_failure(health.report("lower", Some("gone".into())));
+        assert_eq!(
+            format!("{name}: {detail}"),
+            "lower camera: gone; upper camera: torn"
+        );
+
+        let (name, detail) = expect_failure(health.report("lower", None));
+        assert_eq!((name.as_str(), detail.as_str()), ("upper camera", "torn"));
+
+        assert!(matches!(
+            health.report("upper", None),
+            Inbound::CameraResult { ok: true, .. }
+        ));
     }
 
     #[test]

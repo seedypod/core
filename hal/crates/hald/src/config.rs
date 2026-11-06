@@ -133,17 +133,67 @@ pub struct CameraEntry {
     /// Used while `device` doesn't exist, e.g. before the udev rules are installed.
     #[serde(default)]
     pub fallback: Option<PathBuf>,
+    /// The sensor's own 4:3 shape, so nothing is cropped, at a size a Pi Zero
+    /// decodes and re-encodes in a few seconds.
     #[serde(default = "default_resolution")]
     pub resolution: String,
+    /// Always sent: left unset, each camera keeps whatever format it last used.
+    #[serde(default = "default_palette")]
+    pub palette: String,
     #[serde(default = "default_skip")]
     pub skip_frames: u32,
+    /// Tries per still; the worst case is about `attempts × attempt_timeout_s`.
+    #[serde(default = "default_capture_attempts")]
+    pub capture_attempts: u32,
+    /// Wait before retry N is this times N.
+    #[serde(default = "default_capture_retry_ms")]
+    pub capture_retry_ms: u64,
+    /// `fswebcam` is killed after this long.
+    #[serde(default = "default_capture_timeout_s")]
+    pub capture_timeout_s: u64,
+    /// Check each raw frame for tearing. Turn off only if a camera's good
+    /// frames are being refused; damaged frames then reach the store.
+    #[serde(default = "default_inspect_frames")]
+    pub inspect_frames: bool,
 }
 
 fn default_resolution() -> String {
-    "1280x720".into()
+    "1280x960".into()
+}
+fn default_palette() -> String {
+    "MJPEG".into()
 }
 fn default_skip() -> u32 {
     15
+}
+fn default_capture_attempts() -> u32 {
+    3
+}
+fn default_capture_retry_ms() -> u64 {
+    1000
+}
+fn default_capture_timeout_s() -> u64 {
+    15
+}
+fn default_inspect_frames() -> bool {
+    true
+}
+
+impl CameraEntry {
+    fn stock(name: &str, fallback: &str) -> Self {
+        Self {
+            name: name.into(),
+            device: format!("/dev/seedypod/camera-{name}").into(),
+            fallback: Some(fallback.into()),
+            resolution: default_resolution(),
+            palette: default_palette(),
+            skip_frames: default_skip(),
+            capture_attempts: default_capture_attempts(),
+            capture_retry_ms: default_capture_retry_ms(),
+            capture_timeout_s: default_capture_timeout_s(),
+            inspect_frames: default_inspect_frames(),
+        }
+    }
 }
 
 /// Known sensor kinds (`hald --check` rejects anything else).
@@ -217,20 +267,8 @@ impl Default for Config {
             ha: HomeAssistant::default(),
             mdns: true,
             camera: vec![
-                CameraEntry {
-                    name: "upper".into(),
-                    device: "/dev/seedypod/camera-upper".into(),
-                    fallback: Some("/dev/video0".into()),
-                    resolution: default_resolution(),
-                    skip_frames: default_skip(),
-                },
-                CameraEntry {
-                    name: "lower".into(),
-                    device: "/dev/seedypod/camera-lower".into(),
-                    fallback: Some("/dev/video2".into()),
-                    resolution: default_resolution(),
-                    skip_frames: default_skip(),
-                },
+                CameraEntry::stock("upper", "/dev/video0"),
+                CameraEntry::stock("lower", "/dev/video2"),
             ],
             sensor: Vec::new(),
             actuator: Vec::new(),
@@ -623,8 +661,13 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # name = "upper"
 # device = "/dev/seedypod/camera-upper"
 # fallback = "/dev/video0"
-# resolution = "1280x720"
+# resolution = "1280x960"
+# palette = "MJPEG"
 # skip_frames = 15
+# capture_attempts = 3
+# capture_retry_ms = 1000
+# capture_timeout_s = 15
+# inspect_frames = true
 # [[camera]]
 # name = "lower"
 # device = "/dev/seedypod/camera-lower"
