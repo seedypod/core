@@ -137,10 +137,15 @@ Semantics worth knowing:
 - **Pump**: `{"on":true}` runs at the last/ max duty for `pump_max_run_s`;
   `level` is clamped to `pump_max_duty`; `durationS` is clamped to
   `pump_max_run_s`. A start is refused when the median water distance ≥
-  `water_low_cm` (or the ranger is unavailable), when the PCB is ≥
-  `over_temp_c`, when the board's GPIO25 alert line is asserted, or while a
-  fault is latched. A running pump that trips latches `fault` (`dry-run`,
-  `over-temp`) until `alert/pump_fault/ack`. `{"on":false}` always works.
+  `water_low_cm` (or the ranger is unavailable), while `water_low` is active,
+  when the PCB is ≥ `over_temp_c`, when the board's GPIO25 alert line is
+  asserted, or while a fault is latched. A running pump that trips latches
+  `fault` (`dry-run`, `over-temp`) until `alert/pump_fault/ack`. `{"on":false}`
+  always works.
+- **`water_low`** is debounced over the last 6 telemetry rounds, so a ranger
+  on stray echoes doesn't raise a new alert every few seconds. A reading at
+  `water_low_cm` raises it at once, no reading raises it on the third such round
+  of the 6 (or on the first after boot), and it clears after 6 good rounds in a row.
 - **Light**: `level` 0–100, no interlock; `{"on":true}` without a level
   restores the last on-level. The level is persisted and restored on boot.
 - **Dosing** (`dose_1..3`): `durationS` is seconds of pumping, converted to ml
