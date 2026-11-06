@@ -12,6 +12,11 @@
 //! persists per camera between runs, and each capture also dumps the camera's
 //! raw frame for [`mjpeg::inspect`](crate::mjpeg::inspect). A bad frame is
 //! retried in a new process, which also renegotiates with the camera.
+//!
+//! A unit can run for months on one camera with a dead link to the other, so a
+//! camera that keeps failing gets one try per still instead of a round of
+//! retries, and its error reads the same each time: that text becomes the
+//! alert, and a detail that changes is republished and rewritten on the card.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -68,7 +73,8 @@ pub struct UvcConfig {
     pub skip_frames: u32,
     pub jpeg_quality: u8,
     pub min_bytes: usize,
-    /// Tries per capture. Each attempt is a new `fswebcam` process.
+    /// Tries per capture, for a camera that isn't already failing. Each attempt
+    /// is a new `fswebcam` process.
     pub attempts: u32,
     /// Wait before retry N: this times N.
     pub retry_delay: Duration,
@@ -163,7 +169,7 @@ impl CommandRunner for ProcessRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| DeviceError::Other(format!("{program}: {e}")))?;
+            .map_err(|e| DeviceError::Other(format!("{program} didn't start: {e}")))?;
         let (stdout, stderr) = (drain(child.stdout.take()), drain(child.stderr.take()));
         let deadline = Instant::now() + timeout;
         let status = loop {
@@ -189,7 +195,7 @@ impl CommandRunner for ProcessRunner {
             Ok(printed)
         } else {
             Err(DeviceError::Other(format!(
-                "{program} exited {status}: {}",
+                "{program} failed: {status}: {}",
                 printed.trim()
             )))
         }
@@ -201,6 +207,8 @@ pub struct UvcCamera<R: CommandRunner> {
     cfg: UvcConfig,
     runner: R,
     scratch: PathBuf,
+    /// The last capture used up its attempts.
+    failing: bool,
 }
 
 impl<R: CommandRunner> UvcCamera<R> {
@@ -211,6 +219,7 @@ impl<R: CommandRunner> UvcCamera<R> {
             cfg,
             runner,
             scratch: scratch.into(),
+            failing: false,
         }
     }
 
@@ -238,14 +247,14 @@ impl<R: CommandRunner> UvcCamera<R> {
         let args = fswebcam_args(&self.cfg, device, out, inspect.then_some(raw));
         let printed = self.runner.run("fswebcam", &args, self.cfg.attempt_timeout)?;
         if let Some(line) = failure_line(&printed) {
-            return Err(DeviceError::Other(format!("fswebcam reported {line:?}")));
+            return Err(DeviceError::Other(format!("fswebcam reported: {line}")));
         }
         let bytes = std::fs::read(out).map_err(|e| DeviceError::Other(format!("read capture: {e}")))?;
         if !jpeg_is_plausible(&bytes, self.cfg.min_bytes) {
             return Err(DeviceError::Other(format!(
-                "capture from {} is not a plausible JPEG ({} bytes)",
-                device.display(),
-                bytes.len()
+                "not a plausible JPEG: {} bytes from {}",
+                bytes.len(),
+                device.display()
             )));
         }
         if inspect {
@@ -267,7 +276,7 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
         &self.name
     }
     fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
-        let attempts = self.cfg.attempts.max(1);
+        let attempts = if self.failing { 1 } else { self.cfg.attempts.max(1) };
         let mut last = None;
         for attempt in 1..=attempts {
             // Looked up each time: a camera that drops off the bus mid-retry is missing, not failing.
@@ -276,9 +285,10 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
             };
             match self.attempt(&device) {
                 Ok(bytes) => {
-                    if attempt > 1 {
+                    if attempt > 1 || self.failing {
                         info!(camera = %self.name, attempt, "capture recovered");
                     }
+                    self.failing = false;
                     return Ok(bytes);
                 }
                 Err(e) => {
@@ -290,10 +300,11 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
                 thread::sleep(self.cfg.retry_delay * attempt);
             }
         }
+        self.failing = true;
         let last = last.map(|e| e.to_string()).unwrap_or_default();
-        Err(DeviceError::Other(format!(
-            "no good frame in {attempts} attempts: {last}"
-        )))
+        // The kind of failure only: the specifics are in the log above.
+        let kind = last.split_once(": ").map_or(last.as_str(), |(kind, _)| kind);
+        Err(DeviceError::Other(format!("no good frame: {kind}")))
     }
 }
 
@@ -425,7 +436,7 @@ mod tests {
                 std::fs::remove_dir_all(p).unwrap();
             }
             if run.fails {
-                return Err(DeviceError::Other("fswebcam exited 1".into()));
+                return Err(DeviceError::Other("fswebcam failed: exit status: 1: boom".into()));
             }
             Ok(run.printed.to_owned())
         }
@@ -486,10 +497,7 @@ mod tests {
         };
         let mut cam = camera(&dir, vec![torn(), torn(), torn()]);
         let e = error(cam.capture());
-        assert!(
-            e.contains("no good frame in 3 attempts: damaged frame: scan ended"),
-            "{e}"
-        );
+        assert_eq!(e, "no good frame: damaged frame");
         assert_eq!(cam.runner.calls, 3);
         assert!(!cam.out_path().exists());
         assert!(!cam.raw_path().exists());
@@ -505,8 +513,7 @@ mod tests {
         };
         let mut cam = camera(&dir, vec![warned(), warned(), warned()]);
         let e = error(cam.capture());
-        assert!(e.contains("fswebcam reported"), "{e}");
-        assert!(e.contains("Not a JPEG file"), "{e}");
+        assert_eq!(e, "no good frame: fswebcam reported");
         assert_eq!(cam.runner.calls, 3);
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -549,11 +556,49 @@ mod tests {
             ],
         );
         let e = error(cam.capture());
-        assert!(
-            e.contains("no good frame in 3 attempts: fswebcam exited 1"),
-            "{e}"
-        );
+        assert_eq!(e, "no good frame: fswebcam failed");
         assert_eq!(cam.runner.calls, 3);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn torn_at(cut: usize) -> Run {
+        Run {
+            raw: Some(GOOD_RAW[..cut].to_vec()),
+            ..good()
+        }
+    }
+
+    #[test]
+    fn a_camera_that_keeps_failing_gets_one_try_per_still_until_it_recovers() {
+        let dir = scratch("calm");
+        let cut = GOOD_RAW.len() / 2;
+        let mut runs: Vec<Run> = (0..5).map(|_| torn_at(cut)).collect();
+        runs.extend([good(), torn_at(cut), good()]);
+        let mut cam = camera(&dir, runs);
+        assert!(cam.capture().is_err());
+        assert_eq!(cam.runner.calls, 3);
+        assert!(cam.capture().is_err());
+        assert_eq!(cam.runner.calls, 4);
+        assert!(cam.capture().is_err());
+        assert_eq!(cam.runner.calls, 5);
+        assert!(cam.capture().is_ok());
+        assert_eq!(cam.runner.calls, 6);
+        // Recovered, so it gets its retries back.
+        assert!(cam.capture().is_ok());
+        assert_eq!(cam.runner.calls, 8);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_error_reads_the_same_however_the_frame_was_torn() {
+        let dir = scratch("stable");
+        let n = GOOD_RAW.len();
+        let mut cam = camera(
+            &dir,
+            vec![torn_at(n / 2), torn_at(n / 2), torn_at(n / 2), torn_at(n / 3)],
+        );
+        let first = error(cam.capture());
+        assert_eq!(error(cam.capture()), first);
         let _ = std::fs::remove_dir_all(dir);
     }
 

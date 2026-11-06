@@ -28,30 +28,36 @@ pub type SharedCamera = Arc<Mutex<Box<dyn Camera>>>;
 pub struct CameraHealth(Arc<Mutex<BTreeMap<String, String>>>);
 
 impl CameraHealth {
-    /// Record one capture and return what the engine should now show. Names
-    /// read `upper camera`: core and the app go by that prefix.
-    fn report(&self, name: &str, failure: Option<String>) -> Inbound {
+    /// Record one capture and tell the engine what it should now show. The send
+    /// stays under the lock so the engine sees results in the order they were
+    /// recorded: a stale success must not land after a newer failure.
+    fn report(&self, name: &str, failure: Option<String>, engine: &Sender<Inbound>) {
         let mut failing = self.0.lock().unwrap_or_else(|e| e.into_inner());
         match failure {
             Some(detail) => failing.insert(name.to_owned(), detail),
             None => failing.remove(name),
         };
-        let mut all = failing.iter().map(|(n, d)| (format!("{n} camera"), d.clone()));
-        match all.next() {
-            Some((first, detail)) => Inbound::CameraResult {
-                name: first,
-                ok: false,
-                detail: std::iter::once(detail)
-                    .chain(all.map(|(n, d)| format!("{n}: {d}")))
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            },
-            None => Inbound::CameraResult {
-                name: format!("{name} camera"),
-                ok: true,
-                detail: String::new(),
-            },
-        }
+        let _ = engine.send(summary(&failing, name));
+    }
+}
+
+/// Names read `upper camera`: core and the app go by that prefix.
+fn summary(failing: &BTreeMap<String, String>, name: &str) -> Inbound {
+    let mut all = failing.iter().map(|(n, d)| (format!("{n} camera"), d.clone()));
+    match all.next() {
+        Some((first, detail)) => Inbound::CameraResult {
+            name: first,
+            ok: false,
+            detail: std::iter::once(detail)
+                .chain(all.map(|(n, d)| format!("{n}: {d}")))
+                .collect::<Vec<_>>()
+                .join("; "),
+        },
+        None => Inbound::CameraResult {
+            name: format!("{name} camera"),
+            ok: true,
+            detail: String::new(),
+        },
     }
 }
 
@@ -113,27 +119,25 @@ async fn camera(State(s): State<AppState>, Path(file): Path<String>) -> Response
         return (StatusCode::NOT_FOUND, format!("no camera {name:?}")).into_response();
     };
     let name = name.to_owned();
+    let (health, engine) = (s.camera_health.clone(), s.inbound.clone());
     let captured = tokio::task::spawn_blocking(move || {
         let mut c = cam.lock().unwrap_or_else(|e| e.into_inner());
-        c.capture()
+        let result = c.capture();
+        // Here, not after the await: a client that hangs up drops the handler, not this task.
+        health.report(&name, result.as_ref().err().map(ToString::to_string), &engine);
+        result
     })
     .await;
     match captured {
-        Ok(Ok(bytes)) => {
-            let _ = s.inbound.send(s.camera_health.report(&name, None));
-            (
-                [
-                    (header::CONTENT_TYPE, "image/jpeg".to_owned()),
-                    (header::CACHE_CONTROL, "no-store".to_owned()),
-                ],
-                bytes,
-            )
-                .into_response()
-        }
-        Ok(Err(e)) => {
-            let _ = s.inbound.send(s.camera_health.report(&name, Some(e.to_string())));
-            (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response()
-        }
+        Ok(Ok(bytes)) => (
+            [
+                (header::CONTENT_TYPE, "image/jpeg".to_owned()),
+                (header::CACHE_CONTROL, "no-store".to_owned()),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Ok(Err(e)) => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -144,6 +148,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::Request;
     use hal_core::{ActuatorId, Caps, DeviceError, Limits, SensorId, CONTRACT_VERSION};
+    use std::time::Duration;
     use tower::ServiceExt;
 
     struct Broken;
@@ -152,6 +157,18 @@ mod tests {
             "lower"
         }
         fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
+            Err(DeviceError::NotPresent)
+        }
+    }
+
+    /// Holds its capture open, for a client that doesn't wait.
+    struct Slow;
+    impl Camera for Slow {
+        fn name(&self) -> &str {
+            "slow"
+        }
+        fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
+            std::thread::sleep(Duration::from_millis(100));
             Err(DeviceError::NotPresent)
         }
     }
@@ -165,6 +182,7 @@ mod tests {
             Arc::new(Mutex::new(Box::new(hal_sim::SimCamera::new("upper")))),
         );
         cameras.insert("lower".into(), Arc::new(Mutex::new(Box::new(Broken))));
+        cameras.insert("slow".into(), Arc::new(Mutex::new(Box::new(Slow))));
         let snapshot: SharedSnapshot = Arc::default();
         snapshot.write().unwrap().unit_id = "u1".into();
         let state = AppState {
@@ -280,6 +298,28 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
+    #[tokio::test]
+    async fn a_client_that_hangs_up_doesnt_lose_the_result() {
+        let (app, rx, _) = app();
+        let request = tokio::spawn(async move { get_path(&app, "/camera/slow.jpg").await });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        request.abort();
+        let reported = tokio::task::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(5)))
+            .await
+            .unwrap();
+        assert!(matches!(
+            reported,
+            Ok(Inbound::CameraResult { ok: false, name, .. }) if name == "slow camera"
+        ));
+    }
+
+    /// What the engine is told after one report.
+    fn report(health: &CameraHealth, name: &str, failure: Option<&str>) -> Inbound {
+        let (tx, rx) = std::sync::mpsc::channel();
+        health.report(name, failure.map(str::to_owned), &tx);
+        rx.try_recv().unwrap()
+    }
+
     fn expect_failure(result: Inbound) -> (String, String) {
         match result {
             Inbound::CameraResult {
@@ -294,26 +334,50 @@ mod tests {
     #[test]
     fn camera_missing_stays_up_until_every_camera_has_recovered() {
         let health = CameraHealth::default();
-        let (name, detail) = expect_failure(health.report("upper", Some("torn".into())));
+        let (name, detail) = expect_failure(report(&health, "upper", Some("torn")));
         assert_eq!((name.as_str(), detail.as_str()), ("upper camera", "torn"));
 
         // The other camera's good frame leaves it standing, unchanged.
-        let (name, detail) = expect_failure(health.report("lower", None));
+        let (name, detail) = expect_failure(report(&health, "lower", None));
         assert_eq!((name.as_str(), detail.as_str()), ("upper camera", "torn"));
 
         // Both failing: the alert names both.
-        let (name, detail) = expect_failure(health.report("lower", Some("gone".into())));
+        let (name, detail) = expect_failure(report(&health, "lower", Some("gone")));
         assert_eq!(
             format!("{name}: {detail}"),
             "lower camera: gone; upper camera: torn"
         );
 
-        let (name, detail) = expect_failure(health.report("lower", None));
+        let (name, detail) = expect_failure(report(&health, "lower", None));
         assert_eq!((name.as_str(), detail.as_str()), ("upper camera", "torn"));
 
         assert!(matches!(
-            health.report("upper", None),
+            report(&health, "upper", None),
             Inbound::CameraResult { ok: true, .. }
+        ));
+    }
+
+    #[test]
+    fn the_engine_hears_results_in_the_order_they_were_recorded() {
+        let health = CameraHealth::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let writers: Vec<_> = (0..8)
+            .map(|i| {
+                let (health, tx) = (health.clone(), tx.clone());
+                std::thread::spawn(move || {
+                    for n in 0..=200 {
+                        let failure = (n % 2 == 1).then(|| "torn".to_owned());
+                        health.report(if i % 2 == 0 { "upper" } else { "lower" }, failure, &tx);
+                    }
+                })
+            })
+            .collect();
+        writers.into_iter().for_each(|w| w.join().unwrap());
+        drop(tx);
+        // Every writer ends on a success, so whatever arrived last must say all clear.
+        assert!(matches!(
+            rx.iter().last(),
+            Some(Inbound::CameraResult { ok: true, .. })
         ));
     }
 

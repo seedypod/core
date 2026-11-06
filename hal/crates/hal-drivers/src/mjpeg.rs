@@ -13,10 +13,14 @@
 //! The walk Huffman-decodes every block and throws the values away. No IDCT,
 //! no colour conversion, no image buffer, so its cost is a small fraction of
 //! the decode `fswebcam` does anyway.
+//!
+//! Refusing a good frame makes a working camera look dead, which is worse than
+//! passing a blemish. So anything libjpeg reads without having to repair it
+//! passes here too, however odd: partial tables, padding, stray header bytes.
 
-/// Bytes tolerated between the end of the data and the next marker. Cheap UVC
-/// encoders pad here (libjpeg's "extraneous bytes before marker"), but a
-/// zero-filled or stale tail runs to far more than this.
+/// Stray bytes tolerated before a marker, as libjpeg does ("extraneous bytes
+/// before marker"), not counting 0x00 and 0xFF fill, which can run to any
+/// length. The stale tail of an earlier frame runs to far more than this.
 const MARKER_SLACK: usize = 64;
 
 /// What a frame's walk found. `Err` from [`inspect`] means it is damaged.
@@ -132,14 +136,21 @@ impl<'a> Bits<'a> {
     /// Drop the padding bits and find the next marker within the slack.
     fn next_marker(&mut self) -> Option<u8> {
         self.left = 0;
-        let end = (self.pos + MARKER_SLACK).min(self.data.len().saturating_sub(1));
-        (self.pos..end).find_map(|i| {
-            let next = self.data[i + 1];
-            (self.data[i] == 0xFF && next != 0 && next != 0xFF).then(|| {
-                self.pos = i + 2;
-                next
-            })
-        })
+        let mut stray = 0;
+        while let [byte, next, ..] = self.data[self.pos.min(self.data.len())..] {
+            self.pos += 1;
+            if byte == 0xFF && next != 0 && next != 0xFF {
+                self.pos += 1;
+                return Some(next);
+            }
+            if byte != 0 && byte != 0xFF {
+                stray += 1;
+                if stray > MARKER_SLACK {
+                    return None;
+                }
+            }
+        }
+        None
     }
 }
 
@@ -218,17 +229,21 @@ fn walk_scan(
         }
         for c in comps.iter_mut() {
             for _ in 0..c.blocks {
-                walk_block(&mut bits, c).map_err(|stop| match stop {
-                    Stop::Marker => format!("scan ended after {mcu} of {mcus} MCUs"),
-                    Stop::BadCode => format!("bad Huffman code at MCU {mcu} of {mcus}"),
-                    Stop::BadBlock => format!("impossible block at MCU {mcu} of {mcus}"),
-                    Stop::BadDc => format!("DC out of range at MCU {mcu} of {mcus}"),
-                })?;
+                match walk_block(&mut bits, c) {
+                    Ok(()) => {}
+                    // A scan a few bits short of the end, which libjpeg fills in.
+                    Err(Stop::Marker) if mcu + 1 == mcus && bits.next_marker() == Some(0xD9) => return Ok(()),
+                    Err(Stop::Marker) => return Err(format!("scan ended after {mcu} of {mcus} MCUs")),
+                    Err(Stop::BadCode) => return Err(format!("bad Huffman code at MCU {mcu} of {mcus}")),
+                    Err(Stop::BadBlock) => return Err(format!("impossible block at MCU {mcu} of {mcus}")),
+                    Err(Stop::BadDc) => return Err(format!("DC out of range at MCU {mcu} of {mcus}")),
+                }
             }
         }
     }
     match bits.next_marker() {
-        Some(0xD9) => Ok(()),
+        // A comment or application segment may sit between the scan and EOI.
+        Some(0xD9 | 0xE0..=0xEF | 0xFE) => Ok(()),
         Some(m) => Err(format!("marker {m:#04x} after the last MCU, expected EOI")),
         None => Err(format!("no EOI after all {mcus} MCUs")),
     }
@@ -322,6 +337,7 @@ fn parse_dht(mut seg: &[u8], tables: &mut [Option<Table>; 8]) -> Result<(), Stri
 }
 
 /// The tables of T.81 Annex K.3, which MJPEG streams leave out of each frame.
+/// Slots 2 and 3 have no standard table, so a scan using one must have sent it.
 fn standard_tables() -> [Option<Table>; 8] {
     let digits: Vec<u8> = (0..12).collect();
     let mut t: [Option<Table>; 8] = Default::default();
@@ -439,12 +455,16 @@ pub fn inspect(data: &[u8]) -> Result<FrameScan, String> {
     }
     let mut pos = 2;
     let mut frame = None;
-    let mut dht: [Option<Table>; 8] = Default::default();
-    let mut has_dht = false;
+    // libjpeg-turbo starts from these too, so a DHT may replace only some of them.
+    let mut tables = standard_tables();
     let mut dc_steps = [None; 4];
     let mut restart = 0;
     loop {
-        // Markers may be padded with extra 0xFF bytes.
+        // Stray bytes may come before a marker, and extra 0xFF bytes may pad it.
+        let start = pos;
+        while data.get(pos).is_some_and(|&b| b != 0xFF) && pos - start < MARKER_SLACK {
+            pos += 1;
+        }
         if data.get(pos) != Some(&0xFF) {
             return Err(format!("expected a marker at byte {pos}"));
         }
@@ -453,6 +473,10 @@ pub fn inspect(data: &[u8]) -> Result<FrameScan, String> {
         }
         let marker = *data.get(pos).ok_or("frame ended inside the headers")?;
         pos += 1;
+        // These have no length to skip.
+        if matches!(marker, 0x00 | 0x01 | 0xD0..=0xD7) {
+            continue;
+        }
         if marker == 0xD9 {
             return Err("frame ended before any scan".into());
         }
@@ -470,10 +494,7 @@ pub fn inspect(data: &[u8]) -> Result<FrameScan, String> {
             0xC2 | 0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF => {
                 return Ok(FrameScan::NotInspected("not a baseline JPEG"))
             }
-            0xC4 => {
-                has_dht = true;
-                parse_dht(seg, &mut dht)?;
-            }
+            0xC4 => parse_dht(seg, &mut tables)?,
             0xDB => parse_dqt(seg, &mut dc_steps)?,
             0xDD => {
                 let b = seg.get(..2).ok_or("malformed restart interval")?;
@@ -484,7 +505,6 @@ pub fn inspect(data: &[u8]) -> Result<FrameScan, String> {
                 if frame.height == 0 {
                     return Ok(FrameScan::NotInspected("height set by a later DNL"));
                 }
-                let tables = if has_dht { dht } else { standard_tables() };
                 let (mut comps, mcus) = scan_layout(&frame, seg, &tables, &dc_steps)?;
                 if comps.len() < frame.components.len() {
                     return Ok(FrameScan::NotInspected("more than one scan"));
@@ -624,6 +644,89 @@ mod tests {
             }
             pos += 2 + len;
         }
+    }
+
+    /// `data` with only the DHT tables `keep` accepts, in one segment before the SOS.
+    fn with_tables(data: &[u8], keep: impl Fn(u8) -> bool) -> Vec<u8> {
+        let mut tables = Vec::new();
+        let mut pos = 2;
+        while data[pos + 1] != 0xDA {
+            let len = usize::from(data[pos + 2]) << 8 | usize::from(data[pos + 3]);
+            if data[pos + 1] == 0xC4 {
+                let mut seg = &data[pos + 4..pos + 2 + len];
+                while !seg.is_empty() {
+                    let size = 17 + seg[1..17].iter().map(|&n| usize::from(n)).sum::<usize>();
+                    if keep(seg[0]) {
+                        tables.extend_from_slice(&seg[..size]);
+                    }
+                    seg = &seg[size..];
+                }
+            }
+            pos += 2 + len;
+        }
+        let stripped = without_dht(data);
+        let sos = scan_start(&stripped) - 14;
+        let [hi, lo] = (tables.len() as u16 + 2).to_be_bytes();
+        [&stripped[..sos], &[0xFF, 0xC4, hi, lo], &tables, &stripped[sos..]].concat()
+    }
+
+    /// Each of these came through libjpeg-turbo 2.1.5 with no complaint, so
+    /// refusing one would make a healthy camera look dead.
+    #[test]
+    fn accepts_what_libjpeg_reads_without_repair() {
+        let eoi = SENSOR.len() - 2;
+        let dqt = SENSOR.windows(2).position(|w| w == [0xFF, 0xDB]).unwrap();
+        let shapes: Vec<(&str, Vec<u8>)> = vec![
+            ("luma tables only", with_tables(SENSOR, |t| t & 0x0F == 0)),
+            ("chroma tables only", with_tables(SENSOR, |t| t & 0x0F == 1)),
+            ("AC tables only", with_tables(SENSOR, |t| t >> 4 == 1)),
+            (
+                "zero fill before EOI",
+                [&SENSOR[..eoi], &[0; 500], &SENSOR[eoi..]].concat(),
+            ),
+            (
+                "0xFF fill before EOI",
+                [&SENSOR[..eoi], &[0xFF; 500], &SENSOR[eoi..]].concat(),
+            ),
+            (
+                "a comment after the scan",
+                [&SENSOR[..eoi], b"\xFF\xFE\x00\x05abc", &SENSOR[eoi..]].concat(),
+            ),
+            (
+                "the last byte of the scan missing",
+                [&SENSOR[..eoi - 1], &SENSOR[eoi..]].concat(),
+            ),
+            (
+                "stray bytes in the headers",
+                [&SENSOR[..dqt], &[1, 2, 3, 4, 5], &SENSOR[dqt..]].concat(),
+            ),
+            (
+                "a TEM marker in the headers",
+                [&SENSOR[..dqt], &[0xFF, 0x01], &SENSOR[dqt..]].concat(),
+            ),
+        ];
+        for (what, frame) in shapes {
+            assert_eq!(inspect(&frame), Ok(FrameScan::Complete), "{what}");
+        }
+    }
+
+    #[test]
+    fn a_table_with_no_standard_form_must_be_sent() {
+        // Point the scan at table 2, which only a DHT can define.
+        let mut frame = SENSOR.to_vec();
+        let selectors = scan_start(&frame) - 8;
+        frame[selectors] = 0x22;
+        let e = inspect(&frame).unwrap_err();
+        assert!(e.contains("undefined Huffman table"), "{e}");
+    }
+
+    #[test]
+    fn a_stale_tail_is_not_mistaken_for_padding() {
+        let start = scan_start(SENSOR);
+        let cut = start + (SENSOR.len() - start) / 2;
+        // Enough zero bytes for the walk to finish its MCUs, then an old frame's data.
+        let frame = [&SENSOR[..cut], &[0; 1 << 16], &SENSOR_NEXT[1000..]].concat();
+        assert!(inspect(&frame).is_err());
     }
 
     #[test]

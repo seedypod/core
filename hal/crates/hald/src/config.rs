@@ -531,6 +531,9 @@ impl Config {
             if !names.insert(c.name.clone()) {
                 errs.push(format!("camera {:?} listed twice", c.name));
             }
+            if c.capture_timeout_s == 0 {
+                errs.push(format!("camera {:?}: capture_timeout_s must be ≥ 1", c.name));
+            }
         }
         let mut addrs = std::collections::BTreeMap::new();
         for (i, s) in self.sensors().iter().enumerate() {
@@ -795,6 +798,20 @@ pin = 5
         );
         c.extra_sensors = vec![ph(0x7A)];
         assert!(c.validate().iter().any(|e| e.contains("outside 0x08–0x77")));
+    }
+
+    #[test]
+    fn a_capture_timeout_of_zero_would_kill_every_capture_and_is_refused() {
+        let c: Config = toml::from_str(
+            r#"
+[[camera]]
+name = "upper"
+device = "/dev/video0"
+capture_timeout_s = 0
+"#,
+        )
+        .unwrap();
+        assert!(c.validate().iter().any(|e| e.contains("capture_timeout_s")));
     }
 
     #[test]

@@ -240,11 +240,17 @@ IDCT, colour conversion or image buffer. Lost USB packets show up as a scan that
 ends short or overruns, a code no table holds, a restart marker out of turn, or a
 DC value no 8-bit sample can produce. Damage smaller than one MCU can pass; it
 leaves a local blemish, not a tear. Only `MJPEG` and `JPEG` palettes can be walked.
+Anything libjpeg reads without repairing it passes, such as a partial DHT or padding
+before EOI, because refusing a good frame makes a working camera look dead.
 
 Each failed attempt is retried in a new process, up to `capture_attempts`, waiting
 `capture_retry_ms` × the attempt number. `capture_timeout_s` kills a hung
 `fswebcam`, so with the defaults a bad camera answers in about 15 s and a wedged
 one in at most 48 s. A device node that isn't there fails at once with no retries.
+Once a camera has used up its attempts it gets one try per still until it gives a
+good frame, so a unit can run for months on one camera without the other costing
+it CPU. That also keeps the alert quiet: its detail says only what kind of failure
+it was (`no good frame: damaged frame`), and the log has the specifics.
 
 After the last attempt `/camera/<name>.jpg` returns `503` with the reason and
 `camera_missing` goes up naming the camera. It stays up until every camera that
