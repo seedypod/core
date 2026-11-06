@@ -191,7 +191,8 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                     let mut b = hal_drivers::gpio_binary::OverTempAlert::new(
                         "over_temp",
                         input,
-                        s.active_low.unwrap_or(false),
+                        // PCT2075 OS is active-low at power-up (OS_POL = 0): the idle line reads high.
+                        s.active_low.unwrap_or(true),
                     );
                     b.probe().map_err(|e| anyhow::anyhow!("{e}"))?;
                     over_temp = Some(Box::new(b));
