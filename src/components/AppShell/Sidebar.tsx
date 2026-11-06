@@ -86,7 +86,7 @@ function NeedsYou() {
           key={p.slot}
           to={p.slot}
           color="var(--pod-attention)"
-          thumb={<PlantThumb plant={p.plant} stage={podForm({ status: p.status, green: outlook.get(p.slot)?.cover, ageDays: ageDays(p.plantedAt) })} size={32} />}
+          thumb={<PlantThumb plant={p.plant} stage={podForm({ status: p.status, green: outlook.get(p.slot)?.cover, ageDays: ageDays(p.plantedAt) })} size={32} passive />}
           title={p.plant ?? `Pod ${p.slot}`}
           sub={p.notes.trim() || 'Needs attention'}
           tag={`P${p.slot}`}

@@ -356,32 +356,33 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
       current = state
       paint(state)
     },
-    /** Advances the animations by `dt` seconds; true while anything is still moving. */
+    /** Advances the animations by `dt` seconds; true while anything is still moving. `calm` jumps to each target and stills the pump's flow, for prefers-reduced-motion. */
     /** 0–1: the light level as drawn right now, mid-fade included. */
     light: () => lightShown ?? lightTarget,
-    tick(dt: number): boolean {
+    tick(dt: number, calm = false): boolean {
       let moving = false
+      const ease = (rate: number) => (calm ? 1 : Math.min(1, dt * rate))
       const shown = waterShown ?? waterTarget
       if (Math.abs(shown - waterTarget) > 0.002) {
-        waterShown = shown + (waterTarget - shown) * Math.min(1, dt * 3)
+        waterShown = shown + (waterTarget - shown) * ease(3)
         moving = true
       }
       else waterShown = waterTarget
       setWater(waterShown)
       const light = lightShown ?? lightTarget
       if (Math.abs(light - lightTarget) > 0.003) {
-        lightShown = light + (lightTarget - light) * Math.min(1, dt * 2.5)
+        lightShown = light + (lightTarget - light) * ease(2.5)
         moving = true
       }
       else lightShown = lightTarget
       setLight(lightShown)
       const flowTarget = pumpOn ? 0.45 : 0
       if (Math.abs(flowMat.opacity - flowTarget) > 0.01) {
-        flowMat.opacity += (flowTarget - flowMat.opacity) * Math.min(1, dt * 1.5)
+        flowMat.opacity += (flowTarget - flowMat.opacity) * ease(1.5)
         moving = true
       }
       else flowMat.opacity = flowTarget
-      if (pumpOn) {
+      if (pumpOn && !calm) {
         flowTex.offset.y -= dt * 0.3
         moving = true
       }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cachedThumb, clearThumbs, plantThumb, thumbKey, THUMB_PX } from '../plantThumbs'
+import { cachedThumb, clearThumbs, noteThreeLoaded, plantThumb, thumbKey, THUMB_PX } from '../plantThumbs'
 import { PlantThumb, podForm } from '../PlantThumb'
 
 const { draw } = vi.hoisted(() => ({ draw: { calls: [] as unknown[][], fail: false } }))
@@ -24,6 +24,20 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   delete document.documentElement.dataset.theme
+})
+
+describe('a passive thumbnail', () => {
+  const kind = () => screen.getByTestId('plant-thumb').dataset.kind
+
+  it('keeps the leaf and asks for nothing until three.js is on the page', async () => {
+    webGL()
+    render(<PlantThumb plant="Basil" stage="bush" passive />)
+    await act(() => new Promise<void>(r => setTimeout(r, 10)))
+    expect(kind()).toBe('neutral')
+    expect(draw.calls).toEqual([])
+    act(() => noteThreeLoaded())
+    await waitFor(() => expect(kind()).toBe('model'))
+  })
 })
 
 describe('plant thumbnails', () => {

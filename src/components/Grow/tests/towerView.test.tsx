@@ -183,6 +183,48 @@ describe('TowerView', () => {
     expect(onPart).toHaveBeenCalledWith('tank')
   })
 
+  describe('near the viewport', () => {
+    const io: { report: (near: boolean) => void, margin: string, disconnects: number } = { report: () => {}, margin: '', disconnects: 0 }
+    beforeEach(() => {
+      Object.assign(io, { margin: '', disconnects: 0 })
+      vi.stubGlobal('IntersectionObserver', class {
+        constructor(cb: (e: Array<{ isIntersecting: boolean }>) => void, o: IntersectionObserverInit) {
+          io.report = near => cb([{ isIntersecting: near }])
+          io.margin = o.rootMargin ?? ''
+        }
+
+        observe() {}
+        disconnect() {
+          io.disconnects++
+        }
+      })
+    })
+    const tower = () => <TowerView pods={pods} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} />
+    const flush = () => act(() => new Promise<void>(r => setTimeout(r, 20)))
+
+    it('shows the wireframe and leaves three.js alone while the tower is out of reach', async () => {
+      render(tower())
+      io.report(false)
+      await flush()
+      expect(screen.getByTestId('tower-wireframe')).toBeTruthy()
+      expect(mounted.opts).toBeNull()
+      expect(io.margin).toBe('300px')
+    })
+
+    it('loads the tower once it nears the viewport, and stops watching', async () => {
+      render(tower())
+      act(() => io.report(true))
+      await waitFor(() => expect(mounted.opts).not.toBeNull())
+      expect(io.disconnects).toBe(1)
+    })
+
+    it('stops watching when it leaves the page first', () => {
+      const { unmount } = render(tower())
+      unmount()
+      expect(io.disconnects).toBe(1)
+    })
+  })
+
   it('gives up without WebGL, or when the renderer fails, and disposes on unmount', async () => {
     const off = vi.fn()
     vi.stubGlobal('WebGLRenderingContext', undefined)
