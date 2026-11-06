@@ -40,3 +40,23 @@ test('⌘K search finds the bundled docs offline and opens a guide in a new tab'
   await expect(palette).toBeHidden()
   await expect(page).toHaveURL(/\/water$/)
 })
+
+test('⌘K search survives its chunk failing to load, and retries for real', async ({ page }) => {
+  let down = true
+  await page.route('**/assets/PaletteBody-*.js', route => (down ? route.abort('connectionfailed') : route.continue()))
+  await page.goto('/water')
+  await page.getByRole('button', { name: 'Search' }).click()
+  const palette = page.getByRole('dialog', { name: 'Search' })
+  await expect(palette.getByRole('alert')).toContainText('Search didn\'t load')
+  // The page behind it is untouched, and the dialog closes.
+  await page.keyboard.press('Escape')
+  await expect(palette).toBeHidden()
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Water' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Search' }).click()
+  await palette.getByRole('button', { name: 'Try again' }).click()
+  await expect(palette.getByRole('alert')).toContainText('Search didn\'t load')
+  down = false
+  await palette.getByRole('button', { name: 'Try again' }).click()
+  await expect(page.getByRole('combobox', { name: 'Search pages, settings, plants and rules' })).toBeFocused()
+})
