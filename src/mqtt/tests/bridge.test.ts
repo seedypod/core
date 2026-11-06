@@ -150,7 +150,7 @@ describe('keepConnecting', () => {
 
   it('drops a bridge that arrives after being cancelled, and ignores a late failure', async () => {
     const late = bridge()
-    let settle = (_: HaBridge) => {}
+    let settle: (b: HaBridge) => void = () => undefined
     const on = { up: vi.fn(), failed: vi.fn() }
     keepConnecting(() => new Promise<HaBridge>((resolve) => {
       settle = resolve

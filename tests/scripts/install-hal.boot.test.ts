@@ -259,12 +259,10 @@ describe('apply_boot_settings', () => {
 describe('the units', () => {
   it('holds hald for its hardware, for a bounded time, then starts regardless', () => {
     const text = readFileSync(script, 'utf8')
-    const wait = text.match(/^ExecStartPre=(.*)$/m)?.[1] ?? ''
-    expect(wait).toMatch(/^-\/usr\/bin\/timeout 30 /)
+    const wait = text.match(/^ExecStartPre=(-\/usr\/bin\/timeout 30 .*)$/m)?.[1] ?? ''
     expect(wait).toContain('/sys/class/pwm/pwmchip0')
     expect(wait).toContain('/dev/i2c-')
   })
-
 
   it.each(['scripts/install-hal', 'scripts/install'])('%s doesn\'t hold hald or core for the network', (file) => {
     const text = readFileSync(resolve(import.meta.dirname, '../..', file), 'utf8')
