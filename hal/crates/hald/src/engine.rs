@@ -780,9 +780,11 @@ impl Engine {
             let prev = self.alerts.get(&a.kind);
             let changed = prev.map_or(true, |p| p.active != a.active || p.detail != a.detail);
             if changed || force {
-                if a.active && changed {
+                // A live detail (the water distance) changes every reading; log transitions only.
+                let was_active = prev.is_some_and(|p| p.active);
+                if a.active && !was_active {
                     warn!(kind = ?a.kind, detail = %a.detail, "alert raised");
-                } else if changed && prev.is_some() {
+                } else if !a.active && was_active {
                     info!(kind = ?a.kind, "alert cleared");
                 }
                 out.push(Outbound::json(topics::alert(&self.unit, a.kind), &a, true));

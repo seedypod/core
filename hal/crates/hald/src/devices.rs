@@ -191,7 +191,7 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                     let mut b = hal_drivers::gpio_binary::OverTempAlert::new(
                         "over_temp",
                         input,
-                        s.active_low.unwrap_or(false),
+                        s.active_low.unwrap_or(true),
                     );
                     b.probe().map_err(|e| anyhow::anyhow!("{e}"))?;
                     over_temp = Some(Box::new(b));
