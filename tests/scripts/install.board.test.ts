@@ -48,12 +48,12 @@ describe('scripts/install --check', () => {
     }
   })
 
-  it('runs the original Pi Zero W on the ARMv6 build of Node 22, compiling SQLite there', () => {
+  it('runs the original Pi Zero W on the ARMv6 build of Node 22, with prebuilt SQLite', () => {
     const r = check({ model: 'Raspberry Pi Zero W Rev 1.1', arch: 'armv6l', bits: 32 })
     expect(r.code).toBe(0)
     expect(r.out).toContain('runs core on Node 22.23.4 (armv6l)')
     expect(r.out).toContain('A Pi Zero 2 W on 64-bit Raspberry Pi OS moves to Node 24.')
-    expect(r.out).toContain('better-sqlite3 has no ARMv6 build, so it compiles here')
+    expect(r.out).toContain('better-sqlite3 comes prebuilt for ARMv6 from the release; without one it compiles here')
   })
 
   it('turns away a CPU Node has no build for', () => {
