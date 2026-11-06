@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# seedypod login logo: the animation an SSH login opens with, printed from the
+# frames that generate.mjs pre-rendered. Run by /etc/profile.d/seedypod-logo.sh,
+# which holds the guards that need the login shell. Bash and stty only; each
+# frame is one printf, so a Pi Zero W stays out of the way.
+#   truecolor, fits   animation, then the logo
+#   256 colours       the logo, no animation
+#   anything else     one line of text
+# Off with ~/.hushlogin or SEEDYPOD_NO_LOGO=1. Errors stay silent: this must never
+# get in the way of a login.
+exec 2>/dev/null
+
+[ -t 0 ] && [ -t 1 ] || exit 0
+[ "${SEEDYPOD_NO_LOGO:-}" = 1 ] && exit 0
+[ -e "${HOME:-}/.hushlogin" ] && exit 0
+# su - and sudo -i are logins too, but not new ones: the session's owner has
+# already seen it. su keeps a terminal this user doesn't own; sudo may open its own.
+[ -O /dev/stdin ] && [ -z "${SUDO_USER:-}" ] || exit 0
+
+dir="${BASH_SOURCE[0]%/*}"
+frames="$dir/logo.frames"
+read -r version < "$dir/version"
+url="http://${HOSTNAME%%.*}.local:3000"
+
+plain() {
+  printf 'seedypod%s  %s\n' "${version:+ $version}" "$url"
+  exit 0
+}
+
+read -r term_rows term_cols <<< "$(stty size)"
+read -r rows text_col text_row delay < "$frames" || plain
+[ "${term_rows:-0}" -ge $((rows + 2)) ] && [ "${term_cols:-0}" -gt $((text_col + ${#url})) ] || plain
+[ -z "${NO_COLOR:-}" ] || plain
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;; *) plain ;; esac
+
+# SSH passes TERM and little else: Debian's sshd accepts COLORTERM but a stock
+# client doesn't send it, so most truecolor terminals arrive as xterm-256color.
+depth=0
+case "${TERM:-}" in
+  ""|dumb|unknown) plain ;;
+  *-direct|*-truecolor|xterm-kitty|xterm-ghostty|alacritty*|foot*|wezterm) depth=24 ;;
+  *256color*) depth=256 ;;
+esac
+case "${COLORTERM:-}" in truecolor|24bit) depth=24 ;; esac
+[ "${LC_TERMINAL:-}" = iTerm2 ] && depth=24
+[ "$depth" = 0 ] && plain
+
+saved="$(stty -g)" || plain
+skip=""
+cursor_home=""
+restore() {
+  [ -n "$cursor_home" ] && printf '\e[%dB\r' "$rows"
+  printf '\e[0m\e[?25h'
+  stty "$saved"
+}
+trap restore EXIT
+trap 'skip=1' INT
+trap 'exit 0' HUP TERM
+# -isig makes Ctrl-C a key like any other. As a signal it would also reach the
+# login shell, which then abandons /etc/profile and the user's dotfiles with it.
+stty -echo -icanon -isig min 1 time 0
+printf '\e[?25l'
+
+# A 256color terminal may still do truecolor: set a colour and ask for it back.
+# Terminals that can't either don't answer or forget it; all answer DA1, which
+# ends the wait. The timeout is for a slow link, not a slow terminal.
+if [ "$depth" = 256 ]; then
+  printf '\e[38;2;1;2;3m\eP$qm\e\\\e[0m\e[c'
+  IFS= read -r -d c -t 0.4 reply
+  [[ "${reply:-}" == *[:\;]1[:\;]2[:\;]3m* ]] && depth=24
+fi
+
+mapfile -t lines < "$frames"
+[ "${#lines[@]}" -gt 3 ] || exit 0
+
+# Scroll now, so that the frames can move around without ever scrolling.
+printf '\r'
+for ((i = 0; i < rows; i++)); do printf '\n'; done
+printf '\e[%dA' "$rows"
+cursor_home=1
+
+if [ "$depth" = 24 ]; then
+  for ((i = 3; i < ${#lines[@]}; i++)); do
+    printf '%s' "${lines[i]}"
+    key=""
+    IFS= read -r -t "$delay" key && break
+    [ -n "$key$skip" ] && break
+  done
+  printf '%s' "${lines[1]}"
+else
+  printf '%s' "${lines[2]}"
+fi
+
+printf '\e[%dB' $((text_row + 1))
+[ -n "$version" ] && printf '\r\e[%dC\e[38;5;245m%s' "$text_col" "$version"
+printf '\n\r\e[%dC\e[38;5;72m%s\e[0m\r\e[%dA' "$text_col" "$url" $((text_row + 2))

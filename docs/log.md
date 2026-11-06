@@ -1,5 +1,9 @@
 # Docs update log
 
+## 2026-11-06
+
+- **Update**: [Installation](INSTALLATION.md) covers the SSH login logo, how to turn it off and how to remove it.
+
 ## 2026-11-05
 
 - **Creation**: [ADR 0025](adr/0025-accessory-sensor-nodes.md), accessory sensor nodes (proposed): a sensors-only `hald` outside the unit, merged into its parent by core. First use is an external pH probe.

@@ -121,6 +121,15 @@ running, **Settings → Backup** downloads a backup. Set up the off-device
 mirror ([Capture analysis](ANALYSIS.md#mirror-photos-off-the-unit-opt-in))
 and a backup goes to your bucket every night.
 
+An SSH login then opens with an animated logo, the version and the unit's
+address. It runs from `/etc/profile.d/seedypod-logo.sh`, only for an interactive
+login on a terminal, so `ssh host cmd`, `scp`, `sftp` and `rsync` never see it.
+Any key skips it. Terminals that don't do truecolor get a still 256-colour logo
+or one line of text; over SSH, truecolor is detected from `TERM`, by asking the
+terminal, or from a client that sets `SendEnv COLORTERM`. To turn it off, `touch
+~/.hushlogin`, or set `SEEDYPOD_NO_LOGO=1` in `/etc/environment`.
+`scripts/install --login-logo` reinstalls just this.
+
 ## Change Wi-Fi
 
 No keyboard needed. Hold the unit's button for **10 seconds** (at 1 s it
@@ -168,6 +177,7 @@ Either way the device appears in HA with no further setup. See
 ```sh
 sudo systemctl disable --now seedypod-core hald
 sudo rm -rf /opt/seedypod /etc/systemd/system/seedypod-core.service /etc/systemd/system/hald.service \
-  /usr/local/sbin/seedypod-restore /etc/sudoers.d/seedypod-restore /var/lib/seedypod-restore
+  /usr/local/sbin/seedypod-restore /etc/sudoers.d/seedypod-restore /var/lib/seedypod-restore \
+  /usr/local/share/seedypod /etc/profile.d/seedypod-logo.sh
 ```
 Or reflash the stock image from step 0.
