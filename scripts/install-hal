@@ -396,7 +396,7 @@ Wants=network-online.target
 
 [Service]
 ExecStart=$PREFIX/hald --config $CONF_DIR/hal.toml
-Environment=RUST_LOG=info
+Environment=RUST_LOG=info SEEDYPOD_RECORDING_POLICY_FILE=/opt/seedypod/data/recording-policy.json
 User=$SERVICE_USER
 Group=$SERVICE_USER
 SupplementaryGroups=gpio i2c video

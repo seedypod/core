@@ -18,6 +18,7 @@ mod kinds;
 mod mdns;
 mod mqtt;
 mod overlay;
+mod recording;
 mod state;
 mod usb;
 
@@ -32,6 +33,8 @@ use engine::{Engine, EngineConfig, Inbound, Now, Outbound, SharedSnapshot};
 use hal_core::{Caps, Limits, SystemInfo, CONTRACT_VERSION};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{info, warn};
+use tracing_subscriber::layer::{Layer, SubscriberExt};
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Parser, Debug)]
 #[command(name = "hald", version, about = "seedypod hardware daemon")]
@@ -81,9 +84,14 @@ const DEFAULT_MQTT_URL: &str = "mqtt://127.0.0.1:1883";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse()?))
-        .with_writer(std::io::stderr)
+    let policy = recording::RecordingPolicy::from_env();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse()?))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_filter(recording::log_filter(policy)),
+        )
         .init();
     let cli = Cli::parse();
     if cli.print_default_config {

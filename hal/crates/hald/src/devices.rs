@@ -281,7 +281,9 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
         })();
         match outcome {
             Ok(()) => info!(id = %a.id, kind = %a.kind, pin, "actuator ready"),
-            Err(e) => warn!(id = %a.id, kind = %a.kind, %e, "actuator unavailable; commands will be ignored"),
+            Err(e) => {
+                tracing::error!(id = %a.id, kind = %a.kind, %e, "actuator unavailable; commands will be ignored")
+            }
         }
     }
 

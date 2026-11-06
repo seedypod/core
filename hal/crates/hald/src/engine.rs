@@ -21,7 +21,7 @@ use hal_core::{
     DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Quality, Reading, SensorId, SystemInfo,
 };
 use serde::Serialize;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::config::{SensorEntry, I2C_ADDR_RANGE};
 use crate::kinds::SensorFactory;
@@ -370,7 +370,7 @@ impl Engine {
         match msg {
             Inbound::ActuatorSet(id, cmd) => out.extend(self.actuator_set(id, &cmd, now)),
             Inbound::AlertAck(kind) => {
-                info!(?kind, "alert acknowledged");
+                warn!(?kind, "alert acknowledged");
                 match kind {
                     AlertKind::PumpFault => {
                         self.pump.acknowledge();
@@ -678,7 +678,7 @@ impl Engine {
     fn apply_pump(&mut self, level: f64, now: Now) {
         if let Some(p) = self.registry.actuator_mut(ActuatorId::Pump) {
             if let Err(e) = p.set_level(level) {
-                warn!(%e, "pump driver write failed");
+                error!(%e, "pump driver write failed");
             }
         }
         let on = level > 0.0;
@@ -691,7 +691,7 @@ impl Engine {
     fn apply_dose(&mut self, id: ActuatorId, on: bool, now: Now) {
         if let Some(a) = self.registry.actuator_mut(id) {
             if let Err(e) = a.set_level(if on { 100.0 } else { 0.0 }) {
-                warn!(?id, %e, "dosing driver write failed");
+                error!(?id, %e, "dosing driver write failed");
             }
         }
         self.dose_since.insert(id, now.ts());
@@ -700,7 +700,7 @@ impl Engine {
     fn set_light(&mut self, level: f64, now: Now, persist: bool) {
         if let Some(l) = self.registry.actuator_mut(ActuatorId::Light) {
             if let Err(e) = l.set_level(level) {
-                warn!(%e, "light driver write failed");
+                error!(%e, "light driver write failed");
             }
         }
         if level != self.light_level || self.light_since.is_empty() {
@@ -733,7 +733,7 @@ impl Engine {
         }
         if let Some(f) = &self.state_file {
             if let Err(e) = f.save(&self.persisted) {
-                warn!(path = %f.path().display(), %e, "could not persist state");
+                error!(path = %f.path().display(), %e, "could not persist state");
             }
         }
         self.last_hours_persist = Some(now.instant);
@@ -1473,6 +1473,69 @@ mod tests {
             .engine
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
         assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// The fmt layer and policy filter as main.rs builds them, into a buffer.
+    fn quiet_log(run: impl FnOnce()) -> String {
+        use std::io::Write;
+        use std::sync::Mutex;
+        use tracing_subscriber::layer::{Layer, SubscriberExt};
+
+        #[derive(Clone, Default)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let buf = Buf::default();
+        let sink = buf.clone();
+        let policy = Some(crate::recording::RecordingPolicy::new(
+            "/nonexistent/recording-policy.json",
+        ));
+        let layer = tracing_subscriber::fmt::layer()
+            .with_writer(move || sink.clone())
+            .with_filter(crate::recording::log_filter(policy));
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), run);
+        let out = buf.0.lock().unwrap();
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    /// tracing caches per log line, process-wide, whether anyone wants it, and tests running
+    /// beside this one can leave a line switched off. So the scenario gets a process to itself.
+    #[test]
+    fn quiet_logging_keeps_pump_faults_refusals_and_alerts_and_drops_the_routine() {
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "engine::tests::quiet_log_scenario", "--ignored"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && stdout.contains("1 passed"), "{stdout}");
+    }
+
+    #[test]
+    #[ignore = "run in its own process by the test above"]
+    fn quiet_log_scenario() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "quiet");
+        r.engine.boot(r.now);
+        let log = quiet_log(|| {
+            r.engine
+                .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+            r.world.lock().unwrap().water_distance_cm = 17.0;
+            r.now.advance(Duration::from_secs(10));
+            r.engine.tick(r.now);
+            r.engine
+                .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        });
+        assert!(log.contains("pump stopped by guard"), "{log}");
+        assert!(log.contains("alert raised"), "{log}");
+        assert!(log.contains("pump command refused"), "{log}");
+        assert!(!log.contains("pump run accepted"), "{log}");
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

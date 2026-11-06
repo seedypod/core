@@ -66,6 +66,33 @@ describe('storage.database', () => {
   })
 })
 
+describe('system.logging', () => {
+  const state = { mode: 'debug', loggingMode: 'quiet', debugUntil: '2026-11-01T12:10:00.000Z' } as const
+
+  it('shows the policy and changes it through the control', async () => {
+    const logging = { get: vi.fn(() => state), set: vi.fn(() => state) }
+    const { c } = rig({ logging })
+    expect(await c.system.logging()).toEqual(state)
+    expect(await c.system.setLogging({ debugMinutes: 10 })).toEqual(state)
+    expect(logging.set).toHaveBeenCalledWith({ debugMinutes: 10 })
+  })
+
+  it('says so where there is nothing to adjust', async () => {
+    const { c } = rig()
+    expect(await c.system.logging()).toBeNull()
+    await expect(c.system.setLogging({ mode: 'off' })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+  })
+
+  it('refuses a window over 4 hours, so debug can\'t be left on by accident', async () => {
+    const { c } = rig({ logging: { get: () => state, set: () => state } })
+    await expect(c.system.setLogging({ debugMinutes: 241 })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  })
+
+  it('is in the REST facade', () => {
+    expect(Object.keys(openApiDocument('http://x/api').paths ?? {})).toContain('/system/logging')
+  })
+})
+
 describe('system.checks', () => {
   it('lists every part of the unit in a fixed order, with the host-only services idle in tests', async () => {
     const { c, store } = rig()

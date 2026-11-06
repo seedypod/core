@@ -15,6 +15,7 @@ import { GrowEngine } from '../grow/grow'
 import type { HalClient } from '../hardware/types'
 import type { HomeKitControl } from '../homekit/types'
 import { createEventBus, type EventBus } from '../lib/eventBus'
+import type { LoggingControl } from '../logging/policy'
 import type { BridgeStatus } from '../mqtt/bridge'
 import { SimWifi, type Wifi } from '../network/wifi'
 import { Scheduler } from '../scheduler/scheduler'
@@ -53,6 +54,8 @@ export interface CoreOptions {
   disk?: () => DiskUsage | null
   /** The Home Assistant bridge's state; node hosts only. */
   bridge?: () => BridgeStatus
+  /** How much core and hald log; node hosts only. */
+  logging?: LoggingControl
   host?: Context['host']
   /** HomeKit (ADR 0023); node hosts only. Attached to the context here, unpublished on stop. */
   homekit?: HomeKitControl & { attach(ctx: Context): void, shutdown(): Promise<void> }
@@ -85,7 +88,7 @@ export function createCore(o: CoreOptions): Core {
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now })
