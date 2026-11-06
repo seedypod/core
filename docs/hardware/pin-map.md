@@ -29,8 +29,8 @@ BCM numbering (not header pin numbers).
 | PCB temperature | I²C | 0x48 PCT2075 | reads ~47 °C with the lights at 100 % | stock fw |
 | Pump power | I²C | 0x40 INA219 | 0.08 Ω shunt (stock calibration) | stock fw |
 | Air temp + humidity | I²C | 0x5C AM2320 (Gardyn 1.0/2.0) · 0x38 DHT20 (3.0, Studio) | Stock tries AM2320, then DHT20; our 3.0 uses the DHT20. AM2320 needs a wake-up write before it ACKs | stock fw |
-| Upper camera | USB UVC | `/dev/seedypod/camera-upper` (udev, by USB port; `/dev/video0` fallback) | through an on-board hub; port unverified | upstream |
-| Lower camera | USB UVC | `/dev/seedypod/camera-lower` (udev, by USB port; `/dev/video2` fallback) | port unverified | upstream |
+| Upper camera | USB UVC | `/dev/seedypod/camera-upper` (udev, by USB port; `/dev/video0` fallback) | hub port `1-1.3`, confirmed with markers on our 3.0 | unit |
+| Lower camera | USB UVC | `/dev/seedypod/camera-lower` (udev, by USB port; `/dev/video2` fallback) | hub port `1-1.4`, confirmed with markers on our 3.0 | unit |
 | Controller | — | Pi Zero W (our 3.0) / Zero 2 W | microSD boot; stock runs it at `force_turbo=1`, `over_voltage=6` | stock fw |
 
 ## Tank and pump, from two weeks of stock logs
@@ -46,7 +46,13 @@ The data is in `tests/fixtures/gardyn-gh30-stock-2024/`.
 
 ## Controller board, from a photo
 
-On our Home 3.0 the top board is silkscreened **Rev1.5 PCB 11/2019**. It carries the SoC, the micro-SD slot, a mini-HDMI port, two micro-USB ports labelled `PWR IN` and `USB`, and connectors labelled `H2O IN` (2-pin) and `TEMP IN` (4-pin). It is stacked on a second board through the 40-pin GPIO header. A small daughterboard with two connectors sits beside it; what it does (possibly the camera USB hub) is unverified.
+On our Home 3.0 the top board is silkscreened **Rev1.5 PCB 11/2019**. It carries the SoC, the micro-SD slot, a mini-HDMI port, two micro-USB ports labelled `PWR IN` and `USB`, and connectors labelled `H2O IN` (2-pin) and `TEMP IN` (4-pin). It is stacked on a second board through the 40-pin GPIO header. The micro-USB port labelled `USB` carries the cameras: a USB-A plug feeds a small loose daughterboard beside it, which is probably the `1a40:0801` hub, and thin wires from its two white connectors run to the cameras. The two cameras are `c499:0ac8` ("View Camera"). The hub doesn't enumerate on every boot, on stock or on seedypod: on stock it appeared on 3 of 5 logged boots. Those thin wires are the first thing to check for USB errors (`-71`) or torn frames.
+
+## Known issue: torn camera frames
+
+On our 3.0 the upper camera (hub port `1-1.3`) gave torn frames: horizontal bands, split images and a solid green or grey block. It gave 0 good frames in 7 at 1280x960 and 2592x1944, and also failed at 320x240, 640x480 and 1920x1080. The lower camera passed 7 of 7 with the same settings on the same hub. The kernel logged `Failed to set UVC probe control : -71` for that port only, and basic control transfers failed too.
+
+This looks like hardware: the cable, connector or camera. It isn't settled. Lower resolutions didn't help in these tests, and neither did `uvcvideo quirks=128` or removing `snd_usb_audio`, but stock falls back through lower resolutions and retries 5 times, so it may have been working around the same fault. Reseating the connectors on the daughterboard is the next test. A torn frame is still a normal-looking JPEG on disk, and the `green-threshold` analyzer scored 7-13% green on empty pods from one.
 
 ## Model detection
 

@@ -151,6 +151,36 @@ and the page reloads when the unit is back.
 restored the wrong backup, use **Settings → Backup → Undo restore** (or
 `sudo seedypod-restore --undo`). A second undo redoes the restore.
 
+## Check which camera is which
+
+Use this after replacing a camera or moving a cable, or if **Analysis** seems
+to score the wrong pods. The names `upper` and `lower` come from USB port order
+by default, so a swap is easy to miss. Markers settle it in a few minutes, with
+no need to open the base.
+
+1. Put **two** dark round markers in pods the top camera can see, and **one**
+   in a pod the bottom camera can see. Black pod caps work well against the
+   white towers. Choose pods that only one camera can see.
+2. Turn the light on, and take a photo from each camera on **Analysis**.
+3. The photo with two markers is the top camera (`upper`). The photo with one
+   is the bottom camera (`lower`).
+4. If the names are the wrong way round, swap them. `hald --list-cameras` shows
+   each camera's port:
+
+   ```sh
+   sudo hald --camera-rules upper=<port> lower=<port> | sudo tee /etc/udev/rules.d/70-seedypod-cameras.rules
+   sudo udevadm control --reload
+   sudo udevadm trigger --action=add --subsystem-match=video4linux
+   sudo systemctl restart hald
+   ```
+
+5. Take the markers out.
+
+Marked photos also make a quick health check. If a photo is torn into bands,
+has a solid green or grey block, or a marker appears in the wrong place, the
+camera's cable is the first thing to reseat. Its image can't be trusted for
+**Analysis**, even though the file looks like a normal photo.
+
 ## Power cuts
 
 To save wear on the card, core writes sensor history in batches, every 5
@@ -204,7 +234,8 @@ Power the unit off at the wall before opening it.
   backup, the card is a fresh install: choose **Set up a new garden**.
 - **Camera.** Plug it into the same USB port and the stable name follows the
   port, so nothing changes. If you use a different port, run
-  `hald --list-cameras` and regenerate the rules.
+  `hald --list-cameras` and regenerate the rules. Then
+  [check which camera is which](#check-which-camera-is-which).
 - **Air sensor.** A DHT20 and an AM2320 are interchangeable: `hald` detects
   which one answers.
 - **pH / EC / temperature probe.** Swap the probe on the same EZO circuit,
