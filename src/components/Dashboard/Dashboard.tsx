@@ -2,6 +2,7 @@ import { Droplets, Sun, Thermometer, Waves, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { TowerHome } from './TowerHome'
 import { Card, CardHeader, GrowBackdrop, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
+import { Slider } from '@/src/components/ds/forms'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
 import { Welcome } from '@/src/components/Welcome/Welcome'
@@ -28,13 +29,17 @@ export function CardsHome() {
   const pumpState = trpc.pump.get.useQuery()
   const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
   const system = trpc.system.info.useQuery()
-  const setLight = trpc.light.set.useMutation({ onSuccess: () => lightState.refetch() })
-  const runPump = trpc.pump.runOnce.useMutation({ onSuccess: () => pumpState.refetch() })
-  const stopPump = trpc.pump.stop.useMutation({ onSuccess: () => pumpState.refetch() })
+  const utils = trpc.useUtils()
+  const setLight = trpc.light.set.useMutation({ onSuccess: state => utils.light.get.setData(undefined, state) })
+  const runPump = trpc.pump.runOnce.useMutation({ onSuccess: state => utils.pump.get.setData(undefined, state) })
+  const stopPump = trpc.pump.stop.useMutation({ onSuccess: state => utils.pump.get.setData(undefined, state) })
+  const [draft, setDraft] = useState<number | null>(null)
 
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const l = lightState.data
   const p = pumpState.data
+  // The button follows the tap; a refused command puts it back when the mutation ends.
+  const lightOn = (setLight.isPending ? setLight.variables.on : undefined) ?? !!l?.on
   const active = (alerts.data ?? []).filter(a => a.active)
   const quality = (system.data?.system?.caps.sensors ?? []).filter(id => SENSOR_META[id].group === 'water-quality')
 
@@ -54,16 +59,13 @@ export function CardsHome() {
           right={<StatusDot tone={l?.on ? 'ok' : 'muted'} label={l?.on ? 'on' : 'off'} />}
         />
         <div className="mt-3 flex items-center gap-3">
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={l?.level ?? 0}
-            onChange={e => setLight.mutate({ level: Number(e.target.value) })}
-            className="flex-1 accent-[var(--accent-light)]"
-            aria-label="Brightness"
+          <Slider
+            value={draft ?? l?.level ?? 0}
+            onChange={setDraft}
+            onCommit={v => setLight.mutate({ level: v }, { onSettled: () => setDraft(null) })}
+            label="Brightness"
           />
-          <button type="button" className="lp-btn" onClick={() => setLight.mutate({ on: !l?.on })}>{l?.on ? 'Turn off' : 'Turn on'}</button>
+          <button type="button" className="lp-btn" onClick={() => setLight.mutate({ on: !lightOn })}>{lightOn ? 'Turn off' : 'Turn on'}</button>
         </div>
       </Card>
 

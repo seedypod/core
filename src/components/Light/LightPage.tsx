@@ -17,7 +17,7 @@ export function LightPage() {
   const light = trpc.light.get.useQuery()
   const schedules = trpc.schedules.list.useQuery()
   const utils = trpc.useUtils()
-  const setLight = trpc.light.set.useMutation({ onSuccess: () => utils.light.invalidate() })
+  const setLight = trpc.light.set.useMutation({ onSuccess: state => utils.light.get.setData(undefined, state) })
   const owner = trpc.light.owner.useQuery(undefined, { refetchInterval: 15_000 })
   const resume = trpc.light.resume.useMutation({ onSuccess: () => utils.light.invalidate() })
   const o = owner.data
@@ -27,6 +27,8 @@ export function LightPage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const l = light.data
   const level = draft ?? l?.level ?? 0
+  // The switch follows the tap; a refused command puts it back when the mutation ends.
+  const lightOn = (setLight.isPending ? setLight.variables.on : undefined) ?? !!l?.on
   const curves = (schedules.data ?? []).flatMap(s => asCurve(s) ?? [])
   const now = new Date()
   const minutesNow = now.getHours() * 60 + now.getMinutes()
@@ -47,8 +49,8 @@ export function LightPage() {
           <p className="text-[13px] text-fg-2">{[following, holding].filter(Boolean).join(' · ')}</p>
         </div>
         <span className="flex items-center gap-2.5 text-[13px] text-fg-2">
-          {l?.on ? 'Lights on' : 'Lights off'}
-          <Toggle on={!!l?.on} size="md" label="Light power" onChange={on => setLight.mutate({ on })} />
+          {lightOn ? 'Lights on' : 'Lights off'}
+          <Toggle on={lightOn} size="md" label="Light power" onChange={on => setLight.mutate({ on })} />
         </span>
       </div>
 
@@ -62,10 +64,7 @@ export function LightPage() {
             <Slider
               value={level}
               onChange={setDraft}
-              onCommit={(v) => {
-                setDraft(null)
-                setLight.mutate({ level: v })
-              }}
+              onCommit={v => setLight.mutate({ level: v }, { onSettled: () => setDraft(null) })}
               label="Brightness"
             />
             <div className={AXIS} aria-hidden>
