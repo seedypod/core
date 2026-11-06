@@ -81,6 +81,8 @@ pub fn build_sim(cfg: &Config) -> Built {
         .iter()
         .map(|c| {
             let cam: SharedCamera = Arc::new(Mutex::new(Box::new(hal_sim::SimCamera::new(&c.name))));
+            let checked = crate::cameras::PortChecked::new(cam, &c.name, &c.device, c.fallback.as_deref());
+            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(checked)));
             (c.name.clone(), cam)
         })
         .collect();
@@ -307,6 +309,8 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                 hal_drivers::uvc::ProcessRunner,
                 scratch.clone(),
             ))));
+            let checked = crate::cameras::PortChecked::new(cam, &c.name, &c.device, c.fallback.as_deref());
+            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(checked)));
             (c.name.clone(), cam)
         })
         .collect();

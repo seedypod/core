@@ -273,8 +273,7 @@ upper and lower can swap after a reboot. Each UVC camera also exposes a
 metadata node next to its capture node (`video0` + `video1`), which only
 breaks things if it gets the name. `hald` therefore prefers stable names
 pinned to the USB **port** by a udev rule that matches the capture node
-only (`ATTR{index}=="0"`), and falls back to `/dev/videoN` until the rule
-exists:
+only (`ATTR{index}=="0"`):
 
 ```sh
 hald --list-cameras            # capture nodes, their ports, and the default assignment
@@ -295,14 +294,27 @@ named. It only writes once **both** cameras are on the bus: a lone camera on a
 half-enumerated hub could be either one, and naming it `upper` would swap them
 for good. It keeps any pins already in the file, so an assignment set by hand
 stays, and every rule matches a USB interface only (`SUBSYSTEMS=="usb"`, and
-`--camera-rules` refuses anything else). With one camera, `--camera-rules
-upper=<port>` still pins it by hand.
+`--camera-rules` refuses anything else).
 
-`scripts/install-hal` writes the rules on first install if it finds cameras,
-and prints which port became which name. If the photos come out swapped,
-rerun the third command with the ports exchanged. Which physical port feeds
-which camera on a Gardyn is still unverified (see the
-[hardware map](pin-map.md)).
+Port order is only the default: the first port becomes `upper`, the second
+`lower`, and nothing ties a port to a position in the tower. On our 3.0 the default
+is right (`1-1.3` is the top camera, `1-1.4` the bottom), but check yours with the
+[marker check](../MAINTENANCE.md#check-which-camera-is-which). To correct the names,
+write the assignment by hand. It keeps working with a camera missing, so this is
+also how to name the one good camera on a unit whose other camera won't enumerate:
+
+```sh
+sudo hald --camera-rules upper=1-1.3:1.0 lower=1-1.4:1.0 \
+  | sudo tee /etc/udev/rules.d/70-seedypod-cameras.rules
+sudo udevadm control --reload && sudo udevadm trigger --action=add --subsystem-match=video4linux
+```
+
+The `fallback` in `hal.toml` is only used when the port proves that node is that
+camera. `/dev/videoN` numbers shift: when one camera fails to bind, the other takes
+its number, and without this check its picture would be saved under the wrong
+name. With a pin, the node's port must match it. With no pin, both cameras must be
+on the bus, and the default order decides. A lone unpinned camera could be either,
+so neither name takes it until you pin it; the camera shows as `device not present`.
 
 ## State file
 
