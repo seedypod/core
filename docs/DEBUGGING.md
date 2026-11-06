@@ -21,6 +21,15 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
   # … reproduce, reboot, then: journalctl -b -1 -u hald -u seedypod-core
   sudo rm /etc/systemd/journald.conf.d/99-debug-persistent.conf && sudo systemctl restart systemd-journald
   ```
+- **Logs are quiet by default.** On a unit, core and `hald` keep warnings and errors, so pump faults, refusals and raised alerts always show, and drop the routine lines before formatting them. The journal is already in RAM, so this saves CPU and memory rather than card wear. For more, open a timed window; it ends by itself and goes back to what was set:
+
+  ```sh
+  curl -X POST localhost:3000/api/system/logging -H 'content-type: application/json' -d '{"debugMinutes":30}'   # everything, for 30 minutes (240 at most)
+  curl -X POST localhost:3000/api/system/logging -H 'content-type: application/json' -d '{"debugMinutes":0}'    # end it now
+  curl localhost:3000/api/system/logging                                                                        # see what's in force
+  ```
+
+  `{"mode":"off"}` keeps nothing at all, and `{"mode":"quiet"}` puts it back; a crash report still reaches the journal. The setting is `recording-policy.json` beside the database, read at most once a second, so a change takes effect in about a second with no restart. A damaged file counts as `quiet`. With core on another machine, `hald` stays quiet unless you write that file on the unit (`{"loggingMode":"quiet","debugUntil":<epoch ms>}`). In a debug window `hald` logs what `RUST_LOG` allows, `info` by default. `hald` needs `install-hal` run once for this; until then it logs as before.
 - **A restore that didn't finish.** The helper logs each step to `/var/lib/seedypod-restore/status.json`. When the web UI starts the restore, it runs as a transient unit: `journalctl -u 'seedypod-restore-*'`. `sudo seedypod-restore --status` prints the last run. "restore isn't installed" means `scripts/install` hasn't put the helper and its sudoers rule in place; `sudo -n -l /usr/local/sbin/seedypod-restore` as the core user should print the path. `sudo seedypod-restore --undo` puts back what the last restore replaced. A failed restore puts the old files back by itself.
 - **SD card writes:** **Settings → Storage** (or `GET /api/storage/flash`) shows writes per day. To see who is writing, `sudo iotop -ao` or `cat /proc/<pid>/io`; **Settings → SD card → Database** (or `GET /api/storage/database`) splits the database's share by table. `swapon --show` should list only `/dev/zram0`.
 - `sudo i2cdetect -y 1` — expect 0x40 (INA219), 0x48 (PCT2075), and 0x38 (DHT20, 3.0+). The AM2320 (1.0/2.0, 0x5C) does **not** answer `i2cdetect`.

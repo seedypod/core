@@ -1258,6 +1258,55 @@ mod tests {
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
+    /// The fmt layer and policy filter as main.rs builds them, into a buffer.
+    fn quiet_log(run: impl FnOnce()) -> String {
+        use std::io::Write;
+        use std::sync::Mutex;
+        use tracing_subscriber::filter::filter_fn;
+        use tracing_subscriber::layer::{Layer, SubscriberExt};
+
+        #[derive(Clone, Default)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let buf = Buf::default();
+        let sink = buf.clone();
+        let policy = crate::recording::RecordingPolicy::new("/nonexistent/recording-policy.json");
+        let layer = tracing_subscriber::fmt::layer()
+            .with_writer(move || sink.clone())
+            .with_filter(filter_fn(move |meta| policy.allows(*meta.level())));
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), run);
+        let out = buf.0.lock().unwrap();
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    #[test]
+    fn quiet_logging_keeps_pump_faults_refusals_and_alerts_and_drops_the_routine() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "quiet");
+        r.engine.boot(r.now);
+        let log = quiet_log(|| {
+            r.engine
+                .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+            r.world.lock().unwrap().water_distance_cm = 17.0;
+            r.now.advance(Duration::from_secs(10));
+            r.engine.tick(r.now);
+            r.engine
+                .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        });
+        assert!(log.contains("pump stopped by guard"), "{log}");
+        assert!(log.contains("alert raised"), "{log}");
+        assert!(log.contains("pump command refused"), "{log}");
+        assert!(!log.contains("pump run accepted"), "{log}");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
     #[test]
     fn over_temperature_raises_the_alert_and_refuses_the_pump() {
         let mut r = rig(vec![ActuatorId::Pump], false, "hot");

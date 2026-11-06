@@ -14,6 +14,7 @@ import { seedIfFresh } from '../src/demo/seed'
 import { createHal } from '../src/hardware/factory'
 import { HomeKitService } from '../src/homekit/service'
 import { createEventBus } from '../src/lib/eventBus'
+import { installRecordingPolicy, policyPath, RecordingPolicy } from '../src/logging/policy'
 import { bridgeStatus, connectBridge, type HaBridge } from '../src/mqtt/bridge'
 import { CoreAdvertiser } from '../src/network/mdns'
 import { NmcliWifi } from '../src/network/wifi'
@@ -28,9 +29,12 @@ const PORT = Number(process.env.PORT ?? 3000)
 const HOST = process.env.HOST ?? '0.0.0.0'
 const DATA_DIR = process.env.DATA_DIR ?? './data'
 
+const dbPath = process.env.DATABASE_URL ?? `${DATA_DIR}/seedypod.db`
+// Only on a unit, so `pnpm dev` and the tests see everything.
+const logging = new RecordingPolicy({ path: policyPath(process.env, dbPath) })
+if (process.env.NODE_ENV === 'production') installRecordingPolicy(logging)
 const events = createEventBus()
 const hal = await createHal({ events })
-const dbPath = process.env.DATABASE_URL ?? `${DATA_DIR}/seedypod.db`
 const store = new SqliteStore({ url: dbPath })
 // SEED_DEMO=1 fills a new database with the browser demo's story, for testing on the simulator.
 if (process.env.SEED_DEMO === '1' && seedIfFresh(store, hal)) console.log('seeded the demo data (SEED_DEMO=1)')
@@ -63,7 +67,7 @@ const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA
 // System › Status reads its state, and the last connect error, through the context.
 let bridge: HaBridge | null = null
 let bridgeError: string | null = null
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), database, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, bridge, bridgeError), host: { hostname: hostname(), arch: arch() } })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, bridge, bridgeError), host: { hostname: hostname(), arch: arch() } })
 
 const bridgeUp = (b: HaBridge | null) => {
   bridge = b

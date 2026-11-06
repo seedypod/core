@@ -13,6 +13,7 @@ import type { DatabaseInspector } from '../db/inspect'
 import type { RestoreClient } from '../backup/restore'
 import type { HomeKitControl } from '../homekit/types'
 import type { BridgeStatus } from '../mqtt/bridge'
+import type { LoggingControl } from '../logging/policy'
 
 export interface Context {
   hal: HalClient
@@ -37,6 +38,8 @@ export interface Context {
   homekit?: HomeKitControl
   /** The Home Assistant MQTT bridge (ADR-0013); node hosts only, where server/index.ts owns it. */
   bridge?: () => BridgeStatus
+  /** How much core and hald log; node hosts only, where the policy file lives. */
+  logging?: LoggingControl
   /** Build info pinned at release time (.git-info) or 'dev'. */
   version: string
   /** The machine core runs on (the unit's Pi, or a LAN box when the unit has a Pi Zero W); absent in the browser demo. */
