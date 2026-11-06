@@ -21,6 +21,8 @@ set -euo pipefail
 BRANCH="${SEEDYPOD_BRANCH:-__BRANCH__}"
 PREFIX="${SEEDYPOD_PREFIX:-/opt/seedypod}"
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
+# On the card, to outlast a reboot. Core writes it once per version, a minute after starting.
+COMPILE_CACHE=/var/cache/seedypod/compile-cache
 # ROOT prefixes /proc for tests (tests/scripts/install.board.test.ts).
 ROOT="${SEEDYPOD_ROOT:-}"
 RESTORE=""
@@ -284,6 +286,8 @@ if ! command -v node >/dev/null || [ "$(node -v)" != "v$NODE_WANT" ]; then
 fi
 corepack enable >/dev/null 2>&1 || true
 install_deps
+# Keyed on content, so a stale entry is only dead weight, but each update would leave a set of them.
+sudo rm -rf "$COMPILE_CACHE"
 
 # Wi-Fi setup (button held 10 s) drives NetworkManager through nmcli. A system
 # service has no desktop session, so polkit would refuse it; allow this user only.
@@ -312,8 +316,6 @@ else
   echo "   in /etc/systemd/system/seedypod-core.service (see docs/INSTALLATION.md#which-pi)." >&2
 fi
 
-# On the card, to outlast a reboot. Core writes it once per version, a minute after starting.
-COMPILE_CACHE=/var/cache/seedypod/compile-cache
 sudo tee /etc/systemd/system/seedypod-core.service >/dev/null <<UNIT
 [Unit]
 Description=seedypod core (tRPC/MCP/web)
@@ -356,8 +358,6 @@ install_login_logo || echo "   couldn't install the login logo; logins work as b
 
 sudo systemctl daemon-reload
 sudo systemctl enable seedypod-core.service >/dev/null
-# Keyed on content, so a stale entry is only dead weight; each update leaves a set of them.
-sudo rm -rf "$COMPILE_CACHE"
 sudo systemctl restart seedypod-core.service
 install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
 if [ -n "$RESTORE" ]; then
