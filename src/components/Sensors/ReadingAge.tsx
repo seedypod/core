@@ -27,6 +27,10 @@ export function readingAge(readings: Readings, now: number): { text: string, war
  * How far the unit's clock runs ahead of this browser's. Readings are stamped by
  * the unit, which has no battery clock and may have no internet to set it by,
  * so comparing them to the browser's time alone could mark every reading stale.
+ * This is core's clock and the stamps are hald's, one clock on the supported
+ * single-Pi install. With hald on another host, ages are off by the difference
+ * between the two; fixing that means core stamping each reading as it arrives,
+ * a change to the shared contract.
  */
 function useUnitClockOffset(): number {
   const unit = trpc.system.healthcheck.useQuery(undefined, { staleTime: CLOCK_MS, refetchInterval: CLOCK_MS })
