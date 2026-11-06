@@ -81,8 +81,6 @@ pub fn build_sim(cfg: &Config) -> Built {
         .iter()
         .map(|c| {
             let cam: SharedCamera = Arc::new(Mutex::new(Box::new(hal_sim::SimCamera::new(&c.name))));
-            let checked = crate::cameras::PortChecked::new(cam, &c.name, &c.device, c.fallback.as_deref());
-            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(checked)));
             (c.name.clone(), cam)
         })
         .collect();
@@ -351,6 +349,17 @@ fn probe_multi<S: hal_core::MultiSensor>(d: &mut S, s: &SensorEntry) -> anyhow::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Config::default()` names device nodes no simulator has: nothing may ask for them.
+    #[test]
+    fn simulated_cameras_need_no_device_node() {
+        let built = build_sim(&Config::default());
+        assert_eq!(built.cameras.len(), 2);
+        for cam in built.cameras.values() {
+            let mut cam = cam.lock().unwrap();
+            assert!(cam.capture().is_ok(), "{}", cam.name());
+        }
+    }
 
     #[test]
     fn stock_config_plans_the_documented_capability_set() {
