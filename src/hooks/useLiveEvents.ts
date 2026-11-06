@@ -65,6 +65,7 @@ export function useLiveEvents() {
   const pending = useRef(new Set<Area | 'all'>())
   const readings = useRef(new Map<SensorId, Reading>())
   const connected = useRef(false)
+  const failed = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const schedule = () => {
     timer.current ??= setTimeout(flush, BURST_MS)
@@ -84,13 +85,14 @@ export function useLiveEvents() {
     if (areas.has('all')) void utils.invalidate()
     else for (const area of areas as Set<Area>) void utils[area].invalidate()
   }
-  trpc.events.onChange.useSubscription(undefined, {
+  const stream = trpc.events.onChange.useSubscription(undefined, {
     onStarted() {
-      if (connected.current) {
+      if (connected.current || failed.current) {
         pending.current.add('sensors')
         schedule()
       }
       connected.current = true
+      failed.current = false
     },
     onData(e) {
       const touched = touchedBy(e)
@@ -101,6 +103,10 @@ export function useLiveEvents() {
       schedule()
     },
   })
+  // A first attempt that fails can miss readings after the initial fetch, so its retry counts as a reconnect.
+  useEffect(() => {
+    if (stream.error) failed.current = true
+  }, [stream.error])
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current)
   }, [])

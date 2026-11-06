@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query'
-import type { TRPCClientError } from '@trpc/client'
-import { type TRPCLink } from '@trpc/client'
+import { TRPCClientError, type TRPCLink } from '@trpc/client'
 import { observable, type Observer } from '@trpc/server/observable'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
@@ -37,7 +36,7 @@ function harness() {
   )
   render(<Wrap><Show /></Wrap>)
   const event = (e: CoreEvent) => act(() => stream.to?.next({ result: { type: 'data', data: e } } as never))
-  return { fetches, event }
+  return { fetches, event, stream: (result: unknown) => stream.to?.next({ result } as never) }
 }
 
 const tick = (id: string, r: unknown): CoreEvent => ({ kind: 'hal', event: { type: 'sensor', id, reading: r } }) as CoreEvent
@@ -56,6 +55,27 @@ describe('live sensors through the real query cache', () => {
     event(tick('air_temp', reading(21, '2026-11-06T10:00:10Z')))
     await settle()
     expect(shown()).toBe('21')
+    expect(fetches).toHaveLength(1)
+  })
+
+  it('fetches once more when the stream only connects after a failed attempt', async () => {
+    const { fetches, stream } = harness()
+    await waitFor(() => expect(fetches).toHaveLength(1))
+    await act(async () => fetches[0]?.({ air_temp: reading(20, '2026-11-06T10:00:00Z') }))
+    await waitFor(() => expect(shown()).toBe('20'))
+    act(() => stream({ type: 'state', state: 'connecting', error: new TRPCClientError('refused') }))
+    act(() => stream({ type: 'started' }))
+    await waitFor(() => expect(fetches).toHaveLength(2))
+    await act(async () => fetches[1]?.({ air_temp: reading(21, '2026-11-06T10:00:10Z') }))
+    await waitFor(() => expect(shown()).toBe('21'))
+  })
+
+  it('makes no extra fetch on a clean first connect', async () => {
+    const { fetches, stream } = harness()
+    await waitFor(() => expect(fetches).toHaveLength(1))
+    await act(async () => fetches[0]?.({ air_temp: reading(20, '2026-11-06T10:00:00Z') }))
+    act(() => stream({ type: 'started' }))
+    await settle()
     expect(fetches).toHaveLength(1)
   })
 

@@ -5,7 +5,7 @@ import type { CoreEvent } from '@/src/lib/eventBus'
 import { BURST_MS, touchedBy, useLiveEvents } from '../useLiveEvents'
 
 const { live, invalidated, cache } = vi.hoisted(() => ({
-  live: { onData: null as unknown as (e: CoreEvent) => void, onStarted: null as unknown as () => void },
+  live: { onData: null as unknown as (e: CoreEvent) => void, onStarted: null as unknown as () => void, error: null as Error | null },
   invalidated: [] as string[],
   cache: { latest: undefined as Record<string, unknown> | undefined, writes: 0 },
 }))
@@ -30,6 +30,7 @@ vi.mock('@/src/utils/trpc', () => ({
       onChange: {
         useSubscription: (_: undefined, o: { onData: (e: CoreEvent) => void, onStarted: () => void }) => {
           Object.assign(live, o)
+          return { error: live.error }
         },
       },
     },
@@ -88,6 +89,7 @@ describe('useLiveEvents', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     invalidated.length = 0
+    live.error = null
     Object.assign(cache, { latest: { air_temp: reading(20, '2026-11-06T10:00:00Z'), humidity: reading(50, '2026-11-06T10:00:00Z') }, writes: 0 })
   })
   afterEach(() => {
@@ -159,6 +161,21 @@ describe('useLiveEvents', () => {
     vi.advanceTimersByTime(BURST_MS)
     expect(cache.writes).toBe(0)
     expect(invalidated).toEqual([])
+  })
+
+  it('refetches the sensors when the first connect only succeeds on a retry', () => {
+    const hook = renderHook(() => useLiveEvents())
+    live.error = new Error('stream refused')
+    hook.rerender()
+    live.error = null
+    hook.rerender()
+    act(() => live.onStarted())
+    vi.advanceTimersByTime(BURST_MS)
+    expect(invalidated).toEqual(['sensors'])
+    invalidated.length = 0
+    act(() => live.onData(mutation('plans')))
+    vi.advanceTimersByTime(BURST_MS)
+    expect(invalidated).toEqual(['planner'])
   })
 
   it('refetches the sensors on a reconnect, not on the first connect', () => {
