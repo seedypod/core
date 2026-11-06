@@ -49,7 +49,8 @@ wear_journald() {
   return 1
 }
 
-zram_active() { swapon --show=NAME --noheadings 2>/dev/null | grep '^/dev/zram' >/dev/null; }
+# Not swapon: it's in /usr/sbin, which isn't on a non-root PATH on Raspberry Pi OS.
+zram_active() { grep '^/dev/zram' "$ROOT/proc/swaps" >/dev/null 2>&1; }
 
 # dphys-swapfile pages to the card; zram compresses in RAM, which suits a 512 MB board.
 wear_swap() {
@@ -63,6 +64,8 @@ wear_swap() {
       echo "   zram isn't available (no systemd-zram-generator); swap left as it was" >&2
       return 1
     fi
+    local backup="$ZRAM_CONF.seedypod-bak"
+    if [ -f "$ZRAM_CONF" ]; then $SUDO cp -p "$ZRAM_CONF" "$backup"; fi
     $SUDO mkdir -p "$(dirname "$ZRAM_CONF")"
     $SUDO tee "$ZRAM_CONF" >/dev/null <<'CONF'
 # Written by seedypod scripts/install-hal (ADR-0021): swap in compressed RAM, not on the SD card.
@@ -74,11 +77,12 @@ CONF
     $SUDO systemctl daemon-reload
     if ! { $SUDO systemctl start dev-zram0.swap && zram_active; }; then
       $SUDO systemctl stop dev-zram0.swap >/dev/null 2>&1 || true
-      $SUDO rm -f "$ZRAM_CONF"
+      if [ -f "$backup" ]; then $SUDO mv -f "$backup" "$ZRAM_CONF"; else $SUDO rm -f "$ZRAM_CONF"; fi
       $SUDO systemctl daemon-reload
       echo "   zram swap didn't start; swap left as it was" >&2
       return 1
     fi
+    $SUDO rm -f "$backup"
     echo "→ swap on zram (compressed RAM)"
   fi
   # Only once zram is up, so the board is never left without swap.
