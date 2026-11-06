@@ -50,7 +50,7 @@ export class TelemetryRetention {
 
   start(): void {
     this.timer = setInterval(() => void this.tick(), CHECK_EVERY_MS)
-    this.timer.unref()
+    this.timer.unref?.()
   }
 
   /** Resolves once a run in progress has reached the end of its slice. */

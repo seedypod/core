@@ -29,6 +29,16 @@ const cutoff = NIGHT.getTime() - FULL_RESOLUTION_DAYS * DAY
 const hourBefore = (ms: number) => Math.floor(ms / 3_600_000) * 3_600_000
 
 describe('telemetry retention', () => {
+  it('starts where setInterval returns a number, as in the browser demo', async () => {
+    const interval = vi.spyOn(globalThis, 'setInterval').mockReturnValue(1 as unknown as NodeJS.Timeout)
+    const clear = vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => undefined)
+    const retention = new TelemetryRetention({ store: new MemoryStore() })
+    expect(() => retention.start()).not.toThrow()
+    await retention.stop()
+    interval.mockRestore()
+    clear.mockRestore()
+  })
+
   it('thins rows past the window to one per 15 minutes and keeps the recent ones whole', async () => {
     const { store, retention } = rig()
     const old = hourBefore(cutoff - 10 * DAY)
