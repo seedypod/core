@@ -3,7 +3,7 @@ import { httpBatchLink, httpSubscriptionLink, splitLink } from '@trpc/client'
 import { createTRPCReact } from '@trpc/react-query'
 import superjson from 'superjson'
 import type { AppRouter } from '@/src/server/routers/app'
-import { demoLink, isDemo } from '@/src/demo/link'
+import { lazyDemoLink } from '@/src/demo/lazyLink'
 
 export const trpc = createTRPCReact<AppRouter>()
 
@@ -18,8 +18,9 @@ export function apiBase(): string {
 }
 
 export function createTrpcClient() {
-  if (isDemo()) {
-    return trpc.createClient({ links: [demoLink()] })
+  // Spelled out, not isDemo(), so a unit's build folds this away and drops the demo with it.
+  if (import.meta.env.VITE_DEMO === '1') {
+    return trpc.createClient({ links: [lazyDemoLink()] })
   }
   return trpc.createClient({
     links: [

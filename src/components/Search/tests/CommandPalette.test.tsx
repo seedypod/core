@@ -16,7 +16,11 @@ vi.mock('@/src/utils/trpc', () => ({
 
 const input = () => screen.getByRole('combobox', { name: 'Search pages, settings, plants and rules' })
 const selected = () => screen.getAllByRole('option').find(o => o.getAttribute('aria-selected') === 'true')
-const open = () => fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+/** The dialog's body is a lazy chunk, so it lands a tick after the click. */
+const open = async () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+  await screen.findByRole('combobox')
+}
 const docsOptions = () => screen.queryAllByRole('option').filter(o => o.textContent?.includes('Docs › User guide'))
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -51,10 +55,11 @@ describe('SidebarSearch', () => {
     platform.mockRestore()
   })
 
-  it.each([{ metaKey: true }, { ctrlKey: true }])('opens from anywhere with %o + K and toggles closed again', (mod) => {
+  it.each([{ metaKey: true }, { ctrlKey: true }])('opens from anywhere with %o + K and toggles closed again', async (mod) => {
     render(<SidebarSearch />)
     fireEvent.keyDown(document.body, { key: 'k', ...mod })
     expect(screen.getByRole('dialog', { name: 'Search' })).toBeTruthy()
+    await screen.findByRole('combobox')
     expect(document.activeElement).toBe(input())
     fireEvent.keyDown(document.body, { key: 'K', ...mod })
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -77,20 +82,21 @@ describe('SidebarSearch', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('lists the top-level pages before typing', () => {
+  it('lists the top-level pages before typing', async () => {
     render(<SidebarSearch />)
-    open()
+    await open()
     const pages = within(screen.getByRole('listbox', { name: 'Pages' })).getAllByRole('option').map(o => o.textContent)
     expect(pages[0]).toMatch(/^Home/)
     expect(pages.some(p => p?.startsWith('Grow'))).toBe(true)
     expect(pages.some(p => p?.startsWith('Kiosk'))).toBe(false)
   })
 
-  it('finds a plant with its breadcrumb and goes to its pod on Enter, then closes and refocuses the opener', () => {
+  it('finds a plant with its breadcrumb and goes to its pod on Enter, then closes and refocuses the opener', async () => {
     render(<SidebarSearch />)
     const opener = screen.getByRole('button', { name: 'Search' })
     opener.focus()
     fireEvent.click(opener)
+    await screen.findByRole('combobox')
     fireEvent.change(input(), { target: { value: 'tomato' } })
     expect(screen.getAllByRole('option')[0]?.textContent).toBe('Cherry TomatoGrow › Pod 5')
     fireEvent.keyDown(input(), { key: 'Enter' })
@@ -99,9 +105,9 @@ describe('SidebarSearch', () => {
     expect(document.activeElement).toBe(opener)
   })
 
-  it('moves through results with the arrow keys, wrapping at both ends, and opens one on click', () => {
+  it('moves through results with the arrow keys, wrapping at both ends, and opens one on click', async () => {
     render(<SidebarSearch />)
-    open()
+    await open()
     fireEvent.change(input(), { target: { value: 'tank' } })
     const options = screen.getAllByRole('option')
     expect(options.length).toBeGreaterThan(1)
@@ -118,22 +124,22 @@ describe('SidebarSearch', () => {
     expect(navigate).toHaveBeenCalledOnce()
   })
 
-  it('says when nothing matches, does nothing on Enter, and resets when reopened', () => {
+  it('says when nothing matches, does nothing on Enter, and resets when reopened', async () => {
     render(<SidebarSearch />)
-    open()
+    await open()
     fireEvent.change(input(), { target: { value: 'zzzz' } })
     expect(screen.getByRole('status').textContent).toContain('No matches')
     fireEvent.keyDown(input(), { key: 'Enter' })
     expect(navigate).not.toHaveBeenCalled()
     fireEvent.keyDown(input(), { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
-    open()
+    await open()
     expect((input() as HTMLInputElement).value).toBe('')
   })
 
-  it('keeps Tab focus inside the dialog', () => {
+  it('keeps Tab focus inside the dialog', async () => {
     render(<SidebarSearch />)
-    open()
+    await open()
     const close = screen.getByRole('button', { name: 'Close' })
     fireEvent.keyDown(input(), { key: 'Tab' })
     expect(document.activeElement).toBe(close)
@@ -145,7 +151,7 @@ describe('SidebarSearch', () => {
 
   it('searches the bundled docs snapshot offline, with an external-link indicator', async () => {
     render(<SidebarSearch />)
-    open()
+    await open()
     fireEvent.change(input(), { target: { value: 'debugging' } })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
     const docs = docsOptions()
@@ -156,25 +162,25 @@ describe('SidebarSearch', () => {
 
   it('fetches the live index without credentials and only once per page load', async () => {
     render(<SidebarSearch />)
-    open()
+    await open()
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
     expect(fetchMock.mock.calls[0]?.[0]).toBe(DOCS_INDEX_URL)
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer' })
     fireEvent.keyDown(input(), { key: 'Escape' })
-    open()
+    await open()
     await Promise.resolve()
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
-  it('leaves docs out of the page list before typing', () => {
+  it('leaves docs out of the page list before typing', async () => {
     render(<SidebarSearch />)
-    open()
+    await open()
     expect(screen.getAllByRole('option').some(o => o.textContent?.includes('Docs'))).toBe(false)
   })
 
-  it('ranks a setting above the docs page that covers it', () => {
+  it('ranks a setting above the docs page that covers it', async () => {
     render(<SidebarSearch />)
-    open()
+    await open()
     fireEvent.change(input(), { target: { value: 'backup' } })
     expect(screen.getAllByRole('option')[0]?.textContent).toBe('BackupSettings')
   })
@@ -182,7 +188,7 @@ describe('SidebarSearch', () => {
   it('uses a valid live index for the session', async () => {
     respond({ version: 1, generatedAt: '2026-11-01T00:00:00Z', base: DOCS_BASE, pages: [docsPage('Zeppelin mooring')] })
     render(<SidebarSearch />)
-    open()
+    await open()
     fireEvent.change(input(), { target: { value: 'zeppelin' } })
     expect(await screen.findByRole('option', { name: /Zeppelin mooring/ })).toBeTruthy()
   })
@@ -193,7 +199,7 @@ describe('SidebarSearch', () => {
   ])('keeps the snapshot when the live index %s', async (_, arrange) => {
     arrange()
     render(<SidebarSearch />)
-    open()
+    await open()
     fireEvent.change(input(), { target: { value: 'zeppelin' } })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -202,10 +208,10 @@ describe('SidebarSearch', () => {
     expect(docsOptions().length).toBeGreaterThan(0)
   })
 
-  it.each(['Enter', 'click'])('opens a docs result in a new tab on %s without navigating the app', (how) => {
+  it.each(['Enter', 'click'])('opens a docs result in a new tab on %s without navigating the app', async (how) => {
     const openWindow = vi.spyOn(window, 'open').mockReturnValue(null)
     render(<SidebarSearch />)
-    open()
+    await open()
     fireEvent.change(input(), { target: { value: 'debugging' } })
     const option = screen.getAllByRole('option')[0] as HTMLElement
     expect(option.textContent).toContain('Docs')

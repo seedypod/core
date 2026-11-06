@@ -10,7 +10,7 @@ const { data, calls, invalidate, demo } = vi.hoisted(() => ({
   invalidate: vi.fn(),
 }))
 
-vi.mock('@/src/demo/link', () => ({ isDemo: () => demo.on }))
+vi.mock('@/src/demo/mode', () => ({ isDemo: () => demo.on }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: (input?: unknown, opts?: { enabled?: boolean }) => {
