@@ -5,6 +5,8 @@ import { bridgeStatus } from '../../mqtt/bridge'
 import { Check, systemChecks } from '../checks'
 import { publicProcedure, router } from '../trpc'
 
+/** Matches src/logging/policy.ts, which the browser demo can't import. */
+const MAX_DEBUG_MINUTES = 240
 const LoggingMode = z.enum(['quiet', 'off'])
 const LoggingState = z.object({ mode: z.enum(['quiet', 'off', 'debug']), loggingMode: LoggingMode, debugUntil: z.string().nullable() })
 
@@ -36,7 +38,7 @@ export const systemRouter = router({
     .query(({ ctx }) => ctx.logging?.get() ?? null),
   setLogging: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/system/logging', tags: ['system'], summary: 'Set quiet or off, and open a debug window of up to 4 hours that ends by itself (0 closes it)' } })
-    .input(z.object({ mode: LoggingMode.optional(), debugMinutes: z.number().int().min(0).max(240).optional() }))
+    .input(z.object({ mode: LoggingMode.optional(), debugMinutes: z.number().int().min(0).max(MAX_DEBUG_MINUTES).optional() }))
     .output(LoggingState)
     .mutation(({ ctx, input }) => {
       if (!ctx.logging) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'logging isn\'t adjustable on this core' })

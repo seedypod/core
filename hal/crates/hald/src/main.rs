@@ -32,7 +32,6 @@ use engine::{Engine, EngineConfig, Inbound, Now, Outbound, SharedSnapshot};
 use hal_core::{Caps, Limits, SystemInfo, CONTRACT_VERSION};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{info, warn};
-use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::{Layer, SubscriberExt};
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -86,9 +85,7 @@ async fn main() -> anyhow::Result<()> {
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
-                .with_filter(filter_fn(move |meta| {
-                    policy.as_ref().map_or(true, |p| p.allows(*meta.level()))
-                })),
+                .with_filter(recording::log_filter(policy)),
         )
         .init();
     let cli = Cli::parse();

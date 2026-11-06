@@ -21,7 +21,7 @@ use hal_core::{
     DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Reading, SensorId, SystemInfo,
 };
 use serde::Serialize;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::config::{SensorEntry, I2C_ADDR_RANGE};
 use crate::kinds::SensorFactory;
@@ -323,7 +323,7 @@ impl Engine {
         match msg {
             Inbound::ActuatorSet(id, cmd) => out.extend(self.actuator_set(id, &cmd, now)),
             Inbound::AlertAck(kind) => {
-                info!(?kind, "alert acknowledged");
+                warn!(?kind, "alert acknowledged");
                 match kind {
                     AlertKind::PumpFault => {
                         self.pump.acknowledge();
@@ -610,7 +610,7 @@ impl Engine {
     fn apply_pump(&mut self, level: f64, now: Now) {
         if let Some(p) = self.registry.actuator_mut(ActuatorId::Pump) {
             if let Err(e) = p.set_level(level) {
-                warn!(%e, "pump driver write failed");
+                error!(%e, "pump driver write failed");
             }
         }
         let on = level > 0.0;
@@ -623,7 +623,7 @@ impl Engine {
     fn apply_dose(&mut self, id: ActuatorId, on: bool, now: Now) {
         if let Some(a) = self.registry.actuator_mut(id) {
             if let Err(e) = a.set_level(if on { 100.0 } else { 0.0 }) {
-                warn!(?id, %e, "dosing driver write failed");
+                error!(?id, %e, "dosing driver write failed");
             }
         }
         self.dose_since.insert(id, now.ts());
@@ -632,7 +632,7 @@ impl Engine {
     fn set_light(&mut self, level: f64, now: Now, persist: bool) {
         if let Some(l) = self.registry.actuator_mut(ActuatorId::Light) {
             if let Err(e) = l.set_level(level) {
-                warn!(%e, "light driver write failed");
+                error!(%e, "light driver write failed");
             }
         }
         if level != self.light_level || self.light_since.is_empty() {
@@ -665,7 +665,7 @@ impl Engine {
         }
         if let Some(f) = &self.state_file {
             if let Err(e) = f.save(&self.persisted) {
-                warn!(path = %f.path().display(), %e, "could not persist state");
+                error!(path = %f.path().display(), %e, "could not persist state");
             }
         }
         self.last_hours_persist = Some(now.instant);
@@ -1262,7 +1262,6 @@ mod tests {
     fn quiet_log(run: impl FnOnce()) -> String {
         use std::io::Write;
         use std::sync::Mutex;
-        use tracing_subscriber::filter::filter_fn;
         use tracing_subscriber::layer::{Layer, SubscriberExt};
 
         #[derive(Clone, Default)]
@@ -1278,10 +1277,12 @@ mod tests {
         }
         let buf = Buf::default();
         let sink = buf.clone();
-        let policy = crate::recording::RecordingPolicy::new("/nonexistent/recording-policy.json");
+        let policy = Some(crate::recording::RecordingPolicy::new(
+            "/nonexistent/recording-policy.json",
+        ));
         let layer = tracing_subscriber::fmt::layer()
             .with_writer(move || sink.clone())
-            .with_filter(filter_fn(move |meta| policy.allows(*meta.level())));
+            .with_filter(crate::recording::log_filter(policy));
         tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), run);
         let out = buf.0.lock().unwrap();
         String::from_utf8_lossy(&out).into_owned()

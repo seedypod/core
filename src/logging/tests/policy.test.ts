@@ -42,6 +42,14 @@ describe('reading the policy', () => {
     expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ debugUntil: 2_000 })
   })
 
+  it('counts a window further off than the API allows as none', () => {
+    write({ loggingMode: 'off', debugUntil: now + 240 * 60_000 + 1 })
+    expect(policy().mode()).toBe('off')
+    expect(policy().get().debugUntil).toBeNull()
+    write({ loggingMode: 'off', debugUntil: now + 240 * 60_000 })
+    expect(policy().mode()).toBe('debug')
+  })
+
   it.each([
     ['broken JSON', '{broken'],
     ['not an object', '[1]'],
@@ -135,7 +143,7 @@ describe('installRecordingPolicy', () => {
   }
 
   it('keeps warnings and errors in quiet', () => expect(installed('quiet')).toEqual(['warn', 'error']))
-  it('keeps nothing in off', () => expect(installed('off')).toEqual([]))
+  it('keeps only errors in off', () => expect(installed('off')).toEqual(['error']))
   it('keeps everything in debug', () => expect(installed('debug')).toEqual(levels))
 
   it('passes the arguments through untouched', () => {
@@ -151,6 +159,7 @@ describe('installRecordingPolicy', () => {
     try {
       installRecordingPolicy({ mode: () => 'off' })
       expect(console.warn).not.toBe(real.warn)
+      expect(console.error).toBe(real.error)
     }
     finally {
       Object.assign(console, real)
