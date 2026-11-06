@@ -19,6 +19,7 @@ mod mdns;
 mod mqtt;
 mod overlay;
 mod state;
+mod usb;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -59,6 +60,10 @@ struct Cli {
     /// Exit after this many telemetry ticks (for smoke tests).
     #[arg(long)]
     ticks: Option<u64>,
+    /// If the USB bus is empty after boot, try to enumerate it again and exit.
+    /// Needs root. Runs once per boot.
+    #[arg(long)]
+    usb_recover: bool,
     /// List the USB cameras (capture nodes) with their ports as JSON and exit.
     #[arg(long)]
     list_cameras: bool,
@@ -124,6 +129,22 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut cfg = config::Config::load(cli.config.as_deref())?;
+    if cli.usb_recover {
+        let uptime = usb::uptime().unwrap_or_default();
+        match usb::recover(
+            Path::new("/sys"),
+            &cfg.usb_recovery,
+            uptime,
+            &mut std::thread::sleep,
+        ) {
+            usb::Recovery::NoAction(why) => info!(%why, "no USB recovery needed"),
+            usb::Recovery::Recovered { attempts } => info!(attempts, "USB bus recovered"),
+            usb::Recovery::GaveUp { attempts } => {
+                anyhow::bail!("USB bus still empty after {attempts} attempts; giving up until the next boot")
+            }
+        }
+        return Ok(());
+    }
     if let Some(u) = &cli.mqtt_url {
         cfg.mqtt_url = Some(u.clone());
     }
@@ -301,6 +322,21 @@ async fn main() -> anyhow::Result<()> {
         },
         _ => None,
     };
+
+    // An empty USB bus → camera_missing, once recovery has had its chance.
+    if !cli.sim && cfg.usb_recovery.enabled && !cfg.camera.is_empty() {
+        let tx = inbound_tx.clone();
+        let mut watch = usb::Watch::new(&cfg.usb_recovery);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                let uptime = usb::uptime().unwrap_or_default();
+                if let Some(alert) = watch.tick(&usb::bus_state(Path::new("/sys")), uptime) {
+                    let _ = tx.send(alert);
+                }
+            }
+        });
+    }
 
     // Signals → Shutdown.
     {

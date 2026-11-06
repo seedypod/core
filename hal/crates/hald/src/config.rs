@@ -34,6 +34,7 @@ pub struct Config {
     pub button: Button,
     pub dosing: Dosing,
     pub ha: HomeAssistant,
+    pub usb_recovery: UsbRecovery,
     pub mdns: bool,
     pub camera: Vec<CameraEntry>,
     pub sensor: Vec<SensorEntry>,
@@ -104,6 +105,22 @@ pub struct Button {
     pub active_low: bool,
     /// Bounded pump run started by a double press (clamped by the guard).
     pub pump_run_s: u64,
+}
+
+/// `hald --usb-recover`, for a USB hub that didn't enumerate at boot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UsbRecovery {
+    pub enabled: bool,
+    /// Seconds after boot before an empty bus counts as a failure.
+    pub boot_wait_s: u64,
+    /// Root hub re-probes. The controller keeps running through these.
+    pub attempts: u32,
+    /// Seconds to wait for the bus to fill after each attempt.
+    pub settle_s: u64,
+    /// One last attempt that rebinds the whole controller. Off until it has been
+    /// proved on your hardware: the Pi's `dwc_otg` isn't known to unbind cleanly.
+    pub rebind_controller: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,6 +282,7 @@ impl Default for Config {
             button: Button::default(),
             dosing: Dosing::default(),
             ha: HomeAssistant::default(),
+            usb_recovery: UsbRecovery::default(),
             mdns: true,
             camera: vec![
                 CameraEntry::stock("upper", "/dev/video0"),
@@ -333,6 +351,18 @@ impl Default for Tank {
         Self {
             full_cm: 5.0,
             empty_cm: 20.0,
+        }
+    }
+}
+
+impl Default for UsbRecovery {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            boot_wait_s: 90,
+            attempts: 2,
+            settle_s: 20,
+            rebind_controller: false,
         }
     }
 }
@@ -656,6 +686,13 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 [ha]
 # discovery = true
 # prefix = "homeassistant"
+
+[usb_recovery]            # re-enumerate a USB hub that didn't come up at boot
+# enabled = true
+# boot_wait_s = 90
+# attempts = 2            # root hub re-probes
+# settle_s = 20
+# rebind_controller = false   # one last attempt that rebinds the whole controller
 
 # Cameras get stable names from udev rules keyed on their USB port
 # (`hald --list-cameras`, `hald --camera-rules`); /dev/videoN is only a

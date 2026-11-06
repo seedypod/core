@@ -72,6 +72,7 @@ prints every key with its default; the important ones:
 | `[button]` | `debounce_ms`, `double_window_ms`, `long_press_ms`, `setup_hold_ms`, `active_low`, `pump_run_s` | 30, 400, 1000, 10000, true, 300 | |
 | `[dosing]` | `enabled` | **false** | Phase 6.3, ADR-0014: off until you turn it on. |
 | `[dosing]` | `ml_per_s`, `default_dose_ml`, `max_single_ml`, `max_daily_ml`, `max_doses_per_day` | 1, 5, 10, 30, 4 | Hard daily cap; lockout after N doses until acknowledged. |
+| `[usb_recovery]` | `enabled`, `boot_wait_s`, `attempts`, `settle_s`, `rebind_controller` | true, 90, 2, 20, **false** | See [USB recovery](#usb-recovery) |
 | `[ha]` | `discovery`, `prefix` | true, `homeassistant` | |
 | `[[camera]]` | `name`, `device`, `fallback`, `resolution`, `palette`, `skip_frames` | upper `/dev/seedypod/camera-upper` (fallback `/dev/video0`), lower `/dev/seedypod/camera-lower` (fallback `/dev/video2`), 1280x960, MJPEG, 15 | See [Camera names](#camera-names) |
 | `[[camera]]` | `capture_attempts`, `capture_retry_ms`, `capture_timeout_s`, `inspect_frames` | 3, 1000, 15, true | See [Stills](#stills) |
@@ -354,6 +355,44 @@ restarted so it picks up the group.
 
 Operations: `journalctl -u hald -f`, `hald --config /etc/seedypod/hal.toml --check`,
 `mosquitto_sub -v -t 'seedypod/#'`. See [Debugging](../DEBUGGING.md).
+
+## USB recovery
+
+The cameras sit behind a USB hub that doesn't always enumerate at boot, on stock
+firmware too. `seedypod-usb-recover.service` runs `hald --usb-recover` once per
+boot, as root. If the bus still has nothing on it `boot_wait_s` after boot, it asks
+usbcore to re-probe the root hub up to `attempts` times, waiting `settle_s` after
+each. With `rebind_controller = true` it finishes with one rebind of the whole
+controller. Then it stops, and the unit shows as failed; there is no restart.
+
+It does nothing unless the bus is completely empty, so it can't disturb a hub that
+came up or any other USB device. It only acts on the Pi's `dwc_otg` and `dwc2`
+controllers, never in gadget mode. Wi-Fi is on SDIO, not USB.
+
+`hald` itself is unprivileged, so it only watches. If the bus is still empty once
+the attempts must be over, it raises `camera_missing` and clears it when the bus
+fills.
+
+`rebind_controller` is off because a hung kernel would leave the pump's GPIO as it
+was, and nobody has yet proved that the Pi's `dwc_otg` unbinds cleanly. To test on a
+unit, with the pump off, first make the bus empty without touching the controller,
+then let recovery bring it back:
+
+```sh
+echo usb1 | sudo tee /sys/bus/usb/drivers/usb/unbind   # drops the hub and cameras
+ls /sys/bus/usb/devices                                # usb1 and 1-0:1.0 only
+sudo hald --config /etc/seedypod/hal.toml --usb-recover
+ls /sys/bus/usb/devices                                # 1-1 and the cameras are back
+```
+
+Before setting `rebind_controller = true`, try the rebind itself by hand, ready to
+power-cycle the unit:
+
+```sh
+C=$(basename "$(readlink -f /sys/bus/usb/devices/usb1/..)")
+D=$(readlink -f "/sys/bus/platform/devices/$C/driver")
+echo "$C" | sudo tee "$D/unbind"; sleep 1; echo "$C" | sudo tee "$D/bind"
+```
 
 ## Verification status
 
