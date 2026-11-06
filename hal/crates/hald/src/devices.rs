@@ -258,7 +258,9 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                         a.hz.unwrap_or(cfg.pins.light_hz) as f64,
                     )
                     .map_err(|e| anyhow::anyhow!("hardware PWM (is dtoverlay=pwm enabled?): {e}"))?;
-                    let mut d = hal_drivers::pwm::PwmLight::new(id, out);
+                    // At the duty it found, or the probe would blink a light left on across a restart.
+                    let level = out.duty() * 100.0;
+                    let mut d = hal_drivers::pwm::PwmLight::new(id, out).with_level(level);
                     hal_core::Actuator::probe(&mut d).map_err(|e| anyhow::anyhow!("{e}"))?;
                     registry.add_actuator(Box::new(d));
                 }

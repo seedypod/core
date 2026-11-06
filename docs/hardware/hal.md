@@ -158,6 +158,9 @@ Semantics worth knowing:
   command lands, once: nothing publishes or persists per step. A new command
   mid-fade carries on from the light's actual level. Boot restores the level
   exactly, without a fade (upstream #131), and a stop mid-fade lands on the target.
+  The light stays on when `hald` stops, and a restart takes the running channel
+  as it finds it, so an update doesn't blink it. A failed write shows as `fault` in
+  the state, which core raises as `light_fault`, until a write succeeds.
 - **Dosing** (`dose_1..3`): `durationS` is seconds of pumping, converted to ml
   through `ml_per_s`, clamped to `max_single_ml`; omitted → `default_dose_ml`.
   Refused when disabled, when the dose would cross `max_daily_ml` (UTC day),

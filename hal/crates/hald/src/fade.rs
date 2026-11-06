@@ -1,8 +1,12 @@
 //! Every light change fades, whichever source sent it, on its own thread so
-//! that a slow telemetry round can't make a fade stutter and a fade can't hold
-//! up the engine: the pump guard and sensor reads never wait for it. The engine
-//! only ever says where the light should end up. It publishes and persists that
-//! target once, so nothing here reaches MQTT or the card.
+//! that a slow telemetry round can't make a fade stutter. The engine only ever
+//! says where the light should end up. It publishes and persists that target
+//! once, so nothing here reaches MQTT or the card.
+//!
+//! Once that thread runs, the engine never touches the driver: it writes a small
+//! plan under its own lock, and only the thread holds the driver's. So a light
+//! write that hangs can't hold up a command, the pump guard or a sensor read. With
+//! fading off there's no thread, and writes happen on the engine as they always did.
 //!
 //! Levels are PWM duty, and the eye doesn't see duty evenly: a straight ramp
 //! rushes through the dim end and crawls at the top. So a fade is a straight
@@ -20,6 +24,10 @@ const GAMMA: f64 = 2.2;
 const FRAME: Duration = Duration::from_millis(20);
 /// How soon to try again when the last write of a fade fails.
 const RETRY: Duration = Duration::from_secs(1);
+/// How long a shutdown waits for the light to land. The pump is already off by then.
+const FINISH_WAIT: Duration = Duration::from_millis(250);
+/// What the light's state reports, which core raises as `light_fault`.
+const WRITE_FAULT: &str = "light driver write failed";
 
 fn perceived(level: f64) -> f64 {
     (level / 100.0).clamp(0.0, 1.0).powf(1.0 / GAMMA)
@@ -30,6 +38,8 @@ fn level_of(perceived: f64) -> f64 {
 }
 
 struct Ramp {
+    /// Tells a ramp from the one that replaced it during a write.
+    id: u64,
     from: f64,
     to: f64,
     start: Instant,
@@ -50,74 +60,103 @@ impl Ramp {
 
 type Clock = Box<dyn Fn() -> Instant + Send>;
 
-struct State {
-    driver: Box<dyn Actuator>,
+/// Never held across a driver write, so the engine can always take it.
+struct Plan {
     /// The last level the driver took.
     actual: f64,
     target: f64,
     ramp: Option<Ramp>,
+    ramps: u64,
     /// Without something stepping the ramp, a fade would never arrive, so changes land at once.
     stepping: bool,
+    /// A thread is doing the stepping, rather than a test.
+    threaded: bool,
+    stopping: bool,
     stopped: bool,
-    /// One log line per run of failed writes, not fifty a second.
+    /// Also what stops a run of failed writes logging fifty times a second.
     write_failing: bool,
     clock: Clock,
 }
 
-impl State {
-    fn write(&mut self, level: f64) -> Result<(), DeviceError> {
-        let written = self.driver.set_level(level);
-        match &written {
-            Ok(()) => {
-                self.actual = level;
-                self.write_failing = false;
-            }
-            Err(e) if !self.write_failing => {
-                error!(%e, "light driver write failed");
-                self.write_failing = true;
-            }
-            Err(_) => {}
-        }
-        written
-    }
-
-    /// One frame. The delay until the next, or `None` with nothing left to do.
-    fn step(&mut self) -> Option<Duration> {
-        let (level, last) = self.ramp.as_ref()?.at((self.clock)());
-        match (self.write(level), last) {
-            (Ok(()), true) => {
-                self.ramp = None;
-                None
-            }
-            // The last write is the one that matters: off has to reach zero.
-            (Err(_), true) => Some(RETRY),
-            (_, false) => Some(FRAME),
-        }
-    }
-}
-
 struct Shared {
-    state: Mutex<State>,
+    output: Mutex<Box<dyn Actuator>>,
+    plan: Mutex<Plan>,
     wake: Condvar,
 }
 
 impl Shared {
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    fn plan(&self) -> MutexGuard<'_, Plan> {
+        self.plan.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn write(&self, level: f64) -> bool {
+        let written = self
+            .output
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_level(level);
+        let mut plan = self.plan();
+        match &written {
+            Ok(()) => {
+                plan.actual = level;
+                plan.write_failing = false;
+            }
+            Err(e) if !plan.write_failing => {
+                error!(%e, "{WRITE_FAULT}");
+                plan.write_failing = true;
+            }
+            Err(_) => {}
+        }
+        written.is_ok()
+    }
+
+    /// One frame. The delay until the next, or `None` with nothing left to do.
+    fn step(&self) -> Option<Duration> {
+        let (level, last, id) = {
+            let plan = self.plan();
+            let ramp = plan.ramp.as_ref()?;
+            let (level, last) = ramp.at((plan.clock)());
+            (level, last, ramp.id)
+        };
+        let written = self.write(level);
+        let mut plan = self.plan();
+        if written && last && plan.ramp.as_ref().is_some_and(|r| r.id == id) {
+            plan.ramp = None;
+            return None;
+        }
+        // The last write is the one that matters: off has to reach zero.
+        Some(if last && !written { RETRY } else { FRAME })
+    }
+
+    /// Straight to the target, and done.
+    fn land(&self) {
+        let target = {
+            let mut plan = self.plan();
+            plan.ramp = None;
+            plan.target
+        };
+        self.write(target);
+        self.plan().stopped = true;
+        self.wake.notify_all();
     }
 
     fn run(&self) {
-        let mut state = self.lock();
-        while !state.stopped {
-            state = match state.step() {
-                Some(delay) => {
+        loop {
+            let delay = self.step();
+            let plan = self.plan();
+            if plan.stopping {
+                drop(plan);
+                return self.land();
+            }
+            match delay {
+                Some(delay) => drop(
                     self.wake
-                        .wait_timeout(state, delay)
-                        .unwrap_or_else(|e| e.into_inner())
-                        .0
-                }
-                None => self.wake.wait(state).unwrap_or_else(|e| e.into_inner()),
-            };
+                        .wait_timeout(plan, delay)
+                        .unwrap_or_else(|e| e.into_inner()),
+                ),
+                None if plan.ramp.is_none() => drop(self.wake.wait(plan).unwrap_or_else(|e| e.into_inner())),
+                None => {}
+            }
         }
     }
 }
@@ -131,19 +170,22 @@ pub struct LightFader {
 impl LightFader {
     pub fn new(driver: Box<dyn Actuator>, fade: Duration) -> Self {
         let level = driver.level();
-        let state = State {
-            driver,
+        let plan = Plan {
             actual: level,
             target: level,
             ramp: None,
+            ramps: 0,
             stepping: false,
+            threaded: false,
+            stopping: false,
             stopped: false,
             write_failing: false,
             clock: Box::new(Instant::now),
         };
         Self {
             shared: Arc::new(Shared {
-                state: Mutex::new(state),
+                output: Mutex::new(driver),
+                plan: Mutex::new(plan),
                 wake: Condvar::new(),
             }),
             fade,
@@ -159,12 +201,23 @@ impl LightFader {
         std::thread::Builder::new()
             .name("light-fade".into())
             .spawn(move || shared.run())?;
-        self.shared.lock().stepping = true;
+        let mut plan = self.shared.plan();
+        plan.stepping = true;
+        plan.threaded = true;
         Ok(())
     }
 
     pub fn probe(&self) -> Result<(), DeviceError> {
-        self.shared.lock().driver.probe()
+        self.shared
+            .output
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .probe()
+    }
+
+    /// What `actuator/light/state` reports as its fault; clears on the next good write.
+    pub fn fault(&self) -> Option<&'static str> {
+        self.shared.plan().write_failing.then_some(WRITE_FAULT)
     }
 
     /// Fades from wherever the light is right now, so a change mid-fade has no jump.
@@ -172,19 +225,23 @@ impl LightFader {
     /// swing takes `fade`, while the small steps schedules and Autopilot send
     /// finish quickly and can't pile up.
     pub fn fade_to(&self, level: f64) {
-        let mut state = self.shared.lock();
-        if !state.stepping {
-            drop(state);
+        let mut plan = self.shared.plan();
+        if !plan.stepping {
+            drop(plan);
             return self.jump(level);
         }
-        if level == state.target {
+        // On its way or already there. A target it never reached gets a new ramp.
+        if level == plan.target && (plan.ramp.is_some() || plan.actual == level) {
             return;
         }
-        let from = state.actual;
+        let from = plan.actual;
         let distance = (perceived(level) - perceived(from)).abs();
-        let start = (state.clock)();
-        state.target = level;
-        state.ramp = Some(Ramp {
+        let start = (plan.clock)();
+        plan.ramps += 1;
+        let id = plan.ramps;
+        plan.target = level;
+        plan.ramp = Some(Ramp {
+            id,
             from,
             to: level,
             start,
@@ -193,33 +250,44 @@ impl LightFader {
         self.shared.wake.notify_all();
     }
 
-    /// Straight there: a boot restore, or fading turned off.
+    /// Straight there, on the caller's thread: a boot restore, before `spawn`, or fading off.
     pub fn jump(&self, level: f64) {
-        let mut state = self.shared.lock();
-        state.ramp = None;
-        state.target = level;
-        let _ = state.write(level);
+        {
+            let mut plan = self.shared.plan();
+            plan.ramp = None;
+            plan.target = level;
+        }
+        self.shared.write(level);
     }
 
     /// Shutdown: the light lands on its target, which is what the state file says,
-    /// so the next boot restores to where it already is.
+    /// so the next boot restores to where it already is. Waits a moment for that,
+    /// but not for a driver that has hung.
     pub fn finish(&self) {
-        let target = self.shared.lock().target;
-        self.jump(target);
-        self.shared.lock().stopped = true;
+        let mut plan = self.shared.plan();
+        if !plan.threaded {
+            drop(plan);
+            return self.shared.land();
+        }
+        plan.stopping = true;
         self.shared.wake.notify_all();
+        let _ = self
+            .shared
+            .wake
+            .wait_timeout_while(plan, FINISH_WAIT, |p| !p.stopped)
+            .unwrap_or_else(|e| e.into_inner());
     }
 
     #[cfg(test)]
     pub fn step_by_hand(&self, clock: impl Fn() -> Instant + Send + 'static) {
-        let mut state = self.shared.lock();
-        state.stepping = true;
-        state.clock = Box::new(clock);
+        let mut plan = self.shared.plan();
+        plan.stepping = true;
+        plan.clock = Box::new(clock);
     }
 
     #[cfg(test)]
     pub fn step(&self) -> Option<Duration> {
-        self.shared.lock().step()
+        self.shared.step()
     }
 }
 
@@ -369,6 +437,91 @@ mod tests {
         }
         assert!(fake.writes().len() > 1, "{:?}", fake.writes());
         f.finish();
-        assert!(f.shared.lock().stopped);
+        assert!(f.shared.plan().stopped);
+    }
+
+    #[test]
+    fn a_failed_restore_is_recovered_by_asking_for_the_same_level_again() {
+        let fake = Fake::default();
+        let (f, t) = by_hand(&fake);
+        fake.fail_next(1);
+        f.jump(70.0);
+        assert!(fake.writes().is_empty());
+        f.fade_to(70.0);
+        frames(&f, &t, 40);
+        assert_eq!(*fake.writes().last().unwrap(), 70.0);
+    }
+
+    #[test]
+    fn a_failed_write_is_a_fault_until_a_write_succeeds() {
+        let fake = Fake::default();
+        let (f, t) = by_hand(&fake);
+        assert_eq!(f.fault(), None);
+        fake.fail_next(1);
+        f.fade_to(100.0);
+        frames(&f, &t, 1);
+        assert_eq!(f.fault(), Some(WRITE_FAULT));
+        frames(&f, &t, 1);
+        assert_eq!(f.fault(), None);
+    }
+
+    /// A light whose every write hangs until the test lets it go.
+    struct Hung(std::sync::mpsc::Receiver<()>);
+
+    impl Actuator for Hung {
+        fn id(&self) -> ActuatorId {
+            ActuatorId::Light
+        }
+        fn probe(&mut self) -> Result<(), DeviceError> {
+            Ok(())
+        }
+        fn set_level(&mut self, _: f64) -> Result<(), DeviceError> {
+            let _ = self.0.recv();
+            Ok(())
+        }
+        fn level(&self) -> f64 {
+            0.0
+        }
+    }
+
+    #[test]
+    fn a_hung_write_never_holds_up_the_engine() {
+        let (release, hang) = std::sync::mpsc::channel();
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let f = LightFader::new(Box::new(Hung(hang)), Duration::from_millis(800));
+            f.spawn().unwrap();
+            f.fade_to(100.0);
+            std::thread::sleep(FRAME * 3);
+            f.fade_to(50.0);
+            f.fault();
+            f.finish();
+            done.send(()).unwrap();
+            drop(release);
+        });
+        finished
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the engine's calls returned");
+    }
+
+    #[test]
+    fn a_retarget_during_a_write_survives_the_end_of_the_old_ramp() {
+        let fake = Fake::default();
+        let (f, t) = by_hand(&fake);
+        f.fade_to(100.0);
+        *t.lock().unwrap() += Duration::from_secs(2);
+        // The write of the old ramp's last frame is under way when the new command lands.
+        let (level, last, id) = {
+            let plan = f.shared.plan();
+            let ramp = plan.ramp.as_ref().unwrap();
+            let (l, last) = ramp.at(*t.lock().unwrap());
+            (l, last, ramp.id)
+        };
+        assert!(last);
+        f.fade_to(20.0);
+        f.shared.write(level);
+        assert_ne!(f.shared.plan().ramp.as_ref().map(|r| r.id), Some(id));
+        frames(&f, &t, 60);
+        assert_eq!(*fake.writes().last().unwrap(), 20.0);
     }
 }

@@ -100,8 +100,23 @@ impl HwPwm {
             3 => Channel::Pwm3,
             n => return Err(DeviceError::Other(format!("no PWM channel {n}"))),
         };
-        let pwm = Pwm::with_frequency(ch, hz, 0.0, Polarity::Normal, true).map_err(bus_err)?;
+        let mut pwm = Pwm::new(ch).map_err(bus_err)?;
+        // The light stays as it is when hald stops, so an update doesn't blink a grow light.
+        pwm.set_reset_on_drop(false);
+        // And a channel left running is taken as found: `Pwm::with_frequency` would zero it.
+        let running =
+            pwm.is_enabled().unwrap_or(false) && pwm.frequency().is_ok_and(|f| (f - hz).abs() < 1.0);
+        if !running {
+            pwm.set_frequency(hz, 0.0).map_err(bus_err)?;
+            pwm.set_polarity(Polarity::Normal).map_err(bus_err)?;
+            pwm.enable().map_err(bus_err)?;
+        }
         Ok(Self(pwm))
+    }
+
+    /// The duty the channel is running at, 0–1.
+    pub fn duty(&self) -> f64 {
+        self.0.duty_cycle().unwrap_or(0.0)
     }
 }
 

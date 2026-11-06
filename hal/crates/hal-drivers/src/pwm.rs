@@ -25,6 +25,12 @@ impl<P: PwmOut> PwmActuator<P> {
     pub fn new(id: ActuatorId, out: P) -> Self {
         Self { id, out, level: 0.0 }
     }
+
+    /// For an output already running at `level`, so a probe re-asserts that and not zero.
+    pub fn with_level(mut self, level: f64) -> Self {
+        self.level = level.clamp(0.0, 100.0);
+        self
+    }
 }
 
 /// The grow light.
@@ -55,6 +61,14 @@ impl<P: PwmOut> Actuator for PwmActuator<P> {
 mod tests {
     use super::*;
     use crate::bus::fake::FakePwm;
+
+    #[test]
+    fn a_probe_keeps_the_level_an_output_was_found_at() {
+        let mut d = PwmLight::new(ActuatorId::Light, FakePwm::default()).with_level(40.0);
+        d.probe().unwrap();
+        assert_eq!(d.level(), 40.0);
+        assert_eq!(d.out.duties, [0.4]);
+    }
 
     #[test]
     fn level_maps_to_duty_and_clamps() {

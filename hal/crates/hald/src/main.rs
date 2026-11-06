@@ -398,8 +398,9 @@ fn run_engine(mut engine: Engine, cfg: LoopConfig, rx: Receiver<Inbound>, tx: Un
         Duration::from_secs(1)
     };
     let mut now = Now::real();
-    engine.start_light_fades();
     send(&tx, engine.boot(now));
+    // After boot, which restores the light on this thread; from here on only the fader writes.
+    engine.start_light_fades();
     let mut ticks = 0u64;
     loop {
         let deadline = Instant::now() + real_tick;

@@ -152,6 +152,8 @@ pub struct Engine {
     light_since: String,
     /// Owns the light's driver, taken out of the registry.
     light: Option<LightFader>,
+    /// The last light fault published; a failed fade step has no command to report it.
+    light_fault: Option<&'static str>,
     persisted: Persisted,
     state_file: Option<StateFile>,
     env: Env,
@@ -282,6 +284,7 @@ impl Engine {
             light_level: 0.0,
             light_since: persisted.light_since.clone().unwrap_or_default(),
             light,
+            light_fault: None,
             persisted,
             system,
             cfg,
@@ -598,6 +601,11 @@ impl Engine {
                 out.extend(self.publish_actuator(id, now));
             }
         }
+        let light_fault = self.light.as_ref().and_then(LightFader::fault);
+        if light_fault != self.light_fault {
+            self.light_fault = light_fault;
+            out.extend(self.publish_actuator(ActuatorId::Light, now));
+        }
         if due {
             self.refresh_alerts(now, false, &mut out);
         }
@@ -771,7 +779,7 @@ impl Engine {
                 on: self.light_level > 0.0,
                 level: self.light_level,
                 since: self.light_since.clone(),
-                fault: None,
+                fault: self.light.as_ref().and_then(LightFader::fault).map(str::to_owned),
                 remaining_s: None,
             },
             ActuatorId::Pump => ActuatorState {
@@ -1744,6 +1752,67 @@ mod tests {
         f.r.engine.handle(Inbound::Shutdown, f.r.now);
         assert_eq!(f.level(), 80.0);
         assert_eq!(StateFile::new(&f.r.dir).load().light_level, 80.0);
+    }
+
+    /// A light that refuses writes while `broken` is set.
+    struct Flaky(Arc<std::sync::atomic::AtomicBool>);
+
+    impl hal_core::device::Actuator for Flaky {
+        fn id(&self) -> ActuatorId {
+            ActuatorId::Light
+        }
+        fn probe(&mut self) -> Result<(), hal_core::device::DeviceError> {
+            Ok(())
+        }
+        fn set_level(&mut self, _: f64) -> Result<(), hal_core::device::DeviceError> {
+            if self.0.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(hal_core::device::DeviceError::Timeout);
+            }
+            Ok(())
+        }
+        fn level(&self) -> f64 {
+            0.0
+        }
+    }
+
+    #[test]
+    fn a_light_that_wont_write_reports_a_fault_once_and_clears_it() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let broken = Arc::new(AtomicBool::new(false));
+        let mut registry = Registry::default();
+        registry.add_actuator(Box::new(Flaky(broken.clone())));
+        let mut e = Engine::new(
+            system(vec![ActuatorId::Light]),
+            cfg(false),
+            registry,
+            None,
+            None,
+            Arc::default(),
+        );
+        let mut now = Now {
+            instant: Instant::now(),
+            epoch_s: 1_793_419_043,
+        };
+        e.boot(now);
+        broken.store(true, Ordering::Relaxed);
+        let out = e.handle(Inbound::ActuatorSet(ActuatorId::Light, on(Some(50.0), None)), now);
+        assert_eq!(
+            payload(&out, "seedypod/u1/actuator/light/state")["fault"],
+            "light driver write failed"
+        );
+        now.advance(Duration::from_secs(1));
+        let out = e.tick(now);
+        assert_eq!(
+            payload(&out, "seedypod/u1/actuator/light/state")["fault"],
+            "light driver write failed"
+        );
+        now.advance(Duration::from_secs(1));
+        assert!(!topics_of(&e.tick(now)).contains(&"seedypod/u1/actuator/light/state"));
+        broken.store(false, Ordering::Relaxed);
+        e.handle(Inbound::ActuatorSet(ActuatorId::Light, on(Some(60.0), None)), now);
+        now.advance(Duration::from_secs(1));
+        let out = e.tick(now);
+        assert!(payload(&out, "seedypod/u1/actuator/light/state")["fault"].is_null());
     }
 
     #[test]
