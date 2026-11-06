@@ -8,7 +8,7 @@
 //! only from [`Engine::apply_pump`], which only acts on a `PumpGuard`
 //! decision. Dosing pumps likewise only through their `DoseGuard`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -18,7 +18,7 @@ use hal_core::safety::{Decision, DoseGuard, DoseLimits, Env, PumpGuard, PumpLimi
 use hal_core::{
     topics, ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, BinarySensor, ButtonEvent,
     ButtonPress, CalibrationCommand, CalibrationResult, DeviceCommand, DeviceEntry, DeviceInventory,
-    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Reading, SensorId, SystemInfo,
+    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Quality, Reading, SensorId, SystemInfo,
 };
 use serde::Serialize;
 use tracing::{info, warn};
@@ -154,8 +154,54 @@ pub struct Engine {
     last_tick: Option<Instant>,
     last_hours_persist: Option<Instant>,
     alerts: BTreeMap<AlertKind, Alert>,
+    water: WaterAlert,
     snapshot: SharedSnapshot,
     devices: Devices,
+}
+
+/// Telemetry rounds the water alert looks back over: a minute at the default 10 s.
+const WATER_WINDOW: usize = 6;
+/// Rounds without a good reading in that window that raise it.
+const WATER_RAISE_AT: usize = 3;
+
+/// The `water_low` alert, debounced. A tank lifted out leaves the ranger on stray
+/// echoes that alternate with no reading at all, and each raise is an alert row
+/// in core. So a reading at the limit raises at once, a lost reading only when
+/// lost ones pile up, and it clears after a whole window of good readings.
+#[derive(Debug, Default)]
+struct WaterAlert {
+    /// Newest last; `true` for a round that read low or read nothing.
+    rounds: VecDeque<bool>,
+    active: bool,
+    detail: String,
+}
+
+impl WaterAlert {
+    fn observe(&mut self, distance: Option<f64>, low: f64) {
+        let is_low = distance.is_some_and(|d| d >= low);
+        let bad = is_low || distance.is_none();
+        // With no history the first round decides: nothing says a silent ranger is a blip.
+        if self.rounds.is_empty() {
+            self.rounds.extend([bad; WATER_RAISE_AT]);
+        }
+        if self.rounds.len() == WATER_WINDOW {
+            self.rounds.pop_front();
+        }
+        self.rounds.push_back(bad);
+        let bad_rounds = self.rounds.iter().filter(|b| **b).count();
+        if is_low || bad_rounds >= WATER_RAISE_AT {
+            self.active = true;
+        } else if bad_rounds == 0 {
+            self.active = false;
+            self.detail.clear();
+        }
+        if self.active && bad {
+            self.detail = match distance {
+                Some(d) => format!("water distance {d:.1} cm ≥ {low:.1} cm"),
+                None => "water level sensor unavailable".to_owned(),
+            };
+        }
+    }
 }
 
 /// Runtime sensor inventory: what is configured, what was added from the app,
@@ -237,6 +283,7 @@ impl Engine {
             last_tick: None,
             last_hours_persist: None,
             alerts: BTreeMap::new(),
+            water: WaterAlert::default(),
             snapshot,
             devices: Devices::default(),
         }
@@ -466,7 +513,7 @@ impl Engine {
             ActuatorId::Pump => {
                 let mut out = Vec::new();
                 self.refresh_env(now);
-                match self.pump.request(cmd, self.env, now.instant) {
+                match self.pump.request(cmd, self.start_env(), now.instant) {
                     Ok(Decision::Run { level, deadline_in }) => {
                         info!(level, secs = deadline_in.as_secs(), "pump run accepted");
                         self.apply_pump(level, now);
@@ -547,13 +594,19 @@ impl Engine {
     fn telemetry(&mut self, now: Now, force: bool) -> Vec<Outbound> {
         let mut out = Vec::new();
         let mut distance = None;
+        let mut trusted_distance = None;
         let mut pcb = None;
         let mut readings = Vec::new();
         for s in self.registry.sensors_mut() {
             match s.read() {
                 Ok(r) => {
                     match s.id() {
-                        SensorId::WaterDistance => distance = Some(r.value),
+                        SensorId::WaterDistance => {
+                            distance = Some(r.value);
+                            // Too few pings answered: the guard keeps the number, but a
+                            // run of stray echoes mustn't count as water being back.
+                            trusted_distance = (r.quality != Quality::Suspect).then_some(r.value);
+                        }
                         SensorId::PcbTemp => pcb = Some(r.value),
                         _ => {}
                     }
@@ -567,6 +620,9 @@ impl Engine {
         }
         self.env.water_distance_cm = distance;
         self.env.pcb_temp_c = pcb;
+        if let Some(low) = self.cfg.pump.water_low_cm {
+            self.water.observe(trusted_distance, low);
+        }
         self.env.over_temp_signal = self.read_over_temp_signal();
         for (id, r) in readings {
             let changed = self.last_published.get(&id).map_or(true, |(v, t)| {
@@ -595,6 +651,18 @@ impl Engine {
             self.env.pcb_temp_c = s.read().ok().map(|r| r.value);
         }
         self.env.over_temp_signal = self.read_over_temp_signal();
+    }
+
+    /// What the guard judges a pump start on. A held water alert counts as no
+    /// reading, so a stray good echo can't start the pump while the app says the
+    /// water is low (upstream #111). It only holds that way round: the guard judges
+    /// each live read, so one lost read can refuse a start or trip the pump while
+    /// `water_low`, which counts telemetry rounds, stays inactive.
+    fn start_env(&self) -> Env {
+        Env {
+            water_distance_cm: self.env.water_distance_cm.filter(|_| !self.water.active),
+            ..self.env
+        }
     }
 
     fn read_over_temp_signal(&mut self) -> bool {
@@ -722,17 +790,12 @@ impl Engine {
         let ts = now.ts();
         let mut v = Vec::new();
         let has_distance = self.system.caps.sensors.contains(&SensorId::WaterDistance);
-        if let (true, Some(low)) = (has_distance, self.cfg.pump.water_low_cm) {
-            let (active, detail) = match self.env.water_distance_cm {
-                Some(d) if d >= low => (true, format!("water distance {d:.1} cm ≥ {low:.1} cm")),
-                Some(_) => (false, String::new()),
-                None => (true, "water level sensor unavailable".to_owned()),
-            };
+        if has_distance && self.cfg.pump.water_low_cm.is_some() {
             v.push(Alert {
                 kind: AlertKind::WaterLow,
-                active,
+                active: self.water.active,
                 ts: ts.clone(),
-                detail,
+                detail: self.water.detail.clone(),
             });
         }
         let pump_fault = self.pump.fault();
@@ -1246,11 +1309,166 @@ mod tests {
             payload(&out, "seedypod/u1/actuator/pump/state")["fault"],
             "dry-run"
         );
-        assert_eq!(payload(&out, "seedypod/u1/alert/water_low")["active"], false);
         assert_eq!(r.world.lock().unwrap().pump_level, 0.0);
         let out = r.engine.handle(Inbound::AlertAck(AlertKind::PumpFault), r.now);
         assert!(payload(&out, "seedypod/u1/actuator/pump/state")["fault"].is_null());
         assert_eq!(payload(&out, "seedypod/u1/alert/pump_fault")["active"], false);
+        // A window of good readings clears the water alert, and only then may it start.
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], false);
+        let mut cleared = None;
+        for _ in 0..WATER_WINDOW {
+            r.now.advance(Duration::from_secs(10));
+            cleared = r
+                .engine
+                .tick(r.now)
+                .into_iter()
+                .find(|o| o.topic == "seedypod/u1/alert/water_low");
+        }
+        assert!(cleared.unwrap().payload.contains(r#""active":false"#));
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    fn water_rounds(a: &mut WaterAlert, rounds: &[Option<f64>]) -> Vec<bool> {
+        rounds
+            .iter()
+            .map(|d| {
+                a.observe(*d, 16.0);
+                a.active
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_low_reading_raises_the_water_alert_at_once_and_it_needs_a_clean_window_to_clear() {
+        let mut a = WaterAlert::default();
+        water_rounds(&mut a, &[Some(7.0)]);
+        assert!(!a.active);
+        water_rounds(&mut a, &[Some(150.0)]);
+        assert!(a.active);
+        assert_eq!(a.detail, "water distance 150.0 cm ≥ 16.0 cm");
+        let held = water_rounds(&mut a, &[Some(7.0); WATER_WINDOW]);
+        assert_eq!(held, [true, true, true, true, true, false]);
+        assert_eq!(a.detail, "");
+    }
+
+    #[test]
+    fn a_lost_reading_raises_the_water_alert_only_when_they_pile_up() {
+        let mut a = WaterAlert::default();
+        water_rounds(&mut a, &[Some(7.0); WATER_WINDOW]);
+        // A dropout now and then on a full tank is not low water.
+        let blips = [
+            None,
+            Some(7.0),
+            Some(7.0),
+            None,
+            Some(7.0),
+            Some(7.0),
+            None,
+            Some(7.0),
+        ];
+        assert!(!water_rounds(&mut a, &blips).contains(&true));
+        water_rounds(&mut a, &[None, None]);
+        assert!(a.active);
+        assert_eq!(a.detail, "water level sensor unavailable");
+    }
+
+    #[test]
+    fn a_ranger_with_the_tank_out_holds_the_water_alert_instead_of_flapping() {
+        let mut a = WaterAlert::default();
+        let flapping = [
+            None,
+            Some(9.0),
+            None,
+            Some(150.0),
+            None,
+            Some(4.0),
+            None,
+            None,
+            Some(9.0),
+        ]
+        .repeat(5);
+        assert!(!water_rounds(&mut a, &flapping).contains(&false));
+        // Held across a stray good reading, the detail stays the last bad one.
+        assert_eq!(a.detail, "water level sensor unavailable");
+    }
+
+    /// A ranger on stray echoes: under the limit, but too few pings answered.
+    struct StrayEchoes;
+
+    impl hal_core::device::Sensor for StrayEchoes {
+        fn id(&self) -> SensorId {
+            SensorId::WaterDistance
+        }
+        fn probe(&mut self) -> Result<(), hal_core::device::DeviceError> {
+            Ok(())
+        }
+        fn read(&mut self) -> Result<Reading, hal_core::device::DeviceError> {
+            let mut r = Reading::new(9.0, "cm");
+            r.quality = Quality::Suspect;
+            Ok(r)
+        }
+    }
+
+    #[test]
+    fn suspect_readings_never_clear_the_water_alert_but_the_guard_still_sees_them() {
+        let mut registry = Registry::default();
+        registry.add_sensor(Box::new(StrayEchoes));
+        let mut e = Engine::new(system(vec![]), cfg(false), registry, None, None, Arc::default());
+        let mut now = Now {
+            instant: Instant::now(),
+            epoch_s: 1_793_419_043,
+        };
+        e.boot(now);
+        for _ in 0..WATER_WINDOW * 3 {
+            now.advance(Duration::from_secs(10));
+            e.tick(now);
+        }
+        assert!(e.water.active);
+        assert_eq!(e.water.detail, "water level sensor unavailable");
+        assert_eq!(e.env.water_distance_cm, Some(9.0));
+    }
+
+    #[test]
+    fn a_silent_ranger_at_boot_raises_the_water_alert_straight_away() {
+        let mut a = WaterAlert::default();
+        assert_eq!(water_rounds(&mut a, &[None]), [true]);
+    }
+
+    #[test]
+    fn a_held_water_alert_refuses_a_start_on_a_stray_good_reading() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "held");
+        r.engine.boot(r.now);
+        r.world.lock().unwrap().water_distance_cm = 150.0;
+        r.now.advance(Duration::from_secs(10));
+        let out = r.engine.tick(r.now);
+        assert_eq!(payload(&out, "seedypod/u1/alert/water_low")["active"], true);
+        r.world.lock().unwrap().water_distance_cm = 7.0;
+        r.now.advance(Duration::from_secs(10));
+        let out = r.engine.tick(r.now);
+        assert!(!topics_of(&out).contains(&"seedypod/u1/alert/water_low"));
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], false);
+        assert_eq!(r.world.lock().unwrap().pump_level, 0.0);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn a_unit_with_the_water_interlock_off_has_no_water_alert_to_hold() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "nolimit");
+        r.engine.cfg.pump.water_low_cm = None;
+        r.engine.pump = PumpGuard::new(r.engine.cfg.pump.clone());
+        r.world.lock().unwrap().water_distance_cm = 150.0;
+        let out = r.engine.boot(r.now);
+        assert!(!topics_of(&out).contains(&"seedypod/u1/alert/water_low"));
         let out = r
             .engine
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);

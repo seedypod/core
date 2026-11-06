@@ -37,7 +37,7 @@ the end of its life.
 
 | Alert | What it means | Fix |
 |---|---|---|
-| **Water low** (`water_low`) | The ranger reads the surface further away than `limits.water_low_cm` (16 cm by default). The pump won't start. | Fill the tank. The alert clears by itself. If it stays on with a full tank, check Settings → Tank calibration and the ranger's view. |
+| **Water low** (`water_low`) | The ranger reads the surface further away than `limits.water_low_cm` (16 cm by default). The pump won't start. | Fill the tank. The alert clears by itself after 6 good telemetry rounds, a minute at the default `telemetry_interval_s`. Nothing restarts the pump: the next scheduled cycle runs. If it stays on with a full tank, check Settings → Tank calibration and the ranger's view. |
 | **Pump fault** (`pump_fault`) | The dry-run interlock stopped the pump, or it ran past `limits.pump_max_run_s`. It is **latched**: the pump stays off until acknowledged. | Fix the cause (water, intake, kinked tube), then acknowledge it in **Alerts** or long-press the button (1 s). |
 | **Dosing lockout** (`dose_fault`) | A doser hit its daily cap or its lockout count (ADR-0014). Latched. | Check the reservoir and the dosing schedule, then acknowledge. |
 | **Board over temperature** (`over_temp`) | The board's temperature sensor or its alert line tripped. The pump is refused. | Check ventilation and the PSU. It clears when the board cools. |
