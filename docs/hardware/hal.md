@@ -363,6 +363,12 @@ restarted so it picks up the group.
 Operations: `journalctl -u hald -f`, `hald --config /etc/seedypod/hal.toml --check`,
 `mosquitto_sub -v -t 'seedypod/#'`. See [Debugging](../DEBUGGING.md).
 
+A rerun only touches what changed: apt runs for a package that's missing,
+`daemon-reload` for a unit that's different, and hald restarts for a new binary,
+unit or group. A rerun with the same binary leaves a running pump alone. A restart
+that's owed is recorded in `/var/lib/seedypod/.restart-hald` first, so an install
+that dies part way still restarts hald on the rerun.
+
 ## USB recovery
 
 The cameras sit behind a USB hub that doesn't always enumerate at boot, on stock

@@ -18,7 +18,9 @@ const listening = (port: string, state = '0A') => `   0: 00000000:${port} 000000
 const STUBS: Record<string, string> = {
   'sudo': 'exec "$@"',
   'systemctl': `echo "systemctl $*" >> "$STATE/log"
-case "$*" in "restart seedypod-port80.service") [ ! -f "$STATE/fail-start" ] ;; esac`,
+case "$*" in
+  "restart seedypod-port80.service") [ ! -f "$STATE/fail-start" ] ;;
+esac`,
   'apt-get': `echo "apt-get $*" >> "$STATE/log"
 [ -f "$STATE/fail-apt" ] && exit 100
 mkdir -p "$SEEDYPOD_ROOT/usr/sbin"; : > "$SEEDYPOD_ROOT/usr/sbin/nft"; chmod +x "$SEEDYPOD_ROOT/usr/sbin/nft"`,
@@ -40,7 +42,8 @@ beforeEach(() => {
     writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`)
     chmodSync(join(bin, name), 0o755)
   }
-  writeFileSync(join(root, 'usr/sbin/nft'), '')
+  // What nft says about the table, however active systemd thinks the oneshot is.
+  writeFileSync(join(root, 'usr/sbin/nft'), '#!/bin/sh\n[ ! -f "$STATE/port80-down" ]\n')
   chmodSync(join(root, 'usr/sbin/nft'), 0o755)
   writeFileSync(join(root, 'proc/net/tcp'), HEADER + listening('0BB8'))
   writeFileSync(join(root, 'proc/net/tcp6'), HEADER)
@@ -81,13 +84,38 @@ describe('on a Raspberry Pi', () => {
     expect(log()).toContain('systemctl restart seedypod-port80.service')
   })
 
-  it('reloads in place on a rerun, with rules that replace themselves', () => {
+  it('leaves a working forward alone on a rerun, with no reload', () => {
     install()
-    const first = readFileSync(join(root, RULES), 'utf8')
-    expect(install().code).toBe(0)
-    expect(readFileSync(join(root, RULES), 'utf8')).toBe(first)
-    expect(first.indexOf('delete table ip seedypod')).toBeLessThan(first.indexOf('table ip seedypod {'))
+    const before = log()
+    const r = install()
+    expect(r.out).toContain('port 80 already forwards to core')
+    expect(log().replace(before, '')).not.toMatch(/daemon-reload|restart/)
+  })
+
+  it('brings the forward back on a rerun after something flushed the table, with rules that replace themselves', () => {
+    install()
+    flag('port80-down')
+    install()
     expect(log().match(/restart seedypod-port80/g)).toHaveLength(2)
+    expect(readFileSync(join(root, RULES), 'utf8')).toContain('delete table ip seedypod')
+  })
+
+  it('doesn\'t pass off a failed write as nothing to do', () => {
+    install()
+    writeFileSync(join(root, RULES), 'older rules\n')
+    writeFileSync(join(bin, 'tee'), '#!/bin/sh\nexit 1\n')
+    chmodSync(join(bin, 'tee'), 0o755)
+    const r = install()
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('couldn\'t write')
+  })
+
+  it('reapplies rules a new version changed', () => {
+    install()
+    writeFileSync(join(root, RULES), 'older rules\n')
+    install()
+    expect(log().match(/restart seedypod-port80/g)).toHaveLength(2)
+    expect(readFileSync(join(root, RULES), 'utf8')).toContain('redirect to :3000')
   })
 
   it('installs nftables if the OS came without it', () => {

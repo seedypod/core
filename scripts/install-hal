@@ -149,7 +149,8 @@ install_camera_rules() {
   $SUDO mkdir -p "$(dirname "$CAMERA_SYNC_RULE")" "$(dirname "$CAMERA_SYNC_UNIT")"
   # USB parents only, so the Pi's on-chip video nodes never start it. The wait lets
   # the second camera arrive; a start while this is waiting joins the same run.
-  $SUDO tee "$CAMERA_SYNC_UNIT" >/dev/null <<UNIT
+  UNIT_CHANGED=0
+  put_unit "$CAMERA_SYNC_UNIT" <<UNIT
 [Unit]
 Description=Pin seedypod camera names to their USB ports
 
@@ -162,7 +163,7 @@ UNIT
 # Written by seedypod scripts/install-hal: pin camera names when a camera appears.
 ACTION=="add", SUBSYSTEM=="video4linux", SUBSYSTEMS=="usb", ATTR{index}=="0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="seedypod-camera-rules.service"
 RULE
-  $SUDO systemctl daemon-reload || true
+  if [ "$UNIT_CHANGED" -eq 1 ]; then $SUDO systemctl daemon-reload || true; fi
   $SUDO udevadm control --reload || true
   local said
   if said="$($SUDO "$hald" --sync-camera-rules 2>&1)"; then
@@ -196,7 +197,8 @@ USB_RECOVER_UNIT="$ROOT/etc/systemd/system/seedypod-usb-recover.service"
 install_usb_recovery() {
   local hald="$1" conf="$2" enable="$3"
   $SUDO mkdir -p "$(dirname "$USB_RECOVER_UNIT")"
-  $SUDO tee "$USB_RECOVER_UNIT" >/dev/null <<UNIT
+  UNIT_CHANGED=0
+  put_unit "$USB_RECOVER_UNIT" <<UNIT
 [Unit]
 Description=Re-enumerate a USB hub that didn't come up at boot
 Documentation=https://github.com/seedypod/core/blob/main/docs/hardware/hal.md#usb-recovery
@@ -208,11 +210,59 @@ ExecStart=$hald --config $conf --usb-recover
 [Install]
 WantedBy=multi-user.target
 UNIT
-  $SUDO systemctl daemon-reload || true
+  if [ "$UNIT_CHANGED" -eq 1 ]; then $SUDO systemctl daemon-reload || true; fi
   if [ "$enable" -eq 1 ]; then
     $SUDO systemctl enable seedypod-usb-recover.service >/dev/null 2>&1 || true
     echo "→ USB hub recovery runs at each boot, and does nothing if the hub came up"
   fi
+}
+
+# ---- quick reruns ------------------------------------------------------------
+# Every daemon-reload reruns systemd's generators, seconds each on a Pi Zero, and apt
+# took 2 minutes to confirm a package it already had. So a rerun only touches what
+# changed; tests/scripts/install-hal.rerun.test.ts covers these.
+
+# Not command -v alone: mosquitto is in /usr/sbin, off a non-root PATH on Raspberry Pi OS.
+# mosquitto_sub comes separately, and docs/DEBUGGING.md counts on it.
+have_broker() {
+  { [ -x "$ROOT/usr/sbin/mosquitto" ] || command -v mosquitto >/dev/null 2>&1; } && command -v mosquitto_sub >/dev/null 2>&1
+}
+
+in_group() { id -nG "$1" 2>/dev/null | tr ' ' '\n' | grep -x "$2" >/dev/null; }
+
+# Writes stdin to $1 if that changes it, and sets UNIT_CHANGED so a caller can reload
+# only then. A write that fails fails the install, not reads as "unchanged".
+put_unit() {
+  local text
+  text="$(cat)"
+  if [ -f "$1" ] && [ "$(cat "$1")" = "$text" ]; then return 0; fi
+  printf '%s\n' "$text" | $SUDO tee "$1" >/dev/null || { echo "couldn't write $1" >&2; exit 1; }
+  UNIT_CHANGED=1
+}
+
+needs_reload() { [ "$(systemctl show -p NeedDaemonReload --value "$1" 2>/dev/null)" = yes ]; }
+
+# A restart owed outlives the run that owed it. Written before the change it's for, so
+# a deploy that dies half way still restarts hald on the rerun, instead of reporting
+# success with the old binary driving the pump.
+HALD_RESTART_OWED="$ROOT/var/lib/seedypod/.restart-hald"
+CORE_RESTART_OWED="$ROOT/var/lib/seedypod/.restart-core"
+
+owe_restart() { $SUDO touch "$1"; }
+
+restart_hald_if_owed() {
+  if [ -e "$HALD_RESTART_OWED" ] || ! systemctl is-active --quiet hald.service; then
+    $SUDO systemctl restart hald.service
+    $SUDO rm -f "$HALD_RESTART_OWED"
+    sleep 1
+  fi
+}
+
+# A running core only picks up the new group on restart.
+restart_core_if_owed() {
+  [ -e "$CORE_RESTART_OWED" ] || return 0
+  $SUDO systemctl try-restart seedypod-core.service >/dev/null 2>&1 || true
+  $SUDO rm -f "$CORE_RESTART_OWED"
 }
 
 if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
@@ -280,10 +330,14 @@ if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
   echo "→ creating user $SERVICE_USER"
   $SUDO useradd --system --home-dir "$STATE_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
-for g in gpio i2c video; do
-  if getent group "$g" >/dev/null; then $SUDO usermod -aG "$g" "$SERVICE_USER"; fi
-done
 $SUDO mkdir -p "$CONF_DIR" "$STATE_DIR"
+# What a rerun left as it was needs no restart, and restarting hald stops a running pump.
+for g in gpio i2c video; do
+  if getent group "$g" >/dev/null && ! in_group "$SERVICE_USER" "$g"; then
+    owe_restart "$HALD_RESTART_OWED"
+    $SUDO usermod -aG "$g" "$SERVICE_USER"
+  fi
+done
 $SUDO chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
 # Core runs as the install user and reads hal.toml, hald's state and the broker
 # password for its backups (ADR-0021): it joins the seedypod group, read-only.
@@ -291,14 +345,20 @@ CORE_USER="${SEEDYPOD_CORE_USER:-${SUDO_USER:-}}"
 if [ -z "$CORE_USER" ] && [ "$(id -u)" -ne 0 ]; then CORE_USER="$(id -un)"; fi
 if [ -z "$CORE_USER" ] && [ -d /opt/seedypod ]; then CORE_USER="$(stat -c %U /opt/seedypod 2>/dev/null || true)"; fi
 if [ -n "$CORE_USER" ] && [ "$CORE_USER" != root ] && id -u "$CORE_USER" >/dev/null 2>&1; then
-  $SUDO usermod -aG "$SERVICE_USER" "$CORE_USER"
+  if ! in_group "$CORE_USER" "$SERVICE_USER"; then
+    owe_restart "$CORE_RESTART_OWED"
+    $SUDO usermod -aG "$SERVICE_USER" "$CORE_USER"
+  fi
   echo "→ $CORE_USER can read $CONF_DIR and $STATE_DIR (group $SERVICE_USER) for backups"
 fi
 $SUDO chgrp "$SERVICE_USER" "$CONF_DIR"
 $SUDO chmod 0755 "$CONF_DIR"
 
 # ---- binary and config --------------------------------------------------------
-$SUDO install -m 0755 "$TMP/hald" "$PREFIX/hald"
+if ! cmp -s "$TMP/hald" "$PREFIX/hald"; then
+  owe_restart "$HALD_RESTART_OWED"
+  $SUDO install -m 0755 "$TMP/hald" "$PREFIX/hald"
+fi
 if [ ! -f "$CONF_DIR/hal.toml" ]; then
   echo "→ writing $CONF_DIR/hal.toml (commented defaults)"
   "$PREFIX/hald" --print-default-config | $SUDO tee "$CONF_DIR/hal.toml" >/dev/null
@@ -307,7 +367,7 @@ fi
 "$PREFIX/hald" --config "$CONF_DIR/hal.toml" --check >/dev/null
 
 # ---- interfaces: I²C and the hardware PWM overlay ----------------------------
-if command -v raspi-config >/dev/null 2>&1; then
+if command -v raspi-config >/dev/null 2>&1 && [ ! -e "$ROOT/dev/i2c-1" ]; then
   echo "→ enabling I²C"
   $SUDO raspi-config nonint do_i2c 0 || true
 fi
@@ -337,7 +397,8 @@ fi
 MOSQ_CONF=/etc/mosquitto/conf.d/seedypod.conf
 MOSQ_PASSWD=/etc/mosquitto/seedypod.passwd
 if [ "$BROKER" != none ]; then
-  if ! command -v mosquitto >/dev/null 2>&1; then
+  MOSQ_CHANGED=0
+  if ! have_broker; then
     if command -v apt-get >/dev/null 2>&1; then
       echo "→ installing Mosquitto (MQTT broker)"
       $SUDO apt-get install -y -q mosquitto mosquitto-clients >/dev/null
@@ -347,6 +408,7 @@ if [ "$BROKER" != none ]; then
   fi
   if [ -d /etc/mosquitto/conf.d ] && [ ! -f "$MOSQ_CONF" ]; then
     echo "→ writing $MOSQ_CONF (127.0.0.1:1883, no password: only processes on this Pi can reach it)"
+    MOSQ_CHANGED=1
     $SUDO tee "$MOSQ_CONF" >/dev/null <<'CONF'
 # Written by seedypod scripts/install-hal. Each listener has its own auth.
 per_listener_settings true
@@ -357,6 +419,7 @@ allow_anonymous true
 CONF
   fi
   if [ "$BROKER" = lan ] && [ -f "$MOSQ_CONF" ] && ! grep -q '^listener 1884' "$MOSQ_CONF"; then
+    MOSQ_CHANGED=1
     HA_PASS="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
     $SUDO mosquitto_passwd -b -c "$MOSQ_PASSWD" homeassistant "$HA_PASS"
     # Mosquitto warns (and newer releases refuse) unless its own user owns the file and
@@ -378,8 +441,11 @@ CONF
     $SUDO chmod 0640 "$MOSQ_PASSWD"
   fi
   if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files mosquitto.service >/dev/null 2>&1; then
-    $SUDO systemctl enable mosquitto.service >/dev/null 2>&1 || true
-    $SUDO systemctl restart mosquitto.service
+    systemctl is-enabled --quiet mosquitto.service || $SUDO systemctl enable mosquitto.service >/dev/null 2>&1 || true
+    # A restart drops hald's and core's connections, so only for a new config.
+    if [ "$MOSQ_CHANGED" -eq 1 ] || ! systemctl is-active --quiet mosquitto.service; then
+      $SUDO systemctl restart mosquitto.service
+    fi
   fi
 fi
 
@@ -387,7 +453,8 @@ fi
 install_usb_recovery "$PREFIX/hald" "$CONF_DIR/hal.toml" "$ENABLE"
 
 # ---- systemd ---------------------------------------------------------------
-$SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT
+UNIT_CHANGED=0
+put_unit /etc/systemd/system/hald.service <<UNIT
 [Unit]
 Description=seedypod hardware daemon (hald)
 Documentation=https://github.com/$REPO/blob/main/docs/hardware/hal.md
@@ -415,13 +482,12 @@ PrivateTmp=true
 WantedBy=multi-user.target
 UNIT
 
-$SUDO systemctl daemon-reload
-# A running core only picks up the new group on restart.
-$SUDO systemctl try-restart seedypod-core.service >/dev/null 2>&1 || true
+if [ "$UNIT_CHANGED" -eq 1 ]; then owe_restart "$HALD_RESTART_OWED"; fi
+if [ "$UNIT_CHANGED" -eq 1 ] || needs_reload hald.service; then $SUDO systemctl daemon-reload; fi
+restart_core_if_owed
 if [ "$ENABLE" -eq 1 ]; then
-  $SUDO systemctl enable hald.service >/dev/null
-  $SUDO systemctl restart hald.service
-  sleep 1
+  systemctl is-enabled --quiet hald.service || $SUDO systemctl enable hald.service >/dev/null
+  restart_hald_if_owed
   $SUDO systemctl --no-pager --lines=5 status hald.service || true
 fi
 

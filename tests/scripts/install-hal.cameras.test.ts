@@ -51,6 +51,13 @@ describe('install_camera_rules', () => {
     expect(unit).toContain(`ExecStart=${dir}/bin/hald --sync-camera-rules`)
   })
 
+  it('reloads systemd for a new unit only, so a rerun doesn\'t pay for it', () => {
+    install()
+    expect(log().match(/daemon-reload/g)).toHaveLength(1)
+    install()
+    expect(log().match(/daemon-reload/g)).toHaveLength(1)
+  })
+
   it('pins what is there now and triggers with --action=add', () => {
     const r = install()
     expect(r.stdout).toContain('→ camera names pinned: upper = port 1-1.3:1.0')
