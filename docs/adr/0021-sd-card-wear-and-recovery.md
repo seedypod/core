@@ -103,7 +103,12 @@ unit's rate.
   restores lose nothing. A crash counts as a power cut.
 - **A failing card can't grow memory.** A failed flush keeps its rows for the
   next try. The buffer stops at 5,000 rows, about ten hours of a stock unit,
-  and then drops the oldest, like sleepypod's cap on pinned frames.
+  and then drops the oldest, like sleepypod's cap on pinned frames. Reaching
+  the cap tries one flush. If that fails, only the timer retries until a flush
+  lands, so a bad card can't stall the event loop on every sample.
+- **A backup never leaves held rows out.** If they can't reach the card, the
+  backup fails instead and says why, rather than producing a bundle that would
+  lose them on a restore.
 - **Live alert detail stays in memory.** `water_low` and `over_temp` carry the
   current reading, so their detail changes every 10 seconds. A raise is
   written at once. After that the newest detail from `hald` is held in memory,
@@ -309,7 +314,8 @@ Each phase ships on its own and is useful alone.
 - A dead card costs a new card and about ten minutes, provided off-card
   backups are on. The `backup_stale` alert exists to make sure they are.
 - **A power cut loses up to `telemetryFlushMin` of sensor history.** Charts
-  show a gap. Querying the database file directly can lag the app by as much.
+  show a gap. Reading the database file can lag the app by as much, whether by
+  hand or in the Database view.
 - **Logs are lost on reboot.** Debugging a crash before a reboot means
   checking the database's alerts and faults, or turning persistent journald
   back on for the session (DEBUGGING.md gains the command).

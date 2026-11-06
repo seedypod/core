@@ -156,8 +156,10 @@ restored the wrong backup, use **Settings → Backup → Undo restore** (or
 To save wear on the card, core writes sensor history in batches, every 5
 minutes by default (ADR-0021). A power cut can lose up to that much, which
 shows as a gap in the charts. Stopping or updating core and taking a backup
-write the batch first, so they lose nothing. Settings, schedules, grow data
-and alerts are written as they happen.
+write the batch first, so they lose nothing. If the card won't take the batch,
+the backup fails and says why, because a backup without those readings would
+lose them on a restore. Settings, schedules, grow data and alerts are written
+as they happen.
 
 A longer interval saves a little more wear and risks a little more history.
 To change it (1–60 minutes):
