@@ -25,6 +25,8 @@ export interface DeviceSettings {
   mqttTlsEnabled: boolean
   mqttTlsInsecure: boolean
   captureIntervalMin: number
+  /** How often held telemetry goes to the card in one transaction (ADR-0021); a power cut loses at most this much. */
+  telemetryFlushMin: number
   primaryAnalyzer: string
   analysisArtifacts: boolean
   analysisIngestToken: string
@@ -180,8 +182,12 @@ export interface Store {
   }
   alerts: {
     list(opts?: { activeOnly?: boolean }): AlertRow[]
-    /** Raise (or refresh detail of) the active alert of this kind. */
-    raise(kind: string, detail: string, ts: string): AlertRow
+    /**
+     * Raise (or refresh detail of) the active alert of this kind. A raise is always written.
+     * `live` marks a refresh as a reading that changes every sample: it stays in memory, `list`
+     * shows it, and it reaches the row with the next clear, acknowledge or dismiss (ADR-0021).
+     */
+    raise(kind: string, detail: string, ts: string, opts?: { live?: boolean }): AlertRow
     clear(kind: string, ts: string): AlertRow | null
     acknowledge(id: number, ts: string): AlertRow | null
     dismiss(id: number, ts: string): AlertRow | null
@@ -211,8 +217,11 @@ export interface Store {
     prune(camera: 'upper' | 'lower', keep: number): Capture[]
   }
   telemetry: {
+    /** Held in memory until the next `flush` (ADR-0021); `range` sees it straight away. */
     add(points: TelemetryPoint[]): void
     range(sensor: SensorId, fromTs: string, toTs: string, maxPoints?: number): TelemetryPoint[]
+    /** Writes held rows in one transaction. A failed write keeps them for the next try. */
+    flush(): void
   }
   counters: {
     add(key: string, delta: number, ts: string): number
@@ -285,6 +294,7 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   mqttTlsEnabled: false,
   mqttTlsInsecure: false,
   captureIntervalMin: 60,
+  telemetryFlushMin: 5,
   primaryAnalyzer: 'green-threshold',
   analysisArtifacts: false,
   analysisIngestToken: '',

@@ -22,6 +22,9 @@ export interface SqliteStoreOptions {
 
 const here = dirname(fileURLToPath(import.meta.url))
 
+/** About ten hours of a stock unit's rows, under 1 MB: enough to ride out a bad card without growing on a 426 MB board. */
+export const MAX_HELD_TELEMETRY = 5_000
+
 /**
  * Migrations live in src/db/migrations. From source (vitest/tsx) that is next
  * to this file; from the esbuild bundle (server/dist/index.js) it is two levels
@@ -40,6 +43,12 @@ export function defaultMigrationsFolder(): string {
 export class SqliteStore implements Store {
   private readonly sqlite: Database.Database
   private readonly db
+  /** Rows waiting for the next flush (ADR-0021). */
+  private heldTelemetry: TelemetryPoint[] = []
+  /** A full buffer's own flush failed: new samples leave retrying to the timer until a flush lands. */
+  private capFlushFailed = false
+  /** Newest detail of active alerts whose rows still hold an older one, by alert id. */
+  private readonly liveDetail = new Map<number, string>()
 
   constructor(opts: SqliteStoreOptions) {
     // better-sqlite3 creates the file but not its directory; a fresh install has no ./data yet.
@@ -100,12 +109,18 @@ export class SqliteStore implements Store {
     list: (opts?: { activeOnly?: boolean }): AlertRow[] => {
       const q = this.db.select().from(t.alerts)
       const rows = opts?.activeOnly ? q.where(eq(t.alerts.active, true)).all() : q.all()
-      return rows.sort((a, b) => b.raisedAt.localeCompare(a.raisedAt))
+      return rows.map(r => ({ ...r, detail: this.liveDetail.get(r.id) ?? r.detail })).sort((a, b) => b.raisedAt.localeCompare(a.raisedAt))
     },
-    raise: (kind: string, detail: string, ts: string): AlertRow => {
+    raise: (kind: string, detail: string, ts: string, opts?: { live?: boolean }): AlertRow => {
       const existing = this.db.select().from(t.alerts).where(and(eq(t.alerts.kind, kind), eq(t.alerts.active, true))).get()
       if (existing) {
-        this.db.update(t.alerts).set({ detail }).where(eq(t.alerts.id, existing.id)).run()
+        if (opts?.live) {
+          this.liveDetail.set(existing.id, detail)
+        }
+        else {
+          this.liveDetail.delete(existing.id)
+          this.db.update(t.alerts).set({ detail }).where(eq(t.alerts.id, existing.id)).run()
+        }
         return { ...existing, detail }
       }
       const r = this.db.insert(t.alerts).values({ kind, active: true, detail, raisedAt: ts }).returning().get()
@@ -114,12 +129,12 @@ export class SqliteStore implements Store {
     clear: (kind: string, ts: string): AlertRow | null => {
       const existing = this.db.select().from(t.alerts).where(and(eq(t.alerts.kind, kind), eq(t.alerts.active, true))).get()
       if (!existing) return null
-      return this.db.update(t.alerts).set({ active: false, clearedAt: ts }).where(eq(t.alerts.id, existing.id)).returning().get() ?? null
+      return this.db.update(t.alerts).set({ active: false, clearedAt: ts, ...this.takeLiveDetail(existing.id) }).where(eq(t.alerts.id, existing.id)).returning().get() as AlertRow
     },
     acknowledge: (id: number, ts: string): AlertRow | null =>
-      this.db.update(t.alerts).set({ acknowledgedAt: ts }).where(eq(t.alerts.id, id)).returning().get() ?? null,
+      this.db.update(t.alerts).set({ acknowledgedAt: ts, ...this.takeLiveDetail(id) }).where(eq(t.alerts.id, id)).returning().get() ?? null,
     dismiss: (id: number, ts: string): AlertRow | null =>
-      this.db.update(t.alerts).set({ dismissedAt: ts, active: false }).where(eq(t.alerts.id, id)).returning().get() ?? null,
+      this.db.update(t.alerts).set({ dismissedAt: ts, active: false, ...this.takeLiveDetail(id) }).where(eq(t.alerts.id, id)).returning().get() ?? null,
   }
 
   grow = {
@@ -191,13 +206,32 @@ export class SqliteStore implements Store {
 
   telemetry = {
     add: (pts: TelemetryPoint[]): void => {
-      if (pts.length === 0) return
-      this.db.insert(t.telemetry).values(pts).run()
+      this.heldTelemetry.push(...pts)
+      if (this.heldTelemetry.length < MAX_HELD_TELEMETRY) return
+      if (!this.capFlushFailed) {
+        this.telemetry.flush()
+        this.capFlushFailed = this.heldTelemetry.length > 0
+      }
+      // A card that refuses writes must not grow memory: the oldest rows go first.
+      this.heldTelemetry.splice(0, this.heldTelemetry.length - MAX_HELD_TELEMETRY)
     },
     range: (sensor: SensorId, fromTs: string, toTs: string, maxPoints = 500): TelemetryPoint[] => {
       const rows = this.db.select({ ts: t.telemetry.ts, sensor: t.telemetry.sensor, value: t.telemetry.value }).from(t.telemetry)
-        .where(and(eq(t.telemetry.sensor, sensor), gte(t.telemetry.ts, fromTs), lte(t.telemetry.ts, toTs))).orderBy(asc(t.telemetry.ts)).all()
-      return downsample(rows as TelemetryPoint[], maxPoints)
+        .where(and(eq(t.telemetry.sensor, sensor), gte(t.telemetry.ts, fromTs), lte(t.telemetry.ts, toTs))).orderBy(asc(t.telemetry.ts)).all() as TelemetryPoint[]
+      // Merged rather than flushed, so a chart polling every minute costs no write.
+      const held = this.heldTelemetry.filter(p => p.sensor === sensor && p.ts >= fromTs && p.ts <= toTs)
+      return downsample(held.length ? [...rows, ...held].sort((a, b) => a.ts.localeCompare(b.ts)) : rows, maxPoints)
+    },
+    flush: (): void => {
+      if (this.heldTelemetry.length === 0) return
+      try {
+        this.db.insert(t.telemetry).values(this.heldTelemetry).run()
+        this.heldTelemetry = []
+        this.capFlushFailed = false
+      }
+      catch (e) {
+        console.warn(`telemetry flush failed, holding ${this.heldTelemetry.length} rows: ${(e as Error).message}`)
+      }
     },
   }
 
@@ -225,6 +259,9 @@ export class SqliteStore implements Store {
    * from it doesn't open on Welcome.
    */
   async backupTo(path: string): Promise<void> {
+    this.telemetry.flush()
+    // A copy without these rows would look fine and lose them on a restore.
+    if (this.heldTelemetry.length > 0) throw new Error(`the card refused ${this.heldTelemetry.length} telemetry rows, so a backup would leave them out`)
     await this.sqlite.backup(path)
     const copy = new Database(path)
     try {
@@ -332,7 +369,15 @@ export class SqliteStore implements Store {
   }
 
   close(): void {
+    this.telemetry.flush()
     this.sqlite.close()
+  }
+
+  /** The held detail as a column patch, to persist with the alert's next state change. */
+  private takeLiveDetail(id: number): { detail?: string } {
+    const detail = this.liveDetail.get(id)
+    this.liveDetail.delete(id)
+    return detail === undefined ? {} : { detail }
   }
 }
 

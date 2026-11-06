@@ -151,6 +151,27 @@ and the page reloads when the unit is back.
 restored the wrong backup, use **Settings → Backup → Undo restore** (or
 `sudo seedypod-restore --undo`). A second undo redoes the restore.
 
+## Power cuts
+
+To save wear on the card, core writes sensor history in batches, every 5
+minutes by default (ADR-0021). A power cut can lose up to that much, which
+shows as a gap in the charts. Stopping or updating core and taking a backup
+write the batch first, so they lose nothing. If the card won't take the batch,
+the backup fails and says why, because a backup without those readings would
+lose them on a restore. Settings, schedules, grow data and alerts are written
+as they happen.
+
+A longer interval saves a little more wear and risks a little more history.
+To change it (1–60 minutes):
+
+```bash
+curl -X PATCH http://seedypod.local:3000/api/settings \
+  -H 'content-type: application/json' -d '{"telemetryFlushMin": 10}'
+```
+
+If you query `seedypod.db` directly, the `telemetry` table lags the app by up
+to one interval.
+
 ## Updates
 
 Rerun the installers. They keep your config and data:

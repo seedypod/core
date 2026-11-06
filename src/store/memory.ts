@@ -173,6 +173,9 @@ export class MemoryStore implements Store {
       const rows = this.points.filter(p => p.sensor === sensor && p.ts >= fromTs && p.ts <= toTs)
       return downsample(rows, maxPoints)
     },
+    flush: (): void => {
+      // nothing is held
+    },
   }
 
   counters = {
