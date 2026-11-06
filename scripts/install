@@ -100,10 +100,20 @@ check_sqlite() {
   sqlite_works || { echo "✗ better-sqlite3 still doesn't load on this machine" >&2; return 1; }
 }
 
+# A rerun with the same lockfile and Node has nothing to install, and pnpm takes 40 s
+# on a Pi Zero to find that out. A failed install leaves no stamp, so it's tried again.
+deps_stamp() { echo "node_modules/.seedypod-lock-$(node -v)"; }
+
 install_deps() {
+  if cmp -s pnpm-lock.yaml "$(deps_stamp)" && { [ "$NODE_FROM_SOURCE" != 1 ] || sqlite_works; }; then
+    echo "→ dependencies unchanged"
+    return 0
+  fi
+  rm -f node_modules/.seedypod-lock-*
   if [ "$NODE_FROM_SOURCE" = 1 ]; then prepare_sqlite; fi
   pnpm install --prod --frozen-lockfile
   if [ "$NODE_FROM_SOURCE" = 1 ]; then check_sqlite; fi
+  cp -f pnpm-lock.yaml "$(deps_stamp)"
 }
 
 # ---- which Node --------------------------------------------------------------
@@ -153,6 +163,17 @@ PORT80_RULES="$ROOT/usr/local/share/seedypod/port80.nft"
 PORT80_OFF="$ROOT/usr/local/share/seedypod/port80.off"
 PORT80_UNIT="$ROOT/etc/systemd/system/seedypod-port80.service"
 
+# Writes stdin to $1 if that changes it, and sets FILE_CHANGED, because each daemon-reload
+# reruns systemd's generators, which takes seconds on a Pi Zero. A write that fails
+# returns non-zero, so it never reads as "unchanged".
+put_file() {
+  local text
+  text="$(cat)"
+  if [ -f "$1" ] && [ "$(cat "$1")" = "$text" ]; then return 0; fi
+  printf '%s\n' "$text" | sudo tee "$1" >/dev/null || { echo "couldn't write $1" >&2; return 1; }
+  FILE_CHANGED=1
+}
+
 port80_taken() { grep -Eqs '^ *[0-9]+: [0-9A-F]+:0050 [0-9A-F]+:[0-9A-F]+ 0A ' "$ROOT/proc/net/tcp" "$ROOT/proc/net/tcp6"; }
 
 port80_remove() {
@@ -190,8 +211,9 @@ install_port80() {
     echo "   no nftables on this machine" >&2
     return 1
   fi
+  FILE_CHANGED=0
   sudo mkdir -p "$(dirname "$PORT80_RULES")"
-  sudo tee "$PORT80_RULES" >/dev/null <<'RULES'
+  put_file "$PORT80_RULES" <<'RULES' || return 1
 # Written by seedypod scripts/install: port 80 on this machine reaches core on 3000.
 table ip seedypod
 delete table ip seedypod
@@ -202,7 +224,7 @@ table ip seedypod {
   }
 }
 RULES
-  sudo tee "$PORT80_UNIT" >/dev/null <<'UNIT'
+  put_file "$PORT80_UNIT" <<'UNIT' || return 1
 [Unit]
 Description=seedypod: forward port 80 to core on 3000
 After=nftables.service
@@ -216,6 +238,11 @@ ExecStop=/usr/sbin/nft delete table ip seedypod
 [Install]
 WantedBy=multi-user.target
 UNIT
+  # Asks nft, not systemd: a oneshot stays active after nftables.service flushes the ruleset.
+  if [ "$FILE_CHANGED" -eq 0 ] && sudo "$ROOT/usr/sbin/nft" list table ip seedypod >/dev/null 2>&1; then
+    echo "→ port 80 already forwards to core"
+    return 0
+  fi
   if sudo systemctl daemon-reload && sudo systemctl enable seedypod-port80.service >/dev/null 2>&1 \
     && sudo systemctl restart seedypod-port80.service; then
     echo "→ port 80 forwards to core"
@@ -312,7 +339,8 @@ else
   echo "   in /etc/systemd/system/seedypod-core.service (see docs/INSTALLATION.md#which-pi)." >&2
 fi
 
-sudo tee /etc/systemd/system/seedypod-core.service >/dev/null <<UNIT
+FILE_CHANGED=0
+put_file /etc/systemd/system/seedypod-core.service <<UNIT
 [Unit]
 Description=seedypod core (tRPC/MCP/web)
 After=network-online.target
@@ -351,8 +379,11 @@ if getent group seedypod >/dev/null 2>&1; then sudo usermod -aG seedypod "$USER"
 
 install_login_logo || echo "   couldn't install the login logo; logins work as before" >&2
 
-sudo systemctl daemon-reload
-sudo systemctl enable seedypod-core.service >/dev/null
+# NeedDaemonReload catches a unit an interrupted run wrote and never loaded.
+if [ "$FILE_CHANGED" = 1 ] || [ "$(systemctl show -p NeedDaemonReload --value seedypod-core.service 2>/dev/null)" = yes ]; then
+  sudo systemctl daemon-reload
+fi
+systemctl is-enabled --quiet seedypod-core.service || sudo systemctl enable seedypod-core.service >/dev/null
 sudo systemctl restart seedypod-core.service
 install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
 if [ -n "$RESTORE" ]; then

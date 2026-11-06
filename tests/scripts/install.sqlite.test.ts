@@ -31,6 +31,7 @@ cp "$STATE/release/\${url##*/}" "$out" 2>/dev/null || exit 22`,
 esac`,
   // better-sqlite3's install script: prebuild-install, then node-gyp. pnpm only runs it on a package it hasn't built.
   'pnpm': `echo "pnpm $* source=\${npm_config_build_from_source:-}" >> "$STATE/log"
+[ ! -f "$STATE/fail-pnpm" ] || exit 1
 [ "$1" != install ] || [ ! -f "$SQLITE_BINARY" ] || exit 0
 mkdir -p "$(dirname "$SQLITE_BINARY")"
 if [ "\${npm_config_build_from_source:-}" = true ]; then echo compiled > "$SQLITE_BINARY"; exit 0; fi
@@ -74,7 +75,7 @@ function publish(contents = 'armv6', hashed = contents) {
 }
 
 function install(branch = 'dev') {
-  const r = spawnSync('bash', ['-c', `source "${script}"; NODE_FROM_SOURCE=1 BRANCH=${branch} TMP="${join(dir, 'tmp')}"; cd "${prefix}"; install_deps`], {
+  const r = spawnSync('bash', ['-c', `source "${script}"; set -e; NODE_FROM_SOURCE=1 BRANCH=${branch} TMP="${join(dir, 'tmp')}"; cd "${prefix}"; install_deps`], {
     encoding: 'utf8',
     env: { PATH: `${bin}:${process.env.PATH}`, SEEDYPOD_LIB_ONLY: '1', STATE: state, SQLITE_BINARY: join(prefix, BINARY) },
   })
@@ -83,6 +84,52 @@ function install(branch = 'dev') {
 
 const installed = () => readFileSync(join(prefix, BINARY), 'utf8').trim()
 const log = () => (existsSync(join(state, 'log')) ? readFileSync(join(state, 'log'), 'utf8') : '')
+
+describe('a rerun with nothing to install', () => {
+  const pnpmRuns = () => log().match(/pnpm install/g)?.length ?? 0
+
+  it('skips pnpm when the lockfile and Node are the ones installed', () => {
+    publish()
+    install()
+    const r = install()
+    expect(r).toMatchObject({ code: 0 })
+    expect(r.out).toContain('dependencies unchanged')
+    expect(pnpmRuns()).toBe(1)
+  })
+
+  it('still repairs a binary that stopped loading', () => {
+    publish()
+    install()
+    writeFileSync(join(prefix, BINARY), 'crashes')
+    install()
+    expect(installed()).toBe('compiled')
+  })
+
+  it('runs pnpm for a new lockfile', () => {
+    publish()
+    install()
+    writeFileSync(join(prefix, 'pnpm-lock.yaml'), `${readFileSync(join(prefix, 'pnpm-lock.yaml'), 'utf8')}\n# changed\n`)
+    install()
+    expect(pnpmRuns()).toBe(2)
+  })
+
+  it('runs pnpm for a new Node, and leaves no stale stamp', () => {
+    publish()
+    install()
+    rmSync(join(prefix, 'node_modules/.seedypod-lock-v22.23.4'))
+    writeFileSync(join(prefix, 'node_modules/.seedypod-lock-v22.1.0'), readFileSync(join(prefix, 'pnpm-lock.yaml')))
+    install()
+    expect(pnpmRuns()).toBe(2)
+    expect(existsSync(join(prefix, 'node_modules/.seedypod-lock-v22.1.0'))).toBe(false)
+  })
+
+  it('tries again after an install that failed', () => {
+    publish()
+    writeFileSync(join(state, 'fail-pnpm'), '')
+    expect(install().code).not.toBe(0)
+    expect(existsSync(join(prefix, 'node_modules/.seedypod-lock-v22.23.4'))).toBe(false)
+  })
+})
 
 describe('prebuilt better-sqlite3', () => {
   it('installs the release\'s ARMv6 build without a compiler', () => {

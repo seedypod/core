@@ -347,6 +347,10 @@ reapplies them:
 
 `--no-wear` leaves all three alone.
 
+A rerun only touches what changed: apt runs for a package that's missing,
+`daemon-reload` for a unit that's different, and hald restarts for a new binary,
+unit or group. A rerun with the same binary leaves a running pump alone.
+
 For core's backups, the user core runs as (the one who ran the installer, or
 the owner of `/opt/seedypod`; `SEEDYPOD_CORE_USER` overrides) joins the
 `seedypod` group, which can read `/etc/seedypod`, `/var/lib/seedypod` and the
