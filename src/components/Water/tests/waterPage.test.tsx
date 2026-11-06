@@ -3,18 +3,24 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WaterPage } from '../WaterPage'
 
-const { data, calls, state } = vi.hoisted(() => ({
+const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { runOnce: vi.fn(), stop: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn() },
+  calls: { runOnce: vi.fn(), stop: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
+  pumpSuccess: new Map<string, (s: unknown) => void>(),
   state: { runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string } },
 }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
-  const mutation = (name: 'runOnce' | 'stop' | 'upsert' | 'remove') => ({ useMutation: () => ({ isPending: false, error: name === 'runOnce' ? state.runError : null, mutate: (i?: unknown) => calls[name](i) }) })
+  const mutation = (name: 'runOnce' | 'stop' | 'upsert' | 'remove') => ({
+    useMutation: (o: { onSuccess: (s: unknown) => void }) => {
+      pumpSuccess.set(name, o.onSuccess)
+      return { isPending: false, error: name === 'runOnce' ? state.runError : null, mutate: (i?: unknown) => calls[name](i) }
+    },
+  })
   return {
     trpc: {
-      useUtils: () => ({ pump: { invalidate: vi.fn() }, schedules: { invalidate: vi.fn() } }),
+      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() } }),
       pump: { get: query('pump'), runOnce: mutation('runOnce'), stop: mutation('stop') },
       sensors: { latest: query('sensors') },
       system: { info: query('system') },
@@ -58,6 +64,15 @@ afterEach(() => {
 })
 
 describe('WaterPage: tank and pump', () => {
+  it('asks the server for the pump after each command, since a late reply could be older than the cache', () => {
+    render(<WaterPage />)
+    pumpSuccess.get('runOnce')?.({ ...idle, on: true, level: 30, remainingS: 300 })
+    expect(calls.invalidatePump).toHaveBeenCalledTimes(1)
+    pumpSuccess.get('stop')?.({ ...idle, since: '2026-11-01T10:05:00Z' })
+    expect(calls.invalidatePump).toHaveBeenCalledTimes(2)
+    expect(calls.setPump).not.toHaveBeenCalled()
+  })
+
   it('sums up the tank, the pump and the next run, against the calibration', () => {
     render(<WaterPage />)
     expect(screen.getByText('Tank 71% · pump idle · next run 20:00')).toBeTruthy()

@@ -26,6 +26,18 @@ export interface CreateAppOptions {
 }
 
 /**
+ * How long a browser may keep a file of the SPA. Vite names everything under
+ * `/assets/` by content, so a changed file is a new URL. HTML is asked for
+ * again or an update would never show, and that goes by type, not path: an
+ * asset gone after an update falls back to `index.html` at its old URL, which
+ * must not be pinned there.
+ */
+export function staticCacheControl(path: string, contentType: string | null): string {
+  if (contentType?.startsWith('text/html')) return 'no-cache'
+  return path.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=86400'
+}
+
+/**
  * Builds the Hono app. Kept separate from `index.ts` so integration tests can
  * mount it on an ephemeral port without touching process signals.
  */
@@ -136,8 +148,14 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
   app.all('/api/*', c => createOpenApiFetchHandler({ endpoint: '/api', router: appRouter, createContext: () => ({ ...ctx }), req: c.req.raw }))
 
   if (staticRoot) {
-    app.use('/*', serveStatic({ root: staticRoot }))
-    app.get('*', serveStatic({ root: staticRoot, path: 'index.html' }))
+    // After the fact: serveStatic has built its response by the time its onFound runs, so headers set there are lost.
+    app.use('/*', async (c, next) => {
+      await next()
+      if (c.res.ok) c.header('cache-control', staticCacheControl(c.req.path, c.res.headers.get('content-type')))
+    })
+    // The `.gz` files come from the build (scripts/precompress.mjs): a Pi's one core shouldn't gzip per request.
+    app.use('/*', serveStatic({ root: staticRoot, precompressed: true }))
+    app.get('*', serveStatic({ root: staticRoot, path: 'index.html', precompressed: true }))
   }
 
   return { app, injectWebSocket }
