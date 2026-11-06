@@ -110,7 +110,7 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     }
   })
 
-  // The MCP and OpenAPI stacks load on first use: over a third of the bundle, and a Pi Zero parses it at about a 1 MB a second.
+  // The MCP and OpenAPI stacks load on first use: they're over a third of the bundle, and the UI and the iOS app only use tRPC.
   app.get('/api/openapi.json', async (c) => {
     const { openApiDocument } = await import('../src/server/openapi')
     return c.json(openApiDocument(new URL('/api', c.req.url).toString()))
