@@ -32,8 +32,15 @@ A damaged frame gets no score. `hald` refuses torn frames before core sees them
 JPEG. Analysis also skips a still with full-width rows of the solid green a
 zero-filled camera buffer decodes to, because that colour scores as leaf cover on
 an empty pod. It costs nothing, since the analysers have the pixels anyway, and it
-covers stills taken before `hald` could refuse them, which **Re-run** would
-otherwise score again. Such a still stays in the gallery, with no results.
+covers stills taken before `hald` could refuse them. Such a still stays in the
+gallery, with no results.
+
+Stills scored before this check existed keep their scores until they are looked at
+again. Run **Re-run** once on any analyser: a still found to be damaged loses
+everything this unit scored from it, under every analyser, so it stops affecting
+the pod trends. Other stills are untouched, and so are results a remote worker
+posted. This only finds the green fill; a frame torn some other way, such as a grey
+block, is only caught by `hald` as it arrives.
 
 Open **Analysis** in the sidebar to:
 

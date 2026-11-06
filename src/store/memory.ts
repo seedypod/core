@@ -232,6 +232,10 @@ export class MemoryStore implements Store {
     forCapture: (captureId: string): AnalysisRow[] =>
       this.analysisRows.filter(r => r.captureId === captureId)
         .sort((a, b) => a.analyzer.localeCompare(b.analyzer) || a.version - b.version || a.slot - b.slot || a.metric.localeCompare(b.metric)),
+    removeDevice: (captureId: string): void => {
+      const keep = this.analysisRows.filter(r => r.captureId !== captureId || r.source !== 'device')
+      this.analysisRows.splice(0, this.analysisRows.length, ...keep)
+    },
     range: (fromTs: string, toTs: string): AnalysisRow[] =>
       this.analysisRows.filter(r => r.ts >= fromTs && r.ts <= toTs).sort((a, b) => a.ts.localeCompare(b.ts)),
     stats: (): AnalyzerStats[] => {

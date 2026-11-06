@@ -306,6 +306,9 @@ export class SqliteStore implements Store {
     forCapture: (captureId: string): AnalysisRow[] =>
       this.db.select().from(t.analysisResults).where(eq(t.analysisResults.captureId, captureId))
         .orderBy(asc(t.analysisResults.analyzer), asc(t.analysisResults.version), asc(t.analysisResults.slot), asc(t.analysisResults.metric)).all().map(rowToAnalysis),
+    removeDevice: (captureId: string): void => {
+      this.db.delete(t.analysisResults).where(and(eq(t.analysisResults.captureId, captureId), eq(t.analysisResults.source, 'device'))).run()
+    },
     range: (fromTs: string, toTs: string): AnalysisRow[] =>
       this.db.select().from(t.analysisResults).where(and(gte(t.analysisResults.ts, fromTs), lte(t.analysisResults.ts, toTs)))
         .orderBy(asc(t.analysisResults.ts), asc(t.analysisResults.id)).all().map(rowToAnalysis),

@@ -4,7 +4,7 @@
  * events and MQTT for the duration.
  */
 import { Worker, type WorkerOptions } from 'node:worker_threads'
-import type { AnalysisJob, Executor, JobOutput } from './execute'
+import type { AnalysisJob, Executor, JobResult } from './execute'
 
 export interface WorkerExecutor {
   run: Executor
@@ -14,7 +14,7 @@ export interface WorkerExecutor {
 export function createWorkerExecutor(script: URL, options?: WorkerOptions): WorkerExecutor {
   let worker: Worker | null = null
   let seq = 0
-  const pending = new Map<number, { resolve: (o: JobOutput | null) => void, reject: (e: Error) => void }>()
+  const pending = new Map<number, { resolve: (o: JobResult) => void, reject: (e: Error) => void }>()
 
   const failAll = (e: Error) => {
     for (const p of pending.values()) p.reject(e)
@@ -24,7 +24,7 @@ export function createWorkerExecutor(script: URL, options?: WorkerOptions): Work
   const ensure = (): Worker => {
     if (worker) return worker
     const w = new Worker(script, options)
-    w.on('message', (m: { id: number, out?: JobOutput | null, error?: string }) => {
+    w.on('message', (m: { id: number, out?: JobResult, error?: string }) => {
       const p = pending.get(m.id)
       if (!p) return
       pending.delete(m.id)
@@ -40,7 +40,7 @@ export function createWorkerExecutor(script: URL, options?: WorkerOptions): Work
   }
 
   return {
-    run: (job: AnalysisJob) => new Promise<JobOutput | null>((resolve, reject) => {
+    run: (job: AnalysisJob) => new Promise<JobResult>((resolve, reject) => {
       const id = ++seq
       pending.set(id, { resolve, reject })
       // Copy so the caller's buffer (also written to the sink) is not detached by the transfer.

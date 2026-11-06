@@ -57,6 +57,8 @@ export class CaptureService {
   private readonly minBytes: number
   /** Why each failing camera failed. `camera_missing` covers both, so it only clears once this is empty. */
   private readonly failing = new Map<Cam, string>()
+  /** What `camera_missing` last said, so a camera that stays failing doesn't rewrite it on every still. */
+  private said = ''
   private timer: ReturnType<typeof setInterval> | null = null
 
   constructor(private readonly o: CaptureServiceOptions) {
@@ -67,13 +69,19 @@ export class CaptureService {
 
   private fail(camera: Cam, detail: string, ts: string): void {
     this.failing.set(camera, detail)
-    this.o.store.alerts.raise('camera_missing', [...this.failing.values()].join('; '), ts)
+    this.report(ts)
   }
 
   private recovered(camera: Cam, ts: string): void {
     this.failing.delete(camera)
-    if (this.failing.size === 0) this.o.store.alerts.clear('camera_missing', ts)
-    else this.o.store.alerts.raise('camera_missing', [...this.failing.values()].join('; '), ts)
+    this.report(ts)
+  }
+
+  private report(ts: string): void {
+    const detail = [...this.failing.values()].join('; ')
+    if (!detail) this.o.store.alerts.clear('camera_missing', ts)
+    else if (detail !== this.said) this.o.store.alerts.raise('camera_missing', detail, ts)
+    this.said = detail
   }
 
   async capture(camera: Cam): Promise<Capture> {

@@ -152,6 +152,15 @@ for (const [name, make] of impls) {
       expect(r.every(p => p.sensor === 'air_temp')).toBe(true)
     })
 
+    it('removing a capture\'s device scores keeps its remote ones and every other capture\'s', () => {
+      store = make()
+      const row = (o: Partial<AnalysisRow>): AnalysisRow => ({ captureId: 'a', ts: '2026-01-01T00:00:00Z', camera: 'upper', analyzer: 'green-threshold', version: 1, source: 'device', slot: 1, metric: 'green_fraction', value: 0.1, detail: null, artifact: null, ...o })
+      store.analyses.add([row({}), row({ analyzer: 'exg-otsu' }), row({ analyzer: 'leaf-unet', source: 'remote' }), row({ captureId: 'b' })])
+      store.analyses.removeDevice('a')
+      expect(store.analyses.forCapture('a').map(r => r.analyzer)).toEqual(['leaf-unet'])
+      expect(store.analyses.forCapture('b')).toHaveLength(1)
+    })
+
     it('analysis rows upsert, version per series and stats per analyser', () => {
       store = make()
       const row = (o: Partial<AnalysisRow>): AnalysisRow => ({ captureId: 'a', ts: '2026-01-01T00:00:00Z', camera: 'upper', analyzer: 'green-threshold', version: 1, source: 'device', slot: 1, metric: 'green_fraction', value: 0.1, detail: null, artifact: null, ...o })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { MemoryStore } from '../../store/memory'
 import { CaptureService, isWholeJpeg, MemorySink } from '../captures'
@@ -88,6 +88,20 @@ describe('CaptureService', () => {
     expect(detail()).toBe('upper camera failed: torn')
     await svc.capture('lower')
     expect(detail()).toBe('upper camera failed: torn')
+  })
+
+  it('leaves the alert alone while one camera stays failing, as a unit with a dead link can for months', async () => {
+    const { store, svc, enqueued, detail } = rig(c => (c === 'upper' ? new Error('no good frame: damaged frame') : frame()))
+    await svc.captureAll()
+    const raise = vi.spyOn(store.alerts, 'raise')
+    const clear = vi.spyOn(store.alerts, 'clear')
+    for (let i = 0; i < 5; i++) await svc.captureAll()
+    expect(raise).not.toHaveBeenCalled()
+    expect(clear).not.toHaveBeenCalled()
+    expect(detail()).toBe('upper camera failed: no good frame: damaged frame')
+    // The good camera keeps being stored and analysed all the while.
+    expect(store.captures.list('lower').length).toBeGreaterThan(0)
+    expect(enqueued).toHaveLength(6)
   })
 
   it('names both cameras when both fail, and clears only once both have recovered', async () => {
