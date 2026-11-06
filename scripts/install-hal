@@ -238,6 +238,12 @@ fi
 # ---- cameras: stable names by USB port ----------------------------------------
 # /dev/videoN can swap across reboots; hald prefers /dev/seedypod/camera-<name>.
 RULES=/etc/udev/rules.d/70-seedypod-cameras.rules
+# Earlier installs could name the Pi's on-chip video nodes as cameras.
+if [ -f "$RULES" ] && grep -q 'KERNELS=="bcm2835' "$RULES"; then
+  $SUDO rm -f "$RULES" /dev/seedypod/camera-*
+  $SUDO udevadm control --reload || true
+  echo "→ removed camera rules that matched the Pi's on-chip video nodes"
+fi
 if [ ! -f "$RULES" ]; then
   if "$PREFIX/hald" --camera-rules > "$TMP/cameras.rules" 2>/dev/null; then
     $SUDO install -m 0644 "$TMP/cameras.rules" "$RULES"

@@ -40,6 +40,9 @@ pub fn discover(sysfs: &Path, dev: &Path) -> Vec<Detected> {
                 .file_name()?
                 .to_string_lossy()
                 .into_owned();
+            if !is_usb_interface(&port) {
+                return None;
+            }
             Some(Detected {
                 device: dev.join(e.file_name()),
                 name: read("name").unwrap_or_default(),
@@ -49,6 +52,17 @@ pub fn discover(sysfs: &Path, dev: &Path) -> Vec<Detected> {
         .collect();
     out.sort_by_key(|d| port_key(&d.port));
     out
+}
+
+/// `1-1.3:1.0`, not a Pi's on-chip `bcm2835-codec`, whose video nodes look just like a camera's.
+fn is_usb_interface(port: &str) -> bool {
+    let Some((device, interface)) = port.split_once(':') else {
+        return false;
+    };
+    device.contains('-')
+        && device.chars().all(|c| c.is_ascii_digit() || "-.".contains(c))
+        && !interface.is_empty()
+        && interface.chars().all(|c| c.is_ascii_digit() || c == '.')
 }
 
 /// Sort ports numerically (`1-1.10` after `1-1.9`).
@@ -113,7 +127,7 @@ pub fn stable_path(name: &str) -> PathBuf {
 mod tests {
     use super::*;
 
-    /// A fake sysfs: two cameras, each with a capture and a metadata node, plus one unplugged entry.
+    /// A fake sysfs: cameras with capture and metadata nodes, on-chip nodes, and one unplugged entry.
     fn fake_sysfs(tag: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("hald-cameras-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -124,6 +138,9 @@ mod tests {
             ("video2", "0", "1-1.2:1.0", "Upper Cam"),
             ("video3", "1", "1-1.2:1.0", "Upper Cam"),
             ("video9", "0", "1-1.10:1.0", "Spare"),
+            // On-chip nodes every Pi has, with or without a camera.
+            ("video20", "0", "bcm2835-isp", "bcm2835-isp-output0"),
+            ("video31", "0", "bcm2835-codec", "bcm2835-codec-encode_image"),
         ] {
             let iface = root.join("devices/platform/usb1/1-1").join(port);
             std::fs::create_dir_all(&iface).unwrap();
