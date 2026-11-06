@@ -94,10 +94,10 @@ hour over 24 h, busiest first.
   page only scans when it's open, so visiting Settings costs nothing.
 - **No writes.** Nothing is stored; the last integrity result is held in memory.
   `temp_store = MEMORY` keeps sorts off the card. The connection leaves the
-  database and `-wal` untouched. A reader can move a mark in `-shm`, a page core
-  dirties on every commit, so it adds no page to the card's writeback. Statements
-  run in their own read transactions, since one held across the scan would stop
-  checkpoints from resetting the WAL.
+  database and `-wal` untouched. A reader can move a mark in `-shm`, which dirties
+  at most one 4 KB page per scan, the page core's next commit dirties anyway.
+  Statements run in their own read transactions, since one held across the scan
+  would stop checkpoints from resetting the WAL.
 
 Counts are rows by the time stored in them, not commits, so batched writes show
 as their rows. Tables dated by `updatedAt` count rows changed, a floor. Updates
