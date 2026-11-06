@@ -134,6 +134,8 @@ describe('cameraFailure', () => {
     expect(cameraFailure('lower', latest, [alert('lower camera returned 4 bytes')], null)).toEqual({ ts: '2026-11-01T08:00:00Z', message: 'lower camera returned 4 bytes' })
     expect(cameraFailure('upper', latest, [alert('lower camera returned 4 bytes')], null)).toBeNull()
     expect(cameraFailure('lower', latest, [alert('lower camera returned 4 bytes', '2026-11-01T08:00:00Z', false)], null)).toBeNull()
+    // Both cameras failing share the one alert, and hald's wording has a colon.
+    expect(cameraFailure('lower', latest, [alert('upper camera: torn; lower camera: gone')], null)?.message).toBe('upper camera: torn; lower camera: gone')
   })
   it('clears once a newer frame lands', () => {
     expect(cameraFailure('lower', frame('lower', '2026-11-01T09:00:00Z'), [alert('lower camera returned 4 bytes')], null)).toBeNull()

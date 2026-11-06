@@ -1,8 +1,58 @@
 import { describe, expect, it } from 'vitest'
 import { MemoryStore } from '../../store/memory'
 import type { AnalysisRow } from '../../store/types'
-import { decodeJpeg, podTrends } from '../analyze'
+import { encode } from 'jpeg-js'
+import { decodeJpeg, hasZeroFilledRows, podTrends } from '../analyze'
+import { execute } from '../execute'
 import { jpeg } from './fixtures'
+
+/** A grey still whose rows from `from` down are one colour, through a real JPEG round trip. */
+function filled(from: number, colour: [number, number, number], width = 320, height = 240) {
+  const data = new Uint8Array(width * height * 4)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4
+      const px = y >= from ? colour : [90 + (x % 7), 95, 88 + (y % 5)]
+      data.set([...px, 255] as number[], i)
+    }
+  }
+  return new Uint8Array(encode({ data, width, height }, 85).data)
+}
+
+const GREEN: [number, number, number] = [0, 135, 0]
+
+describe('hasZeroFilledRows', () => {
+  const check = (bytes: Uint8Array) => {
+    const img = decodeJpeg(bytes)
+    if (!img) throw new Error('should decode')
+    return hasZeroFilledRows(img)
+  }
+
+  it('finds the green of a frame cut short', () => {
+    expect(check(filled(144, GREEN))).toBe(true)
+    expect(check(filled(232, GREEN))).toBe(true)
+  })
+
+  it('leaves whole frames alone, even leaf-green ones', () => {
+    expect(check(filled(240, GREEN))).toBe(false)
+    expect(check(jpeg(320, 240, true))).toBe(false)
+    expect(check(jpeg(320, 240, false))).toBe(false)
+    // Dark frames, blown-out frames, and full-width leaf green that isn't the exact colour.
+    expect(check(filled(0, [0, 0, 0]))).toBe(false)
+    expect(check(filled(0, [255, 255, 255]))).toBe(false)
+    expect(check(filled(0, [60, 180, 70]))).toBe(false)
+  })
+
+  it('needs more than a stray row', () => {
+    expect(check(filled(236, GREEN, 320, 240))).toBe(false)
+  })
+
+  it('keeps a damaged frame out of the analysers', () => {
+    const job = { camera: 'upper' as const, analyzers: ['green-threshold'], opts: { artifacts: false } }
+    expect(execute({ ...job, bytes: filled(144, GREEN) })).toBeNull()
+    expect(execute({ ...job, bytes: filled(240, GREEN) })).not.toBeNull()
+  })
+})
 
 describe('vision analyze', () => {
   it('decodes JPEGs and rejects other bytes', () => {

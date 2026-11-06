@@ -1,6 +1,9 @@
 /**
  * Captures — stills from the HAL stored as files (unit) or data URLs (demo),
  * indexed in the Store, pruned to a cap, and served by the server.
+ *
+ * hald refuses torn frames, which only it can see. This only checks that a
+ * whole JPEG arrived, which also covers an older hald or a dropped connection.
  */
 import type { HalClient } from '../hardware/types'
 import type { Capture, Store } from '../store/types'
@@ -41,10 +44,19 @@ export interface CaptureServiceOptions {
   analysis?: { enqueue(c: Capture, bytes: Uint8Array): void, removeArtifacts(captureId: string): Promise<void> }
 }
 
+/** SOI at the start and EOI at the end: the whole file arrived. */
+export function isWholeJpeg(b: Uint8Array): boolean {
+  return b[0] === 0xFF && b[1] === 0xD8 && b.at(-2) === 0xFF && b.at(-1) === 0xD9
+}
+
+type Cam = 'upper' | 'lower'
+
 export class CaptureService {
   private readonly now: () => Date
   private readonly keep: number
   private readonly minBytes: number
+  /** Why each failing camera failed. `camera_missing` covers both, so it only clears once this is empty. */
+  private readonly failing = new Map<Cam, string>()
   private timer: ReturnType<typeof setInterval> | null = null
 
   constructor(private readonly o: CaptureServiceOptions) {
@@ -53,14 +65,37 @@ export class CaptureService {
     this.minBytes = o.minBytes ?? 1024
   }
 
-  async capture(camera: 'upper' | 'lower'): Promise<Capture> {
-    const bytes = await this.o.hal.captureStill(camera)
+  private fail(camera: Cam, detail: string, ts: string): void {
+    this.failing.set(camera, detail)
+    this.o.store.alerts.raise('camera_missing', [...this.failing.values()].join('; '), ts)
+  }
+
+  private recovered(camera: Cam, ts: string): void {
+    this.failing.delete(camera)
+    if (this.failing.size === 0) this.o.store.alerts.clear('camera_missing', ts)
+    else this.o.store.alerts.raise('camera_missing', [...this.failing.values()].join('; '), ts)
+  }
+
+  async capture(camera: Cam): Promise<Capture> {
+    let bytes: Uint8Array
+    try {
+      bytes = await this.o.hal.captureStill(camera)
+    }
+    catch (e) {
+      const detail = `${camera} camera failed: ${(e as Error).message}`
+      this.fail(camera, detail, this.now().toISOString())
+      throw new Error(detail)
+    }
     const ts = this.now().toISOString()
     if (bytes.byteLength < this.minBytes) {
-      this.o.store.alerts.raise('camera_missing', `${camera} camera returned ${bytes.byteLength} bytes`, ts)
+      this.fail(camera, `${camera} camera returned ${bytes.byteLength} bytes`, ts)
       throw new Error(`${camera} camera returned no usable image`)
     }
-    this.o.store.alerts.clear('camera_missing', ts)
+    if (!isWholeJpeg(bytes)) {
+      this.fail(camera, `${camera} camera sent an incomplete JPEG`, ts)
+      throw new Error(`${camera} camera returned no usable image`)
+    }
+    this.recovered(camera, ts)
     const id = `${camera}-${ts.replace(/[:.]/g, '-')}`
     const path = await this.o.sink.put(`${id}.jpg`, bytes)
     const row: Capture = { id, camera, ts, path, bytes: bytes.byteLength }

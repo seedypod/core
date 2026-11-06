@@ -27,6 +27,14 @@ responsive while a Pi decodes the photo:
 | `green-threshold@1` | Excess-green index (2G − R − B) above a fixed cut-off. The original baseline; drifts with grow-light colour and exposure. |
 | `exg-otsu@1` | The same index with the cut-off chosen per photo by Otsu's method (the PlantCV approach), so a lighting change moves the threshold rather than the result. |
 
+A damaged frame gets no score. `hald` refuses torn frames before core sees them
+([Stills](hardware/hal.md#stills)), and core stores nothing that isn't a whole
+JPEG. Analysis also skips a still with full-width rows of the solid green a
+zero-filled camera buffer decodes to, because that colour scores as leaf cover on
+an empty pod. It costs nothing, since the analysers have the pixels anyway, and it
+covers stills taken before `hald` could refuse them, which **Re-run** would
+otherwise score again. Such a still stays in the gallery, with no results.
+
 Open **Analysis** in the sidebar to:
 
 - see every analyser, how many photos it has scored, and which one is

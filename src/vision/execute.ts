@@ -4,7 +4,7 @@
  * so both paths score a still identically.
  */
 import { DEVICE_ANALYZERS, runAnalyzers, type AnalyzerOptions, type AnalyzerOutput } from './analyzer'
-import { decodeJpeg } from './analyze'
+import { decodeJpeg, hasZeroFilledRows } from './analyze'
 
 export interface AnalysisJob {
   bytes: Uint8Array
@@ -16,10 +16,10 @@ export interface AnalysisJob {
 
 export type JobOutput = Array<AnalyzerOutput & { analyzer: string, version: number }>
 
-/** Returns null when the bytes are not a decodable JPEG (demo SVGs, stubs). */
+/** Returns null when the bytes are not a decodable JPEG (demo SVGs, stubs) or show a damaged frame. */
 export function execute(job: AnalysisJob): JobOutput | null {
   const img = decodeJpeg(job.bytes)
-  if (!img) return null
+  if (!img || hasZeroFilledRows(img)) return null
   return runAnalyzers(img, job.camera, DEVICE_ANALYZERS.filter(a => job.analyzers.includes(a.id)), job.opts)
 }
 

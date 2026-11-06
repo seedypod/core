@@ -128,7 +128,8 @@ export class MqttHalClient implements HalClient {
 
   async captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array> {
     const r = await this.fetchImpl(`${this.o.httpBase}/camera/${camera}.jpg`)
-    if (!r.ok) throw new Error(`camera ${camera}: HTTP ${r.status}`)
+    // hald's 503 says why, and that's what the alert should show.
+    if (!r.ok) throw new Error((await r.text().catch(() => '')).trim() || `HTTP ${r.status}`)
     return new Uint8Array(await r.arrayBuffer())
   }
 

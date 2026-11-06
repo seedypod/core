@@ -33,7 +33,7 @@ export interface CameraFailure { ts: string, message: string }
  * failed capture. A frame newer than the failure means it has recovered.
  */
 export function cameraFailure(camera: Cam, latest: Frame | undefined, alerts: Alert[], local: CameraFailure | null): CameraFailure | null {
-  const alert = alerts.find(a => a.active && a.kind === 'camera_missing' && a.detail.startsWith(`${camera} `))
+  const alert = alerts.find(a => a.active && a.kind === 'camera_missing' && a.detail.includes(`${camera} camera`))
   const known = [alert && { ts: alert.raisedAt, message: alert.detail }, local].filter((f): f is CameraFailure => !!f)
   const newest = known.sort((a, b) => b.ts.localeCompare(a.ts))[0]
   // Prefer the alert's wording when both exist: it carries the byte count.
