@@ -15,10 +15,6 @@ import { seedDemo } from './seed'
 import { appRouter, type AppRouter } from '../server/routers/app'
 import { createCallerFactory } from '../server/trpc'
 
-export function isDemo(): boolean {
-  return import.meta.env.VITE_DEMO === '1'
-}
-
 let ctx: Context | null = null
 function demoContext(): Context {
   if (!ctx) {
