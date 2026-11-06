@@ -20,7 +20,8 @@ exec 2>/dev/null
 dir="${BASH_SOURCE[0]%/*}"
 frames="$dir/logo.frames"
 read -r version < "$dir/version"
-url="http://${HOSTNAME%%.*}.local:3000"
+url="http://${HOSTNAME%%.*}.local"
+[ -e "$dir/port80.nft" ] || url="$url:3000"
 
 plain() {
   printf 'seedypod%s  %s\n' "${version:+ $version}" "$url"

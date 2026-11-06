@@ -103,7 +103,17 @@ Pi; [Which Pi](#which-pi)). With hald on the same Pi it reads the unit id from `
 and points core at it; elsewhere, core starts on the simulator until you set
 `HAL_MQTT_URL`, `HAL_UNIT_ID` and `HAL_HTTP_URL` in
 `/etc/systemd/system/seedypod-core.service` ([Which Pi](#which-pi)). Core
-listens on `:3000`. Open `http://seedypod.local:3000/`.
+listens on `:3000`, and on a Raspberry Pi the installer forwards port 80 to it.
+Open `http://seedypod.local/`. `:3000` keeps working, and it's still what the
+iOS app uses.
+
+The forward is one nftables rule loaded by `seedypod-port80.service`, so it
+comes back after a reboot, and core still sees each client's own address, which
+keeps the API key in force. It's IPv4 only, like core itself. If something else
+already listens on port 80, the installer leaves it alone and says so. On any
+other machine it leaves port 80 alone unless you run `scripts/install --port80`.
+`scripts/install --no-port80` removes the forward and keeps it off on later
+installs.
 
 Core also advertises itself over Bonjour as `_seedypod._tcp` on that port,
 so the iOS app finds it without an address. The TXT record carries `id`
@@ -182,7 +192,9 @@ Either way the device appears in HA with no further setup. See
 
 ```sh
 sudo systemctl disable --now seedypod-core hald
+sudo systemctl disable --now seedypod-port80 || true
 sudo rm -rf /opt/seedypod /etc/systemd/system/seedypod-core.service /etc/systemd/system/hald.service \
+  /etc/systemd/system/seedypod-port80.service \
   /usr/local/sbin/seedypod-restore /etc/sudoers.d/seedypod-restore /var/lib/seedypod-restore \
   /usr/local/share/seedypod /etc/profile.d/seedypod-logo.sh
 ```
