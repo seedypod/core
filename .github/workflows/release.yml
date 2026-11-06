@@ -26,7 +26,7 @@ jobs:
           workspaces: hal
           key: ${{ matrix.target }}
       - uses: taiki-e/install-action@cross
-      - run: cross build --release --target ${{ matrix.target }} -p hald
+      - run: cross build --release --target ${{ matrix.target }} -p hald --features hardware
       - run: cp target/${{ matrix.target }}/release/hald hald-${{ matrix.target }}
       - uses: actions/upload-artifact@v6
         with:
