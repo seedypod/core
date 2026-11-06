@@ -5,6 +5,7 @@ import { Card, CardHeader, GrowBackdrop, InlineError, Metric, SectionLabel, Stat
 import { Slider } from '@/src/components/ds/forms'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
+import { useLightControl } from '@/src/components/Light/useLightControl'
 import { Welcome } from '@/src/components/Welcome/Welcome'
 import { trpc } from '@/src/utils/trpc'
 
@@ -25,22 +26,16 @@ export function Dashboard() {
 /** Home without WebGL: the light, water and environment as cards. */
 export function CardsHome() {
   const sensors = trpc.sensors.latest.useQuery()
-  const lightState = trpc.light.get.useQuery()
+  const { light: l, level, requested, lightOn, preview, commit, power } = useLightControl()
   const pumpState = trpc.pump.get.useQuery()
   const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
   const system = trpc.system.info.useQuery()
   const utils = trpc.useUtils()
-  const [draft, setDraft] = useState<number | null>(null)
-  // On the hook, not on mutate: a later mutate or an unmount silently drops mutate's own callbacks.
-  const setLight = trpc.light.set.useMutation({ onSuccess: state => utils.light.get.setData(undefined, state), onSettled: () => setDraft(null) })
   const runPump = trpc.pump.runOnce.useMutation({ onSuccess: () => utils.pump.invalidate() })
   const stopPump = trpc.pump.stop.useMutation({ onSuccess: () => utils.pump.invalidate() })
 
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
-  const l = lightState.data
   const p = pumpState.data
-  // The button follows the tap; a refused command puts it back when the mutation ends.
-  const lightOn = (setLight.isPending ? setLight.variables.on : undefined) ?? !!l?.on
   const active = (alerts.data ?? []).filter(a => a.active)
   const quality = (system.data?.system?.caps.sensors ?? []).filter(id => SENSOR_META[id].group === 'water-quality')
 
@@ -55,18 +50,18 @@ export function CardsHome() {
       <Card backdrop={<GrowBackdrop brightness={l?.on ? l.level : null} minutes={minutesNow()} off={!l?.on} />}>
         <CardHeader
           title="Grow light"
-          subtitle={l ? (l.on ? `${l.level}% since ${new Date(l.since).toLocaleTimeString()}` : 'off') : '…'}
+          subtitle={l ? (l.on || requested ? `${level}% since ${new Date(l.since).toLocaleTimeString()}` : 'off') : '…'}
           icon={Sun}
           right={<StatusDot tone={l?.on ? 'ok' : 'muted'} label={l?.on ? 'on' : 'off'} />}
         />
         <div className="mt-3 flex items-center gap-3">
           <Slider
-            value={draft ?? l?.level ?? 0}
-            onChange={setDraft}
-            onCommit={v => setLight.mutate({ level: v })}
+            value={level}
+            onChange={preview}
+            onCommit={commit}
             label="Brightness"
           />
-          <button type="button" className="lp-btn" onClick={() => setLight.mutate({ on: !lightOn })}>{lightOn ? 'Turn off' : 'Turn on'}</button>
+          <button type="button" className="lp-btn" onClick={() => power(!lightOn)}>{lightOn ? 'Turn off' : 'Turn on'}</button>
         </div>
       </Card>
 
