@@ -24,7 +24,7 @@ export async function createHal(opts: HalFactoryOptions): Promise<HalClient> {
   const unitId = opts.unitId ?? process.env.HAL_UNIT_ID
   if (!unitId) throw new Error('HAL_UNIT_ID is required with HAL_MQTT_URL (the daemon prints it at startup / `hald --check`)')
   const httpBase = opts.httpBase ?? process.env.HAL_HTTP_URL ?? 'http://127.0.0.1:3001'
-  const { connectAsync } = await import('mqtt')
+  const { connectAsync } = await import('../mqtt/connect')
   const mqtt = await connectAsync(url, {
     username: process.env.HAL_MQTT_USERNAME,
     password: process.env.HAL_MQTT_PASSWORD,

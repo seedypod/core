@@ -23,6 +23,7 @@ import { defaultMigrationsFolder, SqliteStore } from '../src/store/sqlite'
 import { nodeDiskUsage, nodeFlashSource } from '../src/telemetry/flashSource'
 import { createWorkerExecutor } from '../src/vision/workerExecutor'
 import { createApp } from './app'
+import { flushCompileCacheSoon } from './compileCache'
 import { readVersion } from './version'
 
 const PORT = Number(process.env.PORT ?? 3000)
@@ -95,6 +96,7 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) =>
   console.log(`seedypod core ${core.ctx.version} listening on http://${info.address}:${info.port}`)
 })
 injectWebSocket(server)
+flushCompileCacheSoon()
 void homekit.startIfEnabled()
 // Bonjour `_seedypod._tcp` for the iOS app (ADR-0017); SEEDYPOD_MDNS=0 turns it off.
 const mdns = new CoreAdvertiser({ store, hal, events, version, port: PORT, host: HOST, hostname: hostname() })

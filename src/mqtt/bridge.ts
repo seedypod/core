@@ -171,7 +171,7 @@ export class HaBridge {
 export async function connectBridge(o: Omit<BridgeOptions, 'mqtt'>): Promise<HaBridge | null> {
   const s = o.store.settings.get()
   if (!s.mqttUrl) return null
-  const { connectAsync } = await import('mqtt')
+  const { connectAsync } = await import('./connect')
   const url = s.mqttTlsEnabled ? s.mqttUrl.replace(/^mqtt:\/\//, 'mqtts://') : s.mqttUrl
   const mqtt = await connectAsync(url, {
     username: s.mqttUsername ?? undefined,
