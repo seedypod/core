@@ -111,6 +111,21 @@ fn invalid_config_is_refused_before_starting() {
 }
 
 #[test]
+fn usb_recovery_can_be_turned_off_and_does_nothing_then() {
+    let dir = tmp("usb");
+    let cfg = dir.join("hal.toml");
+    std::fs::write(&cfg, "[usb_recovery]\nenabled = false\n").unwrap();
+    let out = hald()
+        .args(["--usb-recover", "--config"])
+        .arg(&cfg)
+        .output()
+        .expect("hald runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("disabled"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn camera_rules_are_printed_for_explicit_ports_and_bad_input_is_refused() {
     let out = hald()
         .args(["--camera-rules", "upper=1-1.3:1.0", "lower=1-1.2:1.0"])

@@ -187,6 +187,34 @@ warn_shared_login() {
   echo "  hald still works. To keep them apart, reflash with another username (docs/INSTALLATION.md#2-enable-ic-and-install-the-hal)." >&2
 }
 
+# ---- USB hub recovery -----------------------------------------------------------
+# The hub doesn't always enumerate at boot. Runs as root because hald can't write
+# to sysfs; it waits boot_wait_s itself, and simple keeps that wait out of the boot.
+# No Restart=: a bus it can't bring up is left for the alert hald raises.
+USB_RECOVER_UNIT="$ROOT/etc/systemd/system/seedypod-usb-recover.service"
+
+install_usb_recovery() {
+  local hald="$1" conf="$2" enable="$3"
+  $SUDO mkdir -p "$(dirname "$USB_RECOVER_UNIT")"
+  $SUDO tee "$USB_RECOVER_UNIT" >/dev/null <<UNIT
+[Unit]
+Description=Re-enumerate a USB hub that didn't come up at boot
+Documentation=https://github.com/seedypod/core/blob/main/docs/hardware/hal.md#usb-recovery
+
+[Service]
+Type=simple
+ExecStart=$hald --config $conf --usb-recover
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  $SUDO systemctl daemon-reload || true
+  if [ "$enable" -eq 1 ]; then
+    $SUDO systemctl enable seedypod-usb-recover.service >/dev/null 2>&1 || true
+    echo "→ USB hub recovery runs at each boot, and does nothing if the hub came up"
+  fi
+}
+
 if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
@@ -354,6 +382,9 @@ CONF
     $SUDO systemctl restart mosquitto.service
   fi
 fi
+
+# ---- USB hub recovery ----------------------------------------------------------
+install_usb_recovery "$PREFIX/hald" "$CONF_DIR/hal.toml" "$ENABLE"
 
 # ---- systemd ---------------------------------------------------------------
 $SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT

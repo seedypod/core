@@ -34,6 +34,7 @@ pub struct Config {
     pub button: Button,
     pub dosing: Dosing,
     pub ha: HomeAssistant,
+    pub usb_recovery: UsbRecovery,
     pub mdns: bool,
     pub camera: Vec<CameraEntry>,
     pub sensor: Vec<SensorEntry>,
@@ -104,6 +105,22 @@ pub struct Button {
     pub active_low: bool,
     /// Bounded pump run started by a double press (clamped by the guard).
     pub pump_run_s: u64,
+}
+
+/// `hald --usb-recover`, for a USB hub that didn't enumerate at boot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UsbRecovery {
+    pub enabled: bool,
+    /// Seconds after boot before an empty bus counts as a failure.
+    pub boot_wait_s: u64,
+    /// Root hub re-probes. The controller keeps running through these.
+    pub attempts: u32,
+    /// Seconds to wait for the bus to fill after each attempt.
+    pub settle_s: u64,
+    /// One last attempt that rebinds the whole controller. Off until it has been
+    /// proved on your hardware: the Pi's `dwc_otg` isn't known to unbind cleanly.
+    pub rebind_controller: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,6 +282,7 @@ impl Default for Config {
             button: Button::default(),
             dosing: Dosing::default(),
             ha: HomeAssistant::default(),
+            usb_recovery: UsbRecovery::default(),
             mdns: true,
             camera: vec![
                 CameraEntry::stock("upper", "/dev/video0"),
@@ -333,6 +351,18 @@ impl Default for Tank {
         Self {
             full_cm: 5.0,
             empty_cm: 20.0,
+        }
+    }
+}
+
+impl Default for UsbRecovery {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            boot_wait_s: 90,
+            attempts: 2,
+            settle_s: 20,
+            rebind_controller: false,
         }
     }
 }
@@ -657,6 +687,13 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # discovery = true
 # prefix = "homeassistant"
 
+# [usb_recovery]          # re-enumerate a USB hub that didn't come up at boot
+# enabled = true
+# boot_wait_s = 90
+# attempts = 2            # root hub re-probes
+# settle_s = 20
+# rebind_controller = false   # one last attempt that rebinds the whole controller
+
 # Cameras get stable names from udev rules keyed on their USB port
 # (`hald --list-cameras`, `hald --camera-rules`); /dev/videoN is only a
 # fallback because the numbering can swap across reboots.
@@ -812,6 +849,18 @@ capture_timeout_s = 0
         )
         .unwrap();
         assert!(c.validate().iter().any(|e| e.contains("capture_timeout_s")));
+    }
+
+    /// `install-hal --version <older>` runs an older hald on a file written by a
+    /// newer one, and unknown sections are refused: hald then crash-loops, and takes
+    /// pump and light control with it. New sections must stay commented out.
+    #[test]
+    fn the_default_file_stays_readable_by_a_hald_without_usb_recovery() {
+        let keys: toml::Table = toml::from_str(DEFAULT_CONFIG_TOML).unwrap();
+        assert!(!keys.contains_key("usb_recovery"));
+        let c: Config = toml::from_str(DEFAULT_CONFIG_TOML).unwrap();
+        assert!(c.usb_recovery.enabled);
+        assert!(!c.usb_recovery.rebind_controller);
     }
 
     #[test]
