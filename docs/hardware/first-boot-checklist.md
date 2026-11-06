@@ -66,8 +66,8 @@ journalctl -b -u seedypod-first-boot --no-pager
 - [ ] The light dims in the app (hardware PWM on GPIO18), with no reboot since first boot.
 - [ ] `cat /proc/swaps` shows `/dev/zram0`; `journalctl --disk-usage` reports RAM use only;
       `findmnt -no OPTIONS /` has `noatime`.
-- [ ] The cameras: `ls -l /dev/seedypod/` names them, and if they didn't come up,
-      `systemctl is-enabled seedypod-first-boot` stays `enabled` and a later boot names them.
+- [ ] `ls -l /dev/seedypod/` names the cameras, from `seedypod-camera-rules.service`.
+- [ ] `systemctl is-enabled seedypod-first-boot` says `disabled`, and a reboot doesn't run it.
 - [ ] An SSH login opens with the logo.
 - [ ] **Settings → About** shows the board and version; a capture and its analysis work.
 - [ ] `sudo` asks for the password you set in Imager.

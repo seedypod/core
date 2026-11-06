@@ -365,8 +365,8 @@ three ways, all because of what the first real install found.
   `scripts/install` inside the image under emulation, from the release's own tarball.
   So what they set up lands on the image with no second copy to keep in step, and
   only what can't happen in a chroot moves to first boot (`scripts/image/first-boot`):
-  the unit id, unblocking Wi-Fi, the SD card settings, whose checks need a running
-  system, and camera names, which it retries each boot until the USB hub shows up.
+  the unit id, unblocking Wi-Fi, and the SD card settings, whose checks need a running
+  system.
 
 Two accounts differ from a scripted install. The login doesn't exist until first boot,
 so core can't run as it, and gets `seedypod-core`. `hald` gets `seedypod-hal`, because

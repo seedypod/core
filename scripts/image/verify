@@ -42,6 +42,7 @@ check "hardware PWM is on" grep -q '^dtoverlay=pwm,pin=18,func=2' /boot/firmware
 check "not set to boot a 64-bit kernel" no grep -q '^arm_64bit=1' /boot/firmware/config.txt
 check "the ARMv6 kernel is there" test -f /boot/firmware/kernel.img
 check "first boot grows the root partition" grep -q '\bresize\b' /boot/firmware/cmdline.txt
+check "cameras get named when they appear" test -f /etc/udev/rules.d/71-seedypod-camera-sync.rules
 check "the login logo is in place" test -x /usr/local/share/seedypod/login-logo
 check "the port 80 forward is in place" test -f /usr/local/share/seedypod/port80.nft
 check "Mosquitto listens on loopback only" grep -q '^listener 1883 127.0.0.1$' /etc/mosquitto/conf.d/seedypod.conf

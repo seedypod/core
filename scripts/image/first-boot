@@ -1,34 +1,24 @@
 #!/usr/bin/env bash
 # What the seedypod OS image can only do on the unit it boots on, ahead of hald and
-# core (seedypod-first-boot.service). It runs on each boot until the cameras have
-# shown up, because their USB hub doesn't enumerate on every boot; the rest runs once.
-# The functions are the installers' own, from root-owned copies.
+# core (seedypod-first-boot.service). The functions are the installers' own, from
+# root-owned copies. It turns itself off once it has a unit id, and runs again next
+# boot if it doesn't.
 set -uo pipefail
 
 ROOT="${SEEDYPOD_ROOT:-}"
 LIB="${SEEDYPOD_IMAGE_LIB:-$ROOT/usr/local/lib/seedypod}"
-DONE="$ROOT/var/lib/seedypod-image/first-boot-done"
 export SUDO=
 
 SEEDYPOD_LIB_ONLY=1 . "$LIB/install"
 SEEDYPOD_LIB_ONLY=1 . "$LIB/install-hal"
 set +e
 
-once() {
-  local id
-  id="$(hal_unit_id)"
-  if [ -z "$id" ]; then echo "hald gave no unit id; trying again next boot" >&2; return 1; fi
-  sed "s/__UNIT_ID__/$id/" "$CORE_UNIT" > "$CORE_UNIT.new" && mv -f "$CORE_UNIT.new" "$CORE_UNIT"
-  systemctl daemon-reload
-  echo "→ unit id $id"
-  # So the setup hotspot can come up on a card that was never given a country or a network.
-  rfkill unblock wifi
-  apply_wear_settings
-  mkdir -p "$(dirname "$DONE")"
-  touch "$DONE"
-}
-
-[ -e "$DONE" ] || once
-install_camera_rules "$ROOT/usr/local/bin/hald"
-if [ -e "$DONE" ] && [ -f "$CAMERA_RULES" ]; then systemctl disable seedypod-first-boot.service; fi
-exit 0
+id="$(hal_unit_id)"
+if [ -z "$id" ]; then echo "hald gave no unit id; trying again next boot" >&2; exit 1; fi
+sed "s/__UNIT_ID__/$id/" "$CORE_UNIT" > "$CORE_UNIT.new" && mv -f "$CORE_UNIT.new" "$CORE_UNIT"
+systemctl daemon-reload
+echo "→ unit id $id"
+# So the setup hotspot can come up on a card that was never given a country or a network.
+rfkill unblock wifi
+apply_wear_settings
+systemctl disable seedypod-first-boot.service
