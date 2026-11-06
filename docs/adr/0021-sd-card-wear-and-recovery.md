@@ -63,11 +63,68 @@ helper. Rerunning it reapplies them.
 | Swap on zram instead of the SD swapfile | `dphys-swapfile` pages to the card. zram compresses in RAM, which suits a 512 MB board. |
 | `noatime` on `/` | Stops a metadata write on every file read. |
 
-These are left unchanged:
+SQLite stays on the card in WAL mode, and captures are left alone: a few
+small JPEGs a day, pruned to a cap. Core's own database writes are batched
+(below).
 
-- **The database.** SQLite stays on the card in WAL mode. Telemetry is
-  already thinned to one row per sensor per interval.
-- **Captures.** These are a few small JPEGs a day, pruned to a cap.
+**Database writes.** Thinning telemetry to one row per sensor per minute
+turned out not to be enough. Rows are tiny, but WAL mode writes whole 4 KB
+pages. Each row on its own dirtied the table, its `sqlite_sequence` entry and
+the sensor index: 3.4 pages for about 30 bytes. A unit measured 124 KB a
+minute from core, and 340–390 MB a day at the card once the filesystem's
+journal is added.
+
+A 24-hour replay of `hald`'s cadence through the real core, with `water_low`
+firing, gives this WAL traffic. Before the change it lands about 5% under the
+unit's rate.
+
+| Writer | Before | After |
+|---|---|---|
+| Telemetry rows | 132 MB/day | 21 MB/day |
+| Live alert detail | 32 MB/day | none |
+| Captures, flash samples, everything else | 0.8 MB/day | 0.8 MB/day |
+| **Total** | **166 MB/day** | **22 MB/day** |
+
+- **Telemetry is batched.** Rows wait in memory and go to the card in one
+  transaction every `telemetryFlushMin` (a device setting, 5 minutes by
+  default, 1–60). A batch dirties each page once however many rows land on it.
+  sleepypod takes the same shape for its raw frames (its ADR 0018): hot data
+  in RAM, and one write on a cadence instead of a continuous stream.
+- **Five minutes, not sleepypod's 15.** One minute costs 62 MB/day, five 22,
+  fifteen 11. Past five the saving is too small to matter to any card, and a
+  power cut would cost three times as much history.
+- **Charts have no hole.** `telemetry.range` merges the held rows with the
+  stored ones. It doesn't flush, because a chart polling every minute would
+  undo the batching.
+- **A power cut loses at most one interval of sensor history.** Nothing else
+  waits: settings, schedules, grow data, alert raises and clears, and
+  `hald`'s dosing ledger are all written as they happen. Core flushes on
+  SIGTERM and SIGINT, before a backup, and on close, so stops, updates and
+  restores lose nothing. A crash counts as a power cut.
+- **A failing card can't grow memory.** A failed flush keeps its rows for the
+  next try. The buffer stops at 5,000 rows, about ten hours of a stock unit,
+  and then drops the oldest, like sleepypod's cap on pinned frames.
+- **Live alert detail stays in memory.** `water_low` and `over_temp` carry the
+  current reading, so their detail changes every 10 seconds. A raise is
+  written at once. After that the newest detail from `hald` is held in memory,
+  served by `alerts.list`, and written with the clear, acknowledge or dismiss,
+  so history keeps the last value. A restart shows the row's older detail only
+  until `hald`'s retained alert arrives. Details from core's own alerts
+  (reminders, `backup_stale`, `mirror_failed`) still write through: they
+  change rarely, and nothing would bring them back.
+
+Measured and left alone:
+
+- **`wal_autocheckpoint`** stays at 1000. Checkpoints rewrite about 1.5 MB/day
+  after batching. 4000 would save 0.7 MB/day for a 16 MB WAL and a longer
+  replay after a power cut; lower values cost more.
+- **`synchronous`** is already NORMAL once the database is in WAL mode, as
+  sleepypod sets it by hand, so a commit doesn't fsync.
+- **`light_hours`** writes only when the light turns off, about twice a day.
+- **Captures and analysis** write about 17 pages per photo, in one
+  transaction. **Autopilot runs** write 3 pages each, only when a rule fires.
+- **Re-raising an alert with the same detail** is free: SQLite leaves the page
+  clean when the row doesn't change.
 
 **Flash writes.** Core samples `/sys/block/mmcblk0/stat` hourly and shows
 writes per day under **Settings → Storage**, as sleepypod does. Until a day
@@ -251,6 +308,8 @@ Each phase ships on its own and is useful alone.
 
 - A dead card costs a new card and about ten minutes, provided off-card
   backups are on. The `backup_stale` alert exists to make sure they are.
+- **A power cut loses up to `telemetryFlushMin` of sensor history.** Charts
+  show a gap. Querying the database file directly can lag the app by as much.
 - **Logs are lost on reboot.** Debugging a crash before a reboot means
   checking the database's alerts and faults, or turning persistent journald
   back on for the session (DEBUGGING.md gains the command).
