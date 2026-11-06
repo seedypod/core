@@ -2,7 +2,7 @@
  * scripts/install's better-sqlite3 on a Pi Zero W: the release's ARMv6 build, or
  * a compile when that's no good. Run with stub curl, node, pnpm and apt-get, whose
  * pnpm does what the real install script does with the same environment. The
- * real prebuild-install and an ARMv6 load are on the hardware checklist.
+ * real prebuild-install and an ARMv6 load need a real unit.
  */
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
