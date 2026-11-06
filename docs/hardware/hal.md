@@ -380,10 +380,13 @@ then let recovery bring it back:
 
 ```sh
 echo usb1 | sudo tee /sys/bus/usb/drivers/usb/unbind   # drops the hub and cameras
-ls /sys/bus/usb/devices                                # usb1 and 1-0:1.0 only
+ls /sys/bus/usb/devices                                # no 1-1 or 1-1.*: usb1 remains
 sudo hald --config /etc/seedypod/hal.toml --usb-recover
 ls /sys/bus/usb/devices                                # 1-1 and the cameras are back
 ```
+
+What matters after the unbind is that `1-1` and everything under it are gone. The
+root hub's `1-0:1.0` entry may go too, which is fine.
 
 Before setting `rebind_controller = true`, try the rebind itself by hand, ready to
 power-cycle the unit:

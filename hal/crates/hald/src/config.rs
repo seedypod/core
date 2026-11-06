@@ -687,7 +687,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # discovery = true
 # prefix = "homeassistant"
 
-[usb_recovery]            # re-enumerate a USB hub that didn't come up at boot
+# [usb_recovery]          # re-enumerate a USB hub that didn't come up at boot
 # enabled = true
 # boot_wait_s = 90
 # attempts = 2            # root hub re-probes
@@ -849,6 +849,18 @@ capture_timeout_s = 0
         )
         .unwrap();
         assert!(c.validate().iter().any(|e| e.contains("capture_timeout_s")));
+    }
+
+    /// `install-hal --version <older>` runs an older hald on a file written by a
+    /// newer one, and unknown sections are refused: hald then crash-loops, and takes
+    /// pump and light control with it. New sections must stay commented out.
+    #[test]
+    fn the_default_file_stays_readable_by_a_hald_without_usb_recovery() {
+        let keys: toml::Table = toml::from_str(DEFAULT_CONFIG_TOML).unwrap();
+        assert!(!keys.contains_key("usb_recovery"));
+        let c: Config = toml::from_str(DEFAULT_CONFIG_TOML).unwrap();
+        assert!(c.usb_recovery.enabled);
+        assert!(!c.usb_recovery.rebind_controller);
     }
 
     #[test]

@@ -194,7 +194,7 @@ warn_shared_login() {
 USB_RECOVER_UNIT="$ROOT/etc/systemd/system/seedypod-usb-recover.service"
 
 install_usb_recovery() {
-  local hald="$1" conf="$2"
+  local hald="$1" conf="$2" enable="$3"
   $SUDO mkdir -p "$(dirname "$USB_RECOVER_UNIT")"
   $SUDO tee "$USB_RECOVER_UNIT" >/dev/null <<UNIT
 [Unit]
@@ -209,8 +209,10 @@ ExecStart=$hald --config $conf --usb-recover
 WantedBy=multi-user.target
 UNIT
   $SUDO systemctl daemon-reload || true
-  $SUDO systemctl enable seedypod-usb-recover.service >/dev/null 2>&1 || true
-  echo "→ USB hub recovery runs at each boot, and does nothing if the hub came up"
+  if [ "$enable" -eq 1 ]; then
+    $SUDO systemctl enable seedypod-usb-recover.service >/dev/null 2>&1 || true
+    echo "→ USB hub recovery runs at each boot, and does nothing if the hub came up"
+  fi
 }
 
 if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
@@ -382,7 +384,7 @@ CONF
 fi
 
 # ---- USB hub recovery ----------------------------------------------------------
-install_usb_recovery "$PREFIX/hald" "$CONF_DIR/hal.toml"
+install_usb_recovery "$PREFIX/hald" "$CONF_DIR/hal.toml" "$ENABLE"
 
 # ---- systemd ---------------------------------------------------------------
 $SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT

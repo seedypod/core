@@ -20,8 +20,8 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-function install() {
-  return spawnSync('bash', ['-c', `set -euo pipefail; source "${script}"; SUDO=; install_usb_recovery /usr/local/bin/hald /etc/seedypod/hal.toml`], {
+function install(enable = 1) {
+  return spawnSync('bash', ['-c', `set -euo pipefail; source "${script}"; SUDO=; install_usb_recovery /usr/local/bin/hald /etc/seedypod/hal.toml ${enable}`], {
     encoding: 'utf8',
     env: { PATH: `${dir}/bin:/usr/bin:/bin`, SEEDYPOD_LIB_ONLY: '1', SEEDYPOD_ROOT: join(dir, 'root'), STATE: dir },
   })
@@ -42,5 +42,11 @@ describe('install_usb_recovery', () => {
     const log = readFileSync(join(dir, 'log'), 'utf8')
     expect(log).toContain('systemctl enable seedypod-usb-recover.service')
     expect(log).not.toContain('start seedypod-usb-recover')
+  })
+
+  it('writes the unit but leaves it off with --no-enable, like hald.service', () => {
+    expect(install(0).stdout).toBe('')
+    expect(readFileSync(join(dir, 'root/etc/systemd/system/seedypod-usb-recover.service'), 'utf8')).toContain('--usb-recover')
+    expect(readFileSync(join(dir, 'log'), 'utf8')).not.toContain('enable')
   })
 })

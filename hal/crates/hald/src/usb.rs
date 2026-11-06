@@ -35,7 +35,8 @@ pub enum BusState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bus {
-    root_hub: String,
+    /// `None` once the controller is unbound, say by a rebind that failed halfway.
+    root_hub: Option<String>,
     controller: String,
     /// The controller's driver directory, holding `bind` and `unbind`.
     driver: PathBuf,
@@ -55,20 +56,38 @@ pub fn bus_state(sysfs: &Path) -> BusState {
     if names.iter().any(|n| !n.starts_with("usb")) {
         return BusState::Populated;
     }
-    let [root_hub] = names.as_slice() else {
-        return BusState::NotApplicable("not one root hub");
-    };
-    let Some(parent) = std::fs::canonicalize(devices.join(root_hub))
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_path_buf))
-    else {
-        return BusState::NotApplicable("root hub has no controller");
+    let (root_hub, parent) = match names.as_slice() {
+        [root_hub] => {
+            let parent = std::fs::canonicalize(devices.join(root_hub))
+                .ok()
+                .and_then(|p| p.parent().map(Path::to_path_buf));
+            let Some(parent) = parent else {
+                return BusState::NotApplicable("root hub has no controller");
+            };
+            (Some(root_hub.clone()), parent)
+        }
+        [] => {
+            let Some(parent) = platform_controller(sysfs) else {
+                return BusState::NotApplicable("no USB controller");
+            };
+            (None, parent)
+        }
+        _ => return BusState::NotApplicable("not one root hub"),
     };
     let controller = parent
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let Ok(driver) = std::fs::canonicalize(parent.join("driver")) else {
+    let bound = std::fs::canonicalize(parent.join("driver")).ok();
+    // An unbound controller has no driver link, so go by which driver this kernel has.
+    let driver = bound.or_else(|| match root_hub {
+        Some(_) => None,
+        None => DWC_DRIVERS
+            .iter()
+            .map(|d| sysfs.join("bus/platform/drivers").join(d))
+            .find(|d| d.is_dir()),
+    });
+    let Some(driver) = driver else {
         return BusState::NotApplicable("controller has no driver");
     };
     let driver_name = driver.file_name().map(|n| n.to_string_lossy().into_owned());
@@ -80,10 +99,22 @@ pub fn bus_state(sysfs: &Path) -> BusState {
         return BusState::NotApplicable("controller is in gadget mode");
     }
     BusState::Empty(Bus {
-        root_hub: root_hub.clone(),
+        root_hub,
         controller,
         driver,
     })
+}
+
+/// The board's one USB controller, whether or not a driver holds it.
+fn platform_controller(sysfs: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(sysfs.join("bus/platform/devices")).ok()?;
+    let mut usb = entries
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".usb"));
+    let (only, None) = (usb.next()?, usb.next()) else {
+        return None;
+    };
+    std::fs::canonicalize(only.path()).ok()
 }
 
 /// Write `name` to `<dir>/unbind`, wait, then to `<dir>/bind`. The bind is always
@@ -131,8 +162,13 @@ pub fn recover(
     for attempt in 1..=attempts {
         // The gentle one first: usbcore re-probes the root hub, and the controller keeps running.
         let result = if attempt <= cfg.attempts {
-            info!(attempt, root_hub = %bus.root_hub, "re-probing the root hub");
-            rebind(&usbcore, &bus.root_hub, sleep)
+            match &bus.root_hub {
+                Some(root_hub) => {
+                    info!(attempt, %root_hub, "re-probing the root hub");
+                    rebind(&usbcore, root_hub, sleep)
+                }
+                None => Err("the controller has no root hub to re-probe".to_owned()),
+            }
         } else {
             warn!(attempt, controller = %bus.controller, "rebinding the USB controller");
             rebind(&bus.driver, &bus.controller, sleep)
@@ -213,9 +249,17 @@ mod tests {
         let usb1 = controller.join("usb1");
         let drivers = root.join("bus/platform/drivers").join(driver);
         let devices = root.join("bus/usb/devices");
-        for d in [&usb1, &drivers, &devices, &root.join("bus/usb/drivers/usb")] {
+        let platform = root.join("bus/platform/devices");
+        for d in [
+            &usb1,
+            &drivers,
+            &devices,
+            &platform,
+            &root.join("bus/usb/drivers/usb"),
+        ] {
             std::fs::create_dir_all(d).unwrap();
         }
+        std::os::unix::fs::symlink(&controller, platform.join("20980000.usb")).unwrap();
         std::os::unix::fs::symlink(&drivers, controller.join("driver")).unwrap();
         std::os::unix::fs::symlink(&usb1, devices.join("usb1")).unwrap();
         std::os::unix::fs::symlink(&usb1, devices.join("1-0:1.0")).unwrap();
@@ -249,7 +293,7 @@ mod tests {
         let BusState::Empty(bus) = bus_state(&root) else {
             panic!("should be empty");
         };
-        assert_eq!(bus.root_hub, "usb1");
+        assert_eq!(bus.root_hub.as_deref(), Some("usb1"));
         assert_eq!(bus.controller, "20980000.usb");
         assert!(bus.driver.ends_with("drivers/dwc_otg"));
         plug_in(&root, "1-1");
@@ -288,7 +332,8 @@ mod tests {
 
         let none = fake_sysfs("nohub", "dwc_otg");
         std::fs::remove_file(none.join("bus/usb/devices/usb1")).unwrap();
-        assert_eq!(bus_state(&none), BusState::NotApplicable("not one root hub"));
+        std::fs::remove_file(none.join("bus/platform/devices/20980000.usb")).unwrap();
+        assert_eq!(bus_state(&none), BusState::NotApplicable("no USB controller"));
         let _ = std::fs::remove_dir_all(none);
 
         let unbound = fake_sysfs("unbound", "dwc_otg");
@@ -306,6 +351,71 @@ mod tests {
             BusState::NotApplicable("root hub has no controller")
         );
         let _ = std::fs::remove_dir_all(dangling);
+    }
+
+    /// `fake_sysfs` after a rebind that unbound the controller and never bound it back.
+    fn controller_gone(tag: &str, driver: &str) -> PathBuf {
+        let root = fake_sysfs(tag, driver);
+        std::fs::remove_file(root.join("bus/usb/devices/usb1")).unwrap();
+        std::fs::remove_file(root.join("bus/usb/devices/1-0:1.0")).unwrap();
+        std::fs::remove_file(root.join("devices/platform/soc/20980000.usb/driver")).unwrap();
+        root
+    }
+
+    #[test]
+    fn a_controller_left_unbound_still_counts_as_an_empty_bus() {
+        let root = controller_gone("gone", "dwc_otg");
+        let BusState::Empty(bus) = bus_state(&root) else {
+            panic!("{:?}", bus_state(&root));
+        };
+        assert_eq!(bus.root_hub, None);
+        assert_eq!(bus.controller, "20980000.usb");
+        assert!(bus.driver.ends_with("drivers/dwc_otg"));
+        // So the daemon raises the alert.
+        let mut watch = Watch::new(&cfg());
+        let up = watch.tick(&bus_state(&root), Duration::from_secs(600));
+        assert!(failed(up).starts_with("USB hub: nothing on the USB bus"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_unbound_controller_is_only_claimed_for_a_driver_this_kernel_has() {
+        let root = controller_gone("gone-xhci", "xhci-hcd");
+        assert_eq!(
+            bus_state(&root),
+            BusState::NotApplicable("controller has no driver")
+        );
+        let _ = std::fs::remove_dir_all(root);
+
+        // Bound, in gadget mode, with no root hub: an empty bus is normal there.
+        let gadget = fake_sysfs("gone-gadget", "dwc2");
+        std::fs::remove_file(gadget.join("bus/usb/devices/usb1")).unwrap();
+        std::fs::create_dir_all(gadget.join("class/udc/20980000.usb")).unwrap();
+        assert_eq!(
+            bus_state(&gadget),
+            BusState::NotApplicable("controller is in gadget mode")
+        );
+        let _ = std::fs::remove_dir_all(gadget);
+
+        // Two candidates: no way to tell which is the host port.
+        let two = controller_gone("gone-two", "dwc_otg");
+        std::fs::create_dir_all(two.join("bus/platform/devices/fe980000.usb")).unwrap();
+        assert_eq!(bus_state(&two), BusState::NotApplicable("no USB controller"));
+        let _ = std::fs::remove_dir_all(two);
+    }
+
+    #[test]
+    fn a_controller_left_unbound_gets_the_bind_it_needs_and_no_root_hub_writes() {
+        let root = controller_gone("gone-bind", "dwc_otg");
+        let on = UsbRecovery {
+            rebind_controller: true,
+            ..cfg()
+        };
+        let got = recover(&root, &on, Duration::from_secs(600), &mut |_| {});
+        assert_eq!(got, Recovery::GaveUp { attempts: 3 });
+        assert_eq!(written(&root, DRIVER_BIND).as_deref(), Some("20980000.usb"));
+        assert_eq!(written(&root, USBCORE_BIND), None);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -428,7 +538,7 @@ mod tests {
     #[test]
     fn the_alert_waits_for_recovery_repeats_while_empty_and_clears_when_it_fills() {
         let empty = BusState::Empty(Bus {
-            root_hub: "usb1".into(),
+            root_hub: Some("usb1".into()),
             controller: "20980000.usb".into(),
             driver: "/drivers/dwc_otg".into(),
         });
