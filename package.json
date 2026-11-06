@@ -22,6 +22,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "docs:sync-index": "node scripts/sync-docs-index.mjs",
+    "logo:generate": "node scripts/login-logo/generate.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "tsc": "tsc --noEmit",

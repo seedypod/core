@@ -2,7 +2,7 @@
 # seedypod core installer for a Raspberry Pi running Raspberry Pi OS (64-bit),
 # or any 64-bit Linux box on the LAN.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
-#        scripts/install [--branch dev] [--prefix /opt/seedypod] [--restore <file|url>] [--check]
+#        scripts/install [--branch dev] [--prefix /opt/seedypod] [--restore <file|url>] [--check] [--login-logo]
 # Installs Node (via the pinned .node-version), unpacks the release tarball,
 # installs production deps, and enables seedypod-core.service on :3000. It also
 # installs the restore helper (/usr/local/sbin/seedypod-restore, ADR-0021) and
@@ -10,6 +10,7 @@
 #   --restore <file|url>  then restore that backup bundle (seedypod-backup-….tar.gz)
 #                         instead of choosing on the Welcome screen
 #   --check               only say whether this machine can run core, and why not
+#   --login-logo          only reinstall the SSH login logo from the unpacked prefix
 # The Rust HAL (hald) is installed separately by scripts/install-hal; on a new
 # card, run it first so the restore brings hald's state back too.
 set -euo pipefail
@@ -21,6 +22,7 @@ REPO="${SEEDYPOD_REPO:-seedypod/core}"
 ROOT="${SEEDYPOD_ROOT:-}"
 RESTORE=""
 CHECK=0
+LOGIN_LOGO=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -28,6 +30,7 @@ while [ $# -gt 0 ]; do
     --prefix) PREFIX="$2"; shift 2 ;;
     --restore) RESTORE="$2"; shift 2 ;;
     --check) CHECK=1; shift ;;
+    --login-logo) LOGIN_LOGO=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -64,6 +67,27 @@ node_plan() {
   [ "$NODE_FROM_SOURCE" = 1 ] && echo "  better-sqlite3 has no ARMv6 build, so it compiles here: allow 20–40 minutes the first time."
   return 0
 }
+
+# ---- login logo --------------------------------------------------------------
+# The animation an SSH login opens with. It lives in /etc/profile.d: pam_motd runs
+# update-motd.d with no terminal and prints what it collected, so nothing there
+# can animate, see the window size or take a keypress. Root-owned and outside
+# $PREFIX (which this user owns) like the restore helper, since every login runs
+# it, root's included. Only ever a nicety, so a failure here doesn't stop the install.
+install_login_logo() {
+  local from="$PREFIX/scripts/login-logo" share="$ROOT/usr/local/share/seedypod" profile="$ROOT/etc/profile.d/seedypod-logo.sh"
+  local branch commit
+  branch="$(sed -n 's/.*"branch": *"\([^"]*\)".*/\1/p' "$PREFIX/.git-info" 2>/dev/null || true)"
+  commit="$(sed -n 's/.*"commitHash": *"\([^"]*\)".*/\1/p' "$PREFIX/.git-info" 2>/dev/null || true)"
+  sudo mkdir -p "$share" "$(dirname "$profile")" \
+    && sudo cp -f "$from/login-logo" "$from/logo.frames" "$share/" \
+    && sudo cp -f "$from/profile.sh" "$profile" \
+    && echo "${branch:-dev}${commit:+@$commit}" | sudo tee "$share/version" >/dev/null \
+    && sudo chown root:root "$share" "$share/login-logo" "$share/logo.frames" "$share/version" "$profile" \
+    && sudo chmod 0755 "$share/login-logo" \
+    && sudo chmod 0644 "$share/logo.frames" "$share/version" "$profile"
+}
+if [ "$LOGIN_LOGO" = 1 ]; then install_login_logo; exit $?; fi
 if [ "$CHECK" = 1 ]; then node_plan; exit $?; fi
 node_plan || exit 3
 [ "$BRANCH" = "__BRANCH__" ] && BRANCH=main
@@ -170,6 +194,8 @@ rm -f "$SUDOERS_TMP"
 # Backups read hal.toml, hald's state and the broker password through the seedypod
 # group that install-hal creates (ADR-0021); install-hal adds us too if it runs later.
 if getent group seedypod >/dev/null 2>&1; then sudo usermod -aG seedypod "$USER"; fi
+
+install_login_logo || echo "   couldn't install the login logo; logins work as before" >&2
 
 sudo systemctl daemon-reload
 sudo systemctl enable seedypod-core.service >/dev/null
