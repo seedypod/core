@@ -1287,12 +1287,24 @@ mod tests {
         String::from_utf8_lossy(&out).into_owned()
     }
 
+    /// tracing caches per log line, process-wide, whether anyone wants it, and tests running
+    /// beside this one can leave a line switched off. So the scenario gets a process to itself.
     #[test]
     fn quiet_logging_keeps_pump_faults_refusals_and_alerts_and_drops_the_routine() {
-        let dry_run_then_refusal = |tag: &str, inside: &dyn Fn()| {
-            let mut r = rig(vec![ActuatorId::Pump], false, tag);
-            r.engine.boot(r.now);
-            inside();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "engine::tests::quiet_log_scenario", "--ignored"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && stdout.contains("1 passed"), "{stdout}");
+    }
+
+    #[test]
+    #[ignore = "run in its own process by the test above"]
+    fn quiet_log_scenario() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "quiet");
+        r.engine.boot(r.now);
+        let log = quiet_log(|| {
             r.engine
                 .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
             r.world.lock().unwrap().water_distance_cm = 17.0;
@@ -1300,16 +1312,12 @@ mod tests {
             r.engine.tick(r.now);
             r.engine
                 .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
-            let _ = std::fs::remove_dir_all(&r.dir);
-        };
-        // tracing caches whether a log line is wanted, and other tests running at the same
-        // time can cache "no". So this run registers every line, and the rebuild below resets them.
-        dry_run_then_refusal("quiet-warm", &|| {});
-        let log = quiet_log(|| dry_run_then_refusal("quiet", &tracing::callsite::rebuild_interest_cache));
+        });
         assert!(log.contains("pump stopped by guard"), "{log}");
         assert!(log.contains("alert raised"), "{log}");
         assert!(log.contains("pump command refused"), "{log}");
         assert!(!log.contains("pump run accepted"), "{log}");
+        let _ = std::fs::remove_dir_all(&r.dir);
     }
 
     #[test]
