@@ -167,6 +167,36 @@ export class HaBridge {
   }
 }
 
+const RETRY_MIN_MS = 5_000
+const RETRY_MAX_MS = 5 * 60_000
+
+/**
+ * `connectBridge`, tried until it works, without holding up the caller: core starts
+ * before Wi-Fi, and `connectAsync` rejects and ends its client on a socket error, so
+ * one attempt would leave Home Assistant down until a restart. Returns a cancel.
+ */
+export function keepConnecting(connect: () => Promise<HaBridge | null>, on: { up(b: HaBridge | null): void, failed(e: Error): void }): () => void {
+  let cancelled = false
+  let delay = RETRY_MIN_MS
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const attempt = () => {
+    connect().then((b) => {
+      if (cancelled) b?.stop()
+      else on.up(b)
+    }).catch((e: Error) => {
+      if (cancelled) return
+      on.failed(e)
+      timer = setTimeout(attempt, delay)
+      delay = Math.min(delay * 2, RETRY_MAX_MS)
+    })
+  }
+  attempt()
+  return () => {
+    cancelled = true
+    if (timer) clearTimeout(timer)
+  }
+}
+
 /** Build a real mqtt.js connection from settings; returns null when the bridge is dormant. */
 export async function connectBridge(o: Omit<BridgeOptions, 'mqtt'>): Promise<HaBridge | null> {
   const s = o.store.settings.get()

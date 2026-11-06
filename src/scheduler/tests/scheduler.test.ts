@@ -102,6 +102,19 @@ describe('Scheduler', () => {
     expect(store.schedules.recentRuns()).toHaveLength(1)
   })
 
+  it('holds a pump slot while the clock can\'t be believed, and doesn\'t use it up', async () => {
+    const { store, hal } = setup('2026-10-31T08:00:30Z')
+    store.schedules.upsert({ id: 'p', kind: 'pump', name: 'morning', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })
+    let trusted = false
+    const logs: string[] = []
+    const s = new Scheduler({ store, hal, events: createEventBus(), now: () => new Date('2026-10-31T08:00:30Z'), clockTrusted: () => trusted, log: m => logs.push(m) })
+    expect((await s.tick()).pumpFired).toEqual([])
+    expect(store.schedules.recentRuns()).toHaveLength(0)
+    expect(logs.join()).toContain('the clock isn\'t set yet')
+    trusted = true
+    expect((await s.tick()).pumpFired).toEqual(['p'])
+  })
+
   it('respects the day mask and disabled flag', async () => {
     const { store, s } = setup('2026-10-31T08:00:00Z') // Saturday → bit 5
     store.schedules.upsert({ id: 'wk', kind: 'pump', name: 'weekdays', enabled: true, days: 0b0011111, spec: { minute: 480, durationS: 60 } })

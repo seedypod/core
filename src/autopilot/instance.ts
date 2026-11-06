@@ -21,7 +21,7 @@ export function noticeKind(ruleId: number): string {
   return `autopilot_${ruleId}`
 }
 
-export function createAutopilot(o: { hal: HalClient, store: Store, events: EventBus, light: LightArbiter, now?: () => Date, log?: (m: string) => void }): AutopilotEngine {
+export function createAutopilot(o: { hal: HalClient, store: Store, events: EventBus, light: LightArbiter, now?: () => Date, clockTrusted?: () => boolean, log?: (m: string) => void }): AutopilotEngine {
   const now = () => o.now?.() ?? new Date()
   let lastPrune = 0
 
@@ -40,6 +40,7 @@ export function createAutopilot(o: { hal: HalClient, store: Store, events: Event
 
   return new AutopilotEngine({
     now: () => now().getTime(),
+    clockTrusted: o.clockTrusted,
     clock: () => {
       const lt = localTime(now(), o.store.settings.get().timezone)
       return { nowMinutes: lt.minute, dayOfWeek: DAYS[lt.weekday] ?? 'monday', dateKey: lt.date }
