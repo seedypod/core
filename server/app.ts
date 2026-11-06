@@ -5,16 +5,12 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { trpcServer } from '@hono/trpc-server'
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { createOpenApiFetchHandler } from 'trpc-to-openapi'
 import { datasetEntries, datasetName, resolveWindow } from '../src/datasets/export'
 import { tarStream } from '../src/datasets/tar'
-import { createMcpServer } from '../src/mcp/server'
 import { RestoreRefused } from '../src/backup/restore'
 import type { Context } from '../src/server/context'
-import { openApiDocument } from '../src/server/openapi'
 import { appRouter } from '../src/server/routers/app'
 import { IngestBatch, IngestRefused, ingestResults } from '../src/vision/ingest'
 import { apiKeyGuard, timingSafeEqual } from './auth'
@@ -114,7 +110,11 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     }
   })
 
-  app.get('/api/openapi.json', c => c.json(openApiDocument(new URL('/api', c.req.url).toString())))
+  // The MCP and OpenAPI stacks load on first use: over a third of the bundle, and a Pi Zero parses it at about a 1 MB a second.
+  app.get('/api/openapi.json', async (c) => {
+    const { openApiDocument } = await import('../src/server/openapi')
+    return c.json(openApiDocument(new URL('/api', c.req.url).toString()))
+  })
 
   // Raw event stream over WebSocket (ADR-0005 amendment). Same CoreEvent frames
   // as the SSE subscription; for clients that can't do tRPC (dashboards, M5
@@ -138,6 +138,10 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     const origin = c.req.header('origin')
     const host = c.req.header('host')
     if (origin && host && new URL(origin).host !== host) return c.text('forbidden', 403)
+    const [{ createMcpServer }, { WebStandardStreamableHTTPServerTransport }] = await Promise.all([
+      import('../src/mcp/server'),
+      import('@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'),
+    ])
     const server = createMcpServer(ctx)
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     await server.connect(transport)
@@ -145,7 +149,10 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
   })
 
   // Everything else under /api is the OpenAPI REST facade of the tRPC router.
-  app.all('/api/*', c => createOpenApiFetchHandler({ endpoint: '/api', router: appRouter, createContext: () => ({ ...ctx }), req: c.req.raw }))
+  app.all('/api/*', async (c) => {
+    const { createOpenApiFetchHandler } = await import('trpc-to-openapi')
+    return createOpenApiFetchHandler({ endpoint: '/api', router: appRouter, createContext: () => ({ ...ctx }), req: c.req.raw })
+  })
 
   if (staticRoot) {
     // After the fact: serveStatic has built its response by the time its onFound runs, so headers set there are lost.

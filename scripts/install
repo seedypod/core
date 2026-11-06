@@ -312,6 +312,8 @@ else
   echo "   in /etc/systemd/system/seedypod-core.service (see docs/INSTALLATION.md#which-pi)." >&2
 fi
 
+# On the card, to outlast a reboot. Core writes it once per version, a minute after starting.
+COMPILE_CACHE=/var/cache/seedypod/compile-cache
 sudo tee /etc/systemd/system/seedypod-core.service >/dev/null <<UNIT
 [Unit]
 Description=seedypod core (tRPC/MCP/web)
@@ -320,7 +322,8 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=$PREFIX
-Environment=NODE_ENV=production PORT=3000
+Environment=NODE_ENV=production PORT=3000 NODE_COMPILE_CACHE=$COMPILE_CACHE
+CacheDirectory=seedypod
 $HAL_ENV
 ExecStart=/usr/local/bin/node server/dist/index.js
 Restart=always
@@ -353,6 +356,8 @@ install_login_logo || echo "   couldn't install the login logo; logins work as b
 
 sudo systemctl daemon-reload
 sudo systemctl enable seedypod-core.service >/dev/null
+# Keyed on content, so a stale entry is only dead weight; each update leaves a set of them.
+sudo rm -rf "$COMPILE_CACHE"
 sudo systemctl restart seedypod-core.service
 install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
 if [ -n "$RESTORE" ]; then

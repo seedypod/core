@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { flushCompileCache } from 'node:module'
 import { arch, hostname } from 'node:os'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -95,6 +96,9 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) =>
   console.log(`seedypod core ${core.ctx.version} listening on http://${info.address}:${info.port}`)
 })
 injectWebSocket(server)
+// Node otherwise writes NODE_COMPILE_CACHE only at a clean exit, which a unit that gets unplugged never has.
+// Once start-up has compiled what it needs, and a cache that's already there writes nothing.
+setTimeout(flushCompileCache, 60_000).unref()
 void homekit.startIfEnabled()
 // Bonjour `_seedypod._tcp` for the iOS app (ADR-0017); SEEDYPOD_MDNS=0 turns it off.
 const mdns = new CoreAdvertiser({ store, hal, events, version, port: PORT, host: HOST, hostname: hostname() })
