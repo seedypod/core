@@ -246,6 +246,8 @@ export interface Store {
     /** Oldest → newest for one pod; `version` defaults to the newest version that has rows. */
     series(q: { analyzer: string, version?: number, slot: number, metric: string, limit?: number }): AnalysisPoint[]
     forCapture(captureId: string): AnalysisRow[]
+    /** Remove what the unit itself scored for one capture; remote results stay. */
+    removeDevice(captureId: string): void
     /** Rows whose capture time falls in [fromTs, toTs], oldest first. */
     range(fromTs: string, toTs: string): AnalysisRow[]
     stats(): AnalyzerStats[]

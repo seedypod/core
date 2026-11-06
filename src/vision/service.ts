@@ -8,7 +8,7 @@ import type { BlobSink } from '../camera/captures'
 import type { EventBus } from '../lib/eventBus'
 import type { AnalysisRow, Capture, Store } from '../store/types'
 import { DEVICE_ANALYZERS, info, type AnalyzerInfo } from './analyzer'
-import { inlineExecutor, type Executor, type JobOutput } from './execute'
+import { DAMAGED, inlineExecutor, type Executor, type JobOutput } from './execute'
 
 export interface AnalysisServiceOptions {
   store: Store
@@ -138,7 +138,10 @@ export class AnalysisService {
     try {
       const opts = { artifacts: this.o.store.settings.get().analysisArtifacts }
       const out = await this.executor({ bytes, camera: capture.camera, analyzers, opts })
-      if (out) {
+      if (out === DAMAGED) {
+        await this.forget(capture)
+      }
+      else if (out) {
         this.o.store.analyses.add(await this.toRows(capture, out))
         this.o.events?.emit({ kind: 'mutation', path: 'analyses' })
       }
@@ -150,6 +153,21 @@ export class AnalysisService {
     finally {
       this.running = null
     }
+  }
+
+  /**
+   * Drop what this unit scored from a damaged still, which a re-run finds among
+   * stills taken before hald could refuse them. Left in, those scores keep
+   * pulling the pod trends. A remote worker's results stay: they aren't ours to redo.
+   */
+  private async forget(capture: Capture): Promise<void> {
+    const rows = this.o.store.analyses.forCapture(capture.id).filter(r => r.source === 'device')
+    if (rows.length === 0) return
+    for (const r of rows) {
+      if (r.artifact) await this.o.sink.remove(r.artifact)
+    }
+    this.o.store.analyses.removeDevice(capture.id)
+    this.o.events?.emit({ kind: 'mutation', path: 'analyses' })
   }
 
   private async toRows(capture: Capture, out: JobOutput): Promise<AnalysisRow[]> {

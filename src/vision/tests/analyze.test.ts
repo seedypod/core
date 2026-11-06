@@ -7,12 +7,13 @@ import { execute } from '../execute'
 import { jpeg } from './fixtures'
 
 /** A grey still whose rows from `from` down are one colour, through a real JPEG round trip. */
-function filled(from: number, colour: [number, number, number], width = 320, height = 240) {
+function filled(from: number, colour: [number, number, number], width = 320, height = 240, stripeAt?: number) {
   const data = new Uint8Array(width * height * 4)
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4
-      const px = y >= from ? colour : [90 + (x % 7), 95, 88 + (y % 5)]
+      const stripe = stripeAt !== undefined && x >= stripeAt && x < stripeAt + 3
+      const px = stripe ? [200, 200, 200] : y >= from ? colour : [90 + (x % 7), 95, 88 + (y % 5)]
       data.set([...px, 255] as number[], i)
     }
   }
@@ -43,14 +44,21 @@ describe('hasZeroFilledRows', () => {
     expect(check(filled(0, [60, 180, 70]))).toBe(false)
   })
 
+  it('sees a thin stripe of real picture anywhere across the row', () => {
+    // Between the columns a sampling check would look at (5, 15, 25...).
+    expect(check(filled(0, GREEN, 320, 240, 9))).toBe(false)
+    expect(check(filled(0, GREEN, 320, 240, 310))).toBe(false)
+  })
+
   it('needs more than a stray row', () => {
     expect(check(filled(236, GREEN, 320, 240))).toBe(false)
   })
 
   it('keeps a damaged frame out of the analysers', () => {
     const job = { camera: 'upper' as const, analyzers: ['green-threshold'], opts: { artifacts: false } }
-    expect(execute({ ...job, bytes: filled(144, GREEN) })).toBeNull()
-    expect(execute({ ...job, bytes: filled(240, GREEN) })).not.toBeNull()
+    expect(execute({ ...job, bytes: filled(144, GREEN) })).toBe('damaged')
+    expect(execute({ ...job, bytes: filled(240, GREEN) })).toEqual(expect.any(Array))
+    expect(execute({ ...job, bytes: new Uint8Array([1, 2, 3]) })).toBeNull()
   })
 })
 

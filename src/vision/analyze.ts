@@ -14,10 +14,9 @@ export function decodeJpeg(bytes: Uint8Array): Rgba | null {
   }
 }
 
-/** Sampled pixels per row, and the rows to skip between samples. */
-const ROW_SAMPLES = 32
+/** Rows to skip between the ones checked. */
 const ROW_STRIDE = 4
-/** Sampled rows of it that make a frame damaged: more than a stray coincidence. */
+/** Checked rows of it that make a frame damaged: more than a stray coincidence. */
 const FILLED_ROWS = 2
 
 /** The colour a zeroed YUV buffer decodes to, (0, 135, 0), allowing for JPEG's rounding. */
@@ -28,14 +27,16 @@ const isZeroFill = (r: number, g: number, b: number) => r <= 16 && b <= 16 && g 
  * frame. A frame cut short leaves its tail zeroed, `fswebcam` encodes that as a
  * valid JPEG, and it scores as leaf cover on an empty pod. No scene fills whole
  * rows with that exact colour. hald refuses these now, but stills it took
- * before it could are still on the card and can be re-scored.
+ * before it could are still on the card and can be re-scored. Every pixel of a
+ * row has to match, since a thin stripe makes it a real scene; a normal row
+ * stops at its first pixel, so this costs almost nothing.
  */
 export function hasZeroFilledRows(img: Rgba): boolean {
   let filled = 0
   for (let y = 0; y < img.height; y += ROW_STRIDE) {
     let all = true
-    for (let s = 0; s < ROW_SAMPLES && all; s++) {
-      const i = (y * img.width + Math.floor((s + 0.5) * img.width / ROW_SAMPLES)) * 4
+    for (let x = 0; x < img.width && all; x++) {
+      const i = (y * img.width + x) * 4
       all = isZeroFill(img.data[i] ?? 0, img.data[i + 1] ?? 0, img.data[i + 2] ?? 0)
     }
     if (all && ++filled >= FILLED_ROWS) return true
