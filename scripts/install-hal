@@ -131,6 +131,16 @@ apply_wear_settings() {
   return 0
 }
 
+# The login Imager set can be called seedypod too. useradd then has nothing to do and
+# hald runs as that login. It works, so warn rather than touch someone's account.
+warn_shared_login() {
+  case "$(getent passwd "$1" | cut -d: -f7)" in
+    ""|*/nologin|*/false) return 0 ;;
+  esac
+  echo "⚠ The login $1 is also hald's service user, so hald runs as this login, with its groups and shell, not as a locked account." >&2
+  echo "  hald still works. To keep them apart, reflash with another username (docs/INSTALLATION.md#2-enable-ic-and-install-the-hal)." >&2
+}
+
 if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
@@ -191,6 +201,7 @@ fi
 echo "→ $("$TMP/hald" --version) for $TARGET"
 
 # ---- user, groups, directories ---------------------------------------------
+warn_shared_login "$SERVICE_USER"
 if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
   echo "→ creating user $SERVICE_USER"
   $SUDO useradd --system --home-dir "$STATE_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
