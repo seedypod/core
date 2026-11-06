@@ -15,7 +15,7 @@ export class MemoryStore implements Store {
   private readonly podRows = new Map<number, Pod>()
   private readonly profileRows = new Map<string, PlantProfile>()
   private readonly captureRows: Capture[] = []
-  private readonly points: TelemetryPoint[] = []
+  private points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
   private flashRows: FlashSample[] = []
   private readonly backupRows: BackupRecord[] = []
@@ -176,6 +176,19 @@ export class MemoryStore implements Store {
     flush: (): void => {
       // nothing is held
     },
+    thin: (sensors: readonly SensorId[], fromTs: string, toTs: string, bucketMin: number): number => {
+      const seen = new Set<string>()
+      const before = this.points.length
+      this.points = this.points.filter((p) => {
+        if (!sensors.includes(p.sensor) || p.ts < fromTs || p.ts >= toTs) return true
+        const bucket = `${p.sensor}${p.ts.slice(0, 14)}${Math.floor(Number(p.ts.slice(14, 16)) / bucketMin)}`
+        if (seen.has(bucket)) return false
+        seen.add(bucket)
+        return true
+      })
+      return before - this.points.length
+    },
+    oldestTs: (): string | null => this.points[0]?.ts ?? null,
   }
 
   counters = {

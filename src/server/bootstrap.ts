@@ -22,6 +22,7 @@ import { Scheduler } from '../scheduler/scheduler'
 import type { Store } from '../store/types'
 import { FlashMeter, type DiskUsage, type FlashSource } from '../telemetry/flash'
 import { Recorder } from '../telemetry/recorder'
+import { TelemetryRetention } from '../telemetry/retention'
 import type { Executor } from '../vision/execute'
 import { AnalysisService } from '../vision/service'
 import type { Context } from './context'
@@ -91,12 +92,14 @@ export function createCore(o: CoreOptions): Core {
   const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
+  const retention = new TelemetryRetention({ store: o.store, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })
 
   let growTimer: ReturnType<typeof setInterval> | null = null
   if (o.startServices) {
     recorder.start()
+    retention.start()
     scheduler.start()
     autopilot.start()
     flash.start()
@@ -125,6 +128,7 @@ export function createCore(o: CoreOptions): Core {
       flash.stop()
       o.backup?.stop()
       await analysis.idle()
+      await retention.stop()
       recorder.stop()
       if (growTimer) clearInterval(growTimer)
       await o.hal.close()

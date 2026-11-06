@@ -222,6 +222,10 @@ export interface Store {
     range(sensor: SensorId, fromTs: string, toTs: string, maxPoints?: number): TelemetryPoint[]
     /** Writes held rows in one transaction. A failed write keeps them for the next try. */
     flush(): void
+    /** Keeps each sensor's first row of each `bucketMin` in [fromTs, toTs), in one transaction, and says how many went. */
+    thin(sensors: readonly SensorId[], fromTs: string, toTs: string, bucketMin: number): number
+    /** The first stored row's time, which is where thinning starts. */
+    oldestTs(): string | null
   }
   counters: {
     add(key: string, delta: number, ts: string): number

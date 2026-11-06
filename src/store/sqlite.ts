@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { and, asc, desc, eq, gte, lt, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, lt, lte, notInArray, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -233,6 +233,19 @@ export class SqliteStore implements Store {
         console.warn(`telemetry flush failed, holding ${this.heldTelemetry.length} rows: ${(e as Error).message}`)
       }
     },
+    thin: (sensors: readonly SensorId[], fromTs: string, toTs: string, bucketMin: number): number => {
+      // ts is ISO 8601, so the first 14 characters end at the hour, and the minutes follow.
+      // Inlined: a bound JS number arrives as a REAL, and the division wouldn't round down.
+      const minutes = sql`CAST(substr(${t.telemetry.ts}, 15, 2) AS INTEGER) / ${sql.raw(String(Math.trunc(bucketMin)))}`
+      // One transaction, or each sensor would write the same table pages to the WAL again.
+      return this.sqlite.transaction(() => sensors.reduce((removed, sensor) => {
+        // Per sensor, because the only index that reaches ts starts with it.
+        const window = and(eq(t.telemetry.sensor, sensor), gte(t.telemetry.ts, fromTs), lt(t.telemetry.ts, toTs))
+        const firsts = this.db.select({ id: sql<number>`min(${t.telemetry.id})` }).from(t.telemetry).where(window).groupBy(sql`substr(${t.telemetry.ts}, 1, 14)`, minutes)
+        return removed + this.db.delete(t.telemetry).where(and(window, notInArray(t.telemetry.id, firsts))).run().changes
+      }, 0))()
+    },
+    oldestTs: (): string | null => this.db.select({ ts: t.telemetry.ts }).from(t.telemetry).orderBy(asc(t.telemetry.id)).limit(1).get()?.ts ?? null,
   }
 
   counters = {
