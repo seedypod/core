@@ -34,10 +34,11 @@ prints which Node a machine gets.
 
 On a Pi Zero W:
 
-- The installer compiles `better-sqlite3` from source (its 32-bit ARM binary is
-  built for ARMv7 and would crash). That takes 20–40 minutes the first time and
-  needs `build-essential`, which the installer adds; run `install-hal` first so
-  swap is on compressed RAM while it compiles.
+- The installer takes `better-sqlite3` from the release as a prebuilt ARMv6
+  binary (upstream's 32-bit ARM binary is built for ARMv7 and would crash). If
+  the release has none, or it won't load, the installer compiles it instead.
+  That takes about 53 minutes and needs `build-essential`, which the installer
+  adds; run `install-hal` first so swap is on compressed RAM while it compiles.
 - One 1 GHz core runs hald, core and camera analysis. It works, but expect the
   app to be slower than on a Zero 2 W.
 
@@ -55,6 +56,20 @@ from the app then acts on that machine, not the unit.
 
 **Settings → About** shows the board hald runs on and the machine core runs on.
 
+## How long it takes
+
+Measured on a Pi Zero W over Wi-Fi. A Pi Zero 2 W should be quicker, but hasn't
+been timed.
+
+| Step | Time |
+|---|---|
+| First boot, until SSH opens | about 3 minutes |
+| `install-hal` | about 4.5 minutes |
+| Core install, compiling `better-sqlite3` | about 56 minutes, 53 of them the compile |
+| Core install, with the prebuilt binary | not timed yet; it skips that compile |
+| Update (rerunning the core installer) | about 2 minutes |
+| Reboot, until core serves pages | about 4 minutes |
+
 ## 0. Back up
 
 1. Power off, open the base, remove the Pi's microSD.
@@ -69,16 +84,43 @@ there is. `install-hal` also cuts what the unit writes (below), and
 **Settings → Storage** shows how much it writes a day.
 
 Raspberry Pi Imager → Raspberry Pi OS Lite (64-bit for Zero 2 W / Pi 4 / Pi 5;
-32-bit for the original Zero W, which runs core on Node 22: see [Which Pi](#which-pi)). In the advanced options set hostname
-`seedypod`, enable SSH, add Wi-Fi. Reseat the card, boot, `ssh pi@seedypod.local`.
+32-bit for the original Zero W, which runs core on Node 22: see [Which Pi](#which-pi)). A Zero W won't
+boot a 64-bit OS, and won't tell you so ([Won't come online](#wont-come-online)).
+In the advanced options set hostname `seedypod`, enable SSH, add Wi-Fi. A Zero W
+only has 2.4 GHz Wi-Fi, so give it a 2.4 GHz network.
+
+Check the username and password before you write the card. Imager keeps what
+you entered last time, so both can look filled in when you never chose them for
+this card. The login is whatever is there, not necessarily `pi`, and `sudo` asks
+for that password. With key-only SSH and a password you don't know, you have no
+`sudo` and have to reflash.
+
+Reseat the card, boot, `ssh <your-login>@seedypod.local`. `seedypod.local`
+answers before SSH does: SSH opens near the end of first boot, so "connection
+refused" for the first few minutes is normal. After a reflash the unit has a new
+host key, so run `ssh-keygen -R seedypod.local` first.
 
 ## 2. Enable I²C and install the HAL
+
+**On a Pi Zero W, use the `dev` commands for now.** `main` doesn't have the
+ARMv6 fixes yet, so a Zero W needs these in place of the `curl` lines in this
+step and the next. This goes away at the next release.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/dev/scripts/install-hal | bash -s -- --version dev-latest
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/dev/scripts/install | bash -s -- --branch dev
+```
+
+Everyone else:
 
 ```sh
 sudo raspi-config nonint do_i2c 0
 curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash   # Phase 2.9
 hald --check
 ```
+
+Reboot once afterwards: hardware PWM on GPIO18, which dims the light, only comes
+up after a reboot.
 
 Besides `hald`, this keeps the system journal in RAM, moves swap to
 compressed RAM (zram) and mounts `/` with `noatime`, so the card sees far
@@ -187,6 +229,36 @@ reach the same broker. Pick one:
 
 Either way the device appears in HA with no further setup. See
 `docs/homeassistant/` for an example dashboard.
+
+## Won't come online
+
+**No SSH and no `seedypod.local`, ever.** On a Pi Zero W, suspect a 64-bit OS. It
+never boots and gives no error. Put the card in a computer and look for these:
+
+- The root partition is still 2.5 GB, because first boot never grew it.
+- `bootfs` has only `kernel8.img` and `kernel_2712.img`.
+- `config.txt` has `arm_64bit=1`.
+
+Any of those means reflashing with Raspberry Pi OS Lite (32-bit). Otherwise check
+the Wi-Fi network is 2.4 GHz.
+
+**`seedypod.local` answers but SSH refuses.** Wait: SSH opens about 3 minutes
+after power on, later than mDNS.
+
+**SSH warns that the host key changed.** The card was reflashed. Run
+`ssh-keygen -R seedypod.local`.
+
+**SSH says permission denied.** The login is what Imager had, not necessarily
+`pi`. If you've forgotten it, `user-data` on the card's `bootfs` has it under
+`user: name`.
+
+**The browser says connection refused.** That's normal until step 3 finishes:
+SSH works from first boot, but nothing serves pages before core is installed.
+After that, the address is `http://seedypod.local/`, with `:3000` also working.
+After a reboot, allow about 4 minutes.
+
+**You can't find it by IP.** The unit can land on a different subnet from your
+computer, where a network scan misses it. Use `seedypod.local`.
 
 ## Uninstall
 
