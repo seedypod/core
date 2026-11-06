@@ -73,7 +73,8 @@ prints every key with its default; the important ones:
 | `[dosing]` | `enabled` | **false** | Phase 6.3, ADR-0014: off until you turn it on. |
 | `[dosing]` | `ml_per_s`, `default_dose_ml`, `max_single_ml`, `max_daily_ml`, `max_doses_per_day` | 1, 5, 10, 30, 4 | Hard daily cap; lockout after N doses until acknowledged. |
 | `[ha]` | `discovery`, `prefix` | true, `homeassistant` | |
-| `[[camera]]` | `name`, `device`, `fallback`, `resolution`, `skip_frames` | upper `/dev/seedypod/camera-upper` (fallback `/dev/video0`), lower `/dev/seedypod/camera-lower` (fallback `/dev/video2`), 1280x720, 15 | See [Camera names](#camera-names) |
+| `[[camera]]` | `name`, `device`, `fallback`, `resolution`, `palette`, `skip_frames` | upper `/dev/seedypod/camera-upper` (fallback `/dev/video0`), lower `/dev/seedypod/camera-lower` (fallback `/dev/video2`), 1280x960, MJPEG, 15 | See [Camera names](#camera-names) |
+| `[[camera]]` | `capture_attempts`, `capture_retry_ms`, `capture_timeout_s`, `inspect_frames` | 3, 1000, 15, true | See [Stills](#stills) |
 
 ### Device list
 
@@ -216,8 +217,46 @@ the error.
 | `GET /state` | `{unitId, ts, sensors{id: Reading}, actuators{id: ActuatorState}, alerts{kind: Alert}, lightHoursTotal}` |
 | `GET /camera/<name>.jpg` | `image/jpeg`; one capture at a time per camera; `503` with the reason when the camera fails (and `camera_missing` is raised) |
 
-Captures shell out to `fswebcam -S <skip_frames> --no-banner` and reject
-anything that is not a plausible JPEG (upstream #143, #144).
+### Stills
+
+Captures shell out to `fswebcam -p MJPEG -S <skip_frames> --no-banner`. The
+palette is always set: left alone, a camera keeps whatever format it last used,
+so two identical cameras can come up as MJPEG and YUYV. The default of 1280x960
+is the sensor's own 4:3 shape, so nothing is cropped, and a Pi Zero re-encodes it
+in a few seconds; 2592x1944 takes roughly four times that.
+
+A capture fails if any of these is true (upstream #143, #144):
+
+- `fswebcam` exits non-zero, or prints a known failure such as
+  `Not a JPEG file` or `Timed out`. It often exits 0 after these.
+- The saved file is too small, or has no SOI and EOI markers.
+- The camera's raw frame is damaged.
+
+The last check matters most. `fswebcam` decodes every frame and encodes a new
+JPEG, and libjpeg repairs what it can without a word, so a torn frame arrives as
+a valid file of a torn picture. hald asks for the raw frame as well
+(`--dumpframe`) and walks its entropy-coded data: Huffman decoding only, with no
+IDCT, colour conversion or image buffer. Lost USB packets show up as a scan that
+ends short or overruns, a code no table holds, a restart marker out of turn, or a
+DC value no 8-bit sample can produce. Damage smaller than one MCU can pass; it
+leaves a local blemish, not a tear. Only `MJPEG` and `JPEG` palettes can be walked.
+Anything libjpeg reads without repairing it passes, such as a partial DHT or padding
+before EOI, because refusing a good frame makes a working camera look dead.
+
+Each failed attempt is retried in a new process, up to `capture_attempts`, waiting
+`capture_retry_ms` × the attempt number. `capture_timeout_s` kills a hung
+`fswebcam`, so with the defaults a bad camera answers in about 15 s and a wedged
+one in at most 48 s. A device node that isn't there fails at once with no retries.
+Once a camera has used up its attempts it gets one try per still until it gives a
+good frame, so a unit can run for months on one camera without the other costing
+it CPU. That also keeps the alert quiet: its detail says only what kind of failure
+it was (`no good frame: damaged frame`), and the log has the specifics.
+
+After the last attempt `/camera/<name>.jpg` returns `503` with the reason and
+`camera_missing` goes up naming the camera. It stays up until every camera that
+failed has produced a good frame, so one good camera can't hide the other. If
+good frames from a camera are being refused (the log says why, under `capture
+rejected`), set `inspect_frames = false` for it; damaged frames then get through.
 
 ## Camera names
 
