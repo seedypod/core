@@ -215,6 +215,15 @@ describe('system.checks', () => {
   })
 })
 
+describe('settings.update', () => {
+  it('keeps the telemetry flush interval between one minute and an hour', async () => {
+    const { c } = rig()
+    await expect(c.settings.update({ telemetryFlushMin: 0 })).rejects.toThrow()
+    await expect(c.settings.update({ telemetryFlushMin: 61 })).rejects.toThrow()
+    expect((await c.settings.update({ telemetryFlushMin: 10 })).telemetryFlushMin).toBe(10)
+  })
+})
+
 describe('bytes', () => {
   it('scales by thousands with one decimal under ten', () => {
     expect(bytes(512)).toBe('512 B')

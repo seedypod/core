@@ -78,6 +78,13 @@
       "when": 1793608483439,
       "tag": "0010_furry_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793970385155,
+      "tag": "0011_adorable_the_hunter",
+      "breakpoints": true
     }
   ]
 }

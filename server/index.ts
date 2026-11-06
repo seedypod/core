@@ -98,6 +98,8 @@ void mdns.start()
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
+    // First, so a teardown step that hangs or fails can't cost the held telemetry.
+    store.telemetry.flush()
     bridge?.stop()
     void mdns.stop().then(() => core.stop()).then(() => vision?.close()).finally(() => {
       server.close()

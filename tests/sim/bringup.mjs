@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { Aedes } from 'aedes'
+import Database from 'better-sqlite3'
 import mqtt from 'mqtt'
 
 const root = resolve(import.meta.dirname, '../..')
@@ -520,6 +521,27 @@ try {
     const info = await get('/backup/restore')
     assert(info.undo?.undoneAt === null && info.status?.state === 'done', `info ${JSON.stringify(info)}`)
     return 'undo → fresh card again; undo again → restored'
+  })
+
+  await check('SIGTERM writes held telemetry to the card', async () => {
+    const since = new Date(Date.now() - 3_600_000).toISOString()
+    const onCard = () => {
+      const db = new Database(coreEnv.SEEDYPOD_RESTORE_DB, { readonly: true })
+      const { n } = db.prepare(`SELECT count(*) AS n FROM telemetry WHERE sensor = 'air_temp' AND ts >= ?`).get(since)
+      db.close()
+      return n
+    }
+    // History serves rows from memory until the flush, so more there than on the card means some are held.
+    const shown = await until('a held row', async () => {
+      const h = await get('/telemetry/air_temp?hours=1')
+      return h.length > onCard() ? h.length : 0
+    }, 90_000)
+    await stop(coreProc)
+    const saved = onCard()
+    assert(saved >= shown, `history showed ${shown} rows, ${saved} reached the card`)
+    startCore()
+    await until('core back', () => get('/settings'))
+    return `${saved} rows on the card after the stop`
   })
 
   await check('daemon loss is noticed (LWT → hal_offline)', async () => {

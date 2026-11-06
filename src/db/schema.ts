@@ -28,6 +28,7 @@ export const deviceSettings = sqliteTable('device_settings', {
   mqttTlsEnabled: integer({ mode: 'boolean' }).notNull().default(false),
   mqttTlsInsecure: integer({ mode: 'boolean' }).notNull().default(false),
   captureIntervalMin: integer().notNull().default(60),
+  telemetryFlushMin: integer().notNull().default(5),
   /** Analyser whose green fraction drives pod trends (ADR-0019). */
   primaryAnalyzer: text().notNull().default('green-threshold'),
   /** Store large analyser outputs (masks) in the blob sink. */
