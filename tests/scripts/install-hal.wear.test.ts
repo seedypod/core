@@ -1,6 +1,6 @@
 /**
  * install-hal's SD card settings (ADR-0021), run against a scratch root with
- * stub systemctl/swapon/mount/findmnt/apt-get so each change and its rollback
+ * stub systemctl/mount/findmnt/apt-get so each change and its rollback
  * can be checked without a Pi. How Raspberry Pi OS itself takes them is on
  * the hardware checklist (docs/hardware/pin-map.md).
  */
@@ -18,12 +18,9 @@ const STUBS: Record<string, string> = {
 case "$*" in
   "restart systemd-journald") [ -f "$STATE/fail-journald" ] && grep -q volatile "$SEEDYPOD_ROOT/etc/systemd/journald.conf.d/"*.conf 2>/dev/null && exit 1; exit 0 ;;
   "is-active --quiet systemd-journald") [ -f "$STATE/fail-journald" ] && grep -q volatile "$SEEDYPOD_ROOT/etc/systemd/journald.conf.d/"*.conf 2>/dev/null && exit 3; exit 0 ;;
-  "start dev-zram0.swap") [ -f "$STATE/fail-zram" ] && exit 1; touch "$STATE/zram-on" ;;
-  "stop dev-zram0.swap") rm -f "$STATE/zram-on" ;;
+  "start dev-zram0.swap") [ -f "$STATE/fail-zram" ] && exit 1; echo '/dev/zram0 partition 435196 0 100' >> "$SEEDYPOD_ROOT/proc/swaps" ;;
+  "stop dev-zram0.swap") sed -i.bak /zram/d "$SEEDYPOD_ROOT/proc/swaps" ;;
 esac
-exit 0`,
-  'swapon': `[ -f "$STATE/zram-on" ] && echo /dev/zram0
-[ -f "$STATE/dphys-on" ] && echo /var/swap
 exit 0`,
   'dphys-swapfile': `echo "dphys-swapfile $*" >> "$STATE/log"; [ "$1" = swapoff ] && rm -f "$STATE/dphys-on"; exit 0`,
   'apt-get': `echo "apt-get $*" >> "$STATE/log"
@@ -43,6 +40,8 @@ PARTUUID=abcd-01  /boot/firmware  vfat    defaults          0       2
 PARTUUID=abcd-02  /               ext4    defaults          0       1
 `
 
+const SWAPS_HEADER = 'Filename Type Size Used Priority\n'
+
 let dir: string
 let root: string
 let state: string
@@ -53,12 +52,13 @@ beforeEach(() => {
   root = join(dir, 'root')
   state = join(dir, 'state')
   bin = join(dir, 'bin')
-  for (const d of [root, state, bin, join(root, 'etc')]) mkdirSync(d, { recursive: true })
+  for (const d of [root, state, bin, join(root, 'etc'), join(root, 'proc')]) mkdirSync(d, { recursive: true })
   for (const [name, body] of Object.entries(STUBS)) {
     writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`)
     chmodSync(join(bin, name), 0o755)
   }
   writeFileSync(join(root, 'etc/fstab'), FSTAB)
+  writeFileSync(join(root, 'proc/swaps'), `${SWAPS_HEADER}/var/swap file 102396 0 -2\n`)
   writeFileSync(join(state, 'dphys-on'), '')
 })
 
@@ -66,6 +66,8 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 const flag = (name: string) => writeFileSync(join(state, name), '')
 const read = (p: string) => readFileSync(join(root, p), 'utf8')
+/** zram already swapping when install-hal runs, as trixie's rpi-swap leaves it. */
+const zramOn = () => writeFileSync(join(root, 'proc/swaps'), `${SWAPS_HEADER}/dev/zram0 partition 435196 0 100\n`)
 const log = () => (existsSync(join(state, 'log')) ? readFileSync(join(state, 'log'), 'utf8') : '')
 
 function run(fn: string) {
@@ -129,11 +131,42 @@ describe('swap on zram', () => {
   })
 
   it('only retires dphys-swapfile when zram is already on (Raspberry Pi OS with rpi-swap)', () => {
-    flag('zram-on')
+    zramOn()
     const r = run('wear_swap')
     expect(r.out).toContain('swap already on zram')
     expect(log()).not.toContain('apt-get')
     expect(log()).toContain('dphys-swapfile uninstall')
+  })
+
+  it('sees zram without swapon, which isn\'t on a non-root PATH on Raspberry Pi OS', () => {
+    zramOn()
+    writeFileSync(join(bin, 'swapon'), '#!/bin/sh\necho "swapon: command not found" >&2\nexit 127\n')
+    chmodSync(join(bin, 'swapon'), 0o755)
+    const r = run('wear_swap')
+    expect(r.code).toBe(0)
+    expect(r.err).toBe('')
+    expect(r.out).toContain('swap already on zram')
+  })
+
+  it('leaves a working zram running and its config unwritten', () => {
+    zramOn()
+    run('wear_swap')
+    expect(log()).not.toContain('dev-zram0.swap')
+    expect(read('proc/swaps')).toContain('/dev/zram0')
+    expect(existsSync(join(root, 'etc/systemd/zram-generator.conf'))).toBe(false)
+  })
+
+  it('puts back a zram config it replaced when zram does not start', () => {
+    mkdirSync(join(root, 'etc/systemd'))
+    writeFileSync(join(root, 'etc/systemd/zram-generator.conf'), '[zram0]\nzram-size = 64\n')
+    mkdirSync(join(root, 'usr/lib/systemd/system-generators'), { recursive: true })
+    writeFileSync(join(root, 'usr/lib/systemd/system-generators/zram-generator'), '')
+    chmodSync(join(root, 'usr/lib/systemd/system-generators/zram-generator'), 0o755)
+    flag('fail-zram')
+    const r = run('wear_swap')
+    expect(r.code).toBe(1)
+    expect(read('etc/systemd/zram-generator.conf')).toBe('[zram0]\nzram-size = 64\n')
+    expect(existsSync(join(root, 'etc/systemd/zram-generator.conf.seedypod-bak'))).toBe(false)
   })
 })
 
