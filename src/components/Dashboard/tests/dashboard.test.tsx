@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Dashboard } from '../Dashboard'
 
-interface Hook { onSuccess?: (r: unknown) => void, onSettled?: () => void }
+interface Hook { onMutate?: () => unknown, onSuccess?: (r: unknown, sent?: unknown, context?: unknown) => void, onError?: (e: Error, sent: unknown) => void, onSettled?: () => void }
 
 const { data, mutations, setData, invalidatePump } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
@@ -24,6 +24,7 @@ vi.mock('@/src/utils/trpc', () => {
       mutations.set(path, { ...m, hook })
       return {
         mutate: (input: unknown) => {
+          hook?.onMutate?.()
           const now = mutations.get(path)
           mutations.set(path, { ...now, input, count: (now?.count ?? 0) + 1 })
         },
@@ -70,40 +71,46 @@ describe('Dashboard', () => {
       return await screen.findByLabelText('Brightness') as HTMLInputElement
     }
 
-    it('moves the slider at once and sends one command, on release, however many ticks the drag took', async () => {
+    const adjust = (slider: HTMLInputElement, ...values: string[]) => {
+      fireEvent.keyDown(slider, { key: 'ArrowRight' })
+      for (const value of values) fireEvent.input(slider, { target: { value } })
+    }
+
+    it('moves the slider at once and sends one command, on release, however many ticks the adjustment took', async () => {
       const slider = await brightness()
-      for (const value of ['45', '50', '55', '60']) fireEvent.change(slider, { target: { value } })
+      adjust(slider, '45', '50', '55', '60')
       expect(slider.value).toBe('60')
       expect(mutations.get('light.set')?.count ?? 0).toBe(0)
-      fireEvent.pointerUp(slider)
+      fireEvent.keyUp(slider, { key: 'ArrowRight' })
       expect(mutations.get('light.set')).toMatchObject({ count: 1, input: { level: 60 } })
     })
 
-    it('holds the released level until the Pi has answered, so the slider never jumps back', async () => {
+    it('holds the requested level past the answer until the light reports it, so a fade never drags the slider', async () => {
       const slider = await brightness()
-      fireEvent.change(slider, { target: { value: '60' } })
-      fireEvent.pointerUp(slider)
+      adjust(slider, '60')
+      fireEvent.keyUp(slider, { key: 'ArrowRight' })
       expect(slider.value).toBe('60')
-      data.set('light.get', { ...lit, level: 60 })
-      act(() => mutations.get('light.set')?.hook?.onSettled?.())
+      expect(screen.getByText(/^60% since/)).toBeTruthy()
+      // The light fades up through 50 on its way.
+      data.set('light.get', { ...lit, level: 50 })
+      act(() => mutations.get('light.set')?.hook?.onSuccess?.({ ...lit, level: 50 }, { level: 60 }, { command: 1 }))
       expect(slider.value).toBe('60')
     })
 
     it('goes back to the server\'s level when the command is refused', async () => {
       const slider = await brightness()
-      fireEvent.change(slider, { target: { value: '60' } })
-      fireEvent.pointerUp(slider)
-      act(() => mutations.get('light.set')?.hook?.onSettled?.())
+      adjust(slider, '60')
+      fireEvent.keyUp(slider, { key: 'ArrowRight' })
+      act(() => mutations.get('light.set')?.hook?.onError?.(new Error('refused'), { level: 60 }))
       expect(slider.value).toBe('40')
     })
 
-    it('lets go of the draft even when a power tap replaced the brightness command in flight', async () => {
+    it('lets go of the requested level when the power button overrides it', async () => {
       const slider = await brightness()
-      fireEvent.change(slider, { target: { value: '60' } })
-      fireEvent.pointerUp(slider)
+      adjust(slider, '60')
+      fireEvent.keyUp(slider, { key: 'ArrowRight' })
       fireEvent.click(screen.getByText('Turn off'))
       expect(mutations.get('light.set')).toMatchObject({ count: 2, input: { on: false } })
-      act(() => mutations.get('light.set')?.hook?.onSettled?.())
       expect(slider.value).toBe('40')
     })
 
@@ -123,7 +130,8 @@ describe('Dashboard', () => {
 
     it('writes the light a command returns into the cache instead of fetching it again', async () => {
       await brightness()
-      mutations.get('light.set')?.hook?.onSuccess?.(lit)
+      const context = mutations.get('light.set')?.hook?.onMutate?.()
+      mutations.get('light.set')?.hook?.onSuccess?.(lit, { level: 40 }, context)
       expect(setData).toHaveBeenCalledWith('light', lit)
     })
 

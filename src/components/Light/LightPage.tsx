@@ -7,6 +7,7 @@ import { fmtClock } from '@/src/components/charts/format'
 import { daysLabel, weekdayOf } from '@/src/lib/days'
 import { trpc } from '@/src/utils/trpc'
 import { CurveEditor } from './CurveEditor'
+import { useLightControl } from './useLightControl'
 import { asCurve, levelAt, litHours, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
 
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
@@ -14,22 +15,15 @@ const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 export function LightPage() {
-  const light = trpc.light.get.useQuery()
+  const { light: l, level, requested, lightOn, preview, commit, power } = useLightControl()
   const schedules = trpc.schedules.list.useQuery()
   const utils = trpc.useUtils()
-  const [draft, setDraft] = useState<number | null>(null)
-  // On the hook, not on mutate: a later mutate or an unmount silently drops mutate's own callbacks.
-  const setLight = trpc.light.set.useMutation({ onSuccess: state => utils.light.get.setData(undefined, state), onSettled: () => setDraft(null) })
   const owner = trpc.light.owner.useQuery(undefined, { refetchInterval: 15_000 })
   const resume = trpc.light.resume.useMutation({ onSuccess: () => utils.light.invalidate() })
   const o = owner.data
   const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const lightHours = trpc.telemetry.lightHours.useQuery()
   const [openId, setOpenId] = useState<string | null>(null)
-  const l = light.data
-  const level = draft ?? l?.level ?? 0
-  // The switch follows the tap; a refused command puts it back when the mutation ends.
-  const lightOn = (setLight.isPending ? setLight.variables.on : undefined) ?? !!l?.on
   const curves = (schedules.data ?? []).flatMap(s => asCurve(s) ?? [])
   const now = new Date()
   const minutesNow = now.getHours() * 60 + now.getMinutes()
@@ -51,21 +45,21 @@ export function LightPage() {
         </div>
         <span className="flex items-center gap-2.5 text-[13px] text-fg-2">
           {lightOn ? 'Lights on' : 'Lights off'}
-          <Toggle on={lightOn} size="md" label="Light power" onChange={on => setLight.mutate({ on })} />
+          <Toggle on={lightOn} size="md" label="Light power" onChange={power} />
         </span>
       </div>
 
       <Card className="gap-5 p-[22px]">
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex min-w-[140px] flex-col gap-1">
-            <span className="font-mono text-[44px] font-medium leading-none">{l ? (l.on ? `${l.level}%` : 'Off') : '…'}</span>
+            <span className="font-mono text-[44px] font-medium leading-none">{l ? (l.on || requested ? `${level}%` : 'Off') : '…'}</span>
             <span className="text-[12px] text-fg-3">{l ? `since ${clock(l.since)}` : '…'}</span>
           </div>
           <div className="flex min-w-[260px] flex-1 flex-col gap-3 pt-2">
             <Slider
               value={level}
-              onChange={setDraft}
-              onCommit={v => setLight.mutate({ level: v })}
+              onChange={preview}
+              onCommit={commit}
               label="Brightness"
             />
             <div className={AXIS} aria-hidden>

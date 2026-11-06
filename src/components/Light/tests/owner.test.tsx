@@ -2,11 +2,12 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LightPage } from '../LightPage'
+import { HOLD_MS } from '../useLightControl'
 
 const { data, calls, setLight } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn() },
-  setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onSuccess?: (s: unknown) => void, onSettled?: () => void } },
+  setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onMutate?: () => { command: number }, onSuccess?: (s: unknown, sent: unknown, context: { command: number }) => void, onError?: (e: Error, sent: { level?: number }) => void } },
 }))
 
 vi.mock('../CurveEditor', () => ({ CurveEditor: ({ schedule }: { schedule: { name: string } }) => <div>{`editing ${schedule.name}`}</div> }))
@@ -85,31 +86,67 @@ describe('LightPage: who controls the light', () => {
     expect(screen.getByRole('switch', { name: 'Light power' }).getAttribute('aria-checked')).toBe('true')
   })
 
-  it('holds a released level until the Pi has answered, then shows what the server says', () => {
+  const adjust = (slider: HTMLElement, value: string) => {
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' })
+    fireEvent.input(slider, { target: { value } })
+    fireEvent.keyUp(slider, { key: 'ArrowLeft' })
+  }
+
+  it('shows the requested level on the slider and the readout straight away, and goes back when refused', () => {
     render(<LightPage />)
     const slider = screen.getByLabelText('Brightness') as HTMLInputElement
-    fireEvent.change(slider, { target: { value: '30' } })
-    fireEvent.pointerUp(slider)
+    adjust(slider, '30')
     expect(slider.value).toBe('30')
-    act(() => setLight.hook.onSettled?.())
+    expect(screen.getByText('30%')).toBeTruthy()
+    act(() => setLight.hook.onError?.(new Error('refused'), { level: 30 }))
     expect(slider.value).toBe('80')
   })
 
-  it('lets go of the draft even when a power tap replaced the brightness command in flight', () => {
+  it('keeps a newer request when an older command is refused', () => {
     render(<LightPage />)
     const slider = screen.getByLabelText('Brightness') as HTMLInputElement
-    fireEvent.change(slider, { target: { value: '30' } })
-    fireEvent.pointerUp(slider)
+    adjust(slider, '30')
+    adjust(slider, '60')
+    act(() => setLight.hook.onError?.(new Error('refused'), { level: 30 }))
+    expect(slider.value).toBe('60')
+  })
+
+  it('follows the light again once it reports the requested level', () => {
+    const { rerender } = render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    adjust(slider, '30')
+    data.set('light', { ...(data.get('light') as object), level: 30 })
+    rerender(<LightPage />)
+    data.set('light', { ...(data.get('light') as object), level: 55 })
+    rerender(<LightPage />)
+    expect(slider.value).toBe('55')
+  })
+
+  it('gives up on a level the light never reports', () => {
+    vi.useFakeTimers()
+    render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    adjust(slider, '30')
+    act(() => void vi.advanceTimersByTime(HOLD_MS - 1))
+    expect(slider.value).toBe('30')
+    act(() => void vi.advanceTimersByTime(1))
+    expect(slider.value).toBe('80')
+    vi.useRealTimers()
+  })
+
+  it('lets go of the requested level when the power switch overrides it', () => {
+    render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    adjust(slider, '30')
     fireEvent.click(screen.getByRole('switch', { name: 'Light power' }))
     expect(calls.set).toHaveBeenCalledTimes(2)
-    act(() => setLight.hook.onSettled?.())
     expect(slider.value).toBe('80')
   })
 
   it('writes the state a command returns into the cache instead of fetching it again', () => {
     render(<LightPage />)
     const state = { on: true, level: 30, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null }
-    setLight.hook.onSuccess?.(state)
+    setLight.hook.onSuccess?.(state, { level: 30 }, setLight.hook.onMutate?.() as { command: number })
     expect(setLight.setData).toHaveBeenCalledWith(undefined, state)
   })
 
@@ -118,9 +155,7 @@ describe('LightPage: who controls the light', () => {
     expect(screen.getByText('Lights on')).toBeTruthy()
     fireEvent.click(screen.getByRole('switch', { name: 'Light power' }))
     expect(calls.set).toHaveBeenCalledWith({ on: false })
-    const slider = screen.getByLabelText('Brightness')
-    fireEvent.change(slider, { target: { value: '30' } })
-    fireEvent.pointerUp(slider)
+    adjust(screen.getByLabelText('Brightness'), '30')
     expect(calls.set).toHaveBeenCalledWith({ level: 30 })
     cleanup()
     data.set('light', { on: false, level: 0, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null })
