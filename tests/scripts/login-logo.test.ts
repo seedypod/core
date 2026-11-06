@@ -96,6 +96,13 @@ describe('login-logo animation', () => {
     expect(r.out).toContain('\x1b[46C\x1b[38;5;72mhttp://seedypod.local:3000\x1b[0m')
   })
 
+  it('drops the port when port 80 forwards to core', () => {
+    writeFileSync(join(share, 'port80.nft'), '')
+    const r = pty()
+    expect(r.out).toContain('\x1b[46C\x1b[38;5;72mhttp://seedypod.local\x1b[0m')
+    expect(r.out).not.toContain(':3000')
+  })
+
   it('leaves the version out when none was installed', () => {
     rmSync(join(share, 'version'))
     const r = pty()

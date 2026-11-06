@@ -3,6 +3,7 @@
 # or any 64-bit Linux box on the LAN.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
 #        scripts/install [--branch dev] [--prefix /opt/seedypod] [--restore <file|url>] [--check] [--login-logo]
+#                        [--port80 | --no-port80]
 # Installs Node (via the pinned .node-version), unpacks the release tarball,
 # installs production deps, and enables seedypod-core.service on :3000. It also
 # installs the restore helper (/usr/local/sbin/seedypod-restore, ADR-0021) and
@@ -11,6 +12,8 @@
 #                         instead of choosing on the Welcome screen
 #   --check               only say whether this machine can run core, and why not
 #   --login-logo          only reinstall the SSH login logo from the unpacked prefix
+#   --port80              only forward port 80 to core; the way to opt in off a Pi
+#   --no-port80           only remove that forward, and keep it off on later installs
 # The Rust HAL (hald) is installed separately by scripts/install-hal; on a new
 # card, run it first so the restore brings hald's state back too.
 set -euo pipefail
@@ -23,6 +26,7 @@ ROOT="${SEEDYPOD_ROOT:-}"
 RESTORE=""
 CHECK=0
 LOGIN_LOGO=0
+PORT80=auto
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -31,6 +35,8 @@ while [ $# -gt 0 ]; do
     --restore) RESTORE="$2"; shift 2 ;;
     --check) CHECK=1; shift ;;
     --login-logo) LOGIN_LOGO=1; shift ;;
+    --port80) PORT80=on; shift ;;
+    --no-port80) PORT80=off; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -68,6 +74,92 @@ node_plan() {
   return 0
 }
 
+# ---- port 80 -----------------------------------------------------------------
+# So a browser reaches http://seedypod.local with no port, while core stays on 3000,
+# which the iOS app, the hotspot address and saved addresses all assume. An nftables
+# redirect, not a proxy: core exempts loopback from the API key (server/auth.ts), so
+# behind systemd-socket-proxyd every LAN client would arrive as 127.0.0.1 and skip it.
+# A redirect keeps the client's address, can't buffer SSE and runs no process, and
+# Raspberry Pi OS Lite ships nftables. Its own table, because nothing else may touch
+# it, and only for traffic addressed to this machine, so the hotspot's forwarding is
+# left alone. IPv4 only, as core listens on IPv4. nft is in /usr/sbin, off this
+# user's PATH. Only ever a nicety, so a failure here doesn't stop the install.
+PORT80_RULES="$ROOT/usr/local/share/seedypod/port80.nft"
+PORT80_OFF="$ROOT/usr/local/share/seedypod/port80.off"
+PORT80_UNIT="$ROOT/etc/systemd/system/seedypod-port80.service"
+
+port80_taken() { grep -Eqs '^ *[0-9]+: [0-9A-F]+:0050 [0-9A-F]+:[0-9A-F]+ 0A ' "$ROOT/proc/net/tcp" "$ROOT/proc/net/tcp6"; }
+
+port80_remove() {
+  [ -e "$PORT80_UNIT" ] || return 0
+  sudo systemctl disable --now seedypod-port80.service >/dev/null 2>&1 || true
+  sudo rm -f "$PORT80_UNIT" "$PORT80_RULES"
+  sudo systemctl daemon-reload
+}
+
+install_port80() {
+  case "$PORT80" in
+    off)
+      port80_remove
+      sudo mkdir -p "$(dirname "$PORT80_OFF")" && sudo touch "$PORT80_OFF"
+      echo "→ port 80 left alone; core is on :3000"
+      return 0 ;;
+    on) sudo rm -f "$PORT80_OFF" ;;
+    auto)
+      [ ! -e "$PORT80_OFF" ] || return 0
+      # A LAN box may well have plans for port 80. --port80 is how it says otherwise.
+      if [ ! -e "$PORT80_RULES" ] && ! grep -aqs 'Raspberry Pi' "$ROOT/proc/device-tree/model"; then
+        echo "→ not a Raspberry Pi, so port 80 is left alone; scripts/install --port80 forwards it to core"
+        return 0
+      fi ;;
+  esac
+  if port80_taken; then
+    port80_remove
+    echo "   something else listens on port 80, so it's left alone; core is on :3000" >&2
+    return 0
+  fi
+  if [ ! -x "$ROOT/usr/sbin/nft" ] && command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get install -y -q nftables >/dev/null || true
+  fi
+  if [ ! -x "$ROOT/usr/sbin/nft" ]; then
+    echo "   no nftables on this machine" >&2
+    return 1
+  fi
+  sudo mkdir -p "$(dirname "$PORT80_RULES")"
+  sudo tee "$PORT80_RULES" >/dev/null <<'RULES'
+# Written by seedypod scripts/install: port 80 on this machine reaches core on 3000.
+table ip seedypod
+delete table ip seedypod
+table ip seedypod {
+  chain port80 {
+    type nat hook prerouting priority dstnat; policy accept;
+    fib daddr type local tcp dport 80 redirect to :3000
+  }
+}
+RULES
+  sudo tee "$PORT80_UNIT" >/dev/null <<'UNIT'
+[Unit]
+Description=seedypod: forward port 80 to core on 3000
+After=nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /usr/local/share/seedypod/port80.nft
+ExecStop=/usr/sbin/nft delete table ip seedypod
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  if sudo systemctl daemon-reload && sudo systemctl enable seedypod-port80.service >/dev/null 2>&1 \
+    && sudo systemctl restart seedypod-port80.service; then
+    echo "→ port 80 forwards to core"
+    return 0
+  fi
+  port80_remove
+  return 1
+}
+
 # ---- login logo --------------------------------------------------------------
 # The animation an SSH login opens with. It lives in /etc/profile.d: pam_motd runs
 # update-motd.d with no terminal and prints what it collected, so nothing there
@@ -87,7 +179,9 @@ install_login_logo() {
     && sudo chmod 0755 "$share/login-logo" \
     && sudo chmod 0644 "$share/logo.frames" "$share/version" "$profile"
 }
+if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 if [ "$LOGIN_LOGO" = 1 ]; then install_login_logo; exit $?; fi
+if [ "$PORT80" != auto ]; then install_port80; exit $?; fi
 if [ "$CHECK" = 1 ]; then node_plan; exit $?; fi
 node_plan || exit 3
 [ "$BRANCH" = "__BRANCH__" ] && BRANCH=main
@@ -200,6 +294,7 @@ install_login_logo || echo "   couldn't install the login logo; logins work as b
 sudo systemctl daemon-reload
 sudo systemctl enable seedypod-core.service >/dev/null
 sudo systemctl restart seedypod-core.service
+install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
 if [ -n "$RESTORE" ]; then
   BUNDLE="$RESTORE"
   case "$RESTORE" in
@@ -211,4 +306,6 @@ if [ -n "$RESTORE" ]; then
   echo "→ restoring $RESTORE"
   sudo "$HELPER" "$BUNDLE" >/dev/null
 fi
-echo "✓ seedypod core running on http://$(hostname -I | awk '{print $1}'):3000"
+ADDRESS="http://$(hostname -I | awk '{print $1}')"
+[ -e "$PORT80_RULES" ] || ADDRESS="$ADDRESS:3000"
+echo "✓ seedypod core running on $ADDRESS"
