@@ -11,6 +11,7 @@ mod cameras;
 mod config;
 mod devices;
 mod engine;
+mod fade;
 mod ha;
 mod http;
 mod identity;
@@ -236,6 +237,7 @@ async fn main() -> anyhow::Result<()> {
         system.clone(),
         EngineConfig {
             telemetry_interval: Duration::from_secs(cfg.telemetry_interval_s.max(1)),
+            light_fade: Duration::from_millis(cfg.light_fade_ms),
             pump: (&cfg.limits).into(),
             dosing: (&cfg.dosing).into(),
             button_pump_run_s: cfg.button.pump_run_s,
@@ -396,6 +398,7 @@ fn run_engine(mut engine: Engine, cfg: LoopConfig, rx: Receiver<Inbound>, tx: Un
         Duration::from_secs(1)
     };
     let mut now = Now::real();
+    engine.start_light_fades();
     send(&tx, engine.boot(now));
     let mut ticks = 0u64;
     loop {

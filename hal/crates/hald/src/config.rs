@@ -25,6 +25,8 @@ pub struct Config {
     pub mqtt_password: Option<String>,
     pub http_bind: String,
     pub telemetry_interval_s: u64,
+    /// How long a full swing of the light takes; 0 for no fade.
+    pub light_fade_ms: u64,
     /// Where `state.json` (last light level, dose ledgers) is kept.
     pub state_dir: PathBuf,
     pub pins: Pins,
@@ -278,6 +280,7 @@ impl Default for Config {
             mqtt_password: None,
             http_bind: "0.0.0.0:3001".into(),
             telemetry_interval_s: 10,
+            light_fade_ms: 800,
             state_dir: PathBuf::from("/var/lib/seedypod"),
             pins: Pins::default(),
             i2c: I2c::default(),
@@ -537,6 +540,9 @@ impl Config {
         if self.telemetry_interval_s == 0 {
             errs.push("telemetry_interval_s must be ≥ 1".into());
         }
+        if self.light_fade_ms > 60_000 {
+            errs.push("light_fade_ms must be ≤ 60000".into());
+        }
         if self.http_bind.parse::<std::net::SocketAddr>().is_err() {
             errs.push(format!("http_bind {:?} is not host:port", self.http_bind));
         }
@@ -633,6 +639,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # mqtt_password = ""
 # http_bind = "0.0.0.0:3001"
 # telemetry_interval_s = 10
+# light_fade_ms = 800     # how long a full swing of the light takes; 0 for no fade
 # state_dir = "/var/lib/seedypod"
 # mdns = true
 
@@ -872,6 +879,7 @@ capture_timeout_s = 0
         let c: Config = toml::from_str(
             r#"
 telemetry_interval_s = 0
+light_fade_ms = 60001
 http_bind = "nope"
 mqtt_url = "http://x"
 [limits]
@@ -907,6 +915,7 @@ kind = "pwm_pump"
         let joined = errs.join("\n");
         for needle in [
             "telemetry_interval_s",
+            "light_fade_ms",
             "http_bind",
             "mqtt_url",
             "pump_max_duty",

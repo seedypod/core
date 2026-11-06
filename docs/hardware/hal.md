@@ -58,6 +58,7 @@ prints every key with its default; the important ones:
 | top | `telemetry_interval_s` | 10 | Sensors publish on change *and* at least this often. |
 | top | `state_dir` | `/var/lib/seedypod` | `state.json` lives here (`--sim` uses a temp dir). |
 | top | `mdns` | true | Advertise `_seedypod-hal._tcp`. |
+| top | `light_fade_ms` | 800 | How long a full swing of the light takes. Smaller changes take less. 0 for no fade. At most 60000. |
 | `[pins]` | `light_pwm`/`light_pwm_channel`/`light_hz` | 18 / 0 / 20000 | Hardware PWM. GPIO18 is channel 2 on a Pi 5. |
 | `[pins]` | `pump_pwm`/`pump_hz` | 24 / 50 | Software PWM on a dedicated thread. |
 | `[pins]` | `distance_trigger`/`distance_echo` | 26 / 19 | DYP-A01. |
@@ -151,6 +152,12 @@ Semantics worth knowing:
   fewer than half the pings answering, counts as no reading.
 - **Light**: `level` 0–100, no interlock; `{"on":true}` without a level
   restores the last on-level. The level is persisted and restored on boot.
+  Every change fades, from any source, even in perceived brightness rather than
+  in duty, on its own thread so it can't hold up the pump guard or sensor reads.
+  `actuator/light/state` and the state file carry the target from the moment the
+  command lands, once: nothing publishes or persists per step. A new command
+  mid-fade carries on from the light's actual level. Boot restores the level
+  exactly, without a fade (upstream #131), and a stop mid-fade lands on the target.
 - **Dosing** (`dose_1..3`): `durationS` is seconds of pumping, converted to ml
   through `ml_per_s`, clamped to `max_single_ml`; omitted → `default_dose_ml`.
   Refused when disabled, when the dose would cross `max_daily_ml` (UTC day),

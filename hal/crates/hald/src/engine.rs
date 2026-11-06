@@ -24,6 +24,7 @@ use serde::Serialize;
 use tracing::{error, info, warn};
 
 use crate::config::{SensorEntry, I2C_ADDR_RANGE};
+use crate::fade::LightFader;
 use crate::kinds::SensorFactory;
 use crate::overlay::Overlay;
 use crate::state::{Persisted, StateFile};
@@ -116,6 +117,8 @@ pub type SharedSnapshot = Arc<RwLock<Snapshot>>;
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
     pub telemetry_interval: Duration,
+    /// How long a full swing of the light takes; zero for no fade.
+    pub light_fade: Duration,
     pub pump: PumpLimits,
     pub dosing: DoseLimits,
     /// Bounded run requested by a double press.
@@ -144,8 +147,11 @@ pub struct Engine {
     pump_was_on: bool,
     doses: BTreeMap<ActuatorId, DoseGuard>,
     dose_since: BTreeMap<ActuatorId, String>,
+    /// Where the light is going; a fade may still be on its way there.
     light_level: f64,
     light_since: String,
+    /// Owns the light's driver, taken out of the registry.
+    light: Option<LightFader>,
     persisted: Persisted,
     state_file: Option<StateFile>,
     env: Env,
@@ -251,6 +257,10 @@ impl Engine {
         state_file: Option<StateFile>,
         snapshot: SharedSnapshot,
     ) -> Self {
+        let mut registry = registry;
+        let light = registry
+            .remove_actuator(ActuatorId::Light)
+            .map(|driver| LightFader::new(driver, cfg.light_fade));
         let persisted = state_file.as_ref().map(StateFile::load).unwrap_or_default();
         let mut doses = BTreeMap::new();
         for id in &system.caps.actuators {
@@ -271,6 +281,7 @@ impl Engine {
             dose_since: BTreeMap::new(),
             light_level: 0.0,
             light_since: persisted.light_since.clone().unwrap_or_default(),
+            light,
             persisted,
             system,
             cfg,
@@ -286,6 +297,13 @@ impl Engine {
             water: WaterAlert::default(),
             snapshot,
             devices: Devices::default(),
+        }
+    }
+
+    /// Starts the thread that steps light fades. Without it, light changes are instant.
+    pub fn start_light_fades(&self) {
+        if let Some(Err(e)) = self.light.as_ref().map(LightFader::spawn) {
+            warn!(%e, "light changes won't fade");
         }
     }
 
@@ -320,6 +338,9 @@ impl Engine {
                     warn!(actuator = ?id, %e, "probe failed at boot");
                 }
             }
+        }
+        if let Some(Err(e)) = self.light.as_ref().map(LightFader::probe) {
+            warn!(actuator = ?ActuatorId::Light, %e, "probe failed at boot");
         }
         if let Some(b) = &mut self.over_temp_input {
             if let Err(e) = b.probe() {
@@ -698,9 +719,12 @@ impl Engine {
     }
 
     fn set_light(&mut self, level: f64, now: Now, persist: bool) {
-        if let Some(l) = self.registry.actuator_mut(ActuatorId::Light) {
-            if let Err(e) = l.set_level(level) {
-                error!(%e, "light driver write failed");
+        if let Some(l) = &self.light {
+            // Only a boot restore doesn't persist, and that must land exactly, never fade.
+            if persist {
+                l.fade_to(level);
+            } else {
+                l.jump(level);
             }
         }
         if level != self.light_level || self.light_since.is_empty() {
@@ -1044,6 +1068,9 @@ impl Engine {
             self.apply_dose(id, false, now);
             out.extend(self.publish_actuator(id, now));
         }
+        if let Some(l) = &self.light {
+            l.finish();
+        }
         self.account_light_hours(now);
         self.save_state(now);
         out.push(Outbound::retained(topics::availability(&self.unit), "offline"));
@@ -1084,6 +1111,7 @@ mod tests {
     fn cfg(ha: bool) -> EngineConfig {
         EngineConfig {
             telemetry_interval: Duration::from_secs(10),
+            light_fade: Duration::from_millis(800),
             pump: PumpLimits::default(),
             dosing: DoseLimits {
                 enabled: true,
@@ -1537,6 +1565,202 @@ mod tests {
         assert!(log.contains("pump command refused"), "{log}");
         assert!(!log.contains("pump run accepted"), "{log}");
         let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A rig with fades on, stepped by hand: `frames` moves its clock 20 ms at a time.
+    struct Fading {
+        r: Rig,
+        clock: Arc<std::sync::Mutex<Instant>>,
+    }
+
+    impl Fading {
+        fn new(tag: &str) -> Self {
+            let r = rig(vec![ActuatorId::Light, ActuatorId::Pump], false, tag);
+            let clock = Arc::new(std::sync::Mutex::new(Instant::now()));
+            let reads = clock.clone();
+            r.engine
+                .light
+                .as_ref()
+                .unwrap()
+                .step_by_hand(move || *reads.lock().unwrap());
+            Self { r, clock }
+        }
+        fn set(&mut self, level: f64) -> Vec<Outbound> {
+            self.r.engine.handle(
+                Inbound::ActuatorSet(ActuatorId::Light, on(Some(level), None)),
+                self.r.now,
+            )
+        }
+        fn level(&self) -> f64 {
+            self.r.world.lock().unwrap().light_level
+        }
+        /// The level after each of `n` frames.
+        fn frames(&mut self, n: usize) -> Vec<f64> {
+            (0..n)
+                .map(|_| {
+                    *self.clock.lock().unwrap() += Duration::from_millis(20);
+                    self.r.engine.light.as_ref().unwrap().step();
+                    self.level()
+                })
+                .collect()
+        }
+    }
+
+    impl Drop for Fading {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.r.dir);
+        }
+    }
+
+    #[test]
+    fn a_light_change_fades_while_state_reports_the_target_once() {
+        let mut f = Fading::new("fade");
+        f.r.engine.boot(f.r.now);
+        let out = f.set(60.0);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/light/state")["level"], 60.0);
+        assert_eq!(f.level(), 0.0, "nothing lands before the first frame");
+        assert_eq!(
+            StateFile::new(&f.r.dir).load().light_level,
+            60.0,
+            "the target, once"
+        );
+        let saved = std::fs::metadata(f.r.dir.join("state.json"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        let levels = f.frames(40);
+        assert!(levels.windows(2).all(|w| w[1] >= w[0]), "{levels:?}");
+        assert!(
+            levels.iter().filter(|l| **l > 0.0 && **l < 60.0).count() > 10,
+            "{levels:?}"
+        );
+        assert_eq!(f.level(), 60.0);
+        assert_eq!(
+            std::fs::metadata(f.r.dir.join("state.json"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            saved,
+            "no write per step"
+        );
+    }
+
+    #[test]
+    fn a_new_command_mid_fade_goes_on_from_where_the_light_is() {
+        let mut f = Fading::new("fade-retarget");
+        f.r.engine.boot(f.r.now);
+        f.set(100.0);
+        let here = *f.frames(20).last().unwrap();
+        f.set(10.0);
+        let after = f.frames(1)[0];
+        assert!((after - here).abs() < 2.0, "{here} then {after}");
+        f.frames(40);
+        assert_eq!(f.level(), 10.0);
+    }
+
+    #[test]
+    fn off_mid_fade_reaches_exactly_zero() {
+        let mut f = Fading::new("fade-off");
+        f.r.engine.boot(f.r.now);
+        f.set(100.0);
+        f.frames(10);
+        f.r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Light, off()), f.r.now);
+        f.frames(40);
+        assert_eq!(f.level(), 0.0);
+    }
+
+    #[test]
+    fn frequent_small_changes_track_smoothly_and_repeats_dont_restart_the_fade() {
+        let mut f = Fading::new("fade-small");
+        f.r.engine.boot(f.r.now);
+        f.set(50.0);
+        f.frames(40);
+        let mut levels = Vec::new();
+        for step in 1..=10 {
+            f.set(50.0 + f64::from(step));
+            levels.extend(f.frames(5));
+        }
+        assert!(
+            levels.windows(2).all(|w| w[1] >= w[0] && w[1] - w[0] < 1.0),
+            "{levels:?}"
+        );
+        assert_eq!(f.level(), 60.0);
+        // Asking again for where it's already headed mustn't push the end back.
+        f.set(100.0);
+        f.frames(20);
+        f.set(100.0);
+        f.frames(20);
+        assert_eq!(f.level(), 100.0);
+    }
+
+    #[test]
+    fn boot_restores_the_light_exactly_without_a_fade() {
+        let mut f = Fading::new("fade-boot");
+        StateFile::new(&f.r.dir)
+            .save(&Persisted {
+                light_level: 70.0,
+                ..Default::default()
+            })
+            .unwrap();
+        let persisted = StateFile::new(&f.r.dir).load();
+        f.r.engine.persisted = persisted;
+        f.r.engine.boot(f.r.now);
+        assert_eq!(f.level(), 70.0);
+        assert_eq!(f.r.engine.light.as_ref().unwrap().step(), None);
+    }
+
+    #[test]
+    fn with_fading_off_a_change_lands_at_once() {
+        let mut c = cfg(false);
+        c.light_fade = Duration::ZERO;
+        let world = hal_sim::world();
+        let mut registry = Registry::default();
+        registry.add_actuator(Box::new(hal_sim::SimActuator::new(
+            ActuatorId::Light,
+            world.clone(),
+        )));
+        let mut e = Engine::new(
+            system(vec![ActuatorId::Light]),
+            c,
+            registry,
+            None,
+            None,
+            Arc::default(),
+        );
+        e.start_light_fades();
+        let now = Now::real();
+        e.boot(now);
+        e.handle(Inbound::ActuatorSet(ActuatorId::Light, on(Some(35.0), None)), now);
+        assert_eq!(world.lock().unwrap().light_level, 35.0);
+    }
+
+    #[test]
+    fn a_shutdown_mid_fade_lands_the_light_on_its_saved_target() {
+        let mut f = Fading::new("fade-shutdown");
+        f.r.engine.boot(f.r.now);
+        f.set(80.0);
+        f.frames(5);
+        f.r.engine.handle(Inbound::Shutdown, f.r.now);
+        assert_eq!(f.level(), 80.0);
+        assert_eq!(StateFile::new(&f.r.dir).load().light_level, 80.0);
+    }
+
+    #[test]
+    fn a_fade_leaves_the_pump_guard_alone() {
+        let mut f = Fading::new("fade-pump");
+        f.r.engine.boot(f.r.now);
+        f.set(100.0);
+        f.r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), f.r.now);
+        assert_eq!(f.r.world.lock().unwrap().pump_level, 30.0);
+        f.r.world.lock().unwrap().water_distance_cm = 17.0;
+        f.r.now.advance(Duration::from_secs(10));
+        f.r.engine.tick(f.r.now);
+        assert_eq!(f.r.world.lock().unwrap().pump_level, 0.0, "tripped mid-fade");
+        assert_eq!(f.r.engine.pump.fault(), Some("dry-run"));
+        f.frames(40);
+        assert_eq!(f.level(), 100.0);
     }
 
     #[test]
