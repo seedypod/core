@@ -428,7 +428,8 @@ impl Config {
                 trigger: None,
                 echo: None,
                 optional: true,
-                active_low: Some(false),
+                // PCT2075 OS is active-low at power-up (OS_POL = 0): the idle line reads high.
+                active_low: Some(true),
             },
         ]
     }
@@ -696,6 +697,13 @@ mod tests {
         let a = c.actuators();
         assert_eq!(a[1].id, "pump");
         assert_eq!(a[1].pin, Some(23));
+    }
+
+    #[test]
+    fn stock_over_temp_line_is_active_low() {
+        let stock = Config::default().sensors();
+        let alert = stock.iter().find(|s| s.kind == "over_temp_alert").unwrap();
+        assert_eq!(alert.active_low, Some(true));
     }
 
     #[test]
