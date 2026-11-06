@@ -605,7 +605,7 @@ impl Engine {
                             distance = Some(r.value);
                             // Too few pings answered: the guard keeps the number, but a
                             // run of stray echoes mustn't count as water being back.
-                            trusted_distance = Some(r.value).filter(|_| r.quality != Quality::Suspect);
+                            trusted_distance = (r.quality != Quality::Suspect).then_some(r.value);
                         }
                         SensorId::PcbTemp => pcb = Some(r.value),
                         _ => {}
