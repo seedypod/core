@@ -142,6 +142,35 @@ for (const [name, make] of impls) {
       expect(store.captures.list('lower')).toHaveLength(1)
     })
 
+    it('telemetry thins one sensor in a window to the first row of each bucket', () => {
+      store = make()
+      const at = (h: number, m: number, s = 0) => `2026-01-01T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.000Z`
+      const pts: TelemetryPoint[] = []
+      for (let m = 0; m < 60; m++) pts.push({ ts: at(1, m), sensor: 'air_temp', value: m })
+      pts.push({ ts: at(1, 0, 30), sensor: 'humidity', value: 50 }, { ts: at(1, 1, 30), sensor: 'humidity', value: 51 })
+      pts.push({ ts: at(2, 0), sensor: 'air_temp', value: 99 }, { ts: at(2, 1), sensor: 'air_temp', value: 100 })
+      store.telemetry.add(pts)
+      store.telemetry.flush()
+      expect(store.telemetry.thin(['air_temp'], at(1, 0), at(2, 0), 15)).toBe(56)
+      const air = store.telemetry.range('air_temp', at(0, 0), at(3, 0), 1000).map(p => p.value)
+      expect(air).toEqual([0, 15, 30, 45, 99, 100])
+      expect(store.telemetry.range('humidity', at(0, 0), at(3, 0), 1000)).toHaveLength(2)
+      expect(store.telemetry.thin(['air_temp'], at(1, 0), at(2, 0), 15)).toBe(0)
+      // Buckets are per sensor: two sensors in the same quarter hour each keep a row.
+      store.telemetry.add([{ ts: at(1, 2), sensor: 'ph', value: 6 }])
+      store.telemetry.flush()
+      expect(store.telemetry.thin(['humidity', 'ph'], at(1, 0), at(2, 0), 15)).toBe(1)
+      expect(store.telemetry.range('ph', at(0, 0), at(3, 0), 1000)).toHaveLength(1)
+    })
+
+    it('telemetry knows its first row, and that there may be none', () => {
+      store = make()
+      expect(store.telemetry.oldestTs()).toBeNull()
+      store.telemetry.add([{ ts: '2026-01-02T00:00:00.000Z', sensor: 'air_temp', value: 1 }, { ts: '2026-01-03T00:00:00.000Z', sensor: 'air_temp', value: 2 }])
+      store.telemetry.flush()
+      expect(store.telemetry.oldestTs()).toBe('2026-01-02T00:00:00.000Z')
+    })
+
     it('telemetry range filters by sensor/time and downsamples', () => {
       store = make()
       const pts = Array.from({ length: 1000 }, (_, i) => ({ ts: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), sensor: 'air_temp' as const, value: 20 + (i % 5) }))

@@ -96,6 +96,19 @@ unit's rate.
 - **Charts have no hole.** `telemetry.range` merges the held rows with the
   stored ones. It doesn't flush, because a chart polling every minute would
   undo the batching.
+- **Old telemetry thins itself.** The table grew by about 1 MB a day for ever,
+  and every scan and backup carried it. Rows stay at one a minute for 90 days,
+  which is as far back as any chart goes (Autopilot's backtests stop at 14), then
+  thin to one per 15 minutes. That's about 27 MB a year, so nothing needs dropping
+  outright on a 64 GB card. Harvest Outlook reads captures, not telemetry. A dataset
+  export of an old window gets the thinned rows.
+
+  It only deletes, once a week at 04:00, in transactions of 6 hours of every sensor
+  with a pause between: about 10 MB of WAL a week against 150 MB of telemetry
+  writes, so about 7% more. Six-hour slices per sensor measured 40 MB, because
+  each sensor rewrote the same pages. A counter remembers how far it got, so old
+  rows are never read twice. The file stops growing without a `VACUUM`, which
+  would rewrite all of it: freed pages go back to SQLite's free list.
 - **A power cut loses at most one interval of sensor history.** Nothing else
   waits: settings, schedules, grow data, alert raises and clears, and
   `hald`'s dosing ledger are all written as they happen. Core flushes on
