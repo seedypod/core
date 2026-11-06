@@ -9,6 +9,7 @@ import type { MirroredSink } from '../camera/mirrorSink'
 import type { AnalysisService } from '../vision/service'
 import type { FlashMeter } from '../telemetry/flash'
 import type { BackupService } from '../backup/service'
+import type { DatabaseInspector } from '../db/inspect'
 import type { RestoreClient } from '../backup/restore'
 import type { HomeKitControl } from '../homekit/types'
 import type { BridgeStatus } from '../mqtt/bridge'
@@ -24,6 +25,8 @@ export interface Context {
   autopilot: AutopilotEngine
   /** SD card writes (ADR-0021); reports unavailable off a Pi. */
   flash: FlashMeter
+  /** The Database view's scan; absent in tests. */
+  database?: DatabaseInspector
   /** Present when stills go through the opt-in off-device mirror (the unit; not tests or the demo). */
   mirror?: MirroredSink
   /** Off-card backups (ADR-0021); on the unit only, like the mirror. */

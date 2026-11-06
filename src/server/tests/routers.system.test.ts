@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { BackupService } from '../../backup/service'
 import type { MirroredSink } from '../../camera/mirrorSink'
+import { demoDatabase } from '../../demo/database'
 import type { HalSnapshot } from '../../hardware/types'
 import { SimHal } from '../../hardware/sim'
 import type { HomeKitControl, HomeKitStatus } from '../../homekit/types'
@@ -40,6 +41,30 @@ const backup = (s: { lastSuccess?: { ts: string } | null, stale?: boolean, night
   ({ status: () => ({ lastSuccess: s.lastSuccess ?? null, stale: s.stale ?? false, nightly: { enabled: s.nightly ?? false } }) }) as unknown as BackupService
 const mirror = (s: { enabled: boolean, uploaded?: number, pending?: number, lastError?: string | null }) =>
   ({ status: () => ({ uploaded: 0, pending: 0, failed: 0, lastError: null, lastUploadAt: null, ...s }) }) as unknown as MirroredSink
+
+describe('storage.database', () => {
+  it('reports the scan and runs integrity checks through the inspector', async () => {
+    const { c } = rig({ database: demoDatabase(() => NOW) })
+    const r = await c.storage.database()
+    expect(r.integrity).toBeNull()
+    expect(r.tables.map(t => t.name)).toContain('telemetry')
+    const run = await c.storage.checkDatabase()
+    expect(run).toMatchObject({ ok: true })
+    expect((await c.storage.database()).integrity).toEqual(run)
+  })
+
+  it('says so on a core with no inspector', async () => {
+    const { c } = rig()
+    await expect(c.storage.database()).rejects.toThrow('no database inspector')
+    await expect(c.storage.checkDatabase()).rejects.toThrow('no database inspector')
+  })
+
+  it('is in the REST API, for reads and the integrity check', () => {
+    const paths = openApiDocument('http://localhost:3000/api').paths ?? {}
+    expect(paths['/storage/database']?.get).toBeDefined()
+    expect(paths['/storage/database/integrity']?.post).toBeDefined()
+  })
+})
 
 describe('system.checks', () => {
   it('lists every part of the unit in a fixed order, with the host-only services idle in tests', async () => {

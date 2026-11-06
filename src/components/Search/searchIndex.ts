@@ -4,7 +4,7 @@
  * guides, ranked with BM25.
  */
 import type { LucideIcon } from 'lucide-react'
-import { Archive, BookOpen, CloudUpload, Code, HardDrive, House, Info, KeyRound, Monitor, Radio, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
+import { Archive, BookOpen, CloudUpload, Code, Database, HardDrive, House, Info, KeyRound, Monitor, Radio, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
 import { navItems } from '@/src/components/AppShell/navItems'
 import { createBm25Index, tokenize } from '@/src/lib/bm25'
 import { DOCS_BASE, type DocsIndex } from './docsIndex'
@@ -82,6 +82,7 @@ export function buildSearchEntries(live: LiveData = {}): SearchEntry[] {
   }))
   const sub: SearchEntry[] = [
     { id: 'page:/wifi', title: 'Wi-Fi', crumbs: ['Settings'], description: 'Join a network, or open the setup hotspot', keywords: 'wifi wireless network hotspot ssid password join', href: '/wifi', icon: Wifi },
+    { id: 'page:/database', title: 'Database', crumbs: ['Settings', 'SD card'], description: 'What is writing to the SD card: size, rows and writes per table', keywords: 'database sqlite wal tables rows writes integrity migrations sd card flash', href: '/database', icon: Database },
     { id: 'page:/kiosk', title: 'Kiosk', crumbs: [], description: 'Big numbers for a wall display', keywords: 'kiosk wall display fullscreen tablet', href: '/kiosk', icon: Monitor, boost: 0.8 },
     { id: 'page:/api/openapi.json', title: 'REST API', crumbs: ['Settings', 'API key'], description: 'The OpenAPI description of every endpoint', keywords: 'openapi swagger rest api endpoints docs', href: '/settings#api', icon: Code, boost: 0.7 },
   ]

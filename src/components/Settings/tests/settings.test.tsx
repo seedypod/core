@@ -53,6 +53,11 @@ afterEach(cleanup)
 const field = (label: string) => screen.getByText(label).closest('div')?.parentElement?.querySelector('input') as HTMLInputElement
 
 describe('Settings: storage', () => {
+  it('links the SD card card to the Database view without scanning from Settings', () => {
+    render(<SettingsPage />)
+    expect(screen.getByRole('link', { name: 'Open' }).getAttribute('href')).toBe('/database')
+  })
+
   it('shows the since-boot write rate, the card and its yearly full-card writes', () => {
     data.set('flash', { available: true, device: 'mmcblk0', cardBytes: 32e9, sinceBootBytes: 1.5e9, uptimeS: 2 * 3600, bytesPerDay: 0.8e9, basis: 'boot', windowDays: null, lastSampleAt: null })
     render(<SettingsPage />)

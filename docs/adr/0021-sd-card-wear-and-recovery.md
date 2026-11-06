@@ -74,6 +74,36 @@ writes per day under **Settings → Storage**, as sleepypod does. Until a day
 of samples exists, it shows the average since boot. With that
 number, an owner can see whether a card's lifespan is years or decades.
 
+**Database view.** The meter says how much the card takes, not who is writing.
+**Settings → SD card → Database** answers that for `seedypod.db`, after
+sleepypod's System → Databases: file and WAL size, journal mode, migrations, an
+on-demand `quick_check`, and each table's rows, bytes, last write and rows per
+hour over 24 h, busiest first.
+
+- **Metadata only.** It has no row browser and takes no SQL, because rows hold
+  Wi-Fi details and bucket credentials. sleepypod's row browser wasn't ported.
+- **Off the event loop.** A scan runs on a worker thread that exits when done,
+  on its own read-only connection. A Pi Zero W has one core, so the thread runs
+  at nice 19 and core and `hald` pre-empt it.
+- **One pass over the file.** `dbstat` gives bytes and exact row counts together.
+  Hourly counts walk back from the newest rowid and stop after 1000 rows older
+  than the window, because telemetry has no index on time alone. Without `dbstat`
+  the view falls back to `COUNT(*)` and shows no sizes.
+- **Cached.** A report lives for 5 minutes, or 20 times the last scan's length if
+  that is longer, so a growing file can't take more than 1/20th of the time. The
+  page only scans when it's open, so visiting Settings costs nothing.
+- **No writes.** Nothing is stored; the last integrity result is held in memory.
+  `temp_store = MEMORY` keeps sorts off the card. The connection leaves the
+  database and `-wal` untouched. A reader can move a mark in `-shm`, a page core
+  dirties on every commit, so it adds no page to the card's writeback. Statements
+  run in their own read transactions, since one held across the scan would stop
+  checkpoints from resetting the WAL.
+
+Counts are rows by the time stored in them, not commits, so batched writes show
+as their rows. Tables dated by `updatedAt` count rows changed, a floor. Updates
+that move no time column don't show, and a table with no time column reports no
+count at all.
+
 Rejected for now: a read-only root (overlayroot). It removes nearly all wear,
 but it makes every update and config change a remount dance. Revisit it if
 the measured GB/day turns out high.
