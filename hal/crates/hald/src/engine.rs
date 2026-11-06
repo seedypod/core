@@ -1289,9 +1289,10 @@ mod tests {
 
     #[test]
     fn quiet_logging_keeps_pump_faults_refusals_and_alerts_and_drops_the_routine() {
-        let mut r = rig(vec![ActuatorId::Pump], false, "quiet");
-        r.engine.boot(r.now);
-        let log = quiet_log(|| {
+        let dry_run_then_refusal = |tag: &str, inside: &dyn Fn()| {
+            let mut r = rig(vec![ActuatorId::Pump], false, tag);
+            r.engine.boot(r.now);
+            inside();
             r.engine
                 .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
             r.world.lock().unwrap().water_distance_cm = 17.0;
@@ -1299,12 +1300,16 @@ mod tests {
             r.engine.tick(r.now);
             r.engine
                 .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
-        });
+            let _ = std::fs::remove_dir_all(&r.dir);
+        };
+        // tracing caches whether a log line is wanted, and other tests running at the same
+        // time can cache "no". So this run registers every line, and the rebuild below resets them.
+        dry_run_then_refusal("quiet-warm", &|| {});
+        let log = quiet_log(|| dry_run_then_refusal("quiet", &tracing::callsite::rebuild_interest_cache));
         assert!(log.contains("pump stopped by guard"), "{log}");
         assert!(log.contains("alert raised"), "{log}");
         assert!(log.contains("pump command refused"), "{log}");
         assert!(!log.contains("pump run accepted"), "{log}");
-        let _ = std::fs::remove_dir_all(&r.dir);
     }
 
     #[test]
