@@ -439,6 +439,21 @@ describe('SqliteStore on disk', () => {
       store.close()
     }))
 
+    it('refuses a backup that would leave held rows out, until they reach the card', onDisk(async ({ root, store, card }) => {
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      failWrites(card)
+      store.telemetry.add([point(1), point(2)])
+      const dest = join(root, 'copy.db')
+      await expect(store.backupTo(dest)).rejects.toThrow('the card refused 2 telemetry rows')
+      expect(existsSync(dest)).toBe(false)
+      card.exec('DROP TRIGGER card_failed')
+      await store.backupTo(dest)
+      const copy = new Database(dest)
+      expect(stored(copy)).toBe(2)
+      copy.close()
+      store.close()
+    }))
+
     it('keeps rows through a failed write and lands them on the next one', onDisk(({ store, card }) => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       failWrites(card)
@@ -469,6 +484,38 @@ describe('SqliteStore on disk', () => {
       expect(rows).toHaveLength(MAX_HELD_TELEMETRY)
       expect(rows[0]?.value).toBe(11)
       expect(rows.at(-1)?.value).toBe(MAX_HELD_TELEMETRY + 10)
+      store.close()
+    }))
+
+    it('tries a full buffer once, then leaves retries to the timer until a flush lands', onDisk(({ store, card }) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const fill = () => store.telemetry.add(Array.from({ length: MAX_HELD_TELEMETRY }, (_, i) => point(i)))
+      failWrites(card)
+      fill()
+      expect(warn).toHaveBeenCalledTimes(1)
+      for (let i = 0; i < 20; i++) store.telemetry.add([point(MAX_HELD_TELEMETRY + i)])
+      expect(warn).toHaveBeenCalledTimes(1)
+      const held = store.telemetry.range('air_temp', from, to, Number.MAX_SAFE_INTEGER)
+      expect(held).toHaveLength(MAX_HELD_TELEMETRY)
+      expect(held.at(-1)?.value).toBe(MAX_HELD_TELEMETRY + 19)
+
+      // The timer's flush isn't gated, and a failure leaves the gate shut.
+      store.telemetry.flush()
+      expect(warn).toHaveBeenCalledTimes(2)
+      store.telemetry.add([point(MAX_HELD_TELEMETRY + 20)])
+      expect(warn).toHaveBeenCalledTimes(2)
+
+      card.exec('DROP TRIGGER card_failed')
+      store.telemetry.flush()
+      expect(stored(card)).toBe(MAX_HELD_TELEMETRY)
+
+      // A flush that lands opens the gate, so a full buffer writes itself again.
+      fill()
+      expect(stored(card)).toBe(2 * MAX_HELD_TELEMETRY)
+      failWrites(card)
+      fill()
+      expect(warn).toHaveBeenCalledTimes(3)
+      card.exec('DROP TRIGGER card_failed')
       store.close()
     }))
 

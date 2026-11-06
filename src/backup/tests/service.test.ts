@@ -17,10 +17,10 @@ function enoent(path: string) {
 }
 
 /** A unit's files in memory; `denied` paths fail like a file core may not read. */
-function sources(files: Record<string, string>, denied: string[] = []): BackupSources {
+function sources(files: Record<string, string>, denied: string[] = [], database: BackupSources['database'] = async () => enc.encode('SQLite format 3\0…')): BackupSources {
   return {
     paths: { etcDir: '/etc/seedypod', stateDir: '/var/lib/seedypod', mosquittoPasswd: '/etc/mosquitto/seedypod.passwd', capturesDir: './data/captures' },
-    database: async () => enc.encode('SQLite format 3\0…'),
+    database,
     systemFiles: () => [
       { name: 'etc/seedypod/hal.toml', path: '/etc/seedypod/hal.toml', optional: false },
       { name: 'etc/mosquitto/seedypod.passwd', path: '/etc/mosquitto/seedypod.passwd', optional: true },
@@ -54,7 +54,7 @@ function fakeBucket() {
   return { objects, remote, bucket }
 }
 
-function rig(opts: { files?: Record<string, string>, denied?: string[], mirror?: boolean, at?: string } = {}) {
+function rig(opts: { files?: Record<string, string>, denied?: string[], mirror?: boolean, at?: string, database?: () => Promise<Uint8Array> } = {}) {
   let now = new Date(opts.at ?? '2026-10-31T12:00:00Z')
   const store = new MemoryStore()
   const events = createEventBus()
@@ -66,9 +66,20 @@ function rig(opts: { files?: Record<string, string>, denied?: string[], mirror?:
   if (opts.mirror) store.settings.update({ mirrorEndpoint: cfg.endpoint, mirrorBucket: cfg.bucket, mirrorAccessKeyId: cfg.accessKeyId, mirrorSecretAccessKey: cfg.secretAccessKey })
   const mirror = new MirroredSink({ local: new MemorySink(), store, events, remote: () => b.remote, retryDelayMs: 1 })
   const files = opts.files ?? { '/etc/seedypod/hal.toml': 'unit_id = "kitchen"\n', '/var/lib/seedypod/state.json': '{"light":40}' }
-  const svc = new BackupService({ store, hal, events, version: 'main@abc1234', sources: sources(files, opts.denied), mirror, bucket: () => b.bucket, now: () => now })
+  const svc = new BackupService({ store, hal, events, version: 'main@abc1234', sources: sources(files, opts.denied, opts.database), mirror, bucket: () => b.bucket, now: () => now })
   return { svc, store, b, cfg, seen, advance: (ms: number) => (now = new Date(now.getTime() + ms)), at: (iso: string) => (now = new Date(iso)) }
 }
+
+describe('a database that can\'t be copied', () => {
+  it('fails the bucket backup with the reason, uploads nothing, and fails a download', async () => {
+    const refused = 'the card refused 2 telemetry rows, so a backup would leave them out'
+    const { svc, store, b } = rig({ mirror: true, database: () => Promise.reject(new Error(refused)) })
+    expect(await svc.backupToBucket()).toMatchObject({ ok: false, destination: 'bucket', detail: refused })
+    expect(b.objects.size).toBe(0)
+    await expect(svc.download({ photos: false })).rejects.toThrow(refused)
+    expect(store.backups.lastSuccess()).toBeNull()
+  })
+})
 
 describe('bundle names', () => {
   it('sort by time within a unit and parse back', () => {

@@ -45,6 +45,8 @@ export class SqliteStore implements Store {
   private readonly db
   /** Rows waiting for the next flush (ADR-0021). */
   private heldTelemetry: TelemetryPoint[] = []
+  /** A full buffer's own flush failed: new samples leave retrying to the timer until a flush lands. */
+  private capFlushFailed = false
   /** Newest detail of active alerts whose rows still hold an older one, by alert id. */
   private readonly liveDetail = new Map<number, string>()
 
@@ -206,7 +208,10 @@ export class SqliteStore implements Store {
     add: (pts: TelemetryPoint[]): void => {
       this.heldTelemetry.push(...pts)
       if (this.heldTelemetry.length < MAX_HELD_TELEMETRY) return
-      this.telemetry.flush()
+      if (!this.capFlushFailed) {
+        this.telemetry.flush()
+        this.capFlushFailed = this.heldTelemetry.length > 0
+      }
       // A card that refuses writes must not grow memory: the oldest rows go first.
       this.heldTelemetry.splice(0, this.heldTelemetry.length - MAX_HELD_TELEMETRY)
     },
@@ -222,6 +227,7 @@ export class SqliteStore implements Store {
       try {
         this.db.insert(t.telemetry).values(this.heldTelemetry).run()
         this.heldTelemetry = []
+        this.capFlushFailed = false
       }
       catch (e) {
         console.warn(`telemetry flush failed, holding ${this.heldTelemetry.length} rows: ${(e as Error).message}`)
@@ -254,6 +260,8 @@ export class SqliteStore implements Store {
    */
   async backupTo(path: string): Promise<void> {
     this.telemetry.flush()
+    // A copy without these rows would look fine and lose them on a restore.
+    if (this.heldTelemetry.length > 0) throw new Error(`the card refused ${this.heldTelemetry.length} telemetry rows, so a backup would leave them out`)
     await this.sqlite.backup(path)
     const copy = new Database(path)
     try {
