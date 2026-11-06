@@ -392,7 +392,10 @@ BOOT=1
 PREFIX=/usr/local/bin
 CONF_DIR=/etc/seedypod
 STATE_DIR=/var/lib/seedypod
-SERVICE_USER=seedypod
+# The OS image names this account seedypod-hal, so that a login can be called
+# seedypod. A rerun keeps whatever hald already runs as.
+SERVICE_USER="${SEEDYPOD_SERVICE_USER:-$(sed -n 's/^User=//p' /etc/systemd/system/hald.service 2>/dev/null | head -1 || true)}"
+SERVICE_USER="${SERVICE_USER:-seedypod}"
 
 while [ $# -gt 0 ]; do
   case "$1" in

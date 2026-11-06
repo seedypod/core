@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/sleepypod/core/blob/dev/docs/adr/0018
 
 # ADR 0021: SD card wear and fast recovery
 
-**Status:** Accepted (phases 1–3; phase 4 proposed)
+**Status:** Accepted (phases 1–3; phase 4 built, see [the amendment](#amendment-2026-11-06-phase-4-as-built))
 **Date:** 2026-10-31
 
 ## Context
@@ -342,6 +342,47 @@ Each phase ships on its own and is useful alone.
   open to the LAN unless an API key is set. A restored `hal.toml` brings its
   `[limits]` with it, so a restore can change the pump limits within what
   `hald` accepts. Every pump run stays bounded and goes through `PumpGuard`.
+
+## Amendment 2026-11-06: phase 4 as built
+
+Phase 4 shipped as `seedypod-os.img.xz`, and differs from what's proposed above in
+three ways, all because of what the first real install found.
+
+- **32-bit, not arm64.** Gardyn's Pi Zero W can't boot a 64-bit OS and gives no
+  error, so an arm64 image would fail on the board it most needs to serve. The armhf
+  image runs on a Zero W and a Zero 2 W. It stays on Node 22 even on a Zero 2 W, where
+  a 64-bit install by script gets Node 24.
+- **The official image customised in a chroot, not `rpi-image-gen` or `pi-gen`.** Both
+  generators build the OS again from packages, so what they make isn't what Raspberry
+  Pi ships, and they'd have to rebuild the first-boot behaviour the Imager flow relies
+  on: cloud-init renaming `pi`, growing the root partition, generating SSH host keys.
+  Starting from the published Lite image, pinned by sha256 in
+  `scripts/image/base.env`, keeps exactly that flow. It builds in minutes rather than
+  most of an hour, and moving to a new Raspberry Pi OS is two lines. Packages added
+  during the build come from the live archive, so two builds of one commit aren't
+  byte-identical; `seedypod-os-manifest.txt` records what went in.
+- **The installers build it.** `scripts/image/bake` runs `scripts/install-hal` and
+  `scripts/install` inside the image under emulation, from the release's own tarball.
+  So what they set up lands on the image with no second copy to keep in step, and
+  only what can't happen in a chroot moves to first boot (`scripts/image/first-boot`):
+  the unit id, unblocking Wi-Fi, the SD card settings, whose checks need a running
+  system, and camera names, which it retries each boot until the USB hub shows up.
+
+Two accounts differ from a scripted install. The login doesn't exist until first boot,
+so core can't run as it, and gets `seedypod-core`. `hald` gets `seedypod-hal`, because
+Raspberry Pi OS makes the login by renaming `pi`, which would fail if the name were
+taken; that leaves `seedypod` free for anyone who types it into Imager. `scripts/install`
+and `scripts/install-hal` keep these accounts on a rerun, and the first-boot files root
+runs are copied out of `/opt/seedypod`, which `seedypod-core` owns.
+
+There's no default login and no default password. Imager sets the login, and a card
+with none works from the app alone, with `pi` locked. The setup hotspot still needs
+the button: a fresh card doesn't open a network of its own accord.
+
+The image is built on each push to `dev`, on each release, and on pull requests that
+touch the build. It runs as a job after the release job and is never cancelled, like
+`sqlite-armv6`, and `dev-release.yml` leaves the last image in place while the next
+one builds, so `dev-latest`'s image can lag its tarball by one build.
 
 ## Recommended card
 

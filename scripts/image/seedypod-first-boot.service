@@ -1,0 +1,12 @@
+[Unit]
+Description=seedypod: finish this unit on its first boot
+Before=hald.service seedypod-core.service
+After=swap.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/seedypod-first-boot
+
+[Install]
+WantedBy=multi-user.target

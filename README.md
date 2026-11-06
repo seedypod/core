@@ -50,7 +50,7 @@ A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seed
 
 ## Install
 
-Back up the stock microSD card first, then follow [docs/INSTALLATION.md](docs/INSTALLATION.md). On a fresh Raspberry Pi OS Lite, install the hardware daemon, then core:
+Back up the stock microSD card first, then follow [docs/INSTALLATION.md](docs/INSTALLATION.md). The quickest way is to [flash seedypod OS](docs/INSTALLATION.md#flash-seedypod-os-recommended), which has everything on it. On a fresh Raspberry Pi OS Lite, or to update, install the hardware daemon, then core:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash

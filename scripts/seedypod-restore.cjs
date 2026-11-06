@@ -252,11 +252,11 @@ function settle(file, kind) {
     else own(uid, gid)
   }
   else if (kind === 'hal') {
-    own(0, lookup('/etc/group', 'seedypod') ?? 0)
+    own(0, ofDir(P.etc)[1])
     fs.chmodSync(file, 0o644)
   }
   else if (kind === 'passwd') {
-    own(lookup('/etc/passwd', 'mosquitto') ?? 0, lookup('/etc/group', 'seedypod') ?? 0)
+    own(lookup('/etc/passwd', 'mosquitto') ?? 0, ofDir(P.etc)[1])
     fs.chmodSync(file, 0o640)
   }
   else if (kind === 'homekit') {

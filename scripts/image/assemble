@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Runs in scripts/build-image's privileged container: unpacks the base image, runs
+# scripts/image/bake inside it under emulation, checks it, shrinks and compresses it.
+set -euo pipefail
+
+src=/seedypod
+work=/tmp/image
+root=/mnt/image
+img="$work/os.img"
+# Room for the build. The spare is cut off again, bar what first boot needs before it
+# grows the root partition to fill the card.
+grow=1536M
+spare_blocks=32768
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -q
+apt-get install -y -q --no-install-recommends ca-certificates xz-utils fdisk e2fsprogs dosfstools zerofree jq binutils
+
+mkdir -p "$work" "$root"
+xz -dc -T0 "$src/base.img.xz" > "$img"
+
+part() { sfdisk -J "$img" | jq -r ".partitiontable.partitions[$1].$2"; }
+loop_root() { losetup -f --show -o "$(($(part 1 start) * 512))" --sizelimit "$(($(part 1 size) * 512))" "$img"; }
+loop_boot() { losetup -f --show -o "$(($(part 0 start) * 512))" --sizelimit "$(($(part 0 size) * 512))" "$img"; }
+
+mount_image() {
+  root_dev="$(loop_root)"
+  boot_dev="$(loop_boot)"
+  mount -o "${1:-rw}" "$root_dev" "$root"
+  mount -o "${1:-rw}" "$boot_dev" "$root/boot/firmware"
+  mount -t proc proc "$root/proc"
+  mount --rbind /dev "$root/dev"
+  mount --make-rslave "$root/dev"
+  mount -t tmpfs tmpfs "$root/tmp"
+  mount -t tmpfs tmpfs "$root/run"
+}
+unmount_image() {
+  sync
+  umount -R "$root"
+  losetup -d "$boot_dev" "$root_dev"
+}
+in_image() {
+  chroot "$root" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    QEMU_CPU=arm1176 LC_ALL=C.UTF-8 "$@"
+}
+
+# ---- room to build --------------------------------------------------------------
+truncate -s "+$grow" "$img"
+echo ', +' | sfdisk -q --no-reread --no-tell-kernel -N 2 "$img"
+root_dev="$(loop_root)"
+e2fsck -fy "$root_dev" || [ $? -le 1 ]
+resize2fs "$root_dev"
+losetup -d "$root_dev"
+
+# ---- bake -----------------------------------------------------------------------
+mount_image
+mkdir -p "$root/tmp/seedypod"
+cp -rf "$src/scripts/image" "$root/tmp/seedypod/"
+cp -rf "$src/assets" "$root/tmp/seedypod/assets"
+tar xzf "$src/assets/seedypod-core.tar.gz" -C "$root/tmp/seedypod" ./scripts/install ./scripts/install-hal
+mv -f "$root/tmp/seedypod/scripts/install" "$root/tmp/seedypod/scripts/install-hal" "$root/tmp/seedypod/image/"
+# Services stay down while it's a chroot, and DNS comes from this container.
+printf '#!/bin/sh\nexit 101\n' > "$root/usr/sbin/policy-rc.d"
+chmod 0755 "$root/usr/sbin/policy-rc.d"
+mv -f "$root/etc/resolv.conf" "$root/etc/resolv.conf.seedypod-bak"
+cp -f /etc/resolv.conf "$root/etc/resolv.conf"
+
+in_image bash /tmp/seedypod/image/bake "$BRANCH" "$COMMIT"
+in_image dpkg-query -W -f '${Package} ${Version}\n' > "$work/packages.txt"
+cp -f "$root/usr/local/share/seedypod/image" "$work/image-info"
+tar xzf "$src/assets/seedypod-core.tar.gz" -C "$work" ./web/dist/brand/icon-64.png
+
+rm -f "$root/usr/sbin/policy-rc.d" "$root/etc/resolv.conf"
+mv -f "$root/etc/resolv.conf.seedypod-bak" "$root/etc/resolv.conf"
+unmount_image
+
+# ---- shrink ---------------------------------------------------------------------
+root_dev="$(loop_root)"
+e2fsck -fy "$root_dev" || [ $? -le 1 ]
+resize2fs -M "$root_dev"
+block_size="$(dumpe2fs -h "$root_dev" 2>/dev/null | awk '/^Block size:/ { print $3 }')"
+blocks="$(dumpe2fs -h "$root_dev" 2>/dev/null | awk '/^Block count:/ { print $3 }')"
+resize2fs "$root_dev" "$((blocks + spare_blocks))"
+zerofree "$root_dev"
+losetup -d "$root_dev"
+sectors="$(((blocks + spare_blocks) * block_size / 512))"
+echo ", $sectors" | sfdisk -q --no-reread --no-tell-kernel -N 2 "$img"
+truncate -s "$((($(part 1 start) + sectors) * 512))" "$img"
+
+# ---- check what will ship -------------------------------------------------------
+mount_image ro
+mkdir -p "$root/tmp/seedypod"
+cp -f "$src/scripts/image/verify" "$root/tmp/seedypod/verify"
+in_image bash /tmp/seedypod/verify
+unmount_image
+
+# ---- publish --------------------------------------------------------------------
+extract_size="$(stat -c %s "$img")"
+extract_sha256="$(sha256sum "$img" | cut -d' ' -f1)"
+xz -T0 -6 -c "$img" > "$src/out/seedypod-os.img.xz"
+cd "$src/out"
+sha256sum seedypod-os.img.xz > seedypod-os.img.xz.sha256
+cp -f "$work/web/dist/brand/icon-64.png" seedypod-os-icon.png
+{ cat "$work/image-info"; echo; cat "$work/packages.txt"; } > seedypod-os-manifest.txt
+jq -n --arg url "$URL_BASE/seedypod-os.img.xz" --arg icon "$URL_BASE/seedypod-os-icon.png" \
+  --arg date "$(date -u +%F)" --arg branch "$BRANCH" --arg commit "${COMMIT:0:7}" \
+  --argjson extract_size "$extract_size" --arg extract_sha256 "$extract_sha256" \
+  --argjson download_size "$(stat -c %s seedypod-os.img.xz)" --arg download_sha256 "$(cut -d' ' -f1 seedypod-os.img.xz.sha256)" \
+  -f "$src/scripts/image/imager.jq" > seedypod-os-imager.json

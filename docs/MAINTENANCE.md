@@ -240,13 +240,16 @@ Power the unit off at the wall before opening it.
 
 - **SD card.** With a recent backup (in the bucket, or a downloaded file),
   replacing a dead card takes about fifteen minutes:
-  1. Flash Raspberry Pi OS Lite onto a new card, ideally a high-endurance
-     one, as in [Installation](INSTALLATION.md#1-flash), with the same
-     hostname and Wi-Fi.
-  2. Run `install-hal`, then `install`.
-  3. Open `http://seedypod.local:3000`, choose **Restore from a backup**, and
-     pick the latest. Or skip the browser:
-     `curl -fsSL …/scripts/install | bash -s -- --restore <file|url>`.
+  1. Flash [seedypod OS](INSTALLATION.md#flash-seedypod-os-recommended) onto a
+     new card, ideally a high-endurance one, with the same Wi-Fi.
+  2. Put the card in and power on.
+  3. Open `http://seedypod.local/`, choose **Restore from a backup**, and pick
+     the latest.
+
+  On a card you're setting up by script, flash Raspberry Pi OS Lite
+  ([step 1](INSTALLATION.md#1-flash)), run `install-hal`, then `install`, and
+  restore the same way, or skip the browser with
+  `curl -fsSL …/scripts/install | bash -s -- --restore <file|url>`.
 
   The unit comes back with everything listed under
   [Restoring a backup](#restoring-a-backup). Photos come back too if the

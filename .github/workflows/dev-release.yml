@@ -9,7 +9,7 @@ on:
       - dev
 
 # Concurrency is per job, not per workflow: a new push cancels everything here
-# except sqlite-armv6, which can run for longer than the gap between pushes.
+# except sqlite-armv6 and os-image, which can run for longer than the gap between pushes.
 
 permissions:
   contents: write
@@ -111,6 +111,12 @@ jobs:
           fi
           [ "$(file -b --mime-type "$RUNNER_TEMP/tarball/web/dist/brand/icon-64.png")" = image/png ]
 
+      - uses: actions/upload-artifact@v6
+        with:
+          name: seedypod-core
+          path: seedypod-core.tar.gz
+          retention-days: 1
+
       - name: Download hald binaries
         uses: actions/download-artifact@v8
         with:
@@ -129,17 +135,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete dev-latest --yes 2>/dev/null || true
-          git push -d --no-verify origin refs/tags/dev-latest 2>/dev/null || true
           git tag -f dev-latest
           git push -f --no-verify origin refs/tags/dev-latest
-          gh release create dev-latest seedypod-core.tar.gz release-assets/* \
-            --target "${{ github.sha }}" \
-            --title "Dev (latest)" \
-            --prerelease \
-            --notes "Rolling pre-built release from the \`dev\` branch.
+          notes="Rolling pre-built release from the \`dev\` branch.
 
           **Commit:** ${{ github.sha }}
           **Title:** $(git log -1 --format=%s)
 
-          Install with \`scripts/install-hal --version dev-latest\`, then \`scripts/install --branch dev\`."
+          Flash \`seedypod-os.img.xz\`, or install with \`scripts/install-hal --version dev-latest\`, then \`scripts/install --branch dev\`. The image lags a push by as long as it takes to build: \`seedypod-os-manifest.txt\` says which commit it's from."
+          if gh release view dev-latest >/dev/null 2>&1; then
+            # Everything but the image, which os-image replaces once it's built. Deleting
+            # it here would leave a gap on every push, and no image at all on a busy day.
+            gh release view dev-latest --json assets --jq '.assets[].name' | grep -v '^seedypod-os' \
+              | xargs -r -n1 gh release delete-asset dev-latest --yes
+            gh release upload dev-latest seedypod-core.tar.gz release-assets/* --clobber
+            gh release edit dev-latest --target "${{ github.sha }}" --title "Dev (latest)" --prerelease --notes "$notes"
+          else
+            gh release create dev-latest seedypod-core.tar.gz release-assets/* \
+              --target "${{ github.sha }}" --title "Dev (latest)" --prerelease --notes "$notes"
+          fi
+
+  os-image:
+    needs: [release]
+    uses: ./.github/workflows/os-image.yml
+    with:
+      tag: dev-latest
+      branch: dev

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Runs inside the finished image under ARM emulation, on a read-only mount. A failure
+# here stops the build: this is the last look before anyone flashes it.
+set -uo pipefail
+
+failed=0
+check() {
+  local what="$1"; shift
+  if "$@" >/dev/null 2>&1; then echo "ok    $what"; else echo "FAIL  $what" >&2; failed=1; fi
+}
+no() { ! "$@"; }
+enabled() { [ "$(systemctl is-enabled "$1" 2>/dev/null)" = enabled ]; }
+locked() { [ "$(getent shadow "$1" | cut -d: -f2 | cut -c1)" != '$' ]; }
+armv6() { readelf -A "$1" | grep -q 'Tag_CPU_arch: v6'; }
+
+sqlite=/opt/seedypod/node_modules/better-sqlite3
+
+check "the CPU here is ARMv6" test "$(uname -m)" = armv6l
+check "node is 22.23.4" test "$(node -v)" = v22.23.4
+check "node is the ARMv6 build" armv6 "$(readlink -f /usr/local/bin/node)"
+check "hald runs" hald --version
+check "hald is built for ARMv6" armv6 /usr/local/bin/hald
+check "better-sqlite3 is the ARMv6 build" armv6 "$sqlite/build/Release/better_sqlite3.node"
+check "better-sqlite3 loads and writes" bash -c "cd /opt/seedypod && node -e \"new (require('better-sqlite3'))(':memory:').exec('create table t (x)')\""
+check "core's bundle is there" test -f /opt/seedypod/server/dist/index.js
+
+for unit in seedypod-first-boot hald seedypod-core seedypod-port80 mosquitto; do
+  check "$unit is enabled" enabled "$unit.service"
+done
+check "first boot comes before hald and core" grep -q '^Before=hald.service seedypod-core.service' /etc/systemd/system/seedypod-first-boot.service
+check "root owns what first boot runs" test "$(stat -c %U /usr/local/sbin/seedypod-first-boot /usr/local/lib/seedypod/install /usr/local/lib/seedypod/install-hal | sort -u)" = root
+check "core waits for first boot to fill in its unit id" grep -q 'HAL_UNIT_ID=__UNIT_ID__' /etc/systemd/system/seedypod-core.service
+check "core runs as seedypod-core" grep -q '^User=seedypod-core$' /etc/systemd/system/seedypod-core.service
+check "hald runs as seedypod-hal" grep -q '^User=seedypod-hal$' /etc/systemd/system/hald.service
+check "seedypod-core owns /opt/seedypod" test "$(stat -c %U /opt/seedypod/package.json)" = seedypod-core
+check "seedypod-core can read hald's files" bash -c 'id -nG seedypod-core | grep -qw seedypod-hal'
+check "seedypod-core may manage Wi-Fi" grep -q 'subject.user === "seedypod-core"' /etc/polkit-1/rules.d/50-seedypod-network.rules
+check "seedypod-core may run the restore helper" grep -q '^seedypod-core ALL=(root) NOPASSWD: /usr/local/sbin/seedypod-restore$' /etc/sudoers.d/seedypod-restore
+
+check "I²C is on" grep -q '^dtparam=i2c_arm=on' /boot/firmware/config.txt
+check "hardware PWM is on" grep -q '^dtoverlay=pwm,pin=18,func=2' /boot/firmware/config.txt
+check "not set to boot a 64-bit kernel" no grep -q '^arm_64bit=1' /boot/firmware/config.txt
+check "the ARMv6 kernel is there" test -f /boot/firmware/kernel.img
+check "first boot grows the root partition" grep -q '\bresize\b' /boot/firmware/cmdline.txt
+check "the login logo is in place" test -x /usr/local/share/seedypod/login-logo
+check "the port 80 forward is in place" test -f /usr/local/share/seedypod/port80.nft
+check "Mosquitto listens on loopback only" grep -q '^listener 1883 127.0.0.1$' /etc/mosquitto/conf.d/seedypod.conf
+check "the hostname is seedypod" test "$(cat /etc/hostname)" = seedypod
+
+# Nothing that belongs to one unit, and nothing anyone could log in with.
+check "no SSH host keys" no compgen -G '/etc/ssh/ssh_host_*'
+check "machine-id is unset, so this counts as a first boot" test "$(cat /etc/machine-id)" = uninitialized
+check "no database" no compgen -G '/opt/seedypod/data/*'
+check "no broker password" test ! -e /etc/mosquitto/seedypod.passwd
+check "no Wi-Fi network" no compgen -G '/etc/NetworkManager/system-connections/*'
+check "no cloud-init state" test ! -e /var/lib/cloud/instance
+check "no account has a password" no bash -c "getent shadow | cut -d: -f2 | grep -q '^\\\$'"
+check "no account called seedypod" no getent passwd seedypod
+check "pi can't log in" grep -q '^pi:.*:/usr/sbin/nologin$' /etc/passwd
+check "no login in user-data" no grep -qE '^users?:' /boot/firmware/user-data
+
+[ "$failed" -eq 0 ] || { echo "the image failed its checks" >&2; exit 1; }
+echo "✓ image checks passed"
