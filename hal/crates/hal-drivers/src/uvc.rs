@@ -209,7 +209,12 @@ pub struct UvcCamera<R: CommandRunner> {
     scratch: PathBuf,
     /// The last capture used up its attempts.
     failing: bool,
+    fallback_check: FallbackCheck,
 }
+
+/// Decides whether `fallback` really is this camera. `/dev/videoN` numbers shift
+/// when a camera fails to bind, so the answer can change between two attempts.
+pub type FallbackCheck = Box<dyn Fn(&Path) -> Result<(), DeviceError> + Send>;
 
 impl<R: CommandRunner> UvcCamera<R> {
     /// `scratch` is a writable directory for the intermediate file.
@@ -220,7 +225,27 @@ impl<R: CommandRunner> UvcCamera<R> {
             runner,
             scratch: scratch.into(),
             failing: false,
+            fallback_check: Box::new(|_| Ok(())),
         }
+    }
+
+    /// Ask `check` about the fallback each time it is about to be used.
+    pub fn with_fallback_check(
+        mut self,
+        check: impl Fn(&Path) -> Result<(), DeviceError> + Send + 'static,
+    ) -> Self {
+        self.fallback_check = Box::new(check);
+        self
+    }
+
+    /// The node to capture from now. Called for every attempt: a camera can drop
+    /// off the bus mid-retry, and its fallback may by then be the other camera.
+    fn node(&self) -> Result<PathBuf, DeviceError> {
+        let node = self.cfg.resolve().ok_or(DeviceError::NotPresent)?;
+        if node != self.cfg.device {
+            (self.fallback_check)(node)?;
+        }
+        Ok(node.to_path_buf())
     }
 
     fn out_path(&self) -> PathBuf {
@@ -280,9 +305,7 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
         let mut last = None;
         for attempt in 1..=attempts {
             // Looked up each time: a camera that drops off the bus mid-retry is missing, not failing.
-            let Some(device) = self.cfg.resolve().map(Path::to_path_buf) else {
-                return Err(DeviceError::NotPresent);
-            };
+            let device = self.node()?;
             match self.attempt(&device) {
                 Ok(bytes) => {
                     if attempt > 1 || self.failing {
@@ -725,6 +748,68 @@ mod tests {
         // The stable name wins as soon as it exists.
         cfg.device = std::env::temp_dir();
         assert_eq!(cfg.resolve(), Some(std::env::temp_dir().as_path()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// `upper` on a stable link with a fallback node, both real paths.
+    fn with_fallback(dir: &Path, runs: Vec<Run>) -> (UvcCamera<ScriptedRunner>, PathBuf) {
+        let (device, fallback) = (dir.join("camera-upper"), dir.join("video0"));
+        std::fs::create_dir_all(&device).unwrap();
+        std::fs::create_dir_all(&fallback).unwrap();
+        let mut c = cfg(&device);
+        c.fallback = Some(fallback);
+        (UvcCamera::new("upper", c, scripted(runs), dir), device)
+    }
+
+    #[test]
+    fn a_fallback_is_checked_on_every_attempt_not_just_the_first() {
+        let dir = scratch("midretry");
+        let device = dir.join("camera-upper");
+        // The first attempt reads the stable link, gets a bad frame, and the camera drops off.
+        let drops_off = Run {
+            raw: Some(vec![0x12, 0x34]),
+            unplugs: Some(device.clone()),
+            ..good()
+        };
+        let (cam, _) = with_fallback(&dir, vec![drops_off]);
+        let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = asked.clone();
+        let mut cam = cam.with_fallback_check(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Err(DeviceError::NotPresent)
+        });
+        // video0 is the other camera now: no second run, and nothing saved under this name.
+        assert!(matches!(cam.capture(), Err(DeviceError::NotPresent)));
+        assert_eq!(cam.runner.calls, 1);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::Relaxed), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_stable_link_needs_no_check_and_a_good_fallback_is_used() {
+        let dir = scratch("checked");
+        let (cam, _) = with_fallback(&dir, vec![good()]);
+        let mut cam = cam.with_fallback_check(|_| panic!("the stable link is enough"));
+        assert!(cam.capture().is_ok());
+
+        let (cam, device) = with_fallback(&dir, vec![good()]);
+        std::fs::remove_dir_all(device).unwrap();
+        let mut cam = cam.with_fallback_check(|node| {
+            assert!(node.ends_with("video0"));
+            Ok(())
+        });
+        assert!(cam.capture().is_ok());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_refusal_says_why_and_runs_nothing() {
+        let dir = scratch("refused");
+        let (cam, device) = with_fallback(&dir, vec![]);
+        std::fs::remove_dir_all(device).unwrap();
+        let mut cam = cam.with_fallback_check(|_| Err(DeviceError::Other("pin it".into())));
+        assert_eq!(error(cam.capture()), "pin it");
+        assert_eq!(cam.runner.calls, 0);
         let _ = std::fs::remove_dir_all(dir);
     }
 

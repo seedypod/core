@@ -290,9 +290,7 @@ create the links.
 You rarely need this by hand. `install-hal` installs a udev rule that runs
 `hald --sync-camera-rules` (as `seedypod-camera-rules.service`, five seconds after
 a USB camera appears), so a hub that wasn't up during the install still gets
-named. It only writes once **both** cameras are on the bus: a lone camera on a
-half-enumerated hub could be either one, and naming it `upper` would swap them
-for good. It keeps any pins already in the file, so an assignment set by hand
+named. It keeps any pins already in the file, so an assignment set by hand
 stays, and every rule matches a USB interface only (`SUBSYSTEMS=="usb"`, and
 `--camera-rules` refuses anything else).
 
@@ -310,11 +308,17 @@ sudo udevadm control --reload && sudo udevadm trigger --action=add --subsystem-m
 ```
 
 The `fallback` in `hal.toml` is only used when the port proves that node is that
-camera. `/dev/videoN` numbers shift: when one camera fails to bind, the other takes
-its number, and without this check its picture would be saved under the wrong
-name. With a pin, the node's port must match it. With no pin, both cameras must be
-on the bus, and the default order decides. A lone unpinned camera could be either,
-so neither name takes it until you pin it; the camera shows as `device not present`.
+camera, and that's checked on every attempt, because a camera can drop off the bus
+mid-capture. `/dev/videoN` numbers shift: when one camera fails to bind, the other
+takes its number, and without this check its picture would be saved under the
+wrong name. With a pin, the node's port must match it. With no pin, both cameras
+must be on the bus, and the default order decides.
+
+A lone camera is named only if it's on a stock port (`1-1.3` is `upper`, `1-1.4` is
+`lower`, as confirmed on our 3.0), so a unit with one dead camera keeps the other.
+On any other port it could be either one, so it stays unnamed and the alert says
+`one camera on the bus and no pins: pin it with --camera-rules`. If your unit is
+wired differently, a lone camera can take the wrong name, so run the marker check.
 
 ## State file
 

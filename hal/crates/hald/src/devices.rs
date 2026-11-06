@@ -301,14 +301,15 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
             ucfg.retry_delay = std::time::Duration::from_millis(c.capture_retry_ms);
             ucfg.attempt_timeout = std::time::Duration::from_secs(c.capture_timeout_s);
             ucfg.inspect_frames = c.inspect_frames;
-            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(hal_drivers::uvc::UvcCamera::new(
+            let name = c.name.clone();
+            let camera = hal_drivers::uvc::UvcCamera::new(
                 &c.name,
                 ucfg,
                 hal_drivers::uvc::ProcessRunner,
                 scratch.clone(),
-            ))));
-            let checked = crate::cameras::PortChecked::new(cam, &c.name, &c.device, c.fallback.as_deref());
-            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(checked)));
+            )
+            .with_fallback_check(move |node| crate::cameras::check_fallback(&name, node));
+            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(camera)));
             (c.name.clone(), cam)
         })
         .collect();

@@ -6,15 +6,15 @@
 //!
 //! The numbers aren't just unstable, they shift: when one camera fails to bind,
 //! the other takes its number. So a configured `/dev/videoN` fallback is only
-//! used once its port proves it is that camera ([`PortChecked`]). Port order
+//! used once its port proves it is that camera ([`check_fallback`]). Port order
 //! says nothing about position either: it is only the default assignment.
 
 use std::path::{Path, PathBuf};
 
-use hal_core::{Camera, DeviceError};
+use hal_core::DeviceError;
 use serde::Serialize;
 
-use crate::http::SharedCamera;
+use crate::config::STOCK_CAMERA_PORTS;
 
 /// Where `--sync-camera-rules` keeps the pins.
 pub const RULES_PATH: &str = "/etc/udev/rules.d/70-seedypod-cameras.rules";
@@ -145,12 +145,15 @@ pub fn parse_rules(text: &str) -> Vec<(String, String)> {
 
 /// The pins to write, or `None` to leave things alone.
 ///
-/// Pins already made are kept, so an assignment set by hand survives. A first
-/// assignment waits for both cameras: a lone camera on a half-enumerated hub
-/// could be either one, and naming it `upper` would swap them for good.
+/// Pins already made are kept, so an assignment set by hand survives. With both
+/// cameras on the bus they are named in port order. A lone camera is only named
+/// if it is on a stock port, so a unit with one dead camera keeps the other: on
+/// any other port it could be either one, and a wrong name would stick.
 pub fn plan(existing: &[(String, String)], found: &[Detected]) -> Option<Vec<(String, String)>> {
     if existing.is_empty() && found.len() < NAMES.len() {
-        return None;
+        let lone = found.first()?;
+        let (name, port) = STOCK_CAMERA_PORTS.iter().find(|(_, port)| *port == lone.port)?;
+        return Some(vec![((*name).to_owned(), (*port).to_owned())]);
     }
     let free_names = NAMES
         .iter()
@@ -202,8 +205,9 @@ pub fn sync(
 }
 
 /// Whether `node` is the camera called `name`, going by its port: the pinned one,
-/// or failing that what [`plan`] would pin, which needs both cameras on the bus.
-pub fn fallback_is(name: &str, node: &Path, found: &[Detected], pins: &[(String, String)]) -> bool {
+/// or failing that what [`plan`] would pin.
+#[cfg_attr(not(feature = "hardware"), allow(dead_code))]
+fn fallback_is(name: &str, node: &Path, found: &[Detected], pins: &[(String, String)]) -> bool {
     let Some(detected) = found.iter().find(|d| d.device == node) else {
         return false;
     };
@@ -213,57 +217,41 @@ pub fn fallback_is(name: &str, node: &Path, found: &[Detected], pins: &[(String,
         .any(|(n, port)| n == name && *port == detected.port)
 }
 
-/// A camera that won't use its `/dev/videoN` fallback unless the port checks out,
-/// so one camera's picture is never saved under the other's name.
+/// Whether camera `name` may use `node`, its `/dev/videoN` fallback. Refusing means
+/// one camera's picture is never saved under the other's name.
 #[cfg_attr(not(feature = "hardware"), allow(dead_code))]
-pub struct PortChecked {
-    inner: SharedCamera,
-    name: String,
-    device: PathBuf,
-    fallback: Option<PathBuf>,
-    sysfs: PathBuf,
-    dev: PathBuf,
-    rules_path: PathBuf,
+pub fn check_fallback(name: &str, node: &Path) -> Result<(), DeviceError> {
+    check_fallback_at(
+        Path::new("/sys"),
+        Path::new("/dev"),
+        Path::new(RULES_PATH),
+        name,
+        node,
+    )
 }
 
-impl PortChecked {
-    #[cfg_attr(not(feature = "hardware"), allow(dead_code))]
-    pub fn new(inner: SharedCamera, name: &str, device: &Path, fallback: Option<&Path>) -> Self {
-        Self {
-            inner,
-            name: name.to_owned(),
-            device: device.to_owned(),
-            fallback: fallback.map(Path::to_owned),
-            sysfs: "/sys".into(),
-            dev: "/dev".into(),
-            rules_path: RULES_PATH.into(),
-        }
+#[cfg_attr(not(feature = "hardware"), allow(dead_code))]
+fn check_fallback_at(
+    sysfs: &Path,
+    dev: &Path,
+    rules_path: &Path,
+    name: &str,
+    node: &Path,
+) -> Result<(), DeviceError> {
+    let found = discover(sysfs, dev);
+    let pins = std::fs::read_to_string(rules_path)
+        .map(|t| parse_rules(&t))
+        .unwrap_or_default();
+    if fallback_is(name, node, &found, &pins) {
+        return Ok(());
     }
-
-    fn usable(&self) -> bool {
-        if self.device.exists() {
-            return true;
-        }
-        let Some(fallback) = &self.fallback else {
-            return false;
-        };
-        let pins = std::fs::read_to_string(&self.rules_path)
-            .map(|t| parse_rules(&t))
-            .unwrap_or_default();
-        fallback_is(&self.name, fallback, &discover(&self.sysfs, &self.dev), &pins)
+    // A working camera nothing can name. The wording stays fixed: it becomes the alert.
+    if pins.is_empty() && found.len() == 1 && plan(&pins, &found).is_none() {
+        return Err(DeviceError::Other(
+            "one camera on the bus and no pins: pin it with --camera-rules".into(),
+        ));
     }
-}
-
-impl Camera for PortChecked {
-    fn name(&self) -> &str {
-        &self.name
-    }
-    fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
-        if !self.usable() {
-            return Err(DeviceError::NotPresent);
-        }
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).capture()
-    }
+    Err(DeviceError::NotPresent)
 }
 
 /// `--action=add`: a plain trigger is `change`, which doesn't create the links.
@@ -291,8 +279,6 @@ pub fn stable_path(name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
 
     /// A fake sysfs: cameras with capture and metadata nodes, on-chip nodes, and one unplugged entry.
     fn fake_sysfs(tag: &str) -> PathBuf {
@@ -414,13 +400,38 @@ mod tests {
     }
 
     #[test]
-    fn a_first_assignment_waits_for_both_cameras() {
+    fn a_lone_camera_is_only_named_on_a_stock_port() {
         assert_eq!(plan(&[], &[]), None);
-        // Only the lower camera made it: it must not become `upper`.
-        assert_eq!(plan(&[], &detected(&["1-1.4:1.0"])), None);
+        // The upper camera is dead: the lower one must keep working, as `lower`.
+        assert_eq!(
+            plan(&[], &detected(&["1-1.4:1.0"])),
+            Some(pins(&[("lower", "1-1.4:1.0")]))
+        );
+        assert_eq!(
+            plan(&[], &detected(&["1-1.3:1.0"])),
+            Some(pins(&[("upper", "1-1.3:1.0")]))
+        );
+        // Elsewhere it could be either, and a wrong name would stick.
+        assert_eq!(plan(&[], &detected(&["1-1.2:1.0"])), None);
+        // A pin made that way is completed when the other camera turns up.
+        assert_eq!(
+            plan(
+                &pins(&[("lower", "1-1.4:1.0")]),
+                &detected(&["1-1.3:1.0", "1-1.4:1.0"])
+            ),
+            Some(pins(&[("lower", "1-1.4:1.0"), ("upper", "1-1.3:1.0")]))
+        );
+    }
+
+    #[test]
+    fn both_cameras_are_named_in_port_order_on_any_ports() {
         assert_eq!(
             plan(&[], &detected(&["1-1.3:1.0", "1-1.4:1.0"])),
             Some(pins(&[("upper", "1-1.3:1.0"), ("lower", "1-1.4:1.0")]))
+        );
+        assert_eq!(
+            plan(&[], &detected(&["1-1.1:1.0", "1-1.2:1.0"])),
+            Some(pins(&[("upper", "1-1.1:1.0"), ("lower", "1-1.2:1.0")]))
         );
     }
 
@@ -482,69 +493,54 @@ mod tests {
     }
 
     #[test]
-    fn with_nothing_pinned_a_lone_camera_could_be_either_so_neither_name_takes_it() {
+    fn with_nothing_pinned_a_lone_camera_is_named_by_its_stock_port_or_not_at_all() {
         let lone = nodes(&[(VIDEO0, "1-1.4:1.0")]);
         assert!(!fallback_is("upper", Path::new(VIDEO0), &lone, &[]));
-        assert!(!fallback_is("lower", Path::new(VIDEO0), &lone, &[]));
+        assert!(fallback_is("lower", Path::new(VIDEO0), &lone, &[]));
+        let elsewhere = nodes(&[(VIDEO0, "1-1.2:1.0")]);
+        assert!(!fallback_is("upper", Path::new(VIDEO0), &elsewhere, &[]));
+        assert!(!fallback_is("lower", Path::new(VIDEO0), &elsewhere, &[]));
         // With both there, the default order applies until the rules are written.
         let both = nodes(&[(VIDEO0, "1-1.3:1.0"), (VIDEO2, "1-1.4:1.0")]);
         assert!(fallback_is("upper", Path::new(VIDEO0), &both, &[]));
         assert!(fallback_is("lower", Path::new(VIDEO2), &both, &[]));
     }
 
-    /// Says how many times it was asked for a frame.
-    struct Counting(Arc<AtomicUsize>);
-    impl Camera for Counting {
-        fn name(&self) -> &str {
-            "inner"
+    /// `fake_sysfs` with only `video2` on `1-1.2:1.0` left on the bus.
+    fn lone_on_a_strange_port(tag: &str) -> PathBuf {
+        let root = fake_sysfs(tag);
+        for node in ["video0", "video1", "video3", "video9", "video7"] {
+            std::fs::remove_dir_all(root.join("class/video4linux").join(node)).unwrap();
         }
-        fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Ok(vec![1])
-        }
-    }
-
-    /// A checked camera called `name`, over the fake sysfs at `root`.
-    fn checked(
-        root: &Path,
-        name: &str,
-        device: &Path,
-        fallback: &str,
-        calls: &Arc<AtomicUsize>,
-    ) -> PortChecked {
-        let inner: SharedCamera = Arc::new(Mutex::new(Box::new(Counting(calls.clone()))));
-        let mut cam = PortChecked::new(inner, name, device, Some(Path::new(fallback)));
-        cam.sysfs = root.to_owned();
-        cam.rules_path = root.join("rules");
-        cam
+        root
     }
 
     #[test]
-    fn a_checked_camera_reads_nothing_it_cant_vouch_for() {
-        let root = fake_sysfs("checked");
-        let calls = Arc::new(AtomicUsize::new(0));
-        let missing = root.join("no-such-link");
-        let pin = |line: &str| std::fs::write(root.join("rules"), rules(&pins(&[("lower", line)]))).unwrap();
+    fn a_fallback_is_refused_with_the_reason_a_person_can_act_on() {
+        let root = lone_on_a_strange_port("check");
+        let rules_path = root.join("rules");
+        let check =
+            |name: &str| check_fallback_at(&root, Path::new("/dev"), &rules_path, name, Path::new(VIDEO2));
 
-        // The fake bus has video2 on 1-1.2:1.0. Pinned elsewhere, so it isn't this camera.
-        pin("1-1.9:1.0");
-        let mut cam = checked(&root, "lower", &missing, "/dev/video2", &calls);
-        assert_eq!(cam.name(), "lower");
-        assert!(matches!(cam.capture(), Err(DeviceError::NotPresent)));
-        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        // Nothing can name it: say what to do, in words that don't change.
+        let Err(DeviceError::Other(why)) = check("upper") else {
+            panic!("should need a pin");
+        };
+        assert_eq!(
+            why,
+            "one camera on the bus and no pins: pin it with --camera-rules"
+        );
 
-        pin("1-1.2:1.0");
-        assert!(cam.capture().is_ok());
-        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        // Pinned to this port, it is this camera.
+        std::fs::write(&rules_path, rules(&pins(&[("lower", "1-1.2:1.0")]))).unwrap();
+        assert!(check("lower").is_ok());
+        // And it isn't the other one, which is simply not there.
+        assert!(matches!(check("upper"), Err(DeviceError::NotPresent)));
 
-        // The stable name needs no check, and no fallback means nothing to check.
-        let mut cam = checked(&root, "lower", &root, "/dev/video2", &calls);
-        assert!(cam.capture().is_ok());
-        assert_eq!(calls.load(Ordering::Relaxed), 2);
-        cam.device = missing;
-        cam.fallback = None;
-        assert!(matches!(cam.capture(), Err(DeviceError::NotPresent)));
-        let _ = std::fs::remove_dir_all(root);
+        // Pinned elsewhere, this node isn't that camera.
+        std::fs::write(&rules_path, rules(&pins(&[("lower", "1-1.9:1.0")]))).unwrap();
+        assert!(matches!(check("lower"), Err(DeviceError::NotPresent)));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
