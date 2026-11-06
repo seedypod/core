@@ -98,6 +98,14 @@ describe('unpacking over a prefix core owns', () => {
   })
 })
 
+describe('install-hal on a machine with no hald yet', () => {
+  it('gets past choosing hald\'s account, which reads a unit that isn\'t there', () => {
+    const r = spawnSync('bash', [resolve(script, '../install-hal'), '--help'], { encoding: 'utf8' })
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('seedypod HAL (hald) installer')
+  })
+})
+
 describe('the unit id', () => {
   it('comes from hald, for first boot as much as for an install', () => {
     expect(run('hal_unit_id').out).toBe('gardyn-db753a85')
