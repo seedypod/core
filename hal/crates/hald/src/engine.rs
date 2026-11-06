@@ -18,7 +18,7 @@ use hal_core::safety::{Decision, DoseGuard, DoseLimits, Env, PumpGuard, PumpLimi
 use hal_core::{
     topics, ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, BinarySensor, ButtonEvent,
     ButtonPress, CalibrationCommand, CalibrationResult, DeviceCommand, DeviceEntry, DeviceInventory,
-    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Reading, SensorId, SystemInfo,
+    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Quality, Reading, SensorId, SystemInfo,
 };
 use serde::Serialize;
 use tracing::{info, warn};
@@ -594,13 +594,19 @@ impl Engine {
     fn telemetry(&mut self, now: Now, force: bool) -> Vec<Outbound> {
         let mut out = Vec::new();
         let mut distance = None;
+        let mut trusted_distance = None;
         let mut pcb = None;
         let mut readings = Vec::new();
         for s in self.registry.sensors_mut() {
             match s.read() {
                 Ok(r) => {
                     match s.id() {
-                        SensorId::WaterDistance => distance = Some(r.value),
+                        SensorId::WaterDistance => {
+                            distance = Some(r.value);
+                            // Too few pings answered: the guard keeps the number, but a
+                            // run of stray echoes mustn't count as water being back.
+                            trusted_distance = Some(r.value).filter(|_| r.quality != Quality::Suspect);
+                        }
                         SensorId::PcbTemp => pcb = Some(r.value),
                         _ => {}
                     }
@@ -615,7 +621,7 @@ impl Engine {
         self.env.water_distance_cm = distance;
         self.env.pcb_temp_c = pcb;
         if let Some(low) = self.cfg.pump.water_low_cm {
-            self.water.observe(distance, low);
+            self.water.observe(trusted_distance, low);
         }
         self.env.over_temp_signal = self.read_over_temp_signal();
         for (id, r) in readings {
@@ -648,8 +654,10 @@ impl Engine {
     }
 
     /// What the guard judges a pump start on. A held water alert counts as no
-    /// reading, so the alert and the guard agree (upstream #111) and a stray good
-    /// echo can't start the pump while the app says the water is low.
+    /// reading, so a stray good echo can't start the pump while the app says the
+    /// water is low (upstream #111). It only holds that way round: the guard judges
+    /// each live read, so one lost read can refuse a start or trip the pump while
+    /// `water_low`, which counts telemetry rounds, stays inactive.
     fn start_env(&self) -> Env {
         Env {
             water_distance_cm: self.env.water_distance_cm.filter(|_| !self.water.active),
@@ -1389,6 +1397,42 @@ mod tests {
         assert!(!water_rounds(&mut a, &flapping).contains(&false));
         // Held across a stray good reading, the detail stays the last bad one.
         assert_eq!(a.detail, "water level sensor unavailable");
+    }
+
+    /// A ranger on stray echoes: under the limit, but too few pings answered.
+    struct StrayEchoes;
+
+    impl hal_core::device::Sensor for StrayEchoes {
+        fn id(&self) -> SensorId {
+            SensorId::WaterDistance
+        }
+        fn probe(&mut self) -> Result<(), hal_core::device::DeviceError> {
+            Ok(())
+        }
+        fn read(&mut self) -> Result<Reading, hal_core::device::DeviceError> {
+            let mut r = Reading::new(9.0, "cm");
+            r.quality = Quality::Suspect;
+            Ok(r)
+        }
+    }
+
+    #[test]
+    fn suspect_readings_never_clear_the_water_alert_but_the_guard_still_sees_them() {
+        let mut registry = Registry::default();
+        registry.add_sensor(Box::new(StrayEchoes));
+        let mut e = Engine::new(system(vec![]), cfg(false), registry, None, None, Arc::default());
+        let mut now = Now {
+            instant: Instant::now(),
+            epoch_s: 1_793_419_043,
+        };
+        e.boot(now);
+        for _ in 0..WATER_WINDOW * 3 {
+            now.advance(Duration::from_secs(10));
+            e.tick(now);
+        }
+        assert!(e.water.active);
+        assert_eq!(e.water.detail, "water level sensor unavailable");
+        assert_eq!(e.env.water_distance_cm, Some(9.0));
     }
 
     #[test]

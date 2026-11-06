@@ -145,7 +145,9 @@ Semantics worth knowing:
 - **`water_low`** is debounced over the last 6 telemetry rounds, so a ranger
   on stray echoes doesn't raise a new alert every few seconds. A reading at
   `water_low_cm` raises it at once, no reading raises it on the third such round
-  of the 6 (or on the first after boot), and it clears after 6 good rounds in a row.
+  of the 6 (or on the first after boot), and it clears after 6 good rounds in a row,
+  so the hold scales with `telemetry_interval_s`. A reading flagged `suspect`, with
+  fewer than half the pings answering, counts as no reading.
 - **Light**: `level` 0–100, no interlock; `{"on":true}` without a level
   restores the last on-level. The level is persisted and restored on boot.
 - **Dosing** (`dose_1..3`): `durationS` is seconds of pumping, converted to ml
