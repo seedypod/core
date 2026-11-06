@@ -347,10 +347,6 @@ reapplies them:
 
 `--no-wear` leaves all three alone.
 
-A rerun only touches what changed: apt runs for a package that's missing,
-`daemon-reload` for a unit that's different, and hald restarts for a new binary,
-unit or group. A rerun with the same binary leaves a running pump alone.
-
 For core's backups, the user core runs as (the one who ran the installer, or
 the owner of `/opt/seedypod`; `SEEDYPOD_CORE_USER` overrides) joins the
 `seedypod` group, which can read `/etc/seedypod`, `/var/lib/seedypod` and the
@@ -400,6 +396,11 @@ C=$(basename "$(readlink -f /sys/bus/usb/devices/usb1/..)")
 D=$(readlink -f "/sys/bus/platform/devices/$C/driver")
 echo "$C" | sudo tee "$D/unbind"; sleep 1; echo "$C" | sudo tee "$D/bind"
 ```
+A rerun only touches what changed: apt runs for a package that's missing,
+`daemon-reload` for a unit that's different, and hald restarts for a new binary,
+unit or group. A rerun with the same binary leaves a running pump alone. A restart
+that's owed is recorded in `/var/lib/seedypod/.restart-hald` first, so an install
+that dies part way still restarts hald on the rerun.
 
 ## Verification status
 
