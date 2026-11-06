@@ -16,7 +16,19 @@ export const webGL = () => typeof window !== 'undefined' && typeof window.WebGLR
 
 let loading: Promise<typeof PlantRendererModule> | null = null
 /** Fetches the plant renderer (and three.js, shared with the tower's chunk) once. */
-export const loadPlantRenderer = () => (loading ??= import('./plantRenderer'))
+export const loadPlantRenderer = () => (loading ??= import('./plantRenderer').then((m) => {
+  noteThreeLoaded()
+  return m
+}))
+
+let onThree = () => {}
+let three = new Promise<void>((resolve) => {
+  onThree = resolve
+})
+/** For whatever fetches three.js: thumbnails waiting on it can render now. */
+export const noteThreeLoaded = () => onThree()
+/** Resolves once three.js is on the page for some other reason, for a thumbnail not worth the download itself. */
+export const threeLoaded = () => three
 
 const pending = new Map<string, Promise<string | null>>()
 const done = new Map<string, string>()
@@ -63,4 +75,7 @@ export function clearThumbs() {
   pending.clear()
   done.clear()
   broken = false
+  three = new Promise((resolve) => {
+    onThree = resolve
+  })
 }

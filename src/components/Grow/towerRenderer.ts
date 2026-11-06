@@ -35,6 +35,7 @@ export const VIEW = {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 const isLight = () => document.documentElement.dataset.theme === 'light'
+const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' })
@@ -45,7 +46,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   canvas.style.height = '100%'
   canvas.style.touchAction = 'pan-y'
   canvas.style.opacity = '0'
-  canvas.style.transition = 'opacity 450ms ease-out'
+  if (!reducedMotion()) canvas.style.transition = 'opacity 450ms ease-out'
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.toneMapping = THREE.NeutralToneMapping
   renderer.shadowMap.enabled = true
@@ -94,7 +95,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     frame = 0
     if (document.hidden || !compiled) return
     const dt = last ? Math.min(0.1, (time - last) / 1000) : 0
-    const moving = tower.tick(dt)
+    const moving = tower.tick(dt, reducedMotion())
     room.setLight(tower.light())
     renderer.render(scene, camera)
     o.onRender?.()

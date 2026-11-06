@@ -4,6 +4,7 @@ import type { TowerMount } from './towerRenderer'
 import type { PodHarvest, PodState, TowerPart, TowerTarget } from './towerScene'
 import { TowerWireframe } from './TowerWireframe'
 import { PlantThumb, podForm } from './PlantThumb'
+import { noteThreeLoaded } from './plantThumbs'
 import { heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, STATUS_LABEL, STATUS_TOKEN } from './towerLayout'
 import { MODEL_NAME, podLight, towerModel, ZONE_COLOR, ZONE_LABEL, ZONE_WHERE, ZONES, type PodLight } from './lightZones'
 import { cn } from '@/lib/utils'
@@ -20,7 +21,13 @@ export function hasWebGL(): boolean {
 
 let loading: Promise<typeof RendererModule> | null = null
 /** Starts fetching the renderer (and three.js) once, without waiting for any data. */
-export const loadRenderer = () => (loading ??= import('./towerRenderer'))
+export const loadRenderer = () => (loading ??= import('./towerRenderer').then((m) => {
+  noteThreeLoaded()
+  return m
+}))
+
+/** How far from the viewport the download starts, so a tower scrolled to is nearly there. */
+const NEAR_VIEWPORT = '300px'
 
 const LEGEND = (['growing', 'harvest', 'attention', 'seeded'] as const).map(status => ({ status, token: STATUS_TOKEN[status] }))
 /** Room the readout needs beside its leader line before it flips to the other side. */
@@ -228,7 +235,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   }, [onSelect, onPart, onUnavailable, aside])
   // A Home's 30 until the pods arrive, so the download and the data load at the same time.
   const podCount = pods.length || 30
-  const [preloaded] = useState(() => (hasWebGL() ? loadRenderer().catch(() => null) : null))
+  const [preloaded, setPreloaded] = useState<Promise<typeof RendererModule | null> | null>(null)
   const hovered = hover?.kind === 'pod' ? hover.slot : null
   const [zones, setZones] = useState(savedZones)
   const toggleZones = () => {
@@ -241,6 +248,22 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
     }
   }
   const model = towerModel(podCount)
+
+  // The wireframe stands in until the tower comes near the viewport; three.js is the page's biggest download.
+  useEffect(() => {
+    const el = host.current
+    if (!el || !hasWebGL()) return
+    const load = () => setPreloaded(loadRenderer().catch(() => null))
+    if (typeof IntersectionObserver === 'undefined') return load()
+    const near = new IntersectionObserver((seen) => {
+      if (seen.some(e => e.isIntersecting)) {
+        near.disconnect()
+        load()
+      }
+    }, { rootMargin: NEAR_VIEWPORT })
+    near.observe(el)
+    return () => near.disconnect()
+  }, [])
 
   useEffect(() => {
     if (!hasWebGL()) {

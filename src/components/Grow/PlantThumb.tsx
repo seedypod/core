@@ -1,7 +1,7 @@
 import { Leaf } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { cn } from '@/lib/utils'
-import { cachedThumb, plantThumb, thumbKey } from './plantThumbs'
+import { cachedThumb, plantThumb, thumbKey, threeLoaded } from './plantThumbs'
 import { plantForm, plantScale, type PlantForm, type PodStatus } from './towerLayout'
 
 /** The stage a pod's plant is drawn at, as the tower draws it: 'none' when the pod is empty. */
@@ -22,22 +22,23 @@ export const useLightTheme = () => useSyncExternalStore(subscribeTheme, () => do
  * shared. An unrecognised plant (or one still rendering, or no WebGL) shows a
  * plain neutral leaf instead, so the generic model never passes for a variety
  * at a glance; an empty pod, an empty dashed ring. Decorative: the plant's name
- * always sits beside it.
+ * always sits beside it. `passive` keeps the leaf until three.js is on the page
+ * anyway: the sidebar shows on every page, and one thumbnail isn't worth 150 KB.
  */
-export function PlantThumb({ plant, stage, size = 36, className }: { plant: string | null | undefined, stage: PlantForm, size?: number, className?: string }) {
+export function PlantThumb({ plant, stage, size = 36, passive = false, className }: { plant: string | null | undefined, stage: PlantForm, size?: number, passive?: boolean, className?: string }) {
   const light = useLightTheme()
   const key = stage === 'none' ? null : thumbKey(plant, stage, light)
   const [loaded, setLoaded] = useState<{ key: string, url: string } | null>(null)
   useEffect(() => {
     if (!key || stage === 'none') return
     let alive = true
-    void plantThumb(plant, stage, light).then((url) => {
+    void (passive ? threeLoaded() : Promise.resolve()).then(() => plantThumb(plant, stage, light)).then((url) => {
       if (alive && url) setLoaded({ key, url })
     })
     return () => {
       alive = false
     }
-  }, [key, plant, stage, light])
+  }, [key, plant, stage, light, passive])
   const url = cachedThumb(key) ?? (loaded?.key === key ? loaded.url : null)
   const kind = url ? 'model' : stage === 'none' ? 'empty' : 'neutral'
   return (

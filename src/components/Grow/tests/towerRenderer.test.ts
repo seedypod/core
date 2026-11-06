@@ -115,6 +115,16 @@ describe('mountTower', () => {
     expect(host.dataset.ready).toBeUndefined()
   })
 
+  it('fades the canvas in, except under prefers-reduced-motion', () => {
+    const first = mount()
+    expect(first.canvas.style.transition).toContain('opacity')
+    first.m.dispose()
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    const second = mount()
+    expect(second.canvas.style.transition).toBe('')
+    second.m.dispose()
+  })
+
   it('hovers and picks a pod with a click that did not drag', async () => {
     const { m, calls, canvas } = mount()
     m.update({ pods: allPods, waterPct: 50, lightLevel: 80, hovered: null, selected: null })

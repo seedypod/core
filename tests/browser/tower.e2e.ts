@@ -33,6 +33,24 @@ test('grow: the tower renders in 3D, a pod picked on it opens in the side panel'
   expect(errors).toEqual([])
 })
 
+test('a page without the tower leaves three.js alone, though the sidebar lists a pod needing attention', async ({ page }) => {
+  await page.request.patch('/api/pods/5', { data: { plant: 'Cherry Tomato', status: 'attention', notes: 'leaf curl' } })
+  const scripts: string[] = []
+  page.on('request', r => r.url().endsWith('.js') && scripts.push(r.url()))
+  await page.goto('/light')
+  await expect(page.getByRole('complementary').getByText('Cherry Tomato')).toBeVisible()
+  await expect(page.getByRole('complementary').getByTestId('plant-thumb').first()).toHaveAttribute('data-kind', 'neutral')
+  await page.waitForTimeout(500)
+  expect(scripts.filter(u => /towerRenderer|plantRenderer/.test(u))).toEqual([])
+})
+
+test('home: the sidebar\'s plant stills arrive with the tower', async ({ page }) => {
+  await page.request.patch('/api/pods/5', { data: { plant: 'Cherry Tomato', status: 'attention', notes: 'leaf curl' } })
+  await page.goto('/')
+  await expect(page.getByTestId('tower-3d')).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
+  await expect(page.getByRole('complementary').getByTestId('plant-thumb').first()).toHaveAttribute('data-kind', 'model', { timeout: 10_000 })
+})
+
 test('home: hovering a pod previews its callout, a click pins it, and its close button unpins it', async ({ page }) => {
   await page.request.patch('/api/pods/5', { data: { plant: 'Cherry Tomato', status: 'attention', notes: 'leaf curl' } })
   await page.goto('/')

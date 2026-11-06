@@ -176,6 +176,24 @@ describe('tower scene', () => {
     tower.dispose()
   })
 
+  it('jumps to each target and stills the flow under prefers-reduced-motion, still showing the pump runs', () => {
+    const tower = createTower(THREE, 30)
+    const water = tower.root.getObjectByName('water') as THREE.Mesh
+    const flow = tower.root.getObjectByName('flow') as THREE.Mesh
+    const mat = flow.material as THREE.MeshBasicMaterial
+    tower.update(state)
+    const half = water.scale.y
+    tower.update({ ...state, waterPct: 100, lightLevel: 85, pumpOn: true })
+    const offset = mat.map?.offset.y
+    tower.tick(0.05, true)
+    expect(water.scale.y).toBeCloseTo(half * 2)
+    expect(tower.light()).toBeCloseTo(0.85)
+    expect(mat.opacity).toBeCloseTo(0.45)
+    expect(mat.map?.offset.y).toBe(offset)
+    expect(tower.tick(0.05, true)).toBe(false)
+    tower.dispose()
+  })
+
   it('runs water up the columns while the pump runs, and settles when it stops', () => {
     const tower = createTower(THREE, 30)
     const flows: THREE.Mesh[] = []

@@ -29,7 +29,7 @@ export function TowerWireframe({ pods, podCount, fading }: { pods: PodState[], p
       data-testid="tower-wireframe"
       viewBox={`${-half} 0 ${half * 2} ${top + 0.04}`}
       preserveAspectRatio="xMidYMid meet"
-      className="lp-wireframe pointer-events-none absolute inset-x-0 bottom-[8%] top-[6%] m-auto h-[86%] w-full text-fg-3 transition-opacity duration-500"
+      className="lp-wireframe pointer-events-none absolute inset-x-0 bottom-[8%] top-[6%] m-auto h-[86%] w-full text-fg-3 transition-opacity duration-500 motion-reduce:transition-none"
       style={{ opacity: fading ? 0 : 1 }}
       fill="none"
       stroke="currentColor"
