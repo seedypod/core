@@ -86,6 +86,12 @@ fewer writes ([ADR-0021](adr/0021-sd-card-wear-and-recovery.md)). Each change
 is checked and undone if it doesn't take; `--no-wear` skips them. Logs then
 last until reboot; [Debugging](DEBUGGING.md) shows how to keep them longer.
 
+`hald` runs as its own locked `seedypod` account, so don't name your login
+`seedypod` in Imager. If you did, `install-hal` warns and uses that login for
+hald: it works, but hald then has the login's groups and shell, and shares an
+account with core. Nothing migrates it; reflash with another username to keep
+them apart.
+
 ## 3. Install core (same Pi, or any 64-bit LAN box)
 
 ```sh
