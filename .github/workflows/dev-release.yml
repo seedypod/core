@@ -8,9 +8,8 @@ on:
     branches:
       - dev
 
-concurrency:
-  group: dev-release
-  cancel-in-progress: true
+# Concurrency is per job, not per workflow: a new push cancels everything here
+# except sqlite-armv6, which can run for longer than the gap between pushes.
 
 permissions:
   contents: write
@@ -19,6 +18,9 @@ jobs:
   hal:
     name: hald ${{ matrix.target }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: dev-release-hal-${{ matrix.target }}
+      cancel-in-progress: true
     strategy:
       matrix:
         target: [arm-unknown-linux-gnueabihf, aarch64-unknown-linux-gnu]
@@ -40,9 +42,17 @@ jobs:
           name: hald-${{ matrix.target }}
           path: hal/hald-${{ matrix.target }}
 
+  sqlite-armv6:
+    uses: ./.github/workflows/sqlite-armv6.yml
+
   release:
     runs-on: ubuntu-latest
-    needs: hal
+    needs: [hal, sqlite-armv6]
+    # Without the binary a Pi Zero W compiles it, which beats no release at all.
+    if: ${{ !cancelled() && needs.hal.result == 'success' && needs.sqlite-armv6.result != 'cancelled' }}
+    concurrency:
+      group: dev-release
+      cancel-in-progress: true
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -105,6 +115,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: hald-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Download the ARMv6 better-sqlite3
+        uses: actions/download-artifact@v8
+        with:
+          pattern: better-sqlite3-armv6
           merge-multiple: true
           path: release-assets
 

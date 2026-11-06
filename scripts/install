@@ -35,6 +35,71 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# ---- better-sqlite3 on ARMv6 -------------------------------------------------
+# Upstream's 32-bit ARM binary is built for ARMv7 and would crash on a Pi Zero W,
+# and compiling there took 53 of a 56-minute install. So releases carry an ARMv6
+# build (scripts/build-sqlite-armv6) under a versioned name. better-sqlite3's own
+# install script runs prebuild-install, which takes it from a local directory.
+# If it's missing, corrupt or won't load, the unit compiles as it always has.
+# tests/scripts/install.sqlite.test.ts sources this file with SEEDYPOD_LIB_ONLY=1.
+SQLITE_PREBUILT=""
+sqlite_version() { sed -n 's/^  better-sqlite3@\([0-9][^:(]*\):$/\1/p' pnpm-lock.yaml | head -1; }
+sqlite_binary() { echo "node_modules/.pnpm/better-sqlite3@$(sqlite_version)/node_modules/better-sqlite3/build/Release/better_sqlite3.node"; }
+sqlite_works() { node -e "new (require('better-sqlite3'))(':memory:').exec('create table t (x)')" >/dev/null 2>&1; }
+sqlite_compiler() { if command -v apt-get >/dev/null 2>&1; then sudo apt-get install -y -q build-essential python3 >/dev/null; fi; }
+
+fetch_sqlite_prebuilt() {
+  local version abi asset base dir="$TMP/sqlite"
+  version="$(sqlite_version)"
+  abi="$(node -p process.versions.modules)"
+  asset="better-sqlite3-v$version-node-v$abi-linux-armv6.tar.gz"
+  base="https://github.com/$REPO/releases/download/dev-latest"
+  [ "$BRANCH" != main ] || base="https://github.com/$REPO/releases/latest/download"
+  mkdir -p "$dir/prebuilds"
+  if ! curl -fsSL --retry 3 "$base/$asset" -o "$dir/$asset" || ! curl -fsSL --retry 3 "$base/$asset.sha256" -o "$dir/$asset.sha256"; then
+    echo "   no prebuilt $asset in this release" >&2; return 1
+  fi
+  if ! (cd "$dir" && sha256sum -c --quiet "$asset.sha256") >/dev/null 2>&1; then
+    echo "   the prebuilt $asset fails its sha256" >&2; return 1
+  fi
+  if ! tar xzf "$dir/$asset" -C "$dir" build/Release/better_sqlite3.node || ! node -e 'require(process.argv[1])' "$dir/build/Release/better_sqlite3.node" >/dev/null 2>&1; then
+    echo "   the prebuilt $asset doesn't load under Node $(node -v)" >&2; return 1
+  fi
+  # prebuild-install looks it up by process.arch, which doesn't say ARMv6.
+  mv -f "$dir/$asset" "$dir/prebuilds/better-sqlite3-v$version-node-v$abi-linux-arm.tar.gz"
+  export npm_config_better_sqlite3_local_prebuilds="$dir/prebuilds"
+  SQLITE_PREBUILT="$dir/build/Release/better_sqlite3.node"
+}
+
+prepare_sqlite() {
+  # A rerun keeps what it built: pnpm leaves it, so don't fetch or compile anything.
+  if [ ! -f "$(sqlite_binary)" ]; then
+    if fetch_sqlite_prebuilt; then
+      echo "→ using the prebuilt ARMv6 better-sqlite3"
+      return 0
+    fi
+    echo "→ compiling better-sqlite3 here: allow about an hour"
+    sqlite_compiler
+  fi
+  export npm_config_build_from_source=true
+}
+
+# prebuild-install that misses our file falls back to upstream's ARMv7 binary, which
+# can load and crash later, so a prebuilt must also be the file that landed.
+check_sqlite() {
+  if sqlite_works && { [ -z "$SQLITE_PREBUILT" ] || cmp -s "$SQLITE_PREBUILT" "$(sqlite_binary)"; }; then return 0; fi
+  echo "→ better-sqlite3 didn't come out usable; compiling it here: allow about an hour"
+  sqlite_compiler
+  npm_config_build_from_source=true pnpm rebuild better-sqlite3
+  sqlite_works || { echo "✗ better-sqlite3 still doesn't load on this machine" >&2; return 1; }
+}
+
+install_deps() {
+  if [ "$NODE_FROM_SOURCE" = 1 ]; then prepare_sqlite; fi
+  pnpm install --prod --frozen-lockfile
+  if [ "$NODE_FROM_SOURCE" = 1 ]; then check_sqlite; fi
+}
+
 # ---- which Node --------------------------------------------------------------
 # Core runs on the Node in .node-version (24) where it ships: 64-bit ARM and x86.
 # Node 24 has no 32-bit ARM build, so there core runs on Node 22, the last line
@@ -64,7 +129,7 @@ node_plan() {
     echo "✓ ${model:-$arch} runs core on Node $NODE_VERSION ($NODE_ARCH): Node 24 has no 32-bit ARM build."
     echo "  Node 22 gets security fixes until April 2027.${model:+ }$(case "$model" in *"Zero 2"*|*"Pi 3"*|*"Pi 4"*|*"Pi 5"*) echo "Reflash with 64-bit Raspberry Pi OS Lite to move to Node 24." ;; *) echo "A Pi Zero 2 W on 64-bit Raspberry Pi OS moves to Node 24." ;; esac)"
   fi
-  [ "$NODE_FROM_SOURCE" = 1 ] && echo "  better-sqlite3 has no ARMv6 build, so it compiles here: allow 20–40 minutes the first time."
+  [ "$NODE_FROM_SOURCE" = 1 ] && echo "  better-sqlite3 comes prebuilt for ARMv6 from the release; without one it compiles here, which takes about an hour."
   return 0
 }
 
@@ -87,6 +152,7 @@ install_login_logo() {
     && sudo chmod 0755 "$share/login-logo" \
     && sudo chmod 0644 "$share/logo.frames" "$share/version" "$profile"
 }
+if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 if [ "$LOGIN_LOGO" = 1 ]; then install_login_logo; exit $?; fi
 if [ "$CHECK" = 1 ]; then node_plan; exit $?; fi
 node_plan || exit 3
@@ -124,12 +190,7 @@ if ! command -v node >/dev/null || [ "$(node -v)" != "v$NODE_WANT" ]; then
   curl -fsSL "$NODE_DIST/v$NODE_WANT/node-v$NODE_WANT-linux-$NODE_ARCH.tar.xz" | sudo tar -xJ -C /usr/local --strip-components=1
 fi
 corepack enable >/dev/null 2>&1 || true
-if [ "$NODE_FROM_SOURCE" = 1 ]; then
-  # better-sqlite3's 32-bit ARM binary is built for ARMv7 and would crash here; build it from source.
-  command -v apt-get >/dev/null 2>&1 && sudo apt-get install -y -q build-essential python3 >/dev/null
-  export npm_config_build_from_source=true
-fi
-pnpm install --prod --frozen-lockfile
+install_deps
 
 # Wi-Fi setup (button held 10 s) drives NetworkManager through nmcli. A system
 # service has no desktop session, so polkit would refuse it; allow this user only.
