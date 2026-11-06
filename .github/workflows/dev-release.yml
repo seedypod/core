@@ -16,8 +16,33 @@ permissions:
   contents: write
 
 jobs:
+  hal:
+    name: hald ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [arm-unknown-linux-gnueabihf, aarch64-unknown-linux-gnu]
+    defaults:
+      run:
+        working-directory: hal
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hal
+          key: ${{ matrix.target }}
+      - uses: taiki-e/install-action@cross
+      - run: cross build --release --target ${{ matrix.target }} -p hald --features hardware
+      - run: cp target/${{ matrix.target }}/release/hald hald-${{ matrix.target }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: hald-${{ matrix.target }}
+          path: hal/hald-${{ matrix.target }}
+
   release:
     runs-on: ubuntu-latest
+    needs: hal
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -76,6 +101,13 @@ jobs:
           fi
           [ "$(file -b --mime-type "$RUNNER_TEMP/tarball/web/dist/brand/icon-64.png")" = image/png ]
 
+      - name: Download hald binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: hald-*
+          merge-multiple: true
+          path: release-assets
+
       - name: Update dev release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -84,7 +116,7 @@ jobs:
           git push -d --no-verify origin refs/tags/dev-latest 2>/dev/null || true
           git tag -f dev-latest
           git push -f --no-verify origin refs/tags/dev-latest
-          gh release create dev-latest seedypod-core.tar.gz \
+          gh release create dev-latest seedypod-core.tar.gz release-assets/* \
             --target "${{ github.sha }}" \
             --title "Dev (latest)" \
             --prerelease \
@@ -93,4 +125,4 @@ jobs:
           **Commit:** ${{ github.sha }}
           **Title:** $(git log -1 --format=%s)
 
-          Install with \`scripts/install --branch dev\` or point \`lp-update\` at this release."
+          Install with \`scripts/install-hal --version dev-latest\`, then \`scripts/install --branch dev\`, or point \`lp-update\` at this release."
