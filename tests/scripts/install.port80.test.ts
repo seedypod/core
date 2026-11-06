@@ -1,7 +1,7 @@
 /**
  * scripts/install's forward from port 80 to core, against a scratch root with
- * stub sudo, systemctl and apt-get. The rule itself needs a kernel; how it
- * behaves on a unit is on the hardware checklist.
+ * stub sudo, systemctl and apt-get. The rule itself needs a kernel, so how it
+ * behaves is checked on a real unit.
  */
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
