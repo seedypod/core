@@ -131,6 +131,52 @@ apply_wear_settings() {
   return 0
 }
 
+# ---- cameras: stable names by USB port -----------------------------------------
+# /dev/videoN can swap across reboots; hald prefers /dev/seedypod/camera-<name>.
+# The hub may not be up during the install, so a udev rule runs the same step
+# when a camera appears; hald --sync-camera-rules pins both once both are there.
+CAMERA_RULES="$ROOT/etc/udev/rules.d/70-seedypod-cameras.rules"
+CAMERA_SYNC_RULE="$ROOT/etc/udev/rules.d/71-seedypod-camera-sync.rules"
+CAMERA_SYNC_UNIT="$ROOT/etc/systemd/system/seedypod-camera-rules.service"
+
+install_camera_rules() {
+  local hald="$1"
+  # Earlier installs could name the Pi's on-chip video nodes as cameras.
+  if [ -f "$CAMERA_RULES" ] && grep -q 'KERNELS=="bcm2835' "$CAMERA_RULES"; then
+    $SUDO rm -f "$CAMERA_RULES" "$ROOT"/dev/seedypod/camera-*
+    echo "→ removed camera rules that matched the Pi's on-chip video nodes"
+  fi
+  $SUDO mkdir -p "$(dirname "$CAMERA_SYNC_RULE")" "$(dirname "$CAMERA_SYNC_UNIT")"
+  # USB parents only, so the Pi's on-chip video nodes never start it. The wait lets
+  # the second camera arrive; a start while this is waiting joins the same run.
+  $SUDO tee "$CAMERA_SYNC_UNIT" >/dev/null <<UNIT
+[Unit]
+Description=Pin seedypod camera names to their USB ports
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=$hald --sync-camera-rules
+UNIT
+  $SUDO tee "$CAMERA_SYNC_RULE" >/dev/null <<'RULE'
+# Written by seedypod scripts/install-hal: pin camera names when a camera appears.
+ACTION=="add", SUBSYSTEM=="video4linux", SUBSYSTEMS=="usb", ATTR{index}=="0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="seedypod-camera-rules.service"
+RULE
+  $SUDO systemctl daemon-reload || true
+  $SUDO udevadm control --reload || true
+  local said
+  if said="$($SUDO "$hald" --sync-camera-rules 2>&1)"; then
+    echo "→ $said"
+  else
+    echo "   camera rules not written: $said" >&2
+  fi
+  # Rules from an earlier install may never have made their links.
+  $SUDO udevadm trigger --action=add --subsystem-match=video4linux || true
+  if [ -f "$CAMERA_RULES" ]; then
+    echo "   If upper and lower are swapped: sudo $hald --camera-rules upper=<port> lower=<port> | sudo tee ${CAMERA_RULES#"$ROOT"} && sudo udevadm trigger --action=add --subsystem-match=video4linux"
+  fi
+}
+
 # The login Imager set can be called seedypod too. useradd then has nothing to do and
 # hald runs as that login. It works, so warn rather than touch someone's account.
 warn_shared_login() {
@@ -250,26 +296,8 @@ if ! command -v fswebcam >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; 
   $SUDO apt-get install -y -q fswebcam >/dev/null || echo "   (fswebcam install failed; cameras will report missing)"
 fi
 
-# ---- cameras: stable names by USB port ----------------------------------------
-# /dev/videoN can swap across reboots; hald prefers /dev/seedypod/camera-<name>.
-RULES=/etc/udev/rules.d/70-seedypod-cameras.rules
-# Earlier installs could name the Pi's on-chip video nodes as cameras.
-if [ -f "$RULES" ] && grep -q 'KERNELS=="bcm2835' "$RULES"; then
-  $SUDO rm -f "$RULES" /dev/seedypod/camera-*
-  $SUDO udevadm control --reload || true
-  echo "→ removed camera rules that matched the Pi's on-chip video nodes"
-fi
-if [ ! -f "$RULES" ]; then
-  if "$PREFIX/hald" --camera-rules > "$TMP/cameras.rules" 2>/dev/null; then
-    $SUDO install -m 0644 "$TMP/cameras.rules" "$RULES"
-    $SUDO udevadm control --reload && $SUDO udevadm trigger --subsystem-match=video4linux || true
-    echo "→ camera names pinned to USB ports ($RULES):"
-    grep '^SUBSYSTEM' "$RULES" | sed -E 's/.*KERNELS=="([^"]+)".*camera-([a-z0-9_-]+).*/   \2 = port \1/'
-    echo "   If upper and lower are swapped: sudo $PREFIX/hald --camera-rules upper=<port> lower=<port> | sudo tee $RULES && sudo udevadm trigger"
-  else
-    echo "→ no USB cameras found; run 'sudo $PREFIX/hald --camera-rules | sudo tee $RULES' once they're plugged in"
-  fi
-fi
+# ---- cameras -----------------------------------------------------------------
+install_camera_rules "$PREFIX/hald"
 
 # ---- SD card wear ------------------------------------------------------------------
 if [ "$WEAR" -eq 1 ] && [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then

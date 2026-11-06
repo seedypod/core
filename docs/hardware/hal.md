@@ -234,9 +234,22 @@ hald --list-cameras            # capture nodes, their ports, and the default ass
 hald --camera-rules            # rules for that assignment: first port → upper, second → lower
 sudo hald --camera-rules upper=1-1.3:1.0 lower=1-1.2:1.0 \
   | sudo tee /etc/udev/rules.d/70-seedypod-cameras.rules
-sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=video4linux
+sudo udevadm control --reload && sudo udevadm trigger --action=add --subsystem-match=video4linux
 ls -l /dev/seedypod/           # camera-upper, camera-lower
 ```
+
+`--action=add` matters: a plain `udevadm trigger` sends `change`, which doesn't
+create the links.
+
+You rarely need this by hand. `install-hal` installs a udev rule that runs
+`hald --sync-camera-rules` (as `seedypod-camera-rules.service`, five seconds after
+a USB camera appears), so a hub that wasn't up during the install still gets
+named. It only writes once **both** cameras are on the bus: a lone camera on a
+half-enumerated hub could be either one, and naming it `upper` would swap them
+for good. It keeps any pins already in the file, so an assignment set by hand
+stays, and every rule matches a USB interface only (`SUBSYSTEMS=="usb"`, and
+`--camera-rules` refuses anything else). With one camera, `--camera-rules
+upper=<port>` still pins it by hand.
 
 `scripts/install-hal` writes the rules on first install if it finds cameras,
 and prints which port became which name. If the photos come out swapped,
@@ -271,8 +284,8 @@ Release, installs it to `/usr/local/bin/hald`, writes `/etc/seedypod/hal.toml`
 if absent (the commented defaults), creates the `seedypod` system user in
 `gpio`, `i2c`, `video`, enables I²C (`raspi-config nonint do_i2c 0`) and the
 PWM overlay (`dtoverlay=pwm,pin=18,func=2`, reboot required once), installs
-`fswebcam`, pins camera names to USB ports (`/etc/udev/rules.d/70-seedypod-cameras.rules`,
-see [Camera names](#camera-names)), installs Mosquitto with a listener on
+`fswebcam`, pins camera names to USB ports now or when the cameras appear
+(`/etc/udev/rules.d/70-seedypod-cameras.rules`, see [Camera names](#camera-names)), installs Mosquitto with a listener on
 `127.0.0.1:1883` and no password (`/etc/mosquitto/conf.d/seedypod.conf`,
 written once), and installs/enables `hald.service` (`Restart=always`,
 `After=network-online.target mosquitto.service`, hardened). `--binary ./hald` installs a local
