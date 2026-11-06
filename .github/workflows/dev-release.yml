@@ -125,4 +125,4 @@ jobs:
           **Commit:** ${{ github.sha }}
           **Title:** $(git log -1 --format=%s)
 
-          Install with \`scripts/install-hal --version dev-latest\`, then \`scripts/install --branch dev\`, or point \`lp-update\` at this release."
+          Install with \`scripts/install-hal --version dev-latest\`, then \`scripts/install --branch dev\`."
