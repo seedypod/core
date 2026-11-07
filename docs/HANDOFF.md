@@ -129,3 +129,60 @@ Logs for all of this are in `~/Documents/seedypod/bringup-logs-2026-11-06/`, and
 - The first-boot SSH figure in [Installation](INSTALLATION.md) still says about 3 minutes: 7.5 on the image.
 - The Vercel team is blocked for fair use, so the demo isn't deploying and the `deploy` check fails on every PR. CodeRabbit's included reviews have run out on the `ng/seedypod-core` mirror (`ng/core` is sleepypod's: never push there).
 - The docs site hasn't been updated with this work. A Discord write-up was asked for: it needs a channel.
+
+
+## 8. Controlled hub comparison (2026-11-07)
+
+Forty warm reboots on the same development image, in 20 balanced pairs with the
+order within each pair randomized (seed `20261107`). The owner confirmed the unit
+was not touched during the series. Each result below is the USB inventory at
+184–208 seconds of uptime, with a distinct boot id and the requested firmware
+settings verified. These are **not** cold power-cycle results.
+
+| Same image, different boot settings | Hub and both cameras present | Connected before 90 s | Connected after 90 s |
+|---|---|---|---|
+| Original configuration; reported core voltage 1.35 V | 8 of 20 | 5 | 3 |
+| Add `force_turbo=1`, `over_voltage=6`; reported core voltage 1.40 V | 7 of 20 | 3 | 4 |
+
+The stock turbo/voltage settings did not improve the observed success rate and
+are not a reliable fix. This sample does not establish that the configurations
+are equivalent or rule out a smaller effect. Every sample reported
+`throttled=0x0`; that does not measure the hub's supply or exclude a cable fault.
+
+**New evidence changes the recovery question:** seven successful boots first
+showed the hub at 123–151 seconds. The recovery service tried root-hub re-probes
+at about 90 and 111 seconds. Four late connections were reported as recovered
+during the second attempt; three appeared after the service gave up at about
+132 seconds. The unit was untouched, so these connections did not require a
+physical replug or another reboot. This does **not** prove that re-probing caused
+them: a series without automatic re-probes is still needed.
+
+The earlier 01:03 connection, 13 minutes after boot, remains ambiguous: the owner
+had reassembled the top container around that period, though the Pi was already
+mounted. Do not count it as demonstrated spontaneous recovery.
+
+### Current state and next test
+
+- Original boot configuration restored byte-for-byte (SHA-256 checked); reported
+  core voltage back to 1.35 V. Both services, the hub and both cameras are up.
+  The temporary test helper and its scoped sudo rule have been removed.
+- Keep #118 held. Its proposed default reboot at 90 seconds precedes all seven
+  late connections observed here, and removing the root-hub re-probes has not
+  been justified by this new evidence. Never rebind the `dwc_otg` controller.
+- Next distinguish **waiting** from **retrying**: leave a boot without automatic
+  re-probes up longer, then compare with a deliberately delayed root-hub retry.
+  Preserve the boot configuration and collect monotonic kernel timestamps in
+  both conditions. Root access must be re-established to configure that test;
+  the temporary helper covered only this completed comparison.
+- If that does not settle the fault, continue the physical checks from section 7:
+  live USB-A replug on a failed boot, a known-good OTG lead, hub supply/data-line
+  measurements, and comparison with another host or the stock card.
+- The tank is still empty. No pump command was issued; filled-tank sensor and
+  bounded pump testing remain outstanding.
+
+Raw per-boot JSON (kernel and recovery logs, firmware settings, voltage, USB
+inventory and HAL state), the controller and summary are saved off-repo in
+`~/Documents/seedypod/bringup-logs-2026-11-07/`. The software follow-ups #120 and
+#121 and installation timings #123 are merged. Boot-log PR #122 and release
+PR #124 remain drafts; the docs site refresh is deployed. The Discord write-up
+is drafted but not posted; no destination channel was supplied.
