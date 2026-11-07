@@ -44,7 +44,7 @@ until [ "$(curl -s -m 30 -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/)"
 done
 [ "$tries" -gt 240 ] || echo "BOOT-TEST: core answered, $(cut -d' ' -f1 /proc/uptime) s after boot"
 systemctl is-active seedypod-first-boot hald seedypod-core mosquitto seedypod-port80
-systemctl is-enabled seedypod-first-boot
+tr '\0' '\n' < "/proc/$(pgrep -f server/dist/index.js)/environ" | grep HAL_UNIT_ID
 df -h /
 lsblk
 free -m
@@ -66,7 +66,7 @@ sudo -u seedypod-core sudo -n -l | tail -2
 ps -o user=,args= -C hald,node,mosquitto
 nft list table ip seedypod
 grep -E 'HAL_|^User=' /etc/systemd/system/seedypod-core.service
-journalctl -u seedypod-first-boot --no-pager | tail -15
+journalctl -u seedypod-first-boot -u seedypod-cloud-init-off --no-pager | tail -15
 systemctl --failed --no-pager
 cat /run/boot-test.log > /dev/ttyAMA0
 poweroff

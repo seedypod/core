@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # What the seedypod OS image can only do on the unit it boots on, ahead of hald and
 # core (seedypod-first-boot.service). The functions are the installers' own, from
-# root-owned copies. It turns itself off once it has a unit id, and runs again next
-# boot if it doesn't. seedypod-cloud-init-off.service runs it with --cloud-init after
+# root-owned copies. Writing the unit id comes last and is what ends it, so a boot that
+# doesn't get that far tries again. It stays clear of systemctl: cloud-init and userconf
+# reload systemd on first boot, and a call caught by that fails with "Transport endpoint
+# is not connected". seedypod-cloud-init-off.service runs it with --cloud-init after
 # cloud-init has finished, on each boot until cloud-init can go off.
 set -uo pipefail
 
@@ -22,12 +24,9 @@ if [ "$stage" = --cloud-init ]; then boot_cloud_init; exit 0; fi
 
 id="$(hal_unit_id)"
 if [ -z "$id" ]; then echo "hald gave no unit id; trying again next boot" >&2; exit 1; fi
-mkdir -p "$(dirname "$UNIT_ENV")"
-echo "HAL_UNIT_ID=$id" > "$UNIT_ENV"
-echo "→ unit id $id"
 # So the setup hotspot can come up on a card that was never given a country or a network.
 rfkill unblock wifi
 apply_wear_settings
-# --no-reload, like the file above: a daemon-reload is slow on one core with cloud-init
-# running, and timed out under emulation.
-systemctl disable --no-reload seedypod-first-boot.service
+mkdir -p "$(dirname "$UNIT_ENV")"
+echo "HAL_UNIT_ID=$id" > "$UNIT_ENV"
+echo "→ unit id $id"

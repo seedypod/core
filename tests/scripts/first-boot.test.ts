@@ -58,10 +58,9 @@ describe('the first boot', () => {
     expect(unitId()).toBe('HAL_UNIT_ID=gardyn-db753a85\n')
   })
 
-  it('never asks systemd to reload, which timed out with cloud-init running', () => {
+  it('stays clear of systemctl for itself, which a reload elsewhere in first boot can break', () => {
     boot()
-    expect(log()).not.toContain('daemon-reload')
-    expect(log()).toContain('systemctl disable --no-reload')
+    expect(log()).not.toMatch(/systemctl (daemon-reload|disable|enable)/)
   })
 
   it('unblocks Wi-Fi, so the setup hotspot works on a card with no network set', () => {
@@ -75,20 +74,13 @@ describe('the first boot', () => {
     expect(log()).toContain('systemctl restart systemd-journald')
   })
 
-  it('turns itself off, so later boots leave it all alone', () => {
-    boot()
-    expect(log()).toContain('disable --no-reload seedypod-first-boot.service')
-  })
-
   it('tries again next boot when hald gives no unit id, and core keeps no made-up one', () => {
     writeFileSync(join(state, 'no-id'), '')
     expect(boot().code).toBe(1)
     expect(unitId()).toBe('')
-    expect(log()).not.toContain('disable seedypod-first-boot.service')
     rmSync(join(state, 'no-id'))
     boot()
     expect(unitId()).toBe('HAL_UNIT_ID=gardyn-db753a85\n')
-    expect(log()).toContain('disable --no-reload seedypod-first-boot.service')
   })
 })
 

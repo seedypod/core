@@ -44,7 +44,7 @@ while ! curl -fs -o /dev/null http://seedypod.local/; do sleep 2; done; date    
 | T1 | `seedypod.local` answers | before SSH |
 | T2 | SSH opens | about 3 minutes |
 | T3 | `http://seedypod.local/` serves **Welcome** | |
-| T4 | `systemctl is-system-running` says `running`. Under QEMU it says `degraded`, from `udisks2` and `rpi-zram-writeback.timer`: check `systemctl --failed` for those on a real unit | |
+| T4 | `systemctl is-system-running` says `running`. Under QEMU it says `degraded`, from `udisks2` and `seedypod-usb-recover`, which has no USB there: check `systemctl --failed` for those on a real unit | |
 
 Then a reboot: time power off to T3 again (about 4 minutes on a script install).
 
@@ -67,7 +67,7 @@ journalctl -b -u seedypod-first-boot --no-pager
 - [ ] `cat /proc/swaps` shows `/dev/zram0`; `journalctl --disk-usage` reports RAM use only;
       `findmnt -no OPTIONS /` has `noatime`.
 - [ ] `ls -l /dev/seedypod/` names the cameras, from `seedypod-camera-rules.service`.
-- [ ] `systemctl is-enabled seedypod-first-boot` says `disabled`, and a reboot doesn't run it.
+- [ ] `systemctl status seedypod-first-boot` after a reboot says the condition wasn't met.
 - [ ] `ls /etc/cloud/cloud-init.disabled` exists after first boot with Wi-Fi up. If Wi-Fi came
       up after cloud-init finished, it appears after the next boot instead. The network
       comes back after a reboot with it off.
