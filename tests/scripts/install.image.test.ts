@@ -110,7 +110,7 @@ describe('unpacking over a prefix core owns', () => {
   it('downloads before it stops anything, so a dropped link costs nothing', () => {
     const body = readFileSync(script, 'utf8')
     expect(body.indexOf('curl -fsSL "$TARBALL_URL"')).toBeLessThan(body.indexOf('\nclaim_prefix\n'))
-    expect(body).toMatch(/trap 'clear_busy; abandon_update' EXIT\nclaim_prefix/)
+    expect(body).toMatch(/trap 'abandon_update; clear_busy' EXIT\nclaim_prefix/)
     expect(body).toMatch(/systemctl restart seedypod-core.service\ntrap - EXIT/)
   })
 
