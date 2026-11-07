@@ -83,9 +83,9 @@ been timed.
 | `install-hal` | about 4.5 minutes |
 | Core install, compiling `better-sqlite3` | about 56 minutes, 53 of them the compile |
 | Core install, with the prebuilt binary | not timed yet; it skips that compile |
-| Update (rerunning the core installer) | about 2 minutes |
-| Reboot, until core serves pages | about 4 minutes |
-| seedypod OS, first boot until core serves pages | not timed on a real unit yet |
+| Update (rerunning the core installer) | 1 minute 24 seconds |
+| Reboot, until core serves pages | about 2.5 minutes |
+| seedypod OS, first boot until core serves pages | 4 minutes 31 seconds |
 
 ## 0. Back up
 
@@ -360,7 +360,7 @@ Any of those means reflashing with Raspberry Pi OS Lite (32-bit). Otherwise chec
 the Wi-Fi network is 2.4 GHz.
 
 **`seedypod.local` answers but SSH refuses.** Wait: SSH opened about 7.5 minutes
-after power on, later than mDNS.
+after power on in the Zero W image bring-up, later than mDNS.
 
 **SSH warns that the host key changed.** The card was reflashed. Run
 `ssh-keygen -R seedypod.local`.
