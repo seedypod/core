@@ -801,9 +801,15 @@ mod tests {
             uptime: Duration::from_secs(600),
             has_cameras: true,
         };
-        let got = recover(&what, &on, &mut |_| plug_in(&hub_appears, "1-1"), &mut || {
-            Ok(false)
-        });
+        // After the boot wait and the unbind, while the re-probe settles.
+        let mut sleeps = 0;
+        let mut sleep = |_| {
+            sleeps += 1;
+            if sleeps == 3 {
+                plug_in(&hub_appears, "1-1");
+            }
+        };
+        let got = recover(&what, &on, &mut sleep, &mut || Ok(false));
         assert_eq!(got, Recovery::Recovered { attempts: 1 });
         assert_eq!(counted(&root), None);
         let _ = std::fs::remove_dir_all(root);
