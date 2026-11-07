@@ -28,6 +28,7 @@ export const deviceSettings = sqliteTable('device_settings', {
   mqttTlsEnabled: integer({ mode: 'boolean' }).notNull().default(false),
   mqttTlsInsecure: integer({ mode: 'boolean' }).notNull().default(false),
   captureIntervalMin: integer().notNull().default(60),
+  telemetryFlushMin: integer().notNull().default(5),
   /** Analyser whose green fraction drives pod trends (ADR-0019). */
   primaryAnalyzer: text().notNull().default('green-threshold'),
   /** Store large analyser outputs (masks) in the blob sink. */
@@ -43,6 +44,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   mirrorSecretAccessKey: text(),
   /** Autopilot kill switch (ADR-0020): off stops every rule and drops their light leases. */
   autopilotEnabled: integer({ mode: 'boolean' }).notNull().default(true),
+  /** HomeKit bridge (ADR 0023): off by default; set through homekit.setEnabled once the bridge started. */
+  homekitEnabled: integer({ mode: 'boolean' }).notNull().default(false),
   /** Off on a new database so the first run opens on Welcome (ADR-0021); databases from before it migrate as set up. */
   setupComplete: integer({ mode: 'boolean' }).notNull().default(true),
   updatedAt: text().notNull(),
@@ -98,6 +101,28 @@ export const pods = sqliteTable('pods', {
   plantedAt: text(),
   status: text({ enum: ['empty', 'seeded', 'growing', 'harvest', 'attention'] }).notNull().default('empty'),
   notes: text().notNull().default(''),
+  updatedAt: text().notNull(),
+  /** When the status last changed, for "ready for 2 d". */
+  statusSince: text(),
+  /** The last cut (ADR-0022): camera readiness counts only photos after it. */
+  lastHarvestAt: text(),
+})
+
+/**
+ * Optional per-crop harvest knowledge (ADR-0022), keyed by the plant's name in
+ * lower case. Entered by hand or filled in by an agent over MCP; the camera's
+ * estimate works without any.
+ */
+export const plantProfiles = sqliteTable('plant_profiles', {
+  key: text().primaryKey(),
+  name: text().notNull(),
+  /** Harvest window, days from planting. */
+  harvestMinDays: integer(),
+  harvestMaxDays: integer(),
+  /** Leaf cover (green fraction, 0–1) at which the plant is ready to cut. */
+  targetCover: real(),
+  notes: text().notNull().default(''),
+  source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
   updatedAt: text().notNull(),
 })
 
@@ -188,3 +213,22 @@ export const automationRuns = sqliteTable('automation_runs', {
   outcome: text({ enum: ['fired', 'skipped', 'clamped', 'dry_run', 'refused', 'error'] }).notNull(),
   detail: text().notNull().default('{}'),
 }, t => [index('automation_runs_rule_time').on(t.automationId, t.firedAt)])
+
+/** Saved pod plans (src/plants/planner.ts): layout and sowing waves as JSON. */
+export const plans = sqliteTable('plans', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  model: text({ enum: ['home', 'studio', 'nursery'] }).notNull(),
+  mode: text({ enum: ['staggered', 'batch'] }).notNull().default('staggered'),
+  /** JSON: { plantId, count }[] */
+  request: text().notNull(),
+  /** JSON: PlanResult */
+  layout: text().notNull(),
+  /** JSON: SowingWave[] */
+  sowing: text().notNull(),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+  appliedAt: text(),
+  /** Sow reminders already raised, JSON string[]. */
+  issued: text().notNull().default('[]'),
+})

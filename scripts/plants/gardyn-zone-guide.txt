@@ -1,0 +1,140 @@
+# Gardyn "All Plants Placement by Light Zone Guide" (help.mygardyn.com/en/articles/11547329), read 2026-11-02.
+# name|zone (high|mid|low). Dragon Beans and Green Beans share one line upstream.
+Banana Pepper|high
+Black Pearl Pepper|high
+Burrito Pepper|high
+Candy Cane Pepper|high
+Goliath Pepper|high
+Hungarian Hot Wax Pepper|high
+Jalapeño|high
+Lemon Hot Pepper|high
+Poblano Pepper|high
+Purple Cayenne Pepper|high
+Shishito Pepper|high
+Sweet Pepper|high
+Red Cherry Tomato|high
+Yellow Cherry Tomato|high
+Fairytale Eggplant|high
+Mini Eggplant|high
+Thai Eggplant|high
+Dragon Beans Green Beans|high
+Purple Beans|high
+Yellow Beans|high
+Red Mini Strawberries|high
+Yellow Mini Strawberry|high
+Bare Root Strawberries|high
+Cape Gooseberry|high
+Cucumber|high
+Mini Okra|high
+Mini Pumpkin|high
+Mini Squash|high
+Bi-Color Sunflower|high
+Celosia Mix|high
+Fuchsia Snapdragon|high
+Purple Snapdragon|high
+Scarlet Snapdragon|high
+Stock Flower|high
+Sunflower|high
+Yellow Snapdragon|high
+Zinnia|high
+Portulaca Mix|high
+Holy Basil|high
+Lavender|high
+Stevia|high
+Tokyo Bekana|high
+Mini Broccoli|high
+Mini Cauliflower|high
+American Mustard|medium
+Breen|medium
+Bronze Arrow|medium
+Bull's Blood Beets|medium
+Buttercrunch|medium
+Butterhead|medium
+Cardinale|medium
+Collard Greens|medium
+Endive Lettuce|medium
+Flashy Trout Back|medium
+Green Bok Choy|medium
+Green Cabbage|medium
+Green Mustard|medium
+Green Salanova|medium
+Green Tatsoi|medium
+Hon Tsai Tai|medium
+Iceberg|medium
+Kale|medium
+Kale Lacinato|medium
+Lollo Rossa|medium
+Monte Carlo|medium
+Muir Lettuce|medium
+Perpetual Spinach|medium
+Pink Celery|medium
+Purple Bok Choy|medium
+Purple Kohlrabi|medium
+Radicchio|medium
+Red Amaranth|medium
+Red Mustard|medium
+Red Oak Leaf Lettuce|medium
+Red Romaine|medium
+Red Sails Lettuce|medium
+Red Salad Bowl|medium
+Red Sorrel|medium
+Red Tatsoi|medium
+Red Swiss Chard|medium
+Romaine|medium
+Rouge d'Hiver|medium
+Sorrel|medium
+Wasabi Greens|medium
+Watercress|medium
+White Kohlrabi|medium
+Yellow Swiss Chard|medium
+Celery|medium
+Basil|medium
+Italian Parsley|medium
+Lime Basil|medium
+Mammoth Basil|medium
+Purple Basil|medium
+Sage|medium
+Savory|medium
+Shiso|medium
+Sweet Marjoram|medium
+Sweet Thai Basil|medium
+Tarragon|medium
+Black Viola|medium
+Blue Cornflower|medium
+Blush Hibiscus|medium
+Borage|medium
+Canna Flower|medium
+Chamomile|medium
+Dianthus|medium
+Fiesta Gitana|medium
+Marietta Marigold|medium
+Matilda|medium
+Nasturtium|medium
+Night-Scented Stock|medium
+Pink Petunia|medium
+Purple Campanula|medium
+Purple Petunia|medium
+Radio Calendula|medium
+Red Hibiscus|medium
+Red Impatiens|medium
+Torenia|medium
+Violet Impatiens|medium
+Viola|medium
+White Petunia|medium
+Peas|medium
+Catnip|low
+Chervil|low
+Chives|low
+Cilantro|low
+Dill|low
+Garlic Chives|low
+Lemon Balm|low
+Lemongrass|low
+Mint|low
+Oregano|low
+Rosemary|low
+Thyme|low
+Arugula|low
+Purslane|low
+Wheatgrass|low
+Bunching Onions|low

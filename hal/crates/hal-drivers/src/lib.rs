@@ -19,6 +19,7 @@ pub mod dyp_a01;
 pub mod ezo;
 pub mod gpio_binary;
 pub mod ina219;
+pub mod mjpeg;
 pub mod pct2075;
 pub mod pwm;
 pub mod uvc;

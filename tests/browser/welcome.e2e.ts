@@ -20,6 +20,6 @@ test('a fresh unit opens on Welcome, refuses a backup from newer software, and s
 
   await page.getByRole('button', { name: 'Back', exact: true }).click()
   await page.getByRole('button', { name: 'Set up a new garden' }).click()
-  await expect(page.getByText('Grow light')).toBeVisible()
+  await expect(page.getByTestId('tower-3d')).toBeVisible()
   expect((await (await page.request.get('/api/settings')).json()).setupComplete).toBe(true)
 })

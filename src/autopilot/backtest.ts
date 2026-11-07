@@ -14,7 +14,7 @@ import type { Store } from '../store/types'
 import { signalsOf } from './ast'
 import { AutopilotEngine, type ActionResult } from './engine'
 import { catalog, slope } from './signals'
-import type { AutomationRule, DayOfWeek, RunOutcome } from './types'
+import type { AutomationRule, CompareOp, Condition, DayOfWeek, Expr, RunOutcome } from './types'
 
 interface Sample { t: number, v: number }
 
@@ -162,5 +162,79 @@ export async function backtest(store: Store, input: BacktestInput): Promise<Back
     fires,
     suppressed,
     summary: { fires: fires.length, suppressed: suppressed.length, unknownSteps, disabledAt },
+  }
+}
+
+/** The signal a rule watches most directly: its first comparison against a number. */
+export function firstComparison(c: Condition): { key: string, op: CompareOp, threshold: number } | null {
+  const signalOf = (e: Expr) => (e.kind === 'signal' || e.kind === 'window' ? e.signal : null)
+  const flip: Record<CompareOp, CompareOp> = { '>': '<', '>=': '<=', '<': '>', '<=': '>=', '==': '==', '!=': '!=' }
+  switch (c.kind) {
+    case 'compare': {
+      const l = signalOf(c.left)
+      const r = signalOf(c.right)
+      if (l && c.right.kind === 'literal') return { key: l, op: c.op, threshold: c.right.value }
+      if (r && c.left.kind === 'literal') return { key: r, op: flip[c.op], threshold: c.left.value }
+      return null
+    }
+    case 'between': {
+      const s = signalOf(c.subject)
+      return s && c.max.kind === 'literal' ? { key: s, op: '<=', threshold: c.max.value } : null
+    }
+    case 'and':
+    case 'or':
+      for (const inner of c.conditions) {
+        const f = firstComparison(inner)
+        if (f) return f
+      }
+      return null
+    case 'not':
+      return firstComparison(c.condition)
+    case 'sustained':
+      return firstComparison(c.condition)
+    default:
+      return null
+  }
+}
+
+export interface BacktestSummary {
+  days: number
+  wouldFire: number
+  suppressed: number
+  disabledAt: string | null
+  /** The watched signal, its threshold, and the furthest it went towards (or past) it. */
+  watch: { key: string, label: string, unit: string, op: CompareOp, threshold: number, extreme: number | null } | null
+  /** The watched signal, downsampled for a sparkline; null where unknown. */
+  spark: Array<number | null>
+  /** Indexes into `spark` where the rule would have fired. */
+  fireAt: number[]
+  liveOnly: string[]
+}
+
+/** A backtest boiled down to one line and a sparkline, for the rules list. */
+export function summarize(result: BacktestResult, rule: Pick<AutomationRule, 'conditions'>, points = 48): BacktestSummary {
+  const cmp = firstComparison(rule.conditions)
+  const trace = cmp ? result.traces.find(t => t.key === cmp.key) : undefined
+  const values = trace?.values ?? []
+  const bucket = Math.max(1, Math.ceil(values.length / points))
+  const spark: Array<number | null> = []
+  for (let i = 0; i < values.length; i += bucket) {
+    const slice = values.slice(i, i + bucket).filter((v): v is number => v !== null)
+    spark.push(slice.length ? Math.round((slice.reduce((a, b) => a + b, 0) / slice.length) * 1000) / 1000 : null)
+  }
+  const index = new Map(result.times.map((t, i) => [t, i]))
+  const fireAt = [...new Set(result.fires.map(f => Math.floor((index.get(f.at) ?? 0) / bucket)))]
+  const known = values.filter((v): v is number => v !== null)
+  const high = cmp && (cmp.op === '>' || cmp.op === '>=' || cmp.op === '!=' || cmp.op === '==')
+  const extreme = known.length ? (high ? Math.max(...known) : Math.min(...known)) : null
+  return {
+    days: Math.round((Date.parse(result.to) - Date.parse(result.from)) / 86_400_000),
+    wouldFire: result.summary.fires,
+    suppressed: result.summary.suppressed,
+    disabledAt: result.summary.disabledAt,
+    watch: cmp ? { key: cmp.key, label: trace?.label ?? cmp.key, unit: trace?.unit ?? '', op: cmp.op, threshold: cmp.threshold, extreme } : null,
+    spark,
+    fireAt,
+    liveOnly: result.liveOnly,
   }
 }

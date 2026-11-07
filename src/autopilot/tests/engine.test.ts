@@ -11,7 +11,7 @@ function rule(o: Partial<AutomationRule> & { actions: Action[] }): AutomationRul
   return { id: 1, name: 'r', enabled: true, dryRun: false, priority: 50, cooldownMin: null, trigger: { kind: 'tick', everyMin: 1 }, conditions: { kind: 'and', conditions: [] }, ...o }
 }
 
-function rig(rules: AutomationRule[], init: Record<string, number> = {}) {
+function rig(rules: AutomationRule[], init: Record<string, number> = {}, clockTrusted?: () => boolean) {
   let now = Date.parse('2026-10-31T12:00:00Z')
   let minutes = 12 * 60
   const values = { ...init }
@@ -22,6 +22,7 @@ function rig(rules: AutomationRule[], init: Record<string, number> = {}) {
   let refuse: string | null = null
   const engine = new AutopilotEngine({
     now: () => now,
+    clockTrusted,
     clock: () => ({ nowMinutes: minutes, dayOfWeek: 'saturday', dateKey: `2026-10-${31 + Math.floor((now - Date.parse('2026-10-31T00:00:00Z')) / 86_400_000)}` }),
     signals: () => values,
     loadRules: () => rules,
@@ -107,6 +108,16 @@ describe('AutopilotEngine', () => {
     delete r.values['sensor.water_level_pct']
     await r.step()
     expect(r.calls).toHaveLength(1)
+  })
+
+  it('holds a timeOfDay trigger until the clock can be believed, then fires within its grace', async () => {
+    let trusted = false
+    const r = rig([rule({ trigger: { kind: 'timeOfDay', at: '12:02' }, actions: [{ kind: 'stopPump' }] })], {}, () => trusted)
+    await r.step(3)
+    expect(r.calls).toEqual([])
+    trusted = true
+    await r.step()
+    expect(r.calls).toEqual(['stop'])
   })
 
   it('fires a timeOfDay trigger once a day within its grace window', async () => {

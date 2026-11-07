@@ -37,11 +37,13 @@ the end of its life.
 
 | Alert | What it means | Fix |
 |---|---|---|
-| **Water low** (`water_low`) | The ranger reads the surface further away than `limits.water_low_cm` (16 cm by default). The pump won't start. | Fill the tank. The alert clears by itself. If it stays on with a full tank, check Settings → Tank calibration and the ranger's view. |
+| **Water low** (`water_low`) | The ranger reads the surface further away than `limits.water_low_cm` (16 cm by default). The pump won't start. | Fill the tank. The alert clears by itself after 6 good telemetry rounds, a minute at the default `telemetry_interval_s`. Nothing restarts the pump: the next scheduled cycle runs. If it stays on with a full tank, check Settings → Tank calibration and the ranger's view. |
 | **Pump fault** (`pump_fault`) | The dry-run interlock stopped the pump, or it ran past `limits.pump_max_run_s`. It is **latched**: the pump stays off until acknowledged. | Fix the cause (water, intake, kinked tube), then acknowledge it in **Alerts** or long-press the button (1 s). |
 | **Dosing lockout** (`dose_fault`) | A doser hit its daily cap or its lockout count (ADR-0014). Latched. | Check the reservoir and the dosing schedule, then acknowledge. |
 | **Board over temperature** (`over_temp`) | The board's temperature sensor or its alert line tripped. The pump is refused. | Check ventilation and the PSU. It clears when the board cools. |
-| **Camera missing** (`camera_missing`) | A still came back empty or implausible. Usually unplugged, or a stale device name. | Reseat the USB cable. `hald --list-cameras` should show both. If they swapped ports, regenerate the rules ([Camera names](hardware/hal.md#camera-names)). |
+| **Camera missing** (`camera_missing`) | A camera gave no usable still. The detail says which camera and why: `device not present` is unplugged or a stale device name; `no good frame: damaged frame` is a camera that's there but sending torn frames, usually a marginal USB path. | Reseat that camera's USB cable and check for damage along its run. `hald --list-cameras` should show both. If they swapped ports, regenerate the rules ([Camera names](hardware/hal.md#camera-names)). It clears when every camera has given a good still. A unit with one bad camera keeps working on the other; it's fine to leave it that way. |
+| **Top / Bottom camera connection** (`camera_link_upper`, `camera_link_lower`) | That camera is sending damaged frames, which usually means a failing cable or connector. It appears at 4 damaged frames in the last 20, and one photo can only add 3 however many times it retried, so one glitch can't raise it. "May be failing" means some photos still work; "has failed" means the last 6 were all damaged. An unplugged camera doesn't count: that's **Camera missing**. | [Reseat its cable](#reseat-a-camera-cable). It clears after 12 good frames in a row. Once you've reseated the cable you can dismiss it; it only comes back on a new pattern. |
+| **Camera hub connection** (`camera_hub_flaky`) | The USB hub the cameras share didn't come up by itself on at least 3 of the last 10 starts. It's the same physical link, so it often comes before camera trouble. | [Reseat the cables](#reseat-a-camera-cable). It clears once at most 1 of the last 10 starts missed. |
 | **Hardware daemon offline** (`hal_offline`) | Core lost `hald`: it crashed, the Pi rebooted, or the MQTT broker went away. | `journalctl -u hald -n 100`. `systemctl status mosquitto`. `hald` restarts itself (`Restart=always`). |
 | **Light fault** (`light_fault`) | The light didn't take a command. | Check the light-bar connector, then `journalctl -u hald`. |
 | **Backup overdue** (`backup_stale`) | No off-card backup has succeeded for 7 days. On a unit that never had one it reads "No off-card backup yet", 7 days after core first started. Also a problem sensor in Home Assistant. | **Settings → Backup → Download backup**, or set up the mirror for nightly backups. If the nightly upload is failing, Settings → Backup says why. It clears on the next backup. |
@@ -74,6 +76,11 @@ Expected I²C addresses, with the stock parts and the default probe addresses:
 The **Sensors** screen shows the same inventory, with any part that didn't
 answer at boot marked **not found** and the reason.
 
+**Settings → SD card → Database** shows what's writing to the card: each
+table's rows, size, last write and writes per hour, busiest first, plus an
+integrity check. A scan reads the whole file, so the first one after opening
+the page can take a minute on a unit. It never shows the contents of a row.
+
 ## Backups
 
 A backup is one file, `seedypod-backup-<unit>-<date>.tar.gz`, that holds
@@ -85,6 +92,7 @@ everything needed to rebuild the unit on a new card:
 | `etc/seedypod/hal.toml` | Pin map, limits and unit id. |
 | `etc/mosquitto/seedypod.passwd` | The Home Assistant broker password, if `--mqtt-lan` made one. |
 | `var/lib/seedypod/*.json` | `hald`'s state: light level, dosing ledgers, probes added in the app (`sensors.json`). |
+| `homekit/*.json` | HomeKit's identity and pairing keys, once HomeKit has been on (ADR 0023). Restored onto the same unit, it stays paired in Home. |
 | `captures/` | Photos, only when you ask for them. |
 | `manifest.json` | Unit, core and `hald` versions, database schema, creation time and a checksum per file. |
 
@@ -145,6 +153,75 @@ and the page reloads when the unit is back.
 restored the wrong backup, use **Settings → Backup → Undo restore** (or
 `sudo seedypod-restore --undo`). A second undo redoes the restore.
 
+## Check which camera is which
+
+Use this after replacing a camera or moving a cable, or if **Analysis** seems
+to score the wrong pods. The names `upper` and `lower` come from USB port order
+by default, so a swap is easy to miss. Markers settle it in a few minutes, with
+no need to open the base.
+
+1. Put **two** dark round markers in pods the top camera can see, and **one**
+   in a pod the bottom camera can see. Black pod caps work well against the
+   white towers. Choose pods that only one camera can see.
+2. Turn the light on, and take a photo from each camera on **Analysis**.
+3. The photo with two markers is the top camera (`upper`). The photo with one
+   is the bottom camera (`lower`).
+4. If the names are the wrong way round, swap them. `hald --list-cameras` shows
+   each camera's port:
+
+   ```sh
+   sudo hald --camera-rules upper=<port> lower=<port> | sudo tee /etc/udev/rules.d/70-seedypod-cameras.rules
+   sudo udevadm control --reload
+   sudo udevadm trigger --action=add --subsystem-match=video4linux
+   sudo systemctl restart hald
+   ```
+
+5. Take the markers out.
+
+Marked photos also make a quick health check. If a photo is torn into bands,
+has a solid green or grey block, or a marker appears in the wrong place, the
+camera's cable is the first thing to reseat. Its image can't be trusted for
+**Analysis**, even though the file looks like a normal photo.
+
+## Reseat a camera cable
+
+Use this when **Alerts** or **Status** says a camera's connection may be failing.
+Photos with bands, a solid green or grey block, or a split image point the same way.
+
+1. Check which camera it is. The alert says top or bottom; if you aren't sure which
+   is which, do the [marker check](#check-which-camera-is-which).
+2. Turn the unit off at the wall.
+3. Unplug that camera's USB cable at both ends and plug it back in firmly. Look for
+   pinches, kinks and bent pins along its run.
+4. Reseat the connectors on the small board beside the Pi, which the cameras' USB
+   runs through.
+5. Turn the unit on and take a few photos from that camera on **Analysis**.
+
+The notice clears after 12 good frames in a row, which is about half a day at the
+default hourly photo. If damaged frames carry on after reseating, the cable or
+camera itself is the likely fault. The unit runs fine on one camera in the meantime.
+
+## Power cuts
+
+To save wear on the card, core writes sensor history in batches, every 5
+minutes by default (ADR-0021). A power cut can lose up to that much, which
+shows as a gap in the charts. Stopping or updating core and taking a backup
+write the batch first, so they lose nothing. If the card won't take the batch,
+the backup fails and says why, because a backup without those readings would
+lose them on a restore. Settings, schedules, grow data and alerts are written
+as they happen.
+
+A longer interval saves a little more wear and risks a little more history.
+To change it (1–60 minutes):
+
+```bash
+curl -X PATCH http://seedypod.local:3000/api/settings \
+  -H 'content-type: application/json' -d '{"telemetryFlushMin": 10}'
+```
+
+If you query `seedypod.db` directly, the `telemetry` table lags the app by up
+to one interval.
+
 ## Updates
 
 Rerun the installers. They keep your config and data:
@@ -163,13 +240,16 @@ Power the unit off at the wall before opening it.
 
 - **SD card.** With a recent backup (in the bucket, or a downloaded file),
   replacing a dead card takes about fifteen minutes:
-  1. Flash Raspberry Pi OS Lite onto a new card, ideally a high-endurance
-     one, as in [Installation](INSTALLATION.md#1-flash), with the same
-     hostname and Wi-Fi.
-  2. Run `install-hal`, then `install`.
-  3. Open `http://seedypod.local:3000`, choose **Restore from a backup**, and
-     pick the latest. Or skip the browser:
-     `curl -fsSL …/scripts/install | bash -s -- --restore <file|url>`.
+  1. Flash [seedypod OS](INSTALLATION.md#flash-seedypod-os-recommended) onto a
+     new card, ideally a high-endurance one, with the same Wi-Fi.
+  2. Put the card in and power on.
+  3. Open `http://seedypod.local/`, choose **Restore from a backup**, and pick
+     the latest.
+
+  On a card you're setting up by script, flash Raspberry Pi OS Lite
+  ([step 1](INSTALLATION.md#1-flash)), run `install-hal`, then `install`, and
+  restore the same way, or skip the browser with
+  `curl -fsSL …/scripts/install | bash -s -- --restore <file|url>`.
 
   The unit comes back with everything listed under
   [Restoring a backup](#restoring-a-backup). Photos come back too if the
@@ -177,7 +257,8 @@ Power the unit off at the wall before opening it.
   backup, the card is a fresh install: choose **Set up a new garden**.
 - **Camera.** Plug it into the same USB port and the stable name follows the
   port, so nothing changes. If you use a different port, run
-  `hald --list-cameras` and regenerate the rules.
+  `hald --list-cameras` and regenerate the rules. Then
+  [check which camera is which](#check-which-camera-is-which).
 - **Air sensor.** A DHT20 and an AM2320 are interchangeable: `hald` detects
   which one answers.
 - **pH / EC / temperature probe.** Swap the probe on the same EZO circuit,

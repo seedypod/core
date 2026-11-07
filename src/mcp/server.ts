@@ -77,10 +77,45 @@ export function createMcpServer(ctx: Context): McpServer {
     return text(await caller.automations.backtest({ id: i.id, rule, hours: i.hours ?? 24, stepMin: i.step_min ?? 5 }))
   })
 
+  server.registerTool('plant_catalog', {
+    description: 'Search the plant catalog (Gardyn light zone high/medium/low, first-harvest window in months, care level, yield, succession group). Filter by q (name), category (fruiting, vegetable, legume, flower, herb, green, lettuce) or zone.',
+    inputSchema: { q: z.string().optional(), category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']).optional(), zone: z.enum(['high', 'medium', 'low']).optional() },
+  }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, harvestMonths: p.harvestMonths, careLevel: p.careLevel, inStore: p.inStore }))))
+
+  server.registerTool('plan_layout', {
+    description: 'Lay out plants on a Gardyn by light zone using Gardyn\'s rules (ideal zone, else one zone lower; cucumbers bottom-centre; large plants spaced apart), around pods already planted. model: home (30) or studio (16). Returns slot assignments with reasons and anything that did not fit. Read-only; use save_plan to keep it.',
+    inputSchema: { model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })) },
+  }, async i => text(await caller.planner.layout({ model: i.model, plants: i.plants, respectExisting: true })))
+
+  server.registerTool('best_spot', {
+    description: 'Best free slots for adding one plant to the current tower, ranked by light-zone fit and shading.',
+    inputSchema: { model: z.enum(['home', 'studio']), plantId: z.string() },
+  }, async i => text(await caller.planner.bestSpots({ model: i.model, plantId: i.plantId, limit: 5 })))
+
+  server.registerTool('save_plan', {
+    description: 'Compute and save a layout plus a staggered sowing schedule (Gardyn succession guidance). Does not touch the pods until apply_plan.',
+    inputSchema: { id: z.string(), name: z.string(), model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), mode: z.enum(['staggered', 'batch']).optional() },
+  }, async i => text(await caller.planner.savePlan({ id: i.id, name: i.name, model: i.model, plants: i.plants, mode: i.mode ?? 'staggered' })))
+
+  server.registerTool('apply_plan', {
+    description: 'Write a saved plan onto the pods: first-wave pods are marked seeded today, later waves get their sow date and a reminder fires when it arrives. Overwrites the listed pods — confirm with the user first.',
+    inputSchema: { id: z.string() },
+  }, async i => text(await caller.planner.applyPlan(i)))
+
   server.registerTool('pod_health', {
     description: 'Per-pod growth verdicts from camera stills: green-area fraction and trend (growing / stalled / declining / unknown), from the primary analyser (see list_analyses). Use with `pods` to decide which slots need attention.',
     inputSchema: {},
   }, async () => text(await caller.vision.podTrends()))
+
+  server.registerTool('harvest_outlook', {
+    description: 'Per planted pod: state (ready | soon | growing | unknown), age in days, leaf cover (0–1 green fraction of the pod in camera stills) against its target, cover gained per day, the harvest window in days from planting (from a plant profile, else estimated from the camera), days to ready / days left, the matched profile, and a one-sentence reason. The camera leads; profiles (see plant_profiles) add windows and targets.',
+    inputSchema: {},
+  }, async () => text(await caller.grow.harvest()))
+
+  server.registerTool('plant_profiles', {
+    description: 'Per-crop harvest knowledge the unit holds: name, harvest window (harvestMinDays–harvestMaxDays from planting), targetCover (leaf cover 0–1 at which it is worth cutting), notes, and whether a person or an agent set it. Pods match a profile by exact name, else by the longest profile name whose words all appear in the pod\'s plant name ("Kale" covers "Red Russian Kale").',
+    inputSchema: {},
+  }, async () => text(await caller.plants.list()))
 
   // ── Write (all go through the HAL guard) ─────────────────────────────────
   server.registerTool('set_light', {
@@ -117,6 +152,28 @@ export function createMcpServer(ctx: Context): McpServer {
     description: 'Update a plant pod: what is planted, when, its status and notes.',
     inputSchema: { slot: z.number().int().min(1).max(60), plant: z.string().nullable().optional(), planted_at: z.string().nullable().optional(), status: z.enum(['empty', 'seeded', 'growing', 'harvest', 'attention']).optional(), notes: z.string().optional() },
   }, async i => text(await caller.grow.updatePod({ slot: i.slot, plant: i.plant, plantedAt: i.planted_at, status: i.status, notes: i.notes })))
+
+  server.registerTool('set_plant_profiles', {
+    description: 'Create or replace plant profiles by name, to sharpen harvest_outlook. A good workflow: read `pods`, then for each distinct plant give its typical days from planting (seeding the pod) to first harvest in an indoor hydroponic tower under grow lights as harvest_min_days–harvest_max_days, and the leaf cover (0–1; the share of the pod\'s camera crop that is plant, ~0.3 for a compact herb, ~0.4–0.5 for a full lettuce) at which it is worth cutting. Use the plant names as the pods spell them, or a shorter common name ("Kale"). Leave a field null when unsure; say what you assumed in notes.',
+    inputSchema: {
+      profiles: z.array(z.object({
+        name: z.string().min(1),
+        harvest_min_days: z.number().int().min(1).max(365).nullable().optional(),
+        harvest_max_days: z.number().int().min(1).max(365).nullable().optional(),
+        target_cover: z.number().min(0.05).max(1).nullable().optional(),
+        notes: z.string().optional(),
+      })).min(1).max(100),
+    },
+  }, async i => text(await caller.plants.upsert({
+    profiles: i.profiles.map(p => ({ name: p.name, harvestMinDays: p.harvest_min_days ?? null, harvestMaxDays: p.harvest_max_days ?? null, targetCover: p.target_cover ?? null, notes: p.notes ?? '', source: 'agent' as const })),
+  })))
+
+  server.registerTool('remove_plant_profile', { description: 'Delete a plant profile by name.', inputSchema: { name: z.string().min(1) } }, async i => text(await caller.plants.remove(i)))
+
+  server.registerTool('mark_harvested', {
+    description: 'Record that a pod was cut: its status goes back to growing and the camera counts only regrowth from now on. For a final harvest, use update_pod to empty it instead.',
+    inputSchema: { slot: z.number().int().min(1).max(60) },
+  }, async i => text(await caller.grow.markHarvested(i)))
 
   server.registerTool('grow_cycle', {
     description: 'Manage the grow cycle: action start (optionally with notes), stage (germination|seedling|vegetative|harvest), or end.',

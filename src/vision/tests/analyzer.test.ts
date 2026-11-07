@@ -69,6 +69,7 @@ describe('analysers', () => {
   it('execute runs only the requested analysers and skips non-JPEGs', () => {
     expect(execute({ bytes: new Uint8Array([1, 2]), camera: 'upper', analyzers: ['exg-otsu'], opts: { artifacts: false } })).toBeNull()
     const out = execute({ bytes: jpeg(60, 50, true), camera: 'upper', analyzers: ['exg-otsu', 'unknown'], opts: { artifacts: false } })
-    expect(out?.map(o => o.analyzer)).toEqual(['exg-otsu'])
+    if (!Array.isArray(out)) throw new Error('should have scored it')
+    expect(out.map(o => o.analyzer)).toEqual(['exg-otsu'])
   })
 })

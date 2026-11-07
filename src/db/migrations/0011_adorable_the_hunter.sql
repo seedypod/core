@@ -1,0 +1,1 @@
+ALTER TABLE `device_settings` ADD `telemetryFlushMin` integer DEFAULT 5 NOT NULL;

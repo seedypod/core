@@ -114,7 +114,7 @@ Exported from a seedypod unit (ADR-0019). Every file covers the window in
 | \`manifest.json\` | Format version, window, unit, core version, analysers and which one is primary, row counts |
 | \`captures.jsonl\` | One still per line: \`id\`, \`camera\` (upper/lower), \`ts\`, \`bytes\`, \`image\` (path in this archive, or null) |
 | \`analyses.jsonl\` | One result per line: \`captureId\`, \`ts\`, \`camera\`, \`analyzer\`, \`version\`, \`source\` (device/remote), \`slot\`, \`metric\`, \`value\`, \`detail\`, \`artifact\` |
-| \`telemetry.jsonl\` | One reading per line: \`ts\`, \`sensor\`, \`value\` (canonical units, see the HAL contract) |
+| \`telemetry.jsonl\` | One reading per line, thinned to one per 15 minutes past 90 days: \`ts\`, \`sensor\`, \`value\` (canonical units, see the HAL contract) |
 | \`pods.json\` | The 30 pods: plant, planted date, status, notes |
 | \`grow_cycles.json\` | Grow cycles with start/end and stage |
 | \`images/<id>.jpg\` | The stills, when exported with images |

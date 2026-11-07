@@ -29,6 +29,7 @@ const prefix = INSTALLED_PREFIX.startsWith('__') ? path.resolve(__dirname, '..')
 const P = {
   db: env('SEEDYPOD_RESTORE_DB') ?? path.join(prefix, 'data/seedypod.db'),
   captures: env('SEEDYPOD_RESTORE_CAPTURES') ?? path.join(prefix, 'data/captures'),
+  homekit: env('SEEDYPOD_RESTORE_HOMEKIT') ?? path.join(prefix, 'data/homekit'),
   journal: env('SEEDYPOD_RESTORE_JOURNAL') ?? path.join(prefix, 'src/db/migrations/meta/_journal.json'),
   etc: env('SEEDYPOD_ETC_DIR') ?? '/etc/seedypod',
   state: env('SEEDYPOD_STATE_DIR') ?? '/var/lib/seedypod',
@@ -48,6 +49,7 @@ const NAMES = [
   /^etc\/seedypod\/hal\.toml$/,
   /^etc\/mosquitto\/seedypod\.passwd$/,
   /^var\/lib\/seedypod\/[a-z0-9_-]+\.json$/,
+  /^homekit\/[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)?\.json$/,
   /^captures\/(?:[\w-][\w.@-]*\/)*[\w-][\w.@-]*$/,
 ]
 
@@ -250,12 +252,22 @@ function settle(file, kind) {
     else own(uid, gid)
   }
   else if (kind === 'hal') {
-    own(0, lookup('/etc/group', 'seedypod') ?? 0)
+    own(0, ofDir(P.etc)[1])
     fs.chmodSync(file, 0o644)
   }
   else if (kind === 'passwd') {
-    own(lookup('/etc/passwd', 'mosquitto') ?? 0, lookup('/etc/group', 'seedypod') ?? 0)
+    own(lookup('/etc/passwd', 'mosquitto') ?? 0, ofDir(P.etc)[1])
     fs.chmodSync(file, 0o640)
+  }
+  else if (kind === 'homekit') {
+    // Pairing keys: core's user only, like hap-nodejs and core write them.
+    const [uid, gid] = ofDir(path.dirname(P.db))
+    own(uid, gid)
+    fs.chmodSync(file, 0o700)
+    for (const f of fs.readdirSync(file)) {
+      fs.chownSync(path.join(file, f), uid, gid)
+      fs.chmodSync(path.join(file, f), 0o600)
+    }
   }
   else if (kind === 'state') {
     const [uid, gid] = ofDir(P.state)
@@ -326,6 +338,8 @@ function plan(names, manifest) {
       items.push([`var/lib/seedypod/${f}`, path.join(P.state, f), state.includes(f) ? path.join(files, 'var/lib/seedypod', f) : null, 'state'])
     }
   }
+  // HomeKit's identity and pairings (ADR 0023) are swapped as one directory, and only when the bundle has them.
+  if (names.some(n => n.startsWith('homekit/'))) items.push(['data/homekit', P.homekit, path.join(files, 'homekit'), 'homekit'])
   if (manifest.photos) items.push(['data/captures', P.captures, fs.existsSync(path.join(files, 'captures')) ? path.join(files, 'captures') : null, 'captures'])
   return items
 }

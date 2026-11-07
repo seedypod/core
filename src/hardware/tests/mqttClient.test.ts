@@ -110,6 +110,47 @@ describe('MqttHalClient', () => {
     await expect(slow.removeSensor('ezo_ph', 0x63)).rejects.toThrow(/did not answer the remove ezo_ph request/)
   })
 
+  it('passes on why hald refused a still, or the status if it gave no reason', async () => {
+    const still = (fetchImpl: () => Promise<Response>) => new MqttHalClient({ unitId: U, mqtt: new FakeMqtt(), httpBase: '', fetchImpl: fetchImpl as unknown as typeof fetch }).captureStill('upper')
+    await expect(still(async () => new Response('no good frame in 3 attempts\n', { status: 503 }))).rejects.toThrow(/^no good frame in 3 attempts$/)
+    await expect(still(async () => new Response('', { status: 500 }))).rejects.toThrow('HTTP 500')
+  })
+
+  it('picks up what a still says about the link, whether or not it was good', async () => {
+    const answers = [
+      new Response(new Uint8Array(3000), { headers: { 'x-seedypod-damaged-frames': '2', 'x-seedypod-hub-boots': '8/10' } }),
+      new Response('no good frame', { status: 503, headers: { 'x-seedypod-damaged-frames': '1' } }),
+    ]
+    const client = new MqttHalClient({ unitId: U, mqtt: new FakeMqtt(), httpBase: '', fetchImpl: (async () => answers.shift()) as unknown as typeof fetch })
+    expect(client.damagedFrames('upper')).toBe(0)
+    expect(client.hubBoots()).toBeNull()
+    await client.captureStill('upper')
+    expect(client.damagedFrames('upper')).toBe(2)
+    expect(client.damagedFrames('lower')).toBe(0)
+    expect(client.hubBoots()).toEqual({ missing: 8, total: 10 })
+    await expect(client.captureStill('lower')).rejects.toThrow('no good frame')
+    expect(client.damagedFrames('lower')).toBe(1)
+    expect(client.hubBoots()).toBeNull()
+  })
+
+  it('doesn\'t repeat the last still\'s damage when hald can\'t be reached', async () => {
+    let up = true
+    const client = new MqttHalClient({
+      unitId: U,
+      mqtt: new FakeMqtt(),
+      httpBase: '',
+      fetchImpl: (async () => {
+        if (!up) throw new Error('fetch failed')
+        return new Response(new Uint8Array(3000), { headers: { 'x-seedypod-damaged-frames': '3' } })
+      }) as unknown as typeof fetch,
+    })
+    await client.captureStill('upper')
+    expect(client.damagedFrames('upper')).toBe(3)
+    up = false
+    await expect(client.captureStill('upper')).rejects.toThrow('fetch failed')
+    expect(client.damagedFrames('upper')).toBe(0)
+  })
+
   it('acknowledges alerts, fetches stills over HTTP, forwards button events, and drops garbage', async () => {
     const { mqtt, client } = make()
     const events: string[] = []

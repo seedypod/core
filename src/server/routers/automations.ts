@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { backtest } from '../../autopilot/backtest'
+import { backtest, summarize } from '../../autopilot/backtest'
 import { ActionSchema, ConditionSchema, RuleInput, TriggerSchema } from '../../autopilot/schema'
 import { catalog } from '../../autopilot/signals'
 import type { Context } from '../context'
@@ -46,6 +46,18 @@ const BacktestOut = z.object({
   summary: z.object({ fires: z.number(), suppressed: z.number(), unknownSteps: z.number(), disabledAt: z.string().nullable() }),
 })
 
+const Summary = z.object({
+  id: z.number(),
+  days: z.number(),
+  wouldFire: z.number(),
+  suppressed: z.number(),
+  disabledAt: z.string().nullable(),
+  watch: z.object({ key: z.string(), label: z.string(), unit: z.string(), op: z.enum(['>', '>=', '<', '<=', '==', '!=']), threshold: z.number(), extreme: z.number().nullable() }).nullable(),
+  spark: z.array(z.number().nullable()),
+  fireAt: z.array(z.number()),
+  liveOnly: z.array(z.string()),
+})
+
 const ts = (ctx: Context) => (ctx.now?.() ?? new Date()).toISOString()
 
 function changed(ctx: Context) {
@@ -84,6 +96,21 @@ export const automationsRouter = router({
     .input(z.object({ automationId: z.number().int().optional(), limit: z.number().int().min(1).max(1000).default(100) }))
     .output(z.array(Run))
     .query(({ ctx, input }) => ctx.store.automations.runs(input)),
+  // Static path: must come before /automations/{id}.
+  backtests: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/automations/backtests', tags: ['autopilot'], summary: 'Every rule replayed over the last days of recorded history, boiled down to a line and a sparkline' } })
+    .input(z.object({ days: z.number().int().min(1).max(14).default(7) }).optional())
+    .output(z.array(Summary))
+    .query(async ({ ctx, input }) => {
+      const to = (ctx.now?.() ?? new Date()).getTime()
+      const days = input?.days ?? 7
+      const out = []
+      // One at a time: each replay drives its own engine over the store.
+      for (const rule of ctx.store.automations.list()) {
+        out.push({ id: rule.id, ...summarize(await backtest(ctx.store, { rule, fromMs: to - days * 86_400_000, toMs: to, stepMin: 15 }), rule) })
+      }
+      return out
+    }),
   get: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/automations/{id}', tags: ['autopilot'] } })
     .input(z.object({ id: z.number().int() }))

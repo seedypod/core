@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { and, asc, desc, eq, gte, lt, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, lt, lte, notInArray, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -9,8 +9,8 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
-import { DEFAULT_SETTINGS } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import { DEFAULT_SETTINGS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
   /** File path or ':memory:'. */
@@ -21,6 +21,9 @@ export interface SqliteStoreOptions {
 }
 
 const here = dirname(fileURLToPath(import.meta.url))
+
+/** About ten hours of a stock unit's rows, under 1 MB: enough to ride out a bad card without growing on a 426 MB board. */
+export const MAX_HELD_TELEMETRY = 5_000
 
 /**
  * Migrations live in src/db/migrations. From source (vitest/tsx) that is next
@@ -40,6 +43,12 @@ export function defaultMigrationsFolder(): string {
 export class SqliteStore implements Store {
   private readonly sqlite: Database.Database
   private readonly db
+  /** Rows waiting for the next flush (ADR-0021). */
+  private heldTelemetry: TelemetryPoint[] = []
+  /** A full buffer's own flush failed: new samples leave retrying to the timer until a flush lands. */
+  private capFlushFailed = false
+  /** Newest detail of active alerts whose rows still hold an older one, by alert id. */
+  private readonly liveDetail = new Map<number, string>()
 
   constructor(opts: SqliteStoreOptions) {
     // better-sqlite3 creates the file but not its directory; a fresh install has no ./data yet.
@@ -56,7 +65,7 @@ export class SqliteStore implements Store {
     const now = new Date().toISOString()
     this.db.insert(t.deviceSettings).values({ id: 1, ...DEFAULT_SETTINGS, updatedAt: now }).onConflictDoNothing().run()
     for (let slot = 1; slot <= podCount; slot++) {
-      this.db.insert(t.pods).values({ slot, status: 'empty', notes: '', updatedAt: now }).onConflictDoNothing().run()
+      this.db.insert(t.pods).values({ slot, status: 'empty', notes: '', updatedAt: now, statusSince: now }).onConflictDoNothing().run()
     }
   }
 
@@ -100,12 +109,18 @@ export class SqliteStore implements Store {
     list: (opts?: { activeOnly?: boolean }): AlertRow[] => {
       const q = this.db.select().from(t.alerts)
       const rows = opts?.activeOnly ? q.where(eq(t.alerts.active, true)).all() : q.all()
-      return rows.sort((a, b) => b.raisedAt.localeCompare(a.raisedAt))
+      return rows.map(r => ({ ...r, detail: this.liveDetail.get(r.id) ?? r.detail })).sort((a, b) => b.raisedAt.localeCompare(a.raisedAt))
     },
-    raise: (kind: string, detail: string, ts: string): AlertRow => {
+    raise: (kind: string, detail: string, ts: string, opts?: { live?: boolean }): AlertRow => {
       const existing = this.db.select().from(t.alerts).where(and(eq(t.alerts.kind, kind), eq(t.alerts.active, true))).get()
       if (existing) {
-        this.db.update(t.alerts).set({ detail }).where(eq(t.alerts.id, existing.id)).run()
+        if (opts?.live) {
+          this.liveDetail.set(existing.id, detail)
+        }
+        else {
+          this.liveDetail.delete(existing.id)
+          this.db.update(t.alerts).set({ detail }).where(eq(t.alerts.id, existing.id)).run()
+        }
         return { ...existing, detail }
       }
       const r = this.db.insert(t.alerts).values({ kind, active: true, detail, raisedAt: ts }).returning().get()
@@ -114,12 +129,12 @@ export class SqliteStore implements Store {
     clear: (kind: string, ts: string): AlertRow | null => {
       const existing = this.db.select().from(t.alerts).where(and(eq(t.alerts.kind, kind), eq(t.alerts.active, true))).get()
       if (!existing) return null
-      return this.db.update(t.alerts).set({ active: false, clearedAt: ts }).where(eq(t.alerts.id, existing.id)).returning().get() ?? null
+      return this.db.update(t.alerts).set({ active: false, clearedAt: ts, ...this.takeLiveDetail(existing.id) }).where(eq(t.alerts.id, existing.id)).returning().get() as AlertRow
     },
     acknowledge: (id: number, ts: string): AlertRow | null =>
-      this.db.update(t.alerts).set({ acknowledgedAt: ts }).where(eq(t.alerts.id, id)).returning().get() ?? null,
+      this.db.update(t.alerts).set({ acknowledgedAt: ts, ...this.takeLiveDetail(id) }).where(eq(t.alerts.id, id)).returning().get() ?? null,
     dismiss: (id: number, ts: string): AlertRow | null =>
-      this.db.update(t.alerts).set({ dismissedAt: ts, active: false }).where(eq(t.alerts.id, id)).returning().get() ?? null,
+      this.db.update(t.alerts).set({ dismissedAt: ts, active: false, ...this.takeLiveDetail(id) }).where(eq(t.alerts.id, id)).returning().get() ?? null,
   }
 
   grow = {
@@ -151,11 +166,24 @@ export class SqliteStore implements Store {
 
   pods = {
     list: (): Pod[] => this.db.select().from(t.pods).orderBy(asc(t.pods.slot)).all(),
-    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt'>>, ts: string): Pod => {
-      const r = this.db.update(t.pods).set({ ...patch, updatedAt: ts }).where(eq(t.pods.slot, slot)).returning().get()
+    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt' | 'statusSince'>>, ts: string): Pod => {
+      const prev = this.db.select().from(t.pods).where(eq(t.pods.slot, slot)).get()
+      if (!prev) throw new Error(`no pod ${slot}`)
+      const moved = patch.status !== undefined && patch.status !== prev.status
+      const r = this.db.update(t.pods).set({ ...patch, updatedAt: ts, ...(moved ? { statusSince: ts } : {}) }).where(eq(t.pods.slot, slot)).returning().get()
       if (!r) throw new Error(`no pod ${slot}`)
       return r
     },
+  }
+
+  plants = {
+    list: (): PlantProfile[] => this.db.select().from(t.plantProfiles).orderBy(asc(t.plantProfiles.key)).all(),
+    upsert: (p: Omit<PlantProfile, 'key' | 'updatedAt'>, ts: string): PlantProfile => {
+      const row = { ...p, key: profileKey(p.name), updatedAt: ts }
+      this.db.insert(t.plantProfiles).values(row).onConflictDoUpdate({ target: t.plantProfiles.key, set: row }).run()
+      return row
+    },
+    remove: (name: string): boolean => this.db.delete(t.plantProfiles).where(eq(t.plantProfiles.key, profileKey(name))).run().changes > 0,
   }
 
   captures = {
@@ -178,14 +206,46 @@ export class SqliteStore implements Store {
 
   telemetry = {
     add: (pts: TelemetryPoint[]): void => {
-      if (pts.length === 0) return
-      this.db.insert(t.telemetry).values(pts).run()
+      this.heldTelemetry.push(...pts)
+      if (this.heldTelemetry.length < MAX_HELD_TELEMETRY) return
+      if (!this.capFlushFailed) {
+        this.telemetry.flush()
+        this.capFlushFailed = this.heldTelemetry.length > 0
+      }
+      // A card that refuses writes must not grow memory: the oldest rows go first.
+      this.heldTelemetry.splice(0, this.heldTelemetry.length - MAX_HELD_TELEMETRY)
     },
     range: (sensor: SensorId, fromTs: string, toTs: string, maxPoints = 500): TelemetryPoint[] => {
       const rows = this.db.select({ ts: t.telemetry.ts, sensor: t.telemetry.sensor, value: t.telemetry.value }).from(t.telemetry)
-        .where(and(eq(t.telemetry.sensor, sensor), gte(t.telemetry.ts, fromTs), lte(t.telemetry.ts, toTs))).orderBy(asc(t.telemetry.ts)).all()
-      return downsample(rows as TelemetryPoint[], maxPoints)
+        .where(and(eq(t.telemetry.sensor, sensor), gte(t.telemetry.ts, fromTs), lte(t.telemetry.ts, toTs))).orderBy(asc(t.telemetry.ts)).all() as TelemetryPoint[]
+      // Merged rather than flushed, so a chart polling every minute costs no write.
+      const held = this.heldTelemetry.filter(p => p.sensor === sensor && p.ts >= fromTs && p.ts <= toTs)
+      return downsample(held.length ? [...rows, ...held].sort((a, b) => a.ts.localeCompare(b.ts)) : rows, maxPoints)
     },
+    flush: (): void => {
+      if (this.heldTelemetry.length === 0) return
+      try {
+        this.db.insert(t.telemetry).values(this.heldTelemetry).run()
+        this.heldTelemetry = []
+        this.capFlushFailed = false
+      }
+      catch (e) {
+        console.warn(`telemetry flush failed, holding ${this.heldTelemetry.length} rows: ${(e as Error).message}`)
+      }
+    },
+    thin: (sensors: readonly SensorId[], fromTs: string, toTs: string, bucketMin: number): number => {
+      // ts is ISO 8601, so the first 14 characters end at the hour, and the minutes follow.
+      // Inlined: a bound JS number arrives as a REAL, and the division wouldn't round down.
+      const minutes = sql`CAST(substr(${t.telemetry.ts}, 15, 2) AS INTEGER) / ${sql.raw(String(Math.trunc(bucketMin)))}`
+      // One transaction, or each sensor would write the same table pages to the WAL again.
+      return this.sqlite.transaction(() => sensors.reduce((removed, sensor) => {
+        // Per sensor, because the only index that reaches ts starts with it.
+        const window = and(eq(t.telemetry.sensor, sensor), gte(t.telemetry.ts, fromTs), lt(t.telemetry.ts, toTs))
+        const firsts = this.db.select({ id: sql<number>`min(${t.telemetry.id})` }).from(t.telemetry).where(window).groupBy(sql`substr(${t.telemetry.ts}, 1, 14)`, minutes)
+        return removed + this.db.delete(t.telemetry).where(and(window, notInArray(t.telemetry.id, firsts))).run().changes
+      }, 0))()
+    },
+    oldestTs: (): string | null => this.db.select({ ts: t.telemetry.ts }).from(t.telemetry).orderBy(asc(t.telemetry.id)).limit(1).get()?.ts ?? null,
   }
 
   counters = {
@@ -212,6 +272,9 @@ export class SqliteStore implements Store {
    * from it doesn't open on Welcome.
    */
   async backupTo(path: string): Promise<void> {
+    this.telemetry.flush()
+    // A copy without these rows would look fine and lose them on a restore.
+    if (this.heldTelemetry.length > 0) throw new Error(`the card refused ${this.heldTelemetry.length} telemetry rows, so a backup would leave them out`)
     await this.sqlite.backup(path)
     const copy = new Database(path)
     try {
@@ -256,6 +319,9 @@ export class SqliteStore implements Store {
     forCapture: (captureId: string): AnalysisRow[] =>
       this.db.select().from(t.analysisResults).where(eq(t.analysisResults.captureId, captureId))
         .orderBy(asc(t.analysisResults.analyzer), asc(t.analysisResults.version), asc(t.analysisResults.slot), asc(t.analysisResults.metric)).all().map(rowToAnalysis),
+    removeDevice: (captureId: string): void => {
+      this.db.delete(t.analysisResults).where(and(eq(t.analysisResults.captureId, captureId), eq(t.analysisResults.source, 'device'))).run()
+    },
     range: (fromTs: string, toTs: string): AnalysisRow[] =>
       this.db.select().from(t.analysisResults).where(and(gte(t.analysisResults.ts, fromTs), lte(t.analysisResults.ts, toTs)))
         .orderBy(asc(t.analysisResults.ts), asc(t.analysisResults.id)).all().map(rowToAnalysis),
@@ -294,13 +360,49 @@ export class SqliteStore implements Store {
     pruneRuns: (beforeTs: string): number => this.db.delete(t.automationRuns).where(lt(t.automationRuns.firedAt, beforeTs)).run().changes,
   }
 
+  plans = {
+    list: (): PlanRow[] => this.db.select().from(t.plans).orderBy(desc(t.plans.updatedAt)).all().map(rowToPlan),
+    get: (id: string): PlanRow | null => {
+      const r = this.db.select().from(t.plans).where(eq(t.plans.id, id)).get()
+      return r ? rowToPlan(r) : null
+    },
+    save: (p: Omit<PlanRow, 'createdAt' | 'updatedAt' | 'appliedAt' | 'issued'>): PlanRow => {
+      const now = new Date().toISOString()
+      const values = { id: p.id, name: p.name, model: p.model, mode: p.mode, request: JSON.stringify(p.request), layout: JSON.stringify(p.layout), sowing: JSON.stringify(p.sowing), createdAt: now, updatedAt: now }
+      this.db.insert(t.plans).values(values).onConflictDoUpdate({ target: t.plans.id, set: { name: values.name, model: values.model, mode: values.mode, request: values.request, layout: values.layout, sowing: values.sowing, updatedAt: now } }).run()
+      return this.plans.get(p.id) as PlanRow
+    },
+    remove: (id: string): boolean => this.db.delete(t.plans).where(eq(t.plans.id, id)).run().changes > 0,
+    markApplied: (id: string, ts: string): PlanRow | null => {
+      const r = this.db.update(t.plans).set({ appliedAt: ts }).where(eq(t.plans.id, id)).returning().get()
+      return r ? rowToPlan(r) : null
+    },
+    markIssued: (id: string, key: string): void => {
+      const p = this.plans.get(id)
+      if (!p || p.issued.includes(key)) return
+      this.db.update(t.plans).set({ issued: JSON.stringify([...p.issued, key]) }).where(eq(t.plans.id, id)).run()
+    },
+  }
+
   close(): void {
+    this.telemetry.flush()
     this.sqlite.close()
+  }
+
+  /** The held detail as a column patch, to persist with the alert's next state change. */
+  private takeLiveDetail(id: number): { detail?: string } {
+    const detail = this.liveDetail.get(id)
+    this.liveDetail.delete(id)
+    return detail === undefined ? {} : { detail }
   }
 }
 
 function rowToSchedule(r: typeof t.schedules.$inferSelect): Schedule {
   return { ...r, spec: JSON.parse(r.spec) as LightSpec | PumpSpec }
+}
+
+function rowToPlan(r: typeof t.plans.$inferSelect): PlanRow {
+  return { ...r, request: JSON.parse(r.request) as PlanRow['request'], layout: JSON.parse(r.layout) as PlanRow['layout'], sowing: JSON.parse(r.sowing) as PlanRow['sowing'], issued: JSON.parse(r.issued) as string[] }
 }
 
 function rowToCycle(r: typeof t.growCycles.$inferSelect): GrowCycle {

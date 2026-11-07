@@ -1,20 +1,82 @@
-import { Bell, Check, X } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Bell, Cable, CameraOff, Check, ChevronRight, CloudOff, Droplets, FlaskConical, Info, Scissors, Sprout, Sun, Thermometer, Unplug, Wheat, Waves, X } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import type { inferRouterOutputs } from '@trpc/server'
 import { useState } from 'react'
-import { Button, Card, SectionLabel, StatusDot } from '@/src/components/ds/core'
+import { cn } from '@/lib/utils'
+import { Button } from '@/src/components/ds/core'
 import { SegmentedControl } from '@/src/components/ds/forms'
-import { PageHeader } from '@/src/components/ds/layout'
+import { DOCS_BASE } from '@/src/components/Search/docsIndex'
+import { fmtStamp, timeAgo } from '@/src/lib/timeAgo'
+import type { AppRouter } from '@/src/server/routers/app'
 import { trpc } from '@/src/utils/trpc'
 
+type AlertRow = inferRouterOutputs<AppRouter>['alerts']['list'][number]
+
+const LINK_GUIDE = `${DOCS_BASE}/core/maintenance/#reseat-a-camera-cable`
+
 const LABEL: Record<string, string> = {
-  water_low: 'Water low', pump_fault: 'Pump fault', dose_fault: 'Dosing lockout', over_temp: 'Board over temperature', camera_missing: 'Camera missing', hal_offline: 'Hardware daemon offline', mirror_failed: 'Off-device copy failed',
-  reminder_thinning: 'Thin seedlings', reminder_root_check: 'Check roots', reminder_harvest: 'Harvest window', reminder_nutrients: 'Add nutrients', light_fault: 'Light fault',
+  camera_link_upper: 'Top camera connection', camera_link_lower: 'Bottom camera connection', camera_hub_flaky: 'Camera hub connection',
+  water_low: 'Water low', pump_fault: 'Pump fault', dose_fault: 'Dosing lockout', over_temp: 'Board over temperature', camera_missing: 'Camera not capturing', hal_offline: 'Hardware daemon offline', mirror_failed: 'Off-device copy failed',
+  reminder_thinning: 'Thin seedlings', reminder_root_check: 'Check roots', reminder_harvest: 'Harvest window', reminder_nutrients: 'Add nutrients', reminder_sow: 'Start new yCubes', light_fault: 'Light fault',
 }
-const DANGER = new Set(['pump_fault', 'dose_fault', 'over_temp', 'hal_offline'])
+const ICON: Record<string, LucideIcon> = {
+  camera_link_upper: Cable, camera_link_lower: Cable, camera_hub_flaky: Cable,
+  water_low: Droplets, pump_fault: Waves, dose_fault: FlaskConical, over_temp: Thermometer, camera_missing: CameraOff, hal_offline: Unplug, mirror_failed: CloudOff, light_fault: Sun,
+  reminder_thinning: Scissors, reminder_root_check: Sprout, reminder_harvest: Wheat, reminder_nutrients: FlaskConical, reminder_sow: Sprout,
+}
+const HARDWARE = new Set(['water_low', 'pump_fault', 'dose_fault', 'over_temp', 'camera_missing', 'hal_offline', 'light_fault', 'camera_link_upper', 'camera_link_lower', 'camera_hub_flaky'])
+/** Notices with a repair to follow in the docs. */
+const GUIDE: Record<string, string> = { camera_link_upper: LINK_GUIDE, camera_link_lower: LINK_GUIDE, camera_hub_flaky: LINK_GUIDE }
+/** What acknowledging a latched fault turns back on, and what to fix first. */
+const LATCH: Record<string, string> = {
+  water_low: 'Acknowledging re-enables the pump. Refill the tank first.',
+  pump_fault: 'Acknowledging re-enables the pump. Fix the cause first.',
+  dose_fault: 'Acknowledging re-enables dosing. Fix the cause first.',
+  over_temp: 'Acknowledging re-enables the outputs. Let the board cool first.',
+  camera_missing: 'Acknowledging re-enables the camera. Fix the cause first.',
+  light_fault: 'Acknowledging re-enables the light. Fix the cause first.',
+}
+const VIEW: Record<string, { to: string, label: string }> = {
+  camera_missing: { to: '/cameras', label: 'View camera' },
+  camera_link_upper: { to: '/cameras', label: 'View camera' },
+  camera_link_lower: { to: '/cameras', label: 'View camera' },
+  camera_hub_flaky: { to: '/cameras', label: 'View cameras' },
+  water_low: { to: '/water', label: 'View water' },
+  pump_fault: { to: '/water', label: 'View water' },
+  light_fault: { to: '/light', label: 'View light' },
+  over_temp: { to: '/sensors', label: 'View sensors' },
+  mirror_failed: { to: '/settings', label: 'View settings' },
+}
+const PODS = { upper: '1–15', lower: '16–30' } as const
+
+export const categoryOf = (kind: string): 'hardware' | 'reminder' | 'service' => (HARDWARE.has(kind) ? 'hardware' : kind.startsWith('reminder_') ? 'reminder' : 'service')
+
+/** Title and detail for an alert; a camera alert names the camera and the pods it covers. */
+export function describeAlert(a: Pick<AlertRow, 'kind' | 'detail'>): { title: string, detail: string } {
+  const cam = a.kind === 'camera_missing' ? /^(upper|lower) camera returned (\d+) bytes/.exec(a.detail) : null
+  if (cam) {
+    const camera = cam[1] as keyof typeof PODS
+    return { title: `${camera === 'upper' ? 'Upper' : 'Lower'} camera not capturing`, detail: `Returned ${cam[2]} bytes on the last capture. Pods ${PODS[camera]} have no new photos.` }
+  }
+  return { title: LABEL[a.kind] ?? a.kind, detail: a.detail }
+}
+
+/** "2 open · 1 hardware, 1 reminder". */
+export function openSummary(open: Array<Pick<AlertRow, 'kind'>>): string {
+  if (!open.length) return 'Nothing open'
+  const n = (c: string) => open.filter(a => categoryOf(a.kind) === c).length
+  const parts = [[n('hardware'), 'hardware'], [n('reminder'), n('reminder') === 1 ? 'reminder' : 'reminders'], [n('service'), 'service']]
+    .filter(([c]) => (c as number) > 0).map(([c, l]) => `${c} ${l}`)
+  return `${open.length} open · ${parts.join(', ')}`
+}
 
 export function AlertsPage() {
   const utils = trpc.useUtils()
   const [view, setView] = useState<'active' | 'all'>('active')
   const alerts = trpc.alerts.list.useQuery({ activeOnly: view === 'active' })
+  const open = trpc.alerts.list.useQuery({ activeOnly: true })
+  const pods = trpc.grow.pods.useQuery()
   const ack = trpc.alerts.acknowledge.useMutation({
     onSuccess: () => {
       void utils.alerts.invalidate()
@@ -22,37 +84,87 @@ export function AlertsPage() {
     },
   })
   const dismiss = trpc.alerts.dismiss.useMutation({ onSuccess: () => utils.alerts.invalidate() })
+  const [now] = useState(() => Date.now())
+  const attention = (pods.data ?? []).filter(p => p.status === 'attention')
+  const rows = alerts.data ?? []
+
   return (
-    <div className="mx-auto flex max-w-[960px] flex-col gap-4">
-      <PageHeader title="Alerts" right={<SegmentedControl size="sm" value={view} onChange={setView} options={[{ value: 'active', label: 'Active' }, { value: 'all', label: 'History' }]} />} />
-      {(alerts.data ?? []).length === 0 && <Card dashed><p className="text-[13px] text-fg-2">Nothing to see. Faults latch here until you acknowledge them; reminders clear when you mark the chore done.</p></Card>}
-      {(alerts.data ?? []).map(a => (
-        <Card key={a.id} tone={a.active ? (DANGER.has(a.kind) ? 'danger' : 'warn') : undefined}>
-          <div className="flex items-start gap-3">
-            <Bell size={18} className="mt-0.5 text-icon" />
-            <div className="flex-1">
-              <div className="flex items-center gap-2 text-[15px]">
-                {LABEL[a.kind] ?? a.kind}
-                {' '}
-                <StatusDot tone={a.active ? (DANGER.has(a.kind) ? 'danger' : 'warn') : 'muted'} />
-              </div>
-              <div className="text-[13px] text-fg-2">{a.detail}</div>
-              <div className="mt-1 font-mono text-[11px] text-fg-3">
-                {new Date(a.raisedAt).toLocaleString()}
-                {a.clearedAt ? ` → cleared ${new Date(a.clearedAt).toLocaleString()}` : ''}
-                {a.acknowledgedAt ? ' · acknowledged' : ''}
-              </div>
-            </div>
-            {a.active && (
-              <div className="flex gap-1">
-                <Button size="sm" variant="primary" icon={Check} onClick={() => ack.mutate({ id: a.id })}>{a.kind.startsWith('reminder_') ? 'Done' : 'Acknowledge'}</Button>
-                <Button size="sm" icon={X} onClick={() => dismiss.mutate({ id: a.id })}>Dismiss</Button>
-              </div>
-            )}
+    <div className="mx-auto flex max-w-[860px] flex-col gap-6">
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="flex min-w-[240px] flex-1 flex-col gap-1">
+          <h1 className="text-2xl font-semibold">Alerts</h1>
+          <p className="text-[13px] text-fg-2">{openSummary(open.data ?? [])}</p>
+        </div>
+        <SegmentedControl ariaLabel="Alerts" value={view} onChange={setView} options={[{ value: 'active', label: 'Open' }, { value: 'all', label: 'History' }]} />
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {rows.length === 0 && (
+          <div className="rounded-[14px] border border-dashed border-line-2 px-5 py-4 text-[13px] text-fg-2">
+            Nothing to see. Faults latch here until you acknowledge them; reminders clear when you mark the chore done.
           </div>
-        </Card>
-      ))}
-      {view === 'active' && <SectionLabel>Acknowledging a hardware fault re-enables the actuator — fix the cause first (refill the tank, let the board cool).</SectionLabel>}
+        )}
+        {rows.map((a) => {
+          const cat = categoryOf(a.kind)
+          const { title, detail } = describeAlert(a)
+          const Icon = ICON[a.kind] ?? Bell
+          const hot = a.active && cat === 'hardware'
+          const tone = cat === 'hardware' ? 'attention' : 'ready'
+          const go = a.active ? VIEW[a.kind] : undefined
+          return (
+            <div key={a.id} data-testid={`alert-${a.kind}`} className={cn('flex flex-col gap-3.5 rounded-[14px] border bg-surface px-5 py-[18px]', hot ? 'border-pod-attention/45' : 'border-line', !a.active && 'opacity-75')}>
+              <div className="flex flex-wrap items-start gap-3.5">
+                <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', tone === 'attention' ? 'bg-pod-attention/15 text-pod-attention' : 'bg-pod-ready/15 text-pod-ready')}>
+                  <Icon size={16} />
+                </span>
+                <div className="flex min-w-[220px] flex-1 flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[15px] font-medium">{title}</span>
+                    <span className={cn('rounded-[10px] px-2 py-0.5 font-mono text-[10px] font-medium uppercase', tone === 'attention' ? 'bg-pod-attention/15 text-pod-attention' : 'bg-pod-ready/15 text-pod-ready')}>{cat}</span>
+                  </div>
+                  {detail && <span className="text-[13px] text-fg-2">{detail}</span>}
+                  <span className="font-mono text-[11px] text-fg-3">
+                    {`${fmtStamp(a.raisedAt)} · ${timeAgo(a.raisedAt, now)}`}
+                    {a.clearedAt ? ` → cleared ${fmtStamp(a.clearedAt)}` : ''}
+                    {a.acknowledgedAt ? ' · acknowledged' : ''}
+                    {a.dismissedAt && !a.acknowledgedAt ? ' · dismissed' : ''}
+                  </span>
+                </div>
+                {a.active && (
+                  <div className="flex flex-wrap gap-2">
+                    {go && <Link to={go.to} className="rounded-ctl border border-line-2 px-3 py-[7px] text-[13px] text-fg hover:bg-active">{go.label}</Link>}
+                    {a.active && GUIDE[a.kind] && <a href={GUIDE[a.kind]} target="_blank" rel="noopener noreferrer" className="rounded-ctl border border-line-2 px-3 py-[7px] text-[13px] text-fg hover:bg-active">How to reseat it</a>}
+                    <Button icon={X} className="px-3 py-[7px] text-fg-2" onClick={() => dismiss.mutate({ id: a.id })}>Dismiss</Button>
+                    <Button variant="primary" icon={Check} className="px-3 py-[7px]" onClick={() => ack.mutate({ id: a.id })}>{cat === 'reminder' ? 'Done' : 'Acknowledge'}</Button>
+                  </div>
+                )}
+              </div>
+              {a.active && LATCH[a.kind] && (
+                <div className="flex items-start gap-2.5 rounded-lg bg-active/60 px-3 py-2.5 text-xs leading-normal text-fg-2">
+                  <Info size={16} className="shrink-0" />
+                  <span>{LATCH[a.kind]}</span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {view === 'active' && attention.length > 0 && (
+        <section className="flex flex-col gap-2.5">
+          <h2 className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3">Plants · from Grow</h2>
+          {attention.map(p => (
+            <Link key={p.slot} to="/grow" search={{ pod: p.slot }} className="flex flex-wrap items-center gap-3 rounded-[14px] border border-line bg-surface px-5 py-3.5 text-fg hover:border-line-2">
+              <span className="size-[7px] shrink-0 rounded-full bg-pod-attention" />
+              <span className="min-w-[200px] flex-1 text-[13px]">
+                {`${p.plant ?? `Pod ${p.slot}`} · pod ${p.slot} `}
+                <span className="text-fg-2">{`· ${p.notes.trim() || 'needs attention'}`}</span>
+              </span>
+              <ChevronRight size={16} className="text-fg-3" />
+            </Link>
+          ))}
+        </section>
+      )}
     </div>
   )
 }

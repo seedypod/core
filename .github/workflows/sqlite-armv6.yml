@@ -1,0 +1,55 @@
+name: better-sqlite3 ARMv6
+
+# Builds the better-sqlite3 binary a Pi Zero W installs instead of compiling for
+# 53 minutes (scripts/install). dev-release.yml and release.yml call this and
+# publish the artifact; a pull request only runs it when the build itself changes.
+
+on:
+  workflow_call:
+  pull_request:
+    paths:
+      - .github/workflows/sqlite-armv6.yml
+      - scripts/build-sqlite-armv6
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: better-sqlite3 armv6
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    # Compiling under emulation outlasts the gap between pushes, so nothing may
+    # cancel it: the next push queues behind this one and hits its cache.
+    concurrency:
+      group: sqlite-armv6-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read the versions to build
+        id: versions
+        run: scripts/build-sqlite-armv6 --versions >> "$GITHUB_OUTPUT"
+
+      - name: Restore the binary
+        id: cache
+        uses: actions/cache@v5
+        with:
+          path: sqlite-armv6
+          key: better-sqlite3-${{ steps.versions.outputs.sqlite }}-node-${{ steps.versions.outputs.node }}-armv6-${{ hashFiles('scripts/build-sqlite-armv6') }}
+
+      - name: Set up ARM emulation
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm
+
+      - name: Compile
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: scripts/build-sqlite-armv6 sqlite-armv6
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: better-sqlite3-armv6
+          path: sqlite-armv6/*
+          if-no-files-found: error

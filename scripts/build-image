@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Builds the seedypod OS image: the official Raspberry Pi OS Lite image from
+# scripts/image/base.env, with hald, core and everything the installers set up
+# already on it, so a card boots ready and nothing compiles on the unit.
+# Usage: scripts/build-image <assets-dir> <out-dir> [--branch dev|main] [--url-base <url>]
+#   needs Docker that can run --privileged, and QEMU for ARM on a non-ARM host.
+#   <assets-dir> holds what a release holds: seedypod-core.tar.gz,
+#   hald-arm-unknown-linux-gnueabihf and the ARMv6 better-sqlite3 with its sha256.
+#   --url-base  where the image will be published; goes in the Imager repository JSON
+# Writes seedypod-os.img.xz, its .sha256, seedypod-os-imager.json, seedypod-os-icon.png
+# and seedypod-os-manifest.txt (what went in) to <out-dir>.
+set -euo pipefail
+
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+branch=dev
+url_base=""
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --branch) branch="$2"; shift 2 ;;
+    --url-base) url_base="$2"; shift 2 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+[ "${#args[@]}" -eq 2 ] || { sed -n '5,8p' "$0" >&2; exit 2; }
+[ -n "$url_base" ] || url_base="https://github.com/seedypod/core/releases/download/dev-latest"
+
+# shellcheck source=scripts/image/base.env
+. "$repo/scripts/image/base.env"
+mkdir -p "${args[1]}"
+assets="$(cd "${args[0]}" && pwd)"
+out="$(cd "${args[1]}" && pwd)"
+cache="${SEEDYPOD_IMAGE_CACHE:-$out}"
+base="$cache/$(basename "$BASE_URL")"
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+
+if [ ! -f "$base" ] || [ "$(sha256 "$base")" != "$BASE_SHA256" ]; then
+  curl -fsSL --retry 3 -o "$base" "$BASE_URL"
+  [ "$(sha256 "$base")" = "$BASE_SHA256" ] || { echo "$base doesn't match the sha256 in scripts/image/base.env" >&2; exit 1; }
+fi
+
+docker run --rm --privileged --hostname seedypod --platform linux/"$(docker version -f '{{.Server.Arch}}')" \
+  -e BRANCH="$branch" -e URL_BASE="$url_base" -e COMMIT="${GITHUB_SHA:-$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo unknown)}" \
+  -v "$repo/scripts:/seedypod/scripts:ro" -v "$assets:/seedypod/assets:ro" -v "$base:/seedypod/base.img.xz:ro" -v "$out:/seedypod/out" \
+  debian:trixie bash /seedypod/scripts/image/assemble
+ls -l "$out"

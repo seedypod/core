@@ -15,6 +15,8 @@ export interface BackupPaths {
   stateDir: string
   mosquittoPasswd: string
   capturesDir: string
+  /** HomeKit's identity and pairings (ADR 0023), next to the database; absent until HomeKit was first turned on. */
+  homekitDir?: string
 }
 
 export function backupPaths(env: NodeJS.ProcessEnv, dataDir: string): BackupPaths {
@@ -23,8 +25,12 @@ export function backupPaths(env: NodeJS.ProcessEnv, dataDir: string): BackupPath
     stateDir: env.SEEDYPOD_STATE_DIR || '/var/lib/seedypod',
     mosquittoPasswd: env.SEEDYPOD_MOSQUITTO_PASSWD || '/etc/mosquitto/seedypod.passwd',
     capturesDir: join(dataDir, 'captures'),
+    homekitDir: join(dataDir, 'homekit'),
   }
 }
+
+/** identity.json and hap-nodejs's `AccessoryInfo.<MAC>.json`-style files; never `*.tmp` or `*.corrupt.*`. */
+const HOMEKIT_FILE = /^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)?\.json$/
 
 export interface SourceFile {
   /** Path inside the bundle. */
@@ -76,6 +82,18 @@ export function nodeBackupSources(o: { paths: BackupPaths, snapshot: (dest: stri
         catch {
           // An unreadable state directory: let the read of its main file report why.
           files.push({ name: 'var/lib/seedypod/state.json', path: join(o.paths.stateDir, 'state.json'), optional: false })
+        }
+      }
+      // HomeKit's files ride along so a restore onto the same unit keeps it paired (ADR 0023).
+      const hk = o.paths.homekitDir
+      if (hk && existsSync(hk)) {
+        try {
+          for (const f of readdirSync(hk).sort()) {
+            if (HOMEKIT_FILE.test(f)) files.push({ name: `homekit/${f}`, path: join(hk, f), optional: true })
+          }
+        }
+        catch {
+          files.push({ name: 'homekit/identity.json', path: join(hk, 'identity.json'), optional: false })
         }
       }
       return files

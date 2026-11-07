@@ -4,12 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DeviceEntry, DeviceInventory, DeviceKindInfo } from '@/src/hardware/contract'
 import { formatReading, hexAddr } from '@/src/lib/sensorMeta'
 import { CalibrationWizard } from '../CalibrationWizard'
-import { SensorsPage } from '../SensorsPage'
+import { SensorsPage, sparkPoints } from '../SensorsPage'
 
 // The pages only need the hooks' shape; each test sets what the queries return and
 // what the mutations do, so the trpc client itself stays out of the picture.
 // Hoisted because vi.mock's factory runs before the rest of this module.
-const { q, mutations, mutationError, invalidate, useMutation } = vi.hoisted(() => {
+const { q, mutations, mutationError, invalidate, useMutation, history } = vi.hoisted(() => {
+  const history = { calls: [] as unknown[], data: [{ ts: '2026-10-31T10:00:00Z', value: 21 }, { ts: '2026-10-31T11:00:00Z', value: 23 }] as Array<{ ts: string, value: number }>, error: null as Error | null }
   const q = { devices: { data: undefined as DeviceInventory | undefined }, latest: { data: undefined as Record<string, { value: number, unit: string }> | undefined } }
   const mutations = { addSensor: vi.fn(), removeSensor: vi.fn(), calibrate: vi.fn() }
   const mutationError = { current: null as Error | null }
@@ -26,7 +27,7 @@ const { q, mutations, mutationError, invalidate, useMutation } = vi.hoisted(() =
       }
     },
   })
-  return { q, mutations, mutationError, invalidate, useMutation }
+  return { q, mutations, mutationError, invalidate, useMutation, history }
 })
 
 vi.mock('@/src/utils/trpc', () => ({
@@ -34,6 +35,10 @@ vi.mock('@/src/utils/trpc', () => ({
     useUtils: () => ({ devices: { invalidate }, system: { invalidate }, sensors: { invalidate } }),
     devices: { list: { useQuery: () => q.devices }, addSensor: { useMutation: useMutation('addSensor') }, removeSensor: { useMutation: useMutation('removeSensor') } },
     sensors: { latest: { useQuery: () => q.latest }, calibrate: { useMutation: useMutation('calibrate') } },
+    telemetry: { history: { useQuery: (input: unknown) => {
+      history.calls.push(input)
+      return { data: history.data, isLoading: false, error: history.error }
+    } } },
   },
 }))
 
@@ -60,6 +65,9 @@ beforeEach(() => {
   mutationError.current = null
   for (const m of Object.values(mutations)) m.mockReset()
   invalidate.mockReset()
+  history.calls = []
+  history.data = [{ ts: '2026-10-31T10:00:00Z', value: 21 }, { ts: '2026-10-31T11:00:00Z', value: 23 }]
+  history.error = null
 })
 afterEach(cleanup)
 
@@ -80,14 +88,48 @@ describe('sensorMeta', () => {
 describe('SensorsPage', () => {
   it('lists every device with its source, status and latest reading', () => {
     render(<SensorsPage />)
-    expect(screen.getAllByText('Built-in')).toHaveLength(2)
-    expect(screen.getAllByText('Added')).toHaveLength(1)
+    expect(screen.getByText('3 devices · 3 readings · 1 not found')).toBeTruthy()
+    expect(screen.getAllByText('built-in')).toHaveLength(2)
+    expect(screen.getAllByText('added')).toHaveLength(1)
+    expect(screen.getByText('not found')).toBeTruthy()
     expect(screen.getByText('no device at 0x40')).toBeTruthy()
-    expect(screen.getByText('6.1')).toBeTruthy()
+    // Each reading shows in its tile, grouped, with the part that reports it.
+    expect(screen.getAllByText('6.1')).toHaveLength(2)
     expect(screen.getByText('22.5°C')).toBeTruthy()
+    expect(screen.getByText('22.5°C · —')).toBeTruthy()
+    expect(screen.getByText('Environment')).toBeTruthy()
+    expect(screen.getByText('Water quality')).toBeTruthy()
+    expect(screen.getByText('Air temperature')).toBeTruthy()
+    expect(screen.getByText('EZO-PH')).toBeTruthy()
+    expect(screen.getAllByText('DHT20')).toHaveLength(2)
+    expect(screen.getByRole('img', { name: 'pH' })).toBeTruthy()
+    expect(screen.getAllByText('min 21')).toHaveLength(3)
     // Only app-added probes can be calibrated or removed.
     expect(screen.getAllByText('Remove')).toHaveLength(1)
     expect(screen.getAllByText('Calibrate')).toHaveLength(1)
+  })
+
+  it('reloads every tile\'s history for the chosen range', () => {
+    render(<SensorsPage />)
+    expect(history.calls.at(-1)).toEqual({ sensor: 'ph', hours: 24, maxPoints: 144 })
+    fireEvent.click(screen.getByRole('tab', { name: '7d' }))
+    expect(history.calls.at(-1)).toEqual({ sensor: 'ph', hours: 168, maxPoints: 336 })
+  })
+
+  it('says when a window has no history or the history fails', () => {
+    history.data = []
+    render(<SensorsPage />)
+    expect(screen.getAllByText('Nothing recorded in this window.')).toHaveLength(3)
+    cleanup()
+    history.error = new Error('db locked')
+    render(<SensorsPage />)
+    expect(screen.getAllByText('Couldn\'t load the history: db locked')).toHaveLength(3)
+  })
+
+  it('reports all ready when every device answers', () => {
+    q.devices.data = { sensors: [builtIn], addable: [] }
+    render(<SensorsPage />)
+    expect(screen.getByText('1 device · 2 readings · all ready')).toBeTruthy()
   })
 
   it('says so while the daemon has not reported', () => {
@@ -137,6 +179,14 @@ describe('SensorsPage', () => {
     fireEvent.click(screen.getByText('Calibrate'))
     expect(screen.getByRole('dialog', { name: 'Calibrate pH probe (Atlas EZO)' })).toBeTruthy()
     expect(screen.getByText('Step 1 of 2')).toBeTruthy()
+  })
+})
+
+describe('sparkPoints', () => {
+  it('spans the box and keeps a flat line inside it', () => {
+    expect(sparkPoints([1])).toBe('')
+    expect(sparkPoints([0, 10])).toBe('0,46 200,4')
+    expect(sparkPoints([5, 5, 5])).toBe('0,46 100,46 200,46')
   })
 })
 

@@ -19,6 +19,7 @@ export const SettingsSchema = z.object({
   mqttTlsEnabled: z.boolean(),
   mqttTlsInsecure: z.boolean(),
   captureIntervalMin: z.number().int().min(0),
+  telemetryFlushMin: z.number().int().min(1).max(60),
   primaryAnalyzer: z.string().min(1).max(64),
   analysisArtifacts: z.boolean(),
   analysisIngestToken: z.string(),

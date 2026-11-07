@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 
 # Deployment
 
-How code gets from `dev` to a unit (mirrors sleepypod/core).
+How code gets from `dev` to a unit (mirrors [sleepypod/core](https://sleepypod.github.io/developers/workflows/)).
 
 - **`dev`** → every push builds a tarball (`build.yml`) and re-tags the rolling
   `dev-latest` prerelease (`dev-release.yml`). `scripts/install --branch dev`
@@ -20,6 +20,15 @@ How code gets from `dev` to a unit (mirrors sleepypod/core).
 - **Feature branches** → `build.yml` tarball artifact, installable via
   `nightly.link` with `scripts/install --branch <name>`.
 - **Local** → `scripts/deploy user@host` builds here and ships over SSH.
+- **OS image** → `os-image.yml` runs `scripts/build-image` after each `dev` and
+  `main` release and attaches `seedypod-os.img.xz`, its sha256 and an Imager
+  repository to `dev-latest` or the tag. A new push never cancels it; pushes
+  queue behind it and only the newest builds, so `dev-latest`'s image can lag
+  its tarball by a build. `seedypod-os-manifest.txt` says which commit it's from.
+  Pull requests only run it when they touch the build, using `dev-latest`'s
+  assets, and keep the image as a 7-day artifact to flash. Locally, with Docker:
+  `scripts/build-image <dir-of-release-assets> <out-dir>`. Move to a new Raspberry
+  Pi OS in `scripts/image/base.env`.
 
 The unit runs two systemd services: `hald` (Rust, owns hardware) and
 `seedypod-core` (Node, `:3000`). Both restart on failure. Core is LAN-only;

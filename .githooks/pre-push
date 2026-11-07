@@ -1,6 +1,11 @@
 #!/usr/bin/env sh
 set -e
 
+# Upload the Git LFS objects (brand PNGs) this push needs. Reads the refs on stdin.
+if command -v git-lfs >/dev/null 2>&1; then
+  git lfs pre-push "$@"
+fi
+
 echo "→ TypeScript..."
 pnpm tsc
 

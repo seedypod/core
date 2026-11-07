@@ -37,6 +37,10 @@ export interface HalClient {
   /** Remove an app-added probe; sensors from hal.toml are refused. */
   removeSensor(kind: string, addr: number): Promise<DeviceResult>
   captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array>
+  /** Frames the last still from this camera refused as damaged, retries included. */
+  damagedFrames?(camera: 'upper' | 'lower'): number
+  /** Of the boots on record, how many the USB hub didn't come up by itself. */
+  hubBoots?(): { missing: number, total: number } | null
   subscribe(listener: (event: HalEvent) => void): Unsubscribe
   close(): Promise<void>
 }

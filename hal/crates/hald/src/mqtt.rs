@@ -142,6 +142,8 @@ pub async fn run(
     info!(url = %settings.url, client = %format!("hald-{unit}"), "MQTT connecting");
     let (client, mut eventloop) = AsyncClient::new(opts, 128);
     let mut backoff = BACKOFF_MIN;
+    // The first failure of a run is a warning; the rest of them are routine.
+    let mut retrying = false;
     let mut retry_at: Option<tokio::time::Instant> = None;
 
     loop {
@@ -156,6 +158,7 @@ pub async fn run(
                         info!("MQTT connected");
                         connected.store(true, Ordering::Relaxed);
                         backoff = BACKOFF_MIN;
+                        retrying = false;
                         let _ = client.try_publish(topics::availability(&unit), QoS::AtLeastOnce, true, "online");
                         for t in subscriptions(&unit) {
                             if let Err(e) = client.try_subscribe(&t, QoS::AtLeastOnce) {
@@ -179,9 +182,12 @@ pub async fn run(
                 Err(e) => {
                     if connected.swap(false, Ordering::Relaxed) {
                         warn!(%e, "MQTT connection lost");
+                    } else if !retrying {
+                        warn!(%e, retry_in_s = backoff.as_secs(), "MQTT unavailable; retrying");
                     } else {
                         info!(%e, retry_in_s = backoff.as_secs(), "MQTT unavailable; retrying");
                     }
+                    retrying = true;
                     retry_at = Some(tokio::time::Instant::now() + backoff);
                     backoff = (backoff * 2).min(BACKOFF_MAX);
                 }

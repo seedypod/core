@@ -33,6 +33,12 @@ under **Settings → Off-device storage and analysis** (ADR 0019):
   unit for this: the worker reads stills through the same REST API (and API
   key, if you set one) as any other LAN client.
 
+**HomeKit** (Settings → Apple Home, off by default) is local too. iPhones on
+your network pair with the unit and control it directly over HAP; nothing
+goes through Apple's servers unless you add a home hub, which is Apple's
+service, not seedypod's. The setup code is shown to anyone on your LAN, like
+the rest of the API (ADR 0012). A backup holds HomeKit's pairing keys.
+
 A dataset export (`GET /api/datasets/export`) and a backup download
 (`GET /api/backup/download`) are downloads you start; they go only to the
 browser or script that asked for them. A backup file holds the unit's secrets

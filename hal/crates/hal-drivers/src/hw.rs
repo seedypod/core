@@ -1,7 +1,9 @@
 //! rppal-backed implementations of the bus traits. Only compiled with the
 //! `hardware` feature; constructors fail at runtime off a Raspberry Pi.
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use hal_core::DeviceError;
 use rppal::gpio::{Gpio, InputPin, OutputPin};
@@ -9,6 +11,7 @@ use rppal::i2c::I2c;
 use rppal::pwm::{Channel, Polarity, Pwm};
 
 use crate::bus::{DigitalIn, DigitalOut, I2cBus, PwmOut};
+use crate::pwm::{found_duty, retry_while};
 
 fn bus_err<E: std::fmt::Display>(e: E) -> DeviceError {
     DeviceError::Bus(e.to_string())
@@ -91,6 +94,23 @@ impl DigitalIn for RppalIn {
 /// 2 on the Pi 5; needs `dtoverlay=pwm` in `config.txt`.
 pub struct HwPwm(Pwm);
 
+const OPEN_TRIES: u32 = 30;
+const OPEN_WAIT: Duration = Duration::from_millis(500);
+
+fn permission_denied(e: &rppal::pwm::Error) -> bool {
+    matches!(e, rppal::pwm::Error::Io(io) if io.kind() == std::io::ErrorKind::PermissionDenied)
+}
+
+fn start(ch: Channel, hz: f64, duty: f64) -> rppal::pwm::Result<Pwm> {
+    let mut pwm = Pwm::new(ch)?;
+    // The light stays as it is when hald stops, so an update doesn't turn off a grow light.
+    pwm.set_reset_on_drop(false);
+    pwm.set_frequency(hz, duty)?;
+    pwm.set_polarity(Polarity::Normal)?;
+    pwm.enable()?;
+    Ok(pwm)
+}
+
 impl HwPwm {
     pub fn open(channel: u8, hz: f64) -> Result<Self, DeviceError> {
         let ch = match channel {
@@ -100,8 +120,19 @@ impl HwPwm {
             3 => Channel::Pwm3,
             n => return Err(DeviceError::Other(format!("no PWM channel {n}"))),
         };
-        let pwm = Pwm::with_frequency(ch, hz, 0.0, Polarity::Normal, true).map_err(bus_err)?;
+        // Before `Pwm::new`, which always disables the channel. Back on at that duty straight
+        // after, so a restart is a few syscalls of dark, and never at a stale frequency.
+        let duty = found_duty(Path::new("/sys/class/pwm"), channel);
+        // On the first open after boot the channel's files are new, and udev may not have given
+        // them to the gpio group yet: rppal waits 1 s, which a busy single core can outlast.
+        let pwm =
+            retry_while(OPEN_TRIES, OPEN_WAIT, permission_denied, || start(ch, hz, duty)).map_err(bus_err)?;
         Ok(Self(pwm))
+    }
+
+    /// The duty the channel is running at, 0–1.
+    pub fn duty(&self) -> f64 {
+        self.0.duty_cycle().unwrap_or(0.0)
     }
 }
 

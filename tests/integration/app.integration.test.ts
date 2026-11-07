@@ -48,7 +48,7 @@ describe('core HTTP surface', () => {
     const ok = await fetch(`${base}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json, text/event-stream' }, body })
     expect(ok.status).toBe(200)
     const json = await ok.json() as { result: { tools: { name: string }[] } }
-    expect(json.result.tools.map(t => t.name)).toEqual(expect.arrayContaining(['status', 'set_light', 'run_pump', 'acknowledge_alert']))
+    expect(json.result.tools.map(t => t.name)).toEqual(expect.arrayContaining(['status', 'set_light', 'run_pump', 'acknowledge_alert', 'plant_catalog', 'plan_layout', 'best_spot', 'save_plan', 'apply_plan']))
     const bad = await fetch(`${base}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json', 'origin': 'https://evil.example' }, body })
     expect(bad.status).toBe(403)
   })

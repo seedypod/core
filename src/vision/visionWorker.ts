@@ -8,7 +8,7 @@ import { execute, type AnalysisJob } from './execute'
 parentPort?.on('message', (m: { id: number, job: AnalysisJob }) => {
   try {
     const out = execute(m.job)
-    const transfer = (out ?? []).flatMap(o => (o.artifacts ?? []).map(a => a.bytes.buffer as ArrayBuffer))
+    const transfer = (Array.isArray(out) ? out : []).flatMap(o => (o.artifacts ?? []).map(a => a.bytes.buffer as ArrayBuffer))
     parentPort?.postMessage({ id: m.id, out }, transfer)
   }
   catch (e) {

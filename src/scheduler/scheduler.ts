@@ -20,6 +20,8 @@ export interface SchedulerDeps {
   /** When present, the curve is handed to the light arbiter (ADR-0020) instead of written directly. */
   light?: LightArbiter
   now?: () => Date
+  /** False while the clock can't be believed yet; pump slots wait. */
+  clockTrusted?: () => boolean
   log?: (msg: string) => void
 }
 
@@ -109,6 +111,11 @@ export class Scheduler {
     const pumpFired: string[] = []
     for (const s of schedules.filter((s): s is Schedule & { spec: PumpSpec } => s.kind === 'pump')) {
       if (s.spec.minute !== lt.minute) continue
+      // Unrecorded, so a slot the wrong clock lands on is free to fire at the right time.
+      if (this.deps.clockTrusted?.() === false) {
+        this.log(`pump schedule ${s.name} skipped: the clock isn't set yet`)
+        continue
+      }
       const key = `${s.id}:${lt.date}:${lt.minute}`
       if (!store.schedules.recordRun({ scheduleId: s.id, key, firedAt: now.toISOString(), result: 'pending' })) continue
       try {

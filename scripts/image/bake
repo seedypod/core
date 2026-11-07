@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Runs inside the image, under ARM emulation, as the last step of scripts/build-image.
+# It runs the same scripts/install-hal and scripts/install a unit does, from the same
+# tarball, so whatever they set up lands here too; only the accounts, the assets'
+# whereabouts and first boot are the image's own. What belongs to one unit (unit id,
+# SSH host keys, Wi-Fi, the login) stays out: scripts/image/first-boot and cloud-init
+# make those on the unit.
+# Usage: bake <branch> <commit>
+set -euo pipefail
+
+branch="$1"
+commit="$2"
+here=/tmp/seedypod/image
+assets=/tmp/seedypod/assets
+share=/usr/local/share/seedypod
+lib=/usr/local/lib/seedypod
+export DEBIAN_FRONTEND=noninteractive USER=root HOME=/root
+
+# Neither account is a login, and neither name is one a person would pick, so Imager
+# can create any login at all, seedypod included.
+export SEEDYPOD_SERVICE_USER=seedypod-hal SEEDYPOD_CORE_USER=seedypod-core
+useradd --system --home-dir /opt/seedypod --no-create-home --shell /usr/sbin/nologin "$SEEDYPOD_CORE_USER"
+
+apt-get update -q
+sed -i 's/raspberrypi/seedypod/g' /etc/hosts
+echo seedypod > /etc/hostname
+
+# --no-wear: its checks need a running system, so first boot applies them. Except two
+# that only mean anything from the start of a boot. Restarting journald alongside
+# cloud-init can fail, and dropping rpi-swap's file on the card waits for the next boot,
+# so both are here for the first one. The real unit proved these settings.
+bash "$here/install-hal" --binary "$assets/hald-arm-unknown-linux-gnueabihf" --no-wear
+(
+  export SUDO=
+  systemctl() { :; }
+  SEEDYPOD_LIB_ONLY=1 . "$here/install-hal"
+  wear_journald
+  boot_swap
+)
+
+# The unit id is the Pi's serial. First boot writes it to a file core reads on each start,
+# which overrides this placeholder and needs no daemon-reload.
+mkdir -p /etc/systemd/system/seedypod-core.service.d
+printf '[Service]\nEnvironmentFile=-/var/lib/seedypod-image/unit.env\n' > /etc/systemd/system/seedypod-core.service.d/unit-id.conf
+SEEDYPOD_TARBALL_URL="file://$assets/seedypod-core.tar.gz" SEEDYPOD_RELEASE_URL="file://$assets" \
+  SEEDYPOD_HAL_UNIT_ID=__UNIT_ID__ bash "$here/install" --branch "$branch"
+# A chroot has no device tree to say it's a Pi, so ask for this by name.
+bash "$here/install" --port80
+
+# ---- first boot -------------------------------------------------------------------
+# Root runs these at boot, so they can't sit in /opt/seedypod, which core's account owns.
+mkdir -p "$lib"
+install -m 0644 "$here/install" "$here/install-hal" "$lib/"
+install -m 0755 "$here/first-boot" /usr/local/sbin/seedypod-first-boot
+install -m 0644 "$here/seedypod-first-boot.service" "$here/seedypod-cloud-init-off.service" /etc/systemd/system/
+systemctl enable seedypod-first-boot.service seedypod-cloud-init-off.service
+
+# ---- leave nothing behind ---------------------------------------------------------
+# Node's tarball carries uid 1000, which first boot gives to the login.
+chown -R root:root /usr/local/bin /usr/local/include /usr/local/lib /usr/local/share
+apt-get purge -y -q 'linux-headers-*' >/dev/null
+apt-get autoremove -y -q --purge >/dev/null
+apt-get clean
+rm -rf /var/lib/apt/lists/* /root/.cache /root/.npm /root/.local /root/.config /root/.bash_history
+find /var/log -type f -delete
+find /var/cache -type f -not -path '/var/cache/debconf/*' -delete
+rm -f /etc/ssh/ssh_host_* /var/lib/systemd/random-seed /var/lib/dbus/machine-id
+printf 'uninitialized\n' > /etc/machine-id
+
+# scripts/check-image reads this off the card; the unit keeps a copy.
+printf 'branch=%s\ncommit=%s\nbase=%s\nbuilt=%s\n' "$branch" "$commit" \
+  "$(sed -n 's/^BASE_URL=.*\///p' "$here/base.env")" "$(date -u +%FT%TZ)" | tee "$share/image" > /boot/firmware/seedypod-image.txt

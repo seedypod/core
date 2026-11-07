@@ -1,51 +1,211 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LightPage } from '../LightPage'
+import { HOLD_MS } from '../useLightControl'
 
-const { data, calls } = vi.hoisted(() => ({ data: new Map<string, unknown>(), calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn() } }))
+const { data, calls, setLight } = vi.hoisted(() => ({
+  data: new Map<string, unknown>(),
+  calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn() },
+  setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onMutate?: () => { command: number }, onSuccess?: (s: unknown, sent: unknown, context: { command: number }) => void, onError?: (e: Error, sent: { level?: number }) => void } },
+}))
 
-vi.mock('@/src/components/Schedule/CurveEditor', () => ({ CurveEditor: () => null }))
+vi.mock('../CurveEditor', () => ({ CurveEditor: ({ schedule }: { schedule: { name: string } }) => <div>{`editing ${schedule.name}`}</div> }))
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
   const mutation = (name: keyof typeof calls) => ({ useMutation: () => ({ isPending: false, mutate: (i?: unknown) => calls[name](i) }) })
+  const set = {
+    useMutation: (hook: typeof setLight.hook) => {
+      setLight.hook = hook
+      return { isPending: setLight.pending !== undefined, variables: setLight.pending, mutate: (i?: unknown) => calls.set(i) }
+    },
+  }
   return {
     trpc: {
-      useUtils: () => ({ light: { invalidate: vi.fn() }, schedules: { invalidate: vi.fn() } }),
-      light: { get: query('light'), owner: query('owner'), set: mutation('set'), resume: mutation('resume') },
+      useUtils: () => ({ light: { invalidate: vi.fn(), get: { setData: setLight.setData } }, schedules: { invalidate: vi.fn() } }),
+      light: { get: query('light'), owner: query('owner'), set, resume: mutation('resume') },
       schedules: { list: query('schedules'), upsert: mutation('upsert') },
       telemetry: { lightHours: query('hours') },
     },
   }
 })
 
+const spec = { setpoints: [{ minute: 360, level: 0 }, { minute: 450, level: 85 }, { minute: 1140, level: 85 }, { minute: 1260, level: 0 }] }
+const daylight = { id: 'daylight', kind: 'light', name: 'Daylight curve', enabled: true, days: 127, spec, createdAt: '', updatedAt: '' }
+const boost = { id: 'boost', kind: 'light', name: 'Weekend boost', enabled: false, days: 96, spec: { setpoints: [{ minute: 600, level: 100 }, { minute: 700, level: 0 }, { minute: 720, level: 0 }] }, createdAt: '', updatedAt: '' }
+const pump = { id: 'p', kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 }, createdAt: '', updatedAt: '' }
+
 beforeEach(() => {
   data.clear()
   for (const f of Object.values(calls)) f.mockReset()
+  setLight.pending = undefined
+  setLight.setData.mockReset()
   data.set('light', { on: true, level: 80, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null })
   data.set('schedules', [])
-  data.set('hours', { hours: 1200, pctUsed: 3 })
+  data.set('hours', { hours: 1200, ratedHours: 25000, pctUsed: 4.8 })
 })
 afterEach(cleanup)
 
 describe('LightPage: who controls the light', () => {
-  it('offers Resume while a manual change holds', () => {
+  it('offers Resume curve while a manual change holds, naming the curve level it returns to', () => {
     data.set('owner', { source: 'manual', level: 80, leaseId: null, manualUntil: '2026-10-31T10:30:00Z', schedule: 40 })
     render(<LightPage />)
-    expect(screen.getByText(/Your change holds until/)).toBeTruthy()
-    fireEvent.click(screen.getByText('Resume'))
+    expect(screen.getByText(/Your change holds until .*\. Then the curve \(40% at this hour\) takes over again\./)).toBeTruthy()
+    expect(screen.getByText(/held by hand until/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Resume curve'))
     expect(calls.resume).toHaveBeenCalled()
-    expect(screen.getByText('LED hours: 1,200 (3% of rated life).')).toBeTruthy()
+    expect(screen.getByTestId('led-hours').textContent).toBe('LED life 95% · 1,200 / 25,000 h')
   })
 
-  it('says when Autopilot or the schedule is in charge', () => {
+  it('says the curve or Autopilot takes over when no curve is running', () => {
+    data.set('owner', { source: 'manual', level: 80, leaseId: null, manualUntil: '2026-10-31T10:30:00Z', schedule: null })
+    render(<LightPage />)
+    expect(screen.getByText(/Then the curve or Autopilot takes over again/)).toBeTruthy()
+  })
+
+  it('says when Autopilot or the curve is in charge', () => {
     data.set('owner', { source: 'autopilot', level: 60, leaseId: 'rule:1:0', manualUntil: null, schedule: 40 })
     render(<LightPage />)
     expect(screen.getByText(/Autopilot is setting the light/)).toBeTruthy()
-    expect(screen.queryByText('Resume')).toBeNull()
+    expect(screen.getByText(/Autopilot is in charge/)).toBeTruthy()
+    expect(screen.queryByText('Resume curve')).toBeNull()
     cleanup()
     data.set('owner', { source: 'schedule', level: 40, leaseId: null, manualUntil: null, schedule: 40 })
     render(<LightPage />)
-    expect(screen.getByText(/Following the schedule/)).toBeTruthy()
+    expect(screen.getByText(/Following the curve\./)).toBeTruthy()
+  })
+
+  it('flips the switch with the tap while the command is in flight, and stays put for a brightness change', () => {
+    setLight.pending = { on: false }
+    render(<LightPage />)
+    expect(screen.getByRole('switch', { name: 'Light power' }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByText('Lights off')).toBeTruthy()
+    cleanup()
+    setLight.pending = { level: 10 }
+    render(<LightPage />)
+    expect(screen.getByRole('switch', { name: 'Light power' }).getAttribute('aria-checked')).toBe('true')
+  })
+
+  const adjust = (slider: HTMLElement, value: string) => {
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' })
+    fireEvent.input(slider, { target: { value } })
+    fireEvent.keyUp(slider, { key: 'ArrowLeft' })
+  }
+
+  it('shows the requested level on the slider and the readout straight away, and goes back when refused', () => {
+    render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    adjust(slider, '30')
+    expect(slider.value).toBe('30')
+    expect(screen.getByText('30%')).toBeTruthy()
+    act(() => setLight.hook.onError?.(new Error('refused'), { level: 30 }))
+    expect(slider.value).toBe('80')
+  })
+
+  it('keeps a newer request when an older command is refused', () => {
+    render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    adjust(slider, '30')
+    adjust(slider, '60')
+    act(() => setLight.hook.onError?.(new Error('refused'), { level: 30 }))
+    expect(slider.value).toBe('60')
+  })
+
+  it('follows the light again once it reports the requested level', () => {
+    const { rerender } = render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    adjust(slider, '30')
+    data.set('light', { ...(data.get('light') as object), level: 30 })
+    rerender(<LightPage />)
+    data.set('light', { ...(data.get('light') as object), level: 55 })
+    rerender(<LightPage />)
+    expect(slider.value).toBe('55')
+  })
+
+  it('gives up on a level the light never reports', () => {
+    vi.useFakeTimers()
+    render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    adjust(slider, '30')
+    act(() => void vi.advanceTimersByTime(HOLD_MS - 1))
+    expect(slider.value).toBe('30')
+    act(() => void vi.advanceTimersByTime(1))
+    expect(slider.value).toBe('80')
+    vi.useRealTimers()
+  })
+
+  it('lets go of the requested level when the power switch overrides it', () => {
+    render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    adjust(slider, '30')
+    fireEvent.click(screen.getByRole('switch', { name: 'Light power' }))
+    expect(calls.set).toHaveBeenCalledTimes(2)
+    expect(slider.value).toBe('80')
+  })
+
+  it('writes the state a command returns into the cache instead of fetching it again', () => {
+    render(<LightPage />)
+    const state = { on: true, level: 30, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null }
+    setLight.hook.onSuccess?.(state, { level: 30 }, setLight.hook.onMutate?.() as { command: number })
+    expect(setLight.setData).toHaveBeenCalledWith(undefined, state)
+  })
+
+  it('drives power and brightness', () => {
+    render(<LightPage />)
+    expect(screen.getByText('Lights on')).toBeTruthy()
+    fireEvent.click(screen.getByRole('switch', { name: 'Light power' }))
+    expect(calls.set).toHaveBeenCalledWith({ on: false })
+    adjust(screen.getByLabelText('Brightness'), '30')
+    expect(calls.set).toHaveBeenCalledWith({ level: 30 })
+    cleanup()
+    data.set('light', { on: false, level: 0, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null })
+    render(<LightPage />)
+    expect(screen.getByText('Lights off')).toBeTruthy()
+    expect(screen.getByText('Off')).toBeTruthy()
+  })
+})
+
+describe('LightPage: curves', () => {
+  it('shows today’s curve, and says so when none runs', () => {
+    data.set('schedules', [daylight, pump])
+    render(<LightPage />)
+    expect(screen.getByText('Following Daylight curve')).toBeTruthy()
+    expect(screen.getByText('24:00')).toBeTruthy()
+    cleanup()
+    data.set('schedules', [boost])
+    render(<LightPage />)
+    expect(screen.getByText('No curve today')).toBeTruthy()
+    expect(screen.getByText(/No curve runs today/)).toBeTruthy()
+    cleanup()
+    data.set('schedules', [daylight, { ...daylight, id: 'second', name: 'Second' }])
+    render(<LightPage />)
+    expect(screen.getByText('Following 2 curves')).toBeTruthy()
+  })
+
+  it('lists each curve, opens the running one, and toggles one on at once', () => {
+    data.set('schedules', [daylight, boost])
+    render(<LightPage />)
+    const day = screen.getByText('Daylight curve').closest('button') as HTMLElement
+    expect(within(day).getByText('ACTIVE')).toBeTruthy()
+    expect(within(day).getByText('4 setpoints · Every day · 15 h of light')).toBeTruthy()
+    expect(screen.getByText('3 setpoints · Weekends · off')).toBeTruthy()
+    expect(screen.getByText('editing Daylight curve')).toBeTruthy()
+    expect(screen.queryByText('editing Weekend boost')).toBeNull()
+
+    fireEvent.click(screen.getByLabelText('Edit Weekend boost'))
+    expect(screen.getByText('editing Weekend boost')).toBeTruthy()
+    expect(screen.queryByText('editing Daylight curve')).toBeNull()
+    fireEvent.click(screen.getByText('Weekend boost'))
+    expect(screen.queryByText(/^editing/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable Weekend boost' }))
+    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'boost', enabled: true, spec: boost.spec }))
+  })
+
+  it('adds a curve and opens it', () => {
+    render(<LightPage />)
+    expect(screen.getByText(/No curves yet/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Add curve'))
+    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ kind: 'light', name: 'New curve', enabled: false }))
   })
 })

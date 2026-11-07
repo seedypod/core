@@ -1,7 +1,7 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
-import { DEFAULT_SETTINGS } from './types'
+import { DEFAULT_SETTINGS, profileKey } from './types'
 
 /** In-memory Store for tests and the browser demo. Same semantics as SqliteStore. */
 export class MemoryStore implements Store {
@@ -13,12 +13,14 @@ export class MemoryStore implements Store {
   private nextAlertId = 1
   private readonly cycles: GrowCycle[] = []
   private readonly podRows = new Map<number, Pod>()
+  private readonly profileRows = new Map<string, PlantProfile>()
   private readonly captureRows: Capture[] = []
-  private readonly points: TelemetryPoint[] = []
+  private points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
   private flashRows: FlashSample[] = []
   private readonly backupRows: BackupRecord[] = []
   private readonly analysisRows: AnalysisRow[] = []
+  private readonly planRows = new Map<string, PlanRow>()
   private automationRows: Automation[] = []
   private runRows: AutomationRun[] = []
   private nextAutomationId = 1
@@ -27,7 +29,7 @@ export class MemoryStore implements Store {
   constructor(podCount = 30) {
     const ts = new Date(0).toISOString()
     for (let slot = 1; slot <= podCount; slot++) {
-      this.podRows.set(slot, { slot, plant: null, plantedAt: null, status: 'empty', notes: '', updatedAt: ts })
+      this.podRows.set(slot, { slot, plant: null, plantedAt: null, status: 'empty', notes: '', updatedAt: ts, statusSince: ts, lastHarvestAt: null })
     }
   }
 
@@ -128,13 +130,24 @@ export class MemoryStore implements Store {
 
   pods = {
     list: (): Pod[] => [...this.podRows.values()].sort((a, b) => a.slot - b.slot),
-    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt'>>, ts: string): Pod => {
+    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt' | 'statusSince'>>, ts: string): Pod => {
       const prev = this.podRows.get(slot)
       if (!prev) throw new Error(`no pod ${slot}`)
-      const row = { ...prev, ...patch, updatedAt: ts }
+      const moved = patch.status !== undefined && patch.status !== prev.status
+      const row = { ...prev, ...patch, updatedAt: ts, statusSince: moved ? ts : prev.statusSince }
       this.podRows.set(slot, row)
       return row
     },
+  }
+
+  plants = {
+    list: (): PlantProfile[] => [...this.profileRows.values()].sort((a, b) => a.key.localeCompare(b.key)),
+    upsert: (p: Omit<PlantProfile, 'key' | 'updatedAt'>, ts: string): PlantProfile => {
+      const row = { ...p, key: profileKey(p.name), updatedAt: ts }
+      this.profileRows.set(row.key, row)
+      return row
+    },
+    remove: (name: string): boolean => this.profileRows.delete(profileKey(name)),
   }
 
   captures = {
@@ -160,6 +173,22 @@ export class MemoryStore implements Store {
       const rows = this.points.filter(p => p.sensor === sensor && p.ts >= fromTs && p.ts <= toTs)
       return downsample(rows, maxPoints)
     },
+    flush: (): void => {
+      // nothing is held
+    },
+    thin: (sensors: readonly SensorId[], fromTs: string, toTs: string, bucketMin: number): number => {
+      const seen = new Set<string>()
+      const before = this.points.length
+      this.points = this.points.filter((p) => {
+        if (!sensors.includes(p.sensor) || p.ts < fromTs || p.ts >= toTs) return true
+        const bucket = `${p.sensor}${p.ts.slice(0, 14)}${Math.floor(Number(p.ts.slice(14, 16)) / bucketMin)}`
+        if (seen.has(bucket)) return false
+        seen.add(bucket)
+        return true
+      })
+      return before - this.points.length
+    },
+    oldestTs: (): string | null => this.points[0]?.ts ?? null,
   }
 
   counters = {
@@ -216,6 +245,10 @@ export class MemoryStore implements Store {
     forCapture: (captureId: string): AnalysisRow[] =>
       this.analysisRows.filter(r => r.captureId === captureId)
         .sort((a, b) => a.analyzer.localeCompare(b.analyzer) || a.version - b.version || a.slot - b.slot || a.metric.localeCompare(b.metric)),
+    removeDevice: (captureId: string): void => {
+      const keep = this.analysisRows.filter(r => r.captureId !== captureId || r.source !== 'device')
+      this.analysisRows.splice(0, this.analysisRows.length, ...keep)
+    },
     range: (fromTs: string, toTs: string): AnalysisRow[] =>
       this.analysisRows.filter(r => r.ts >= fromTs && r.ts <= toTs).sort((a, b) => a.ts.localeCompare(b.ts)),
     stats: (): AnalyzerStats[] => {
@@ -268,6 +301,29 @@ export class MemoryStore implements Store {
       const before = this.runRows.length
       this.runRows = this.runRows.filter(r => r.firedAt >= beforeTs)
       return before - this.runRows.length
+    },
+  }
+
+  plans = {
+    list: (): PlanRow[] => [...this.planRows.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    get: (id: string): PlanRow | null => this.planRows.get(id) ?? null,
+    save: (p: Omit<PlanRow, 'createdAt' | 'updatedAt' | 'appliedAt' | 'issued'>): PlanRow => {
+      const now = new Date().toISOString()
+      const prev = this.planRows.get(p.id)
+      const row: PlanRow = { ...p, createdAt: prev?.createdAt ?? now, updatedAt: now, appliedAt: prev?.appliedAt ?? null, issued: prev?.issued ?? [] }
+      this.planRows.set(p.id, row)
+      return row
+    },
+    remove: (id: string): boolean => this.planRows.delete(id),
+    markApplied: (id: string, ts: string): PlanRow | null => {
+      const r = this.planRows.get(id)
+      if (!r) return null
+      r.appliedAt = ts
+      return r
+    },
+    markIssued: (id: string, key: string): void => {
+      const r = this.planRows.get(id)
+      if (r && !r.issued.includes(key)) r.issued.push(key)
     },
   }
 

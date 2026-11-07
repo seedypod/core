@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Checks a seedypod OS image before you flash it, or a card before its first boot.
+# Runs on macOS and Linux and changes nothing.
+# Usage: scripts/check-image seedypod-os.img.xz   the download is whole and is a Pi image;
+#                                                 its .sha256 has to sit next to it
+#        scripts/check-image --card <bootfs>      the card's boot partition, once written:
+#                                                 will it boot a Pi Zero W, and what login
+#                                                 and Wi-Fi will it come up with
+set -euo pipefail
+
+failed=0
+ok() { echo "✓ $*"; }
+note() { echo "  $*"; }
+bad() { echo "✗ $*" >&2; failed=1; }
+
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+
+# The first value of `key:` under a top-level `section:` in Imager's user-data or network-config.
+yaml_value() {
+  awk -v section="$2:" -v key="$3:" '
+    /^[^ #]/ { inside = ($1 == section) }
+    inside && $1 == key { gsub(/^"|"$/, "", $2); print $2; exit }
+  ' "$1"
+}
+
+check_file() {
+  local image="$1" want mbr
+  [ -f "$image" ] || { bad "no such file: $image"; return; }
+  if [ -f "$image.sha256" ]; then
+    want="$(cut -d' ' -f1 "$image.sha256")"
+    if [ "$(sha256 "$image")" = "$want" ]; then ok "sha256 matches $(basename "$image").sha256"; else bad "sha256 doesn't match: download it again"; fi
+  else
+    bad "no $(basename "$image").sha256 next to it, so nothing to check it against"
+  fi
+  command -v xz >/dev/null 2>&1 || { note "no xz here, so the archive and its partitions weren't read"; return; }
+  if xz -t "$image" 2>/dev/null; then ok "the archive is whole"; else bad "the archive is damaged: download it again"; return; fi
+  # A Raspberry Pi OS card: a boot signature, FAT then Linux, in a plain MBR.
+  mbr="$(xz -dc "$image" 2>/dev/null | head -c 512 | od -An -tx1 -v | tr -d ' \n' || true)"
+  if [ "${mbr:1020:4}" = 55aa ] && [ "${mbr:900:2}" = 0c ] && [ "${mbr:932:2}" = 83 ]; then
+    ok "it holds a boot partition and a root partition"
+  else
+    bad "that isn't a Raspberry Pi OS image"
+  fi
+}
+
+check_card() {
+  local boot="$1" login wifi
+  [ -d "$boot" ] || { bad "no such directory: $boot"; return; }
+  [ -f "$boot/config.txt" ] || { bad "$boot has no config.txt: that isn't a Raspberry Pi boot partition"; return; }
+  if [ -f "$boot/kernel.img" ]; then
+    ok "it has the 32-bit kernel a Pi Zero W boots"
+  else
+    bad "no kernel.img: this is a 64-bit OS, which a Pi Zero W can't boot and won't say so. Flash seedypod OS"
+  fi
+  if grep -q '^arm_64bit=1' "$boot/config.txt"; then
+    bad "config.txt has arm_64bit=1, which a Pi Zero W can't boot"
+  fi
+  if [ -f "$boot/seedypod-image.txt" ]; then
+    ok "seedypod OS, $(sed -n 's/^branch=//p' "$boot/seedypod-image.txt") $(sed -n 's/^commit=\(.\{7\}\).*/\1/p' "$boot/seedypod-image.txt")"
+  else
+    note "not seedypod OS: scripts/install-hal and scripts/install are still to run on it"
+  fi
+
+  login="$(yaml_value "$boot/user-data" user name 2>/dev/null || true)"
+  if [ -n "$login" ]; then
+    ok "login: $login"
+  else
+    note "no login set: the app works, but nothing can SSH in (docs/INSTALLATION.md#no-login-on-the-card)"
+  fi
+  wifi="$(sed -n '/access-points:/{n;s/^ *"\{0,1\}\([^":]*\)"\{0,1\}:.*/\1/p;}' "$boot/network-config" 2>/dev/null | head -1 || true)"
+  if [ -n "$wifi" ]; then
+    ok "Wi-Fi: $wifi (a Pi Zero W only has 2.4 GHz)"
+  else
+    note "no Wi-Fi set: hold the unit's button for 10 seconds to open seedypod-setup-xxxx"
+  fi
+}
+
+case "${1:-}" in
+  --card) [ $# -eq 2 ] || { sed -n '4,8p' "$0" >&2; exit 2; }; check_card "$2" ;;
+  ""|-*) sed -n '4,8p' "$0" >&2; exit 2 ;;
+  *) [ $# -eq 1 ] || { sed -n '4,8p' "$0" >&2; exit 2; }; check_file "$1" ;;
+esac
+exit "$failed"

@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createEventBus } from '../../lib/eventBus'
 import { MemoryStore } from '../../store/memory'
 import { LIGHT_HOURS_KEY, Recorder } from '../recorder'
 
 describe('Recorder', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('downsamples telemetry per sensor', () => {
     const store = new MemoryStore()
     let t = 0
@@ -26,6 +30,50 @@ describe('Recorder', () => {
     expect(store.alerts.list({ activeOnly: true })).toHaveLength(0)
     r.onHal({ type: 'availability', online: false })
     expect(store.alerts.list({ activeOnly: true })[0]?.kind).toBe('hal_offline')
+  })
+
+  it('hands HAL alert details over as live, so a changing reading never touches the row', () => {
+    const store = new MemoryStore()
+    const raise = vi.spyOn(store.alerts, 'raise')
+    const r = new Recorder({ store, events: createEventBus() })
+    r.onHal({ type: 'alert', alert: { kind: 'water_low', active: true, ts: 't', detail: 'water distance 151.4 cm' } })
+    expect(raise).toHaveBeenCalledWith('water_low', 'water distance 151.4 cm', 't', { live: true })
+  })
+
+  it('flushes telemetry on the interval from settings, and stops when stopped', () => {
+    vi.useFakeTimers()
+    const store = new MemoryStore()
+    const events = createEventBus()
+    const flush = vi.spyOn(store.telemetry, 'flush')
+    const r = new Recorder({ store, events })
+    r.start()
+    flush.mockClear()
+    vi.advanceTimersByTime(4 * 60_000)
+    expect(flush).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(60_000)
+    expect(flush).toHaveBeenCalledTimes(1)
+    r.stop()
+    vi.advanceTimersByTime(60 * 60_000)
+    expect(flush).toHaveBeenCalledTimes(1)
+  })
+
+  it('picks up a changed flush interval, flushing first so nothing waits longer than it should', () => {
+    vi.useFakeTimers()
+    const store = new MemoryStore()
+    const events = createEventBus()
+    const flush = vi.spyOn(store.telemetry, 'flush')
+    const r = new Recorder({ store, events })
+    r.start()
+    flush.mockClear()
+    events.emit({ kind: 'mutation', path: 'alerts' })
+    events.emit({ kind: 'schedule', action: 'changed', id: 'x' })
+    expect(flush).not.toHaveBeenCalled()
+    store.settings.update({ telemetryFlushMin: 1 })
+    events.emit({ kind: 'mutation', path: 'settings' })
+    expect(flush).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(60_000)
+    expect(flush).toHaveBeenCalledTimes(2)
+    r.stop()
   })
 
   it('leaves doser faults to the HAL dose_fault alert', () => {

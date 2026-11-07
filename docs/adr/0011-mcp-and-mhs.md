@@ -34,7 +34,7 @@ controlled through MCP, a CLI, or code files. The preview is not public yet.
   implied, so an agent can plan within them.
 
 Transport is stateless Streamable HTTP at `/api/mcp` with an Origin≠Host
-rejection (DNS-rebinding guard), as in sleepypod.
+rejection (DNS-rebinding guard), as in [sleepypod](https://sleepypod.github.io/core/mcp/).
 
 ## Consequences
 

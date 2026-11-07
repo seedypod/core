@@ -1,3 +1,4 @@
+import { encode } from 'jpeg-js'
 import { describe, expect, it } from 'vitest'
 import { createWorkerExecutor } from '../workerExecutor'
 import { jpeg } from './fixtures'
@@ -11,10 +12,15 @@ describe('worker executor', () => {
     try {
       const bytes = jpeg(90, 75, true)
       const out = await w.run({ bytes, camera: 'upper', analyzers: ['green-threshold', 'exg-otsu'], opts: { artifacts: true } })
-      expect(out?.map(o => o.analyzer)).toEqual(['green-threshold', 'exg-otsu'])
-      expect(out?.[1]?.artifacts?.[0]?.bytes.byteLength).toBeGreaterThan(0)
+      if (!Array.isArray(out)) throw new Error('should have scored it')
+      expect(out.map(o => o.analyzer)).toEqual(['green-threshold', 'exg-otsu'])
+      expect(out[1]?.artifacts?.[0]?.bytes.byteLength).toBeGreaterThan(0)
       expect(bytes.byteLength).toBeGreaterThan(0)
       expect(await w.run({ bytes: new Uint8Array([1]), camera: 'lower', analyzers: ['exg-otsu'], opts: { artifacts: false } })).toBeNull()
+      const data = new Uint8Array(64 * 64 * 4)
+      for (let i = 0; i < data.length; i += 4) data.set([0, 135, 0, 255], i)
+      const torn = new Uint8Array(encode({ data, width: 64, height: 64 }, 85).data)
+      expect(await w.run({ bytes: torn, camera: 'upper', analyzers: ['exg-otsu'], opts: { artifacts: false } })).toBe('damaged')
     }
     finally {
       await w.close()

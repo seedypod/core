@@ -10,14 +10,19 @@ import { createAutopilot } from '../autopilot/instance'
 import { CaptureService, MemorySink, type BlobSink } from '../camera/captures'
 import type { MirroredSink } from '../camera/mirrorSink'
 import { LightArbiter } from '../control/light'
+import type { DatabaseInspector } from '../db/inspect'
 import { GrowEngine } from '../grow/grow'
 import type { HalClient } from '../hardware/types'
+import type { HomeKitControl } from '../homekit/types'
 import { createEventBus, type EventBus } from '../lib/eventBus'
+import type { LoggingControl } from '../logging/policy'
+import type { BridgeStatus } from '../mqtt/bridge'
 import { SimWifi, type Wifi } from '../network/wifi'
 import { Scheduler } from '../scheduler/scheduler'
 import type { Store } from '../store/types'
-import { FlashMeter, type FlashSource } from '../telemetry/flash'
+import { FlashMeter, type DiskUsage, type FlashSource } from '../telemetry/flash'
 import { Recorder } from '../telemetry/recorder'
+import { TelemetryRetention } from '../telemetry/retention'
 import type { Executor } from '../vision/execute'
 import { AnalysisService } from '../vision/service'
 import type { Context } from './context'
@@ -44,6 +49,19 @@ export interface CoreOptions {
   restore?: RestoreClient
   /** The SD card's write counter (ADR-0021); omitted off a Pi. */
   flashSource?: FlashSource | null
+  /** Metadata about the database for the Database view; a real scan on node hosts, sample data in the demo. */
+  database?: DatabaseInspector
+  /** Used and free space where DATA_DIR lives; node hosts only. */
+  disk?: () => DiskUsage | null
+  /** The Home Assistant bridge's state; node hosts only. */
+  bridge?: () => BridgeStatus
+  /** How much core and hald log; node hosts only. */
+  logging?: LoggingControl
+  host?: Context['host']
+  /** False while the clock can't be believed yet (no RTC, NTP hasn't answered); node hosts only. */
+  clockTrusted?: () => boolean
+  /** HomeKit (ADR 0023); node hosts only. Attached to the context here, unpublished on stop. */
+  homekit?: HomeKitControl & { attach(ctx: Context): void, shutdown(): Promise<void> }
 }
 
 export interface Core {
@@ -71,16 +89,19 @@ export function createCore(o: CoreOptions): Core {
   const captures = new CaptureService({ hal: o.hal, store: o.store, sink, now: o.now, minBytes: o.captureMinBytes, analysis })
   // The light's single owner: manual > Autopilot > schedule (ADR-0020).
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
-  const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, log: m => console.warn(m) })
-  const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, flash, wifi, light, autopilot, version: o.version, now: o.now }
+  const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
+  const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
-  const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now })
+  const retention = new TelemetryRetention({ store: o.store, now: o.now })
+  const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now, clockTrusted: o.clockTrusted })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })
 
   let growTimer: ReturnType<typeof setInterval> | null = null
   if (o.startServices) {
     recorder.start()
+    retention.start()
     scheduler.start()
     autopilot.start()
     flash.start()
@@ -100,6 +121,7 @@ export function createCore(o: CoreOptions): Core {
     grow,
     autopilot,
     async stop() {
+      await o.homekit?.shutdown()
       unsubHal()
       scheduler.stop()
       autopilot.stop()
@@ -108,6 +130,7 @@ export function createCore(o: CoreOptions): Core {
       flash.stop()
       o.backup?.stop()
       await analysis.idle()
+      await retention.stop()
       recorder.stop()
       if (growTimer) clearInterval(growTimer)
       await o.hal.close()

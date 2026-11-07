@@ -51,14 +51,24 @@ rule **skips**. It never acts on missing data.
 
 New rules start in **dry run**. A dry-run rule evaluates on schedule and logs
 what it **would** have done, but touches nothing. Leave it for a few days,
-check the run log, then press **Arm**.
+check the activity log, then switch it to **Active**.
 
-**Back to dry run** and **Turn off** are always one click away.
+Each rule has an **Off / Dry-run / Active** control on its row, so going back
+is always one click. The header shows the count (`3 rules · 2 active ·
+1 dry-run`) next to the kill switch. With no rules yet, the screen offers three
+starters (a low-tank notice, dimming when hot, a pH dose) that open in the
+builder.
 
 ## Backtest before you arm
 
-**Backtest**, on a saved rule or inside the builder, replays the rule over the
-last 1, 3 or 7 days of recorded readings and shows:
+Every rule on the list carries a **standing 7-day backtest**, replayed in the
+background: a line such as `7-day backtest · 3 would fire · peak 31 of 29 °C`
+(how far the reading it watches went against its threshold), and a sparkline
+of that reading with the threshold dashed and a mark where the rule would have
+fired. You can see what arming a rule would mean without opening anything.
+
+Click the summary, or open the builder, for the full replay over the last 1, 3
+or 7 days of recorded readings. It shows:
 
 - when it would have fired, and what each action would have done, including
   values that were clamped;
@@ -72,7 +82,13 @@ unknown in a backtest; the panel tells you when that applies.
 
 ## Why did it do that?
 
-The **run log** keeps one line every time a rule's *when* came round:
+**Today**, at the top of the screen, says who holds the light right now and
+draws the last 24 hours as one lane per rule, with a mark wherever it fired or
+would have fired.
+
+The **activity log** keeps one line every time a rule's *when* came round,
+grouped by day. It shows what rules did by default; **All checks** adds the
+skipped ones, and **Fired**, **Would fire** and **Refused** narrow it down:
 
 | Outcome | Meaning |
 |---|---|
@@ -124,7 +140,8 @@ light at the moment.
 - **REST** (`/api`, see `GET /api/openapi.json`):
   - `GET /automations`, `POST /automations`, `PUT` and `DELETE /automations/{id}`
   - `GET /automations/runs`, `GET /automations/status`, `GET /automations/signals`
-  - `POST /automations/backtest`
+  - `POST /automations/backtest`, and `GET /automations/backtests` for every
+    rule's 7-day summary at once
   - `PUT /autopilot/enabled` (the kill switch)
   - `GET /light/owner`, `POST /light/resume`
 

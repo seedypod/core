@@ -2,7 +2,7 @@
 # seedypod HAL (hald) installer for a Raspberry Pi running Raspberry Pi OS.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 #        scripts/install-hal [--version vX.Y.Z] [--binary ./hald] [--no-enable]
-#                            [--mqtt-lan | --no-broker] [--no-wear]
+#                            [--mqtt-lan | --no-broker] [--no-wear] [--no-boot]
 #
 # Downloads the hald binary for this CPU from the latest GitHub Release of
 # seedypod/core, installs it to /usr/local/bin, writes a commented
@@ -11,14 +11,16 @@
 # Mosquitto MQTT broker (127.0.0.1:1883, for hald and core on this Pi), and
 # installs and enables hald.service. It also cuts SD card writes (ADR-0021):
 # the journal moves to RAM, swap moves to zram, and / is mounted noatime; each
-# change is checked and undone if it doesn't take. Re-running upgrades the
-# binary, reapplies those settings and leaves hal.toml and the broker config
-# alone.
+# change is checked and undone if it doesn't take. It also shortens boot:
+# cloud-init goes off once it's done its work, and nothing that runs the
+# hardware waits for Wi-Fi. Re-running upgrades the binary, reapplies those
+# settings and leaves hal.toml and the broker config alone.
 #   --mqtt-lan   also open port 1884 to the LAN with a password, for Home
 #                Assistant on another machine (prints the password once)
 #   --no-broker  skip Mosquitto: you point hald and core at another broker,
 #                such as Home Assistant's Mosquitto add-on
 #   --no-wear    leave journald, swap and the root mount options as they are
+#   --no-boot    leave cloud-init, rpi-swap's swap file and Mosquitto's start order as they are
 set -euo pipefail
 
 # ---- SD card wear (ADR-0021) ---------------------------------------------------
@@ -49,7 +51,8 @@ wear_journald() {
   return 1
 }
 
-zram_active() { swapon --show=NAME --noheadings 2>/dev/null | grep '^/dev/zram' >/dev/null; }
+# Not swapon: it's in /usr/sbin, which isn't on a non-root PATH on Raspberry Pi OS.
+zram_active() { grep '^/dev/zram' "$ROOT/proc/swaps" >/dev/null 2>&1; }
 
 # dphys-swapfile pages to the card; zram compresses in RAM, which suits a 512 MB board.
 wear_swap() {
@@ -63,6 +66,8 @@ wear_swap() {
       echo "   zram isn't available (no systemd-zram-generator); swap left as it was" >&2
       return 1
     fi
+    local backup="$ZRAM_CONF.seedypod-bak"
+    if [ -f "$ZRAM_CONF" ]; then $SUDO cp -p "$ZRAM_CONF" "$backup"; fi
     $SUDO mkdir -p "$(dirname "$ZRAM_CONF")"
     $SUDO tee "$ZRAM_CONF" >/dev/null <<'CONF'
 # Written by seedypod scripts/install-hal (ADR-0021): swap in compressed RAM, not on the SD card.
@@ -74,11 +79,12 @@ CONF
     $SUDO systemctl daemon-reload
     if ! { $SUDO systemctl start dev-zram0.swap && zram_active; }; then
       $SUDO systemctl stop dev-zram0.swap >/dev/null 2>&1 || true
-      $SUDO rm -f "$ZRAM_CONF"
+      if [ -f "$backup" ]; then $SUDO mv -f "$backup" "$ZRAM_CONF"; else $SUDO rm -f "$ZRAM_CONF"; fi
       $SUDO systemctl daemon-reload
       echo "   zram swap didn't start; swap left as it was" >&2
       return 1
     fi
+    $SUDO rm -f "$backup"
     echo "→ swap on zram (compressed RAM)"
   fi
   # Only once zram is up, so the board is never left without swap.
@@ -127,6 +133,253 @@ apply_wear_settings() {
   return 0
 }
 
+# ---- cameras: stable names by USB port -----------------------------------------
+# /dev/videoN can swap across reboots; hald prefers /dev/seedypod/camera-<name>.
+# The hub may not be up during the install, so a udev rule runs the same step
+# when a camera appears; hald --sync-camera-rules pins both once both are there.
+CAMERA_RULES="$ROOT/etc/udev/rules.d/70-seedypod-cameras.rules"
+CAMERA_SYNC_RULE="$ROOT/etc/udev/rules.d/71-seedypod-camera-sync.rules"
+CAMERA_SYNC_UNIT="$ROOT/etc/systemd/system/seedypod-camera-rules.service"
+
+install_camera_rules() {
+  local hald="$1"
+  # Earlier installs could name the Pi's on-chip video nodes as cameras.
+  if [ -f "$CAMERA_RULES" ] && grep -q 'KERNELS=="bcm2835' "$CAMERA_RULES"; then
+    $SUDO rm -f "$CAMERA_RULES" "$ROOT"/dev/seedypod/camera-*
+    echo "→ removed camera rules that matched the Pi's on-chip video nodes"
+  fi
+  $SUDO mkdir -p "$(dirname "$CAMERA_SYNC_RULE")" "$(dirname "$CAMERA_SYNC_UNIT")"
+  # USB parents only, so the Pi's on-chip video nodes never start it. The wait lets
+  # the second camera arrive; a start while this is waiting joins the same run.
+  UNIT_CHANGED=0
+  put_unit "$CAMERA_SYNC_UNIT" <<UNIT
+[Unit]
+Description=Pin seedypod camera names to their USB ports
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=$hald --sync-camera-rules
+UNIT
+  $SUDO tee "$CAMERA_SYNC_RULE" >/dev/null <<'RULE'
+# Written by seedypod scripts/install-hal: pin camera names when a camera appears.
+ACTION=="add", SUBSYSTEM=="video4linux", SUBSYSTEMS=="usb", ATTR{index}=="0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="seedypod-camera-rules.service"
+RULE
+  if [ "$UNIT_CHANGED" -eq 1 ]; then $SUDO systemctl daemon-reload || true; fi
+  $SUDO udevadm control --reload || true
+  local said
+  if said="$($SUDO "$hald" --sync-camera-rules 2>&1)"; then
+    echo "→ $said"
+  else
+    echo "   camera rules not written: $said" >&2
+  fi
+  # Rules from an earlier install may never have made their links.
+  $SUDO udevadm trigger --action=add --subsystem-match=video4linux || true
+  if [ -f "$CAMERA_RULES" ]; then
+    echo "   If upper and lower are swapped: sudo $hald --camera-rules upper=<port> lower=<port> | sudo tee ${CAMERA_RULES#"$ROOT"} && sudo udevadm trigger --action=add --subsystem-match=video4linux"
+  fi
+}
+
+# ---- boot time ---------------------------------------------------------------
+# A Pi Zero took 4 minutes from power to core. Each change is checked and undone like
+# the wear settings, but no check run now can see the next boot, so that isn't what
+# protects a headless unit: cloud-init only goes off if the connection in use is first
+# shown to come back without it, and anything less leaves it on.
+# tests/scripts/install-hal.boot.test.ts runs them the same way.
+CLOUD_DISABLED="$ROOT/etc/cloud/cloud-init.disabled"
+RPI_SWAP_GENERATOR="$ROOT/usr/lib/systemd/system-generators/rpi-swap-generator"
+RPI_SWAP_CONF="$ROOT/etc/rpi/swap.conf.d/50-seedypod.conf"
+MOSQ_VENDOR_UNIT="$ROOT/usr/lib/systemd/system/mosquitto.service"
+MOSQ_UNIT="$ROOT/etc/systemd/system/mosquitto.service"
+
+# Imager's Wi-Fi reaches NetworkManager through /etc/netplan, which cloud-init wrote
+# once and netplan's own generator reads on every boot, with or without cloud-init.
+# Anything else, or nothing to go on, counts as not coming back.
+network_survives_cloud_init() {
+  local lines line found=0
+  lines="$(nmcli -g TYPE,FILENAME connection show --active 2>/dev/null)" || return 1
+  while IFS= read -r line; do
+    case "$line" in
+      loopback:*|"") continue ;;
+      *:/etc/NetworkManager/system-connections/*) ;;
+      *:/run/NetworkManager/system-connections/netplan-*)
+        [ -e "$ROOT/usr/lib/systemd/system-generators/netplan" ] || return 1
+        compgen -G "$ROOT/etc/netplan/*.yaml" >/dev/null || return 1 ;;
+      *) return 1 ;;
+    esac
+    found=1
+  done <<<"$lines"
+  [ "$found" -eq 1 ]
+}
+
+# It runs ahead of everything on every boot, yet Imager's settings only apply once.
+boot_cloud_init() {
+  [ -d "$ROOT/etc/cloud" ] || return 0
+  if [ -e "$CLOUD_DISABLED" ]; then
+    echo "→ cloud-init already off"; return 0
+  fi
+  if [ ! -e "$ROOT/var/lib/cloud/instance/boot-finished" ]; then
+    echo "   cloud-init hasn't finished first boot, so it's left on; rerun install-hal to turn it off" >&2
+    return 1
+  fi
+  if ! network_survives_cloud_init; then
+    echo "   can't show this network comes back without cloud-init, so it's left on" >&2
+    return 1
+  fi
+  $SUDO touch "$CLOUD_DISABLED"
+  if $SUDO systemctl daemon-reload && network_survives_cloud_init; then
+    echo "→ cloud-init off now first boot is done (to undo: sudo rm $CLOUD_DISABLED)"
+    return 0
+  fi
+  $SUDO rm -f "$CLOUD_DISABLED"
+  $SUDO systemctl daemon-reload || true
+  echo "   turning cloud-init off didn't take; left it on" >&2
+  return 1
+}
+
+# rpi-swap's default gives zram a file on the card: 20 s of resizing each boot, and a
+# daily writeback to the card. Only zram itself suits a unit, and the file goes at the
+# next boot. Masking the resize unit instead would stop zram, which requires it.
+boot_swap() {
+  [ -e "$RPI_SWAP_GENERATOR" ] || return 0
+  local want=$'[Main]\nMechanism=zram'
+  if [ -f "$RPI_SWAP_CONF" ] && grep -v '^#' "$RPI_SWAP_CONF" | cmp -s - <(printf '%s\n' "$want"); then
+    echo "→ swap already zram alone"; return 0
+  fi
+  if grep -rqs '^Mechanism=' "$ROOT/etc/rpi/swap.conf" "$(dirname "$RPI_SWAP_CONF")"; then
+    echo "→ rpi-swap has its own Mechanism set, so it's left alone"; return 0
+  fi
+  $SUDO mkdir -p "$(dirname "$RPI_SWAP_CONF")"
+  printf '%s\n' "# Written by seedypod scripts/install-hal: no swap file on the SD card." "$want" | $SUDO tee "$RPI_SWAP_CONF" >/dev/null
+  if $SUDO systemctl daemon-reload && systemctl cat dev-zram0.swap >/dev/null 2>&1 \
+    && ! systemctl show -p Requires --value systemd-zram-setup@zram0.service | grep rpi-setup-loop >/dev/null; then
+    echo "→ swap is zram alone from the next boot (no swap file on the card)"
+    return 0
+  fi
+  $SUDO rm -f "$RPI_SWAP_CONF"
+  $SUDO systemctl daemon-reload || true
+  echo "   zram alone didn't take; swap left as it was" >&2
+  return 1
+}
+
+# Debian orders the broker after network-online.target, so without Wi-Fi hald and core
+# would wait out the timeout for a broker that only listens on this Pi. A drop-in can't
+# remove a dependency, so this is a whole copy of the vendor unit.
+boot_broker() {
+  [ -f "$MOSQ_VENDOR_UNIT" ] || return 0
+  local want
+  want="$(printf '%s\n' "# Written by seedypod scripts/install-hal: the vendor unit, not waiting for the network."; grep -v 'network-online.target' "$MOSQ_VENDOR_UNIT")"
+  if [ -f "$MOSQ_UNIT" ] && cmp -s "$MOSQ_UNIT" <(printf '%s\n' "$want"); then
+    echo "→ Mosquitto already starts without waiting for the network"; return 0
+  fi
+  printf '%s\n' "$want" | $SUDO tee "$MOSQ_UNIT" >/dev/null
+  if $SUDO systemctl daemon-reload && ! systemctl show -p After --value mosquitto.service | grep network-online >/dev/null; then
+    echo "→ Mosquitto starts without waiting for the network"
+    return 0
+  fi
+  $SUDO rm -f "$MOSQ_UNIT"
+  $SUDO systemctl daemon-reload || true
+  echo "   Mosquitto's start order didn't take; left it as it was" >&2
+  return 1
+}
+
+apply_boot_settings() {
+  local failed=0
+  boot_cloud_init || failed=1
+  # Swap is --no-wear's to leave alone too.
+  if [ "${WEAR:-1}" -eq 1 ]; then boot_swap || failed=1; fi
+  boot_broker || failed=1
+  if [ "$failed" -ne 0 ]; then echo "   some boot settings were skipped (above); the rest are in place" >&2; fi
+  return 0
+}
+
+# The login Imager set can be called seedypod too. useradd then has nothing to do and
+# hald runs as that login. It works, so warn rather than touch someone's account.
+warn_shared_login() {
+  case "$(getent passwd "$1" | cut -d: -f7)" in
+    ""|*/nologin|*/false) return 0 ;;
+  esac
+  echo "⚠ The login $1 is also hald's service user, so hald runs as this login, with its groups and shell, not as a locked account." >&2
+  echo "  hald still works. To keep them apart, reflash with another username (docs/INSTALLATION.md#2-enable-ic-and-install-the-hal)." >&2
+}
+
+# ---- USB hub recovery -----------------------------------------------------------
+# The hub doesn't always enumerate at boot. Runs as root because hald can't write
+# to sysfs; it waits boot_wait_s itself, and simple keeps that wait out of the boot.
+# No Restart=: a bus it can't bring up is left for the alert hald raises.
+USB_RECOVER_UNIT="$ROOT/etc/systemd/system/seedypod-usb-recover.service"
+
+install_usb_recovery() {
+  local hald="$1" conf="$2" enable="$3"
+  $SUDO mkdir -p "$(dirname "$USB_RECOVER_UNIT")"
+  UNIT_CHANGED=0
+  put_unit "$USB_RECOVER_UNIT" <<UNIT
+[Unit]
+Description=Re-enumerate a USB hub that didn't come up at boot
+Documentation=https://github.com/seedypod/core/blob/main/docs/hardware/hal.md#usb-recovery
+
+[Service]
+Type=simple
+ExecStart=$hald --config $conf --usb-recover
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  if [ "$UNIT_CHANGED" -eq 1 ]; then $SUDO systemctl daemon-reload || true; fi
+  if [ "$enable" -eq 1 ]; then
+    $SUDO systemctl enable seedypod-usb-recover.service >/dev/null 2>&1 || true
+    echo "→ USB hub recovery runs at each boot, and does nothing if the hub came up"
+  fi
+}
+
+# ---- quick reruns ------------------------------------------------------------
+# Every daemon-reload reruns systemd's generators, seconds each on a Pi Zero, and apt
+# took 2 minutes to confirm a package it already had. So a rerun only touches what
+# changed; tests/scripts/install-hal.rerun.test.ts covers these.
+
+# Not command -v alone: mosquitto is in /usr/sbin, off a non-root PATH on Raspberry Pi OS.
+# mosquitto_sub comes separately, and docs/DEBUGGING.md counts on it.
+have_broker() {
+  { [ -x "$ROOT/usr/sbin/mosquitto" ] || command -v mosquitto >/dev/null 2>&1; } && command -v mosquitto_sub >/dev/null 2>&1
+}
+
+in_group() { id -nG "$1" 2>/dev/null | tr ' ' '\n' | grep -x "$2" >/dev/null; }
+
+# Writes stdin to $1 if that changes it, and sets UNIT_CHANGED so a caller can reload
+# only then. A write that fails fails the install, not reads as "unchanged".
+put_unit() {
+  local text
+  text="$(cat)"
+  if [ -f "$1" ] && [ "$(cat "$1")" = "$text" ]; then return 0; fi
+  printf '%s\n' "$text" | $SUDO tee "$1" >/dev/null || { echo "couldn't write $1" >&2; exit 1; }
+  UNIT_CHANGED=1
+}
+
+needs_reload() { [ "$(systemctl show -p NeedDaemonReload --value "$1" 2>/dev/null)" = yes ]; }
+
+# A restart owed outlives the run that owed it. Written before the change it's for, so
+# a deploy that dies half way still restarts hald on the rerun, instead of reporting
+# success with the old binary driving the pump.
+HALD_RESTART_OWED="$ROOT/var/lib/seedypod/.restart-hald"
+CORE_RESTART_OWED="$ROOT/var/lib/seedypod/.restart-core"
+
+owe_restart() { $SUDO touch "$1"; }
+
+restart_hald_if_owed() {
+  if [ -e "$HALD_RESTART_OWED" ] || ! systemctl is-active --quiet hald.service; then
+    $SUDO systemctl restart hald.service
+    $SUDO rm -f "$HALD_RESTART_OWED"
+    sleep 1
+  fi
+}
+
+# A running core only picks up the new group on restart.
+restart_core_if_owed() {
+  [ -e "$CORE_RESTART_OWED" ] || return 0
+  $SUDO systemctl try-restart seedypod-core.service >/dev/null 2>&1 || true
+  $SUDO rm -f "$CORE_RESTART_OWED"
+}
+
 if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 
 REPO="${SEEDYPOD_REPO:-seedypod/core}"
@@ -135,10 +388,14 @@ BINARY=""
 ENABLE=1
 BROKER=local
 WEAR=1
+BOOT=1
 PREFIX=/usr/local/bin
 CONF_DIR=/etc/seedypod
 STATE_DIR=/var/lib/seedypod
-SERVICE_USER=seedypod
+# The OS image names this account seedypod-hal, so that a login can be called
+# seedypod. A rerun keeps whatever hald already runs as.
+SERVICE_USER="${SEEDYPOD_SERVICE_USER:-$(sed -n 's/^User=//p' /etc/systemd/system/hald.service 2>/dev/null | head -1 || true)}"
+SERVICE_USER="${SERVICE_USER:-seedypod}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -148,6 +405,7 @@ while [ $# -gt 0 ]; do
     --mqtt-lan) BROKER=lan; shift ;;
     --no-broker) BROKER=none; shift ;;
     --no-wear) WEAR=0; shift ;;
+    --no-boot) BOOT=0; shift ;;
     -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -187,14 +445,19 @@ fi
 echo "→ $("$TMP/hald" --version) for $TARGET"
 
 # ---- user, groups, directories ---------------------------------------------
+warn_shared_login "$SERVICE_USER"
 if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
   echo "→ creating user $SERVICE_USER"
   $SUDO useradd --system --home-dir "$STATE_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
-for g in gpio i2c video; do
-  if getent group "$g" >/dev/null; then $SUDO usermod -aG "$g" "$SERVICE_USER"; fi
-done
 $SUDO mkdir -p "$CONF_DIR" "$STATE_DIR"
+# What a rerun left as it was needs no restart, and restarting hald stops a running pump.
+for g in gpio i2c video; do
+  if getent group "$g" >/dev/null && ! in_group "$SERVICE_USER" "$g"; then
+    owe_restart "$HALD_RESTART_OWED"
+    $SUDO usermod -aG "$g" "$SERVICE_USER"
+  fi
+done
 $SUDO chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
 # Core runs as the install user and reads hal.toml, hald's state and the broker
 # password for its backups (ADR-0021): it joins the seedypod group, read-only.
@@ -202,14 +465,20 @@ CORE_USER="${SEEDYPOD_CORE_USER:-${SUDO_USER:-}}"
 if [ -z "$CORE_USER" ] && [ "$(id -u)" -ne 0 ]; then CORE_USER="$(id -un)"; fi
 if [ -z "$CORE_USER" ] && [ -d /opt/seedypod ]; then CORE_USER="$(stat -c %U /opt/seedypod 2>/dev/null || true)"; fi
 if [ -n "$CORE_USER" ] && [ "$CORE_USER" != root ] && id -u "$CORE_USER" >/dev/null 2>&1; then
-  $SUDO usermod -aG "$SERVICE_USER" "$CORE_USER"
+  if ! in_group "$CORE_USER" "$SERVICE_USER"; then
+    owe_restart "$CORE_RESTART_OWED"
+    $SUDO usermod -aG "$SERVICE_USER" "$CORE_USER"
+  fi
   echo "→ $CORE_USER can read $CONF_DIR and $STATE_DIR (group $SERVICE_USER) for backups"
 fi
 $SUDO chgrp "$SERVICE_USER" "$CONF_DIR"
 $SUDO chmod 0755 "$CONF_DIR"
 
 # ---- binary and config --------------------------------------------------------
-$SUDO install -m 0755 "$TMP/hald" "$PREFIX/hald"
+if ! cmp -s "$TMP/hald" "$PREFIX/hald"; then
+  owe_restart "$HALD_RESTART_OWED"
+  $SUDO install -m 0755 "$TMP/hald" "$PREFIX/hald"
+fi
 if [ ! -f "$CONF_DIR/hal.toml" ]; then
   echo "→ writing $CONF_DIR/hal.toml (commented defaults)"
   "$PREFIX/hald" --print-default-config | $SUDO tee "$CONF_DIR/hal.toml" >/dev/null
@@ -218,7 +487,7 @@ fi
 "$PREFIX/hald" --config "$CONF_DIR/hal.toml" --check >/dev/null
 
 # ---- interfaces: I²C and the hardware PWM overlay ----------------------------
-if command -v raspi-config >/dev/null 2>&1; then
+if command -v raspi-config >/dev/null 2>&1 && [ ! -e "$ROOT/dev/i2c-1" ]; then
   echo "→ enabling I²C"
   $SUDO raspi-config nonint do_i2c 0 || true
 fi
@@ -235,20 +504,8 @@ if ! command -v fswebcam >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; 
   $SUDO apt-get install -y -q fswebcam >/dev/null || echo "   (fswebcam install failed; cameras will report missing)"
 fi
 
-# ---- cameras: stable names by USB port ----------------------------------------
-# /dev/videoN can swap across reboots; hald prefers /dev/seedypod/camera-<name>.
-RULES=/etc/udev/rules.d/70-seedypod-cameras.rules
-if [ ! -f "$RULES" ]; then
-  if "$PREFIX/hald" --camera-rules > "$TMP/cameras.rules" 2>/dev/null; then
-    $SUDO install -m 0644 "$TMP/cameras.rules" "$RULES"
-    $SUDO udevadm control --reload && $SUDO udevadm trigger --subsystem-match=video4linux || true
-    echo "→ camera names pinned to USB ports ($RULES):"
-    grep '^SUBSYSTEM' "$RULES" | sed -E 's/.*KERNELS=="([^"]+)".*camera-([a-z0-9_-]+).*/   \2 = port \1/'
-    echo "   If upper and lower are swapped: sudo $PREFIX/hald --camera-rules upper=<port> lower=<port> | sudo tee $RULES && sudo udevadm trigger"
-  else
-    echo "→ no USB cameras found; run 'sudo $PREFIX/hald --camera-rules | sudo tee $RULES' once they're plugged in"
-  fi
-fi
+# ---- cameras -----------------------------------------------------------------
+install_camera_rules "$PREFIX/hald"
 
 # ---- SD card wear ------------------------------------------------------------------
 if [ "$WEAR" -eq 1 ] && [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then
@@ -260,7 +517,8 @@ fi
 MOSQ_CONF=/etc/mosquitto/conf.d/seedypod.conf
 MOSQ_PASSWD=/etc/mosquitto/seedypod.passwd
 if [ "$BROKER" != none ]; then
-  if ! command -v mosquitto >/dev/null 2>&1; then
+  MOSQ_CHANGED=0
+  if ! have_broker; then
     if command -v apt-get >/dev/null 2>&1; then
       echo "→ installing Mosquitto (MQTT broker)"
       $SUDO apt-get install -y -q mosquitto mosquitto-clients >/dev/null
@@ -270,6 +528,7 @@ if [ "$BROKER" != none ]; then
   fi
   if [ -d /etc/mosquitto/conf.d ] && [ ! -f "$MOSQ_CONF" ]; then
     echo "→ writing $MOSQ_CONF (127.0.0.1:1883, no password: only processes on this Pi can reach it)"
+    MOSQ_CHANGED=1
     $SUDO tee "$MOSQ_CONF" >/dev/null <<'CONF'
 # Written by seedypod scripts/install-hal. Each listener has its own auth.
 per_listener_settings true
@@ -280,6 +539,7 @@ allow_anonymous true
 CONF
   fi
   if [ "$BROKER" = lan ] && [ -f "$MOSQ_CONF" ] && ! grep -q '^listener 1884' "$MOSQ_CONF"; then
+    MOSQ_CHANGED=1
     HA_PASS="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
     $SUDO mosquitto_passwd -b -c "$MOSQ_PASSWD" homeassistant "$HA_PASS"
     # Mosquitto warns (and newer releases refuse) unless its own user owns the file and
@@ -301,22 +561,39 @@ CONF
     $SUDO chmod 0640 "$MOSQ_PASSWD"
   fi
   if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files mosquitto.service >/dev/null 2>&1; then
-    $SUDO systemctl enable mosquitto.service >/dev/null 2>&1 || true
-    $SUDO systemctl restart mosquitto.service
+    systemctl is-enabled --quiet mosquitto.service || $SUDO systemctl enable mosquitto.service >/dev/null 2>&1 || true
+    # A restart drops hald's and core's connections, so only for a new config.
+    if [ "$MOSQ_CHANGED" -eq 1 ] || ! systemctl is-active --quiet mosquitto.service; then
+      $SUDO systemctl restart mosquitto.service
+    fi
   fi
 fi
 
+# ---- USB hub recovery ----------------------------------------------------------
+install_usb_recovery "$PREFIX/hald" "$CONF_DIR/hal.toml" "$ENABLE"
+
+# ---- boot time ---------------------------------------------------------------------
+if [ "$BOOT" -eq 1 ] && [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then
+  apply_boot_settings
+fi
+
 # ---- systemd ---------------------------------------------------------------
-$SUDO tee /etc/systemd/system/hald.service >/dev/null <<UNIT
+I2C_BUS="$(sed -n 's/^bus *= *\([0-9]*\).*/\1/p' "$CONF_DIR/hal.toml" | head -1)"
+UNIT_CHANGED=0
+put_unit /etc/systemd/system/hald.service <<UNIT
 [Unit]
 Description=seedypod hardware daemon (hald)
 Documentation=https://github.com/$REPO/blob/main/docs/hardware/hal.md
-After=network-online.target mosquitto.service
-Wants=network-online.target
+# Not network-online.target: the pump and lights must run without Wi-Fi, and hald's
+# broker is on this Pi. mDNS picks an address up whenever one arrives.
+After=mosquitto.service
 
 [Service]
+# hald opens its hardware once, and starts before Wi-Fi now, so it can beat the PWM overlay
+# and udev's group ownership. Bounded, then on regardless: the pump's interlocks fail safe.
+ExecStartPre=-/usr/bin/timeout 30 /bin/sh -c 'until [ -w /sys/class/pwm/pwmchip0/export ] && [ -r /dev/i2c-${I2C_BUS:-1} ]; do sleep 1; done'
 ExecStart=$PREFIX/hald --config $CONF_DIR/hal.toml
-Environment=RUST_LOG=info
+Environment=RUST_LOG=info SEEDYPOD_RECORDING_POLICY_FILE=/opt/seedypod/data/recording-policy.json
 User=$SERVICE_USER
 Group=$SERVICE_USER
 SupplementaryGroups=gpio i2c video
@@ -335,13 +612,12 @@ PrivateTmp=true
 WantedBy=multi-user.target
 UNIT
 
-$SUDO systemctl daemon-reload
-# A running core only picks up the new group on restart.
-$SUDO systemctl try-restart seedypod-core.service >/dev/null 2>&1 || true
+if [ "$UNIT_CHANGED" -eq 1 ]; then owe_restart "$HALD_RESTART_OWED"; fi
+if [ "$UNIT_CHANGED" -eq 1 ] || needs_reload hald.service; then $SUDO systemctl daemon-reload; fi
+restart_core_if_owed
 if [ "$ENABLE" -eq 1 ]; then
-  $SUDO systemctl enable hald.service >/dev/null
-  $SUDO systemctl restart hald.service
-  sleep 1
+  systemctl is-enabled --quiet hald.service || $SUDO systemctl enable hald.service >/dev/null
+  restart_hald_if_owed
   $SUDO systemctl --no-pager --lines=5 status hald.service || true
 fi
 

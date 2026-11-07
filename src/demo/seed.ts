@@ -4,12 +4,13 @@
  * camera frames (SVGs standing in for JPEGs). Deterministic so the demo looks
  * the same every load.
  */
-import type { SimHal } from '../hardware/sim'
+import type { HalClient } from '../hardware/types'
+import { planLayout, sowingPlan } from '../plants/planner'
 import type { AnalysisRow, Store, TelemetryPoint } from '../store/types'
 
 const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian Kale', 'Cherry Tomato', 'Thai Basil', 'Mint', 'Swiss Chard', 'Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
 
-export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
+export function seedDemo(store: Store, hal: HalClient, now = new Date()): void {
   const day = 86_400_000
   const started = new Date(now.getTime() - 19 * day)
   store.settings.update({ unitName: 'Kitchen Gardyn', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', captureIntervalMin: 60, setupComplete: true })
@@ -32,6 +33,19 @@ export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
     const status = slot === 9 ? 'attention' : slot <= 6 ? 'harvest' : 'growing'
     store.pods.update(slot, { plant, plantedAt: started.toISOString().slice(0, 10), status, notes: slot === 9 ? 'Yellowing lower leaves — check nutrients' : '' }, now.toISOString())
   }
+
+  // A saved plan for the six free pods (bottom rows), not yet applied, so the Plan screen has something to show.
+  const refill = [{ plantId: 'butterhead', count: 3 }, { plantId: 'mint', count: 1 }, { plantId: 'chives', count: 1 }, { plantId: 'oregano', count: 1 }]
+  const taken = Object.fromEntries(store.pods.list().filter(p => p.status !== 'empty').map(p => [p.slot, 'planted']))
+  store.plans.save({ id: 'demo-refill', name: 'Refill the bottom rows', model: 'home', mode: 'staggered', request: refill, layout: planLayout({ model: 'home', plants: refill, occupied: taken }), sowing: sowingPlan(refill, now) })
+
+  // Harvest windows for some of the crops, as an agent would fill them in (ADR-0022); the rest lean on the camera.
+  const profile = (name: string, harvestMinDays: number, harvestMaxDays: number, targetCover: number) => store.plants.upsert({ name, harvestMinDays, harvestMaxDays, targetCover, notes: '', source: 'agent' }, now.toISOString())
+  profile('Arugula', 17, 25, 0.4)
+  profile('Basil', 25, 35, 0.35)
+  profile('Kale', 30, 45, 0.45)
+  profile('Bok Choy', 30, 40, 0.45)
+  profile('Cilantro', 21, 30, 0.3)
 
   // A week of telemetry at 15-min resolution with a daily rhythm.
   const pts: TelemetryPoint[] = []
@@ -72,6 +86,17 @@ export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
 
   // Put the sim in a state that matches the story.
   void hal.setActuator('light', { on: true, level: 85 })
+}
+
+/**
+ * `SEED_DEMO=1` on the server: the same story in a real database, so the
+ * simulator has history to test against (backups, restores, charts). Only a
+ * database nobody has set up is seeded, so a restart never doubles it.
+ */
+export function seedIfFresh(store: Store, hal: HalClient, now = new Date()): boolean {
+  if (store.settings.get().setupComplete || store.grow.current()) return false
+  seedDemo(store, hal, now)
+  return true
 }
 
 function frameSvg(camera: 'upper' | 'lower', dayAge: number): string {

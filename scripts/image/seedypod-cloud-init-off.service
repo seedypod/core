@@ -1,0 +1,11 @@
+[Unit]
+Description=seedypod: turn cloud-init off once it has done its work
+After=cloud-final.service
+ConditionPathExists=!/etc/cloud/cloud-init.disabled
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/seedypod-first-boot --cloud-init
+
+[Install]
+WantedBy=cloud-init.target

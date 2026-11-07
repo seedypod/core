@@ -1,0 +1,12 @@
+{
+  "contract": 1,
+  "unitId": "gardyn-1a2b3c4d",
+  "model": "gardyn 3.0",
+  "halVersion": "0.1.0",
+  "caps": {
+    "sensors": ["air_temp", "humidity", "pcb_temp", "water_distance", "water_level_pct", "pump_v", "pump_a", "pump_w"],
+    "actuators": ["light", "pump"],
+    "cameras": ["upper", "lower"]
+  },
+  "limits": { "pumpMaxRunS": 900, "pumpMaxDuty": 30, "waterLowCm": 16 }
+}

@@ -1,7 +1,8 @@
 /**
  * Recorder — turns HAL events into durable rows: downsampled telemetry,
  * persisted alerts (mirroring the HAL's latched state), and the cumulative
- * light-hours counter used for LED-aging reminders.
+ * light-hours counter used for LED-aging reminders. Telemetry reaches the
+ * card in batches, on this timer (ADR-0021).
  */
 import type { SensorId } from '../hardware/contract'
 import type { HalEvent } from '../hardware/types'
@@ -22,6 +23,7 @@ export class Recorder {
   private readonly lastSample = new Map<SensorId, number>()
   private lightOnSince: number | null = null
   private unsub: (() => void) | null = null
+  private flushTimer: ReturnType<typeof setInterval> | null = null
   private readonly now: () => Date
   private readonly intervalMs: number
 
@@ -32,17 +34,29 @@ export class Recorder {
 
   start(): void {
     this.unsub = this.opts.events.subscribe(e => this.handle(e))
+    this.scheduleFlush()
   }
 
   stop(): void {
     this.flushLightHours()
     this.unsub?.()
     this.unsub = null
+    if (this.flushTimer) clearInterval(this.flushTimer)
+    this.flushTimer = null
   }
 
   handle(e: CoreEvent): void {
+    if (e.kind === 'mutation' && e.path === 'settings') this.scheduleFlush()
     if (e.kind !== 'hal') return
     this.onHal(e.event)
+  }
+
+  /** Flushes first, so a changed interval can't stretch how much a power cut would lose. */
+  private scheduleFlush(): void {
+    const { store } = this.opts
+    if (this.flushTimer) clearInterval(this.flushTimer)
+    store.telemetry.flush()
+    this.flushTimer = setInterval(() => store.telemetry.flush(), store.settings.get().telemetryFlushMin * 60_000)
   }
 
   onHal(event: HalEvent): void {
@@ -70,7 +84,8 @@ export class Recorder {
         break
       }
       case 'alert': {
-        if (event.alert.active) store.alerts.raise(event.alert.kind, event.alert.detail, event.alert.ts)
+        // hald re-sends its alerts on every connect, so a live detail lost to a power cut comes straight back.
+        if (event.alert.active) store.alerts.raise(event.alert.kind, event.alert.detail, event.alert.ts, { live: true })
         else store.alerts.clear(event.alert.kind, event.alert.ts)
         break
       }

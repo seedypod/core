@@ -57,6 +57,34 @@
       "when": 1793488462579,
       "tag": "0007_flawless_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793515760869,
+      "tag": "0008_slim_adam_destine",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793586677300,
+      "tag": "0009_hard_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793608483439,
+      "tag": "0010_furry_power_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793970385155,
+      "tag": "0011_adorable_the_hunter",
+      "breakpoints": true
     }
   ]
 }

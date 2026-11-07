@@ -69,7 +69,7 @@ jobs:
           key: ${{ matrix.target }}
       - name: Install cross
         uses: taiki-e/install-action@cross
-      - run: cross build --release --target ${{ matrix.target }} -p hald
+      - run: cross build --release --target ${{ matrix.target }} -p hald --features hardware
       - uses: actions/upload-artifact@v6
         with:
           name: hald-${{ matrix.target }}

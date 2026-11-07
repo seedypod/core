@@ -30,18 +30,58 @@ const REMINDERS = [
   ['reminder_root_check', 'Check roots', 'mdi:source-branch'],
   ['reminder_harvest', 'Harvest window', 'mdi:basket'],
   ['reminder_nutrients', 'Add nutrients', 'mdi:flask'],
+  ['reminder_sow', 'Start new yCubes', 'mdi:seed'],
 ] as const
+
+/** The bridge as System › Status shows it: off with no broker set, else whether it holds a connection and since when. */
+export interface BridgeStatus {
+  state: 'off' | 'connected' | 'disconnected'
+  /** `host:port` of the broker, without credentials. */
+  broker: string | null
+  since: string | null
+  /** Why the last connect failed. */
+  error: string | null
+}
+
+function brokerHost(url: string): string {
+  try {
+    return new URL(url).host || url
+  }
+  catch {
+    return url
+  }
+}
+
+/** Status for the configured broker URL, the running bridge (null when it isn't up) and the last connect error. */
+export function bridgeStatus(mqttUrl: string | null, bridge: HaBridge | null, error: string | null): BridgeStatus {
+  if (!mqttUrl) return { state: 'off', broker: null, since: null, error: null }
+  const link = bridge?.link() ?? null
+  return { state: link?.connected ? 'connected' : 'disconnected', broker: brokerHost(mqttUrl), since: link?.since ?? null, error: link?.connected ? null : error }
+}
 
 export class HaBridge {
   private unsub: (() => void) | null = null
   private readonly p: string
   private readonly now: () => Date
+  private linkState: { connected: boolean, since: string }
 
   constructor(private readonly o: BridgeOptions) {
     this.p = `${o.prefix ?? 'seedypod'}/${o.unitId}/core`
     this.now = o.now ?? (() => new Date())
+    this.linkState = { connected: !!o.mqtt.connected, since: this.now().toISOString() }
     o.mqtt.on('connect', () => this.onConnect())
+    o.mqtt.on('close', () => this.setLink(false))
+    o.mqtt.on('offline', () => this.setLink(false))
     o.mqtt.on('message', (topic, payload) => this.onMessage(topic, new TextDecoder().decode(payload)))
+  }
+
+  /** Whether the broker connection is up, and since when. */
+  link(): { connected: boolean, since: string } {
+    return this.linkState
+  }
+
+  private setLink(connected: boolean): void {
+    if (this.linkState.connected !== connected) this.linkState = { connected, since: this.now().toISOString() }
   }
 
   start(): void {
@@ -69,6 +109,7 @@ export class HaBridge {
   }
 
   onConnect(): void {
+    this.setLink(true)
     const t = this.topics()
     this.o.mqtt.subscribe([t.waterNow, `${this.p}/done/+`])
     this.o.mqtt.publish(t.availability, 'online', { retain: true })
@@ -126,11 +167,75 @@ export class HaBridge {
   }
 }
 
+const RETRY_MIN_MS = 5_000
+const RETRY_MAX_MS = 5 * 60_000
+
+/**
+ * `connectBridge`, tried until it works, without holding up the caller: core starts
+ * before Wi-Fi, and `connectAsync` rejects and ends its client on a socket error, so
+ * one attempt would leave Home Assistant down until a restart. Returns a cancel.
+ */
+export function keepConnecting(connect: () => Promise<HaBridge | null>, on: { up(b: HaBridge | null): void, failed(e: Error): void }): () => void {
+  let cancelled = false
+  let delay = RETRY_MIN_MS
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const attempt = () => {
+    connect().then((b) => {
+      if (cancelled) b?.stop()
+      else on.up(b)
+    }).catch((e: Error) => {
+      if (cancelled) return
+      on.failed(e)
+      timer = setTimeout(attempt, delay)
+      delay = Math.min(delay * 2, RETRY_MAX_MS)
+    })
+  }
+  attempt()
+  return () => {
+    cancelled = true
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** The bridge for this core's lifetime: it keeps connecting, and starts over when settings change. */
+export function superviseBridge(connect: () => Promise<HaBridge | null>, events: EventBus) {
+  let bridge: HaBridge | null = null
+  let error: string | null = null
+  const start = () => keepConnecting(connect, {
+    up: (b) => {
+      bridge = b
+      error = null
+    },
+    failed: (e) => {
+      console.warn(`HA bridge: ${e.message}`)
+      error = e.message
+    },
+  })
+  let cancel = start()
+  const unsubscribe = events.subscribe((e) => {
+    if (e.kind === 'mutation' && e.path === 'settings') {
+      cancel()
+      bridge?.stop()
+      bridge = null
+      cancel = start()
+    }
+  })
+  return {
+    bridge: () => bridge,
+    error: () => error,
+    stop: () => {
+      unsubscribe()
+      cancel()
+      bridge?.stop()
+    },
+  }
+}
+
 /** Build a real mqtt.js connection from settings; returns null when the bridge is dormant. */
 export async function connectBridge(o: Omit<BridgeOptions, 'mqtt'>): Promise<HaBridge | null> {
   const s = o.store.settings.get()
   if (!s.mqttUrl) return null
-  const { connectAsync } = await import('mqtt')
+  const { connectAsync } = await import('./connect')
   const url = s.mqttTlsEnabled ? s.mqttUrl.replace(/^mqtt:\/\//, 'mqtts://') : s.mqttUrl
   const mqtt = await connectAsync(url, {
     username: s.mqttUsername ?? undefined,

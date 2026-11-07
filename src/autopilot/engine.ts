@@ -44,6 +44,8 @@ export interface AutopilotActions {
 
 export interface AutopilotDeps {
   now: () => number
+  /** False while the clock can't be believed yet; `timeOfDay` triggers wait. */
+  clockTrusted?: () => boolean
   clock: () => { nowMinutes: number, dayOfWeek: DayOfWeek, dateKey: string }
   signals: (podSlots: number[]) => Record<string, number>
   loadRules: () => AutomationRule[]
@@ -230,6 +232,7 @@ export class AutopilotEngine {
         return changed
       }
       case 'timeOfDay': {
+        if (this.d.clockTrusted?.() === false) return false
         const [h = 0, m = 0] = t.at.split(':').map(Number)
         const at = h * 60 + m
         if (t.days && !t.days.includes(ctx.dayOfWeek)) return false
