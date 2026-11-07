@@ -31,6 +31,9 @@ plain() {
 read -r term_rows term_cols <<< "$(stty size)"
 read -r rows text_col text_row delay < "$frames" || plain
 [ "${term_rows:-0}" -ge $((rows + 2)) ] && [ "${term_cols:-0}" -gt $((text_col + ${#url})) ] || plain
+# A blank line above and below the logo, where the terminal has room for them.
+pad=""
+[ "${term_rows:-0}" -lt $((rows + 4)) ] || pad='\n'
 [ -z "${NO_COLOR:-}" ] || plain
 case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;; *) plain ;; esac
 
@@ -50,7 +53,7 @@ saved="$(stty -g)" || plain
 skip=""
 cursor_home=""
 restore() {
-  [ -n "$cursor_home" ] && printf '\e[%dB\r' "$rows"
+  [ -n "$cursor_home" ] && printf "\\e[%dB\\r$pad" "$rows"
   printf '\e[0m\e[?25h'
   stty "$saved"
 }
@@ -75,7 +78,7 @@ mapfile -t lines < "$frames"
 [ "${#lines[@]}" -gt 3 ] || exit 0
 
 # Scroll now, so that the frames can move around without ever scrolling.
-printf '\r'
+printf "\r$pad"
 for ((i = 0; i < rows; i++)); do printf '\n'; done
 printf '\e[%dA' "$rows"
 cursor_home=1
