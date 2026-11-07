@@ -114,8 +114,8 @@ This is the way to get a login and Wi-Fi onto the card. In Imager 2.0:
 
    `rpi-imager --repo <url>` does the same. To go back, pick the Raspberry Pi
    repository in the same dialog.
-2. Pick your device. Only the Pi Zero W (shown as Raspberry Pi Zero in the official
-   list) and Zero 2 W are offered, and **seedypod OS** is the only OS.
+2. Pick your device. Only the Pi Zero W and Zero 2 W are offered, and **seedypod OS**
+   is the only OS.
 3. In the customisation steps set a username and password, Wi-Fi (2.4 GHz on a Zero
    W), and turn on SSH with a key or password if you want a shell. The hostname is
    already `seedypod`. Imager keeps what you entered last time, so read what's there.

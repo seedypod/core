@@ -25,8 +25,16 @@ apt-get update -q
 sed -i 's/raspberrypi/seedypod/g' /etc/hosts
 echo seedypod > /etc/hostname
 
-# --no-wear: its checks need a running system, so first boot applies them.
+# --no-wear: its checks need a running system, so first boot applies them. Except the
+# journal: restarting journald alongside cloud-init can fail, so it's in place before
+# first boot and journald starts on it. The real unit proved the setting.
 bash "$here/install-hal" --binary "$assets/hald-arm-unknown-linux-gnueabihf" --no-wear
+(
+  SUDO=
+  systemctl() { :; }
+  SEEDYPOD_LIB_ONLY=1 . "$here/install-hal"
+  wear_journald
+)
 
 # __UNIT_ID__ is the Pi's serial, which first boot fills in.
 SEEDYPOD_TARBALL_URL="file://$assets/seedypod-core.tar.gz" SEEDYPOD_RELEASE_URL="file://$assets" \

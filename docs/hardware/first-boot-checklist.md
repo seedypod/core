@@ -9,9 +9,9 @@ sources: [{"resource": "/INSTALLATION.md", "title": "Installation"}, {"resource"
 
 # seedypod OS first-boot checklist
 
-CI checks the image inside a chroot under ARM emulation, and it has booted under
-QEMU's `raspi0`, which has no Wi-Fi, I²C, GPIO, cameras or real SD timing. This list
-is what only a real unit can prove. Record the times in
+CI checks the image inside a chroot under ARM emulation, and `scripts/image/boot-test`
+boots it under QEMU's `raspi0`, which has no Wi-Fi, I²C, GPIO, cameras or real SD
+timing. This list is what only a real unit can prove. Record the times in
 [How long it takes](../INSTALLATION.md#how-long-it-takes).
 
 | Path | Time to core serving pages |
@@ -44,7 +44,7 @@ while ! curl -fs -o /dev/null http://seedypod.local/; do sleep 2; done; date    
 | T1 | `seedypod.local` answers | before SSH |
 | T2 | SSH opens | about 3 minutes |
 | T3 | `http://seedypod.local/` serves **Welcome** | |
-| T4 | `systemctl is-system-running` says `running`, or `degraded` with only what's explained below | |
+| T4 | `systemctl is-system-running` says `running`. Under QEMU it says `degraded`, from `udisks2` and `rpi-zram-writeback.timer`: check `systemctl --failed` for those on a real unit | |
 
 Then a reboot: time power off to T3 again (about 4 minutes on a script install).
 
