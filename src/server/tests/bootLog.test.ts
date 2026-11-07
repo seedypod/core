@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { summariseBootLog } from '../bootLog'
 
-const boot = (hub: string) => `2026-11-07T04:42:17Z clock=synced up=92 boot=ab12cd34 core_s=41 hub=${hub} hprt0=0x00001c00 cameras=0 clean=1 temp=48.3 errors=3 outcome=gave-up`
+const boot = (hub: string) => `2026-11-07T04:42:17Z clock=synced up=92 boot=ab12cd34 core_s=41 hub=${hub} hprt0=0x00001c00 cameras=0 reboots=2 clean=1 temp=48.3 errors=3 outcome=reboot`
 
 describe('summariseBootLog', () => {
   it('counts how often the hub came up by itself', () => {

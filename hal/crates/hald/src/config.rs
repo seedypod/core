@@ -120,12 +120,20 @@ pub struct UsbRecovery {
     pub enabled: bool,
     /// Seconds after boot before an empty bus counts as a failure.
     pub boot_wait_s: u64,
-    /// Root hub re-probes. The controller keeps running through these.
+    /// Root hub re-probes before anything else. Off: on the Gardyn's hub they have
+    /// never brought it back, because the port is stuck until the next boot.
     pub attempts: u32,
-    /// Seconds to wait for the bus to fill after each attempt.
+    /// Seconds to wait for the bus to fill after each re-probe.
     pub settle_s: u64,
-    /// One last attempt that rebinds the whole controller. Off until it has been
-    /// proved on your hardware: the Pi's `dwc_otg` isn't known to unbind cleanly.
+    /// Reboots in a row to try for a missing hub. 0 turns this off. The count only
+    /// resets when the hub is seen, so a power cycle doesn't start it again.
+    pub reboot_attempts: u32,
+    /// Looks at the pump and dosers before rebooting, and the wait between looks.
+    /// Long enough to outlast a full pump run; after that this boot goes without.
+    pub busy_checks: u32,
+    pub busy_wait_s: u64,
+    /// WARNING: has no effect, and must not get one back: binding `dwc_otg` again
+    /// segfaults the kernel. It stays only so a `hal.toml` that sets it still loads.
     pub rebind_controller: bool,
 }
 
@@ -373,8 +381,11 @@ impl Default for UsbRecovery {
         Self {
             enabled: true,
             boot_wait_s: 90,
-            attempts: 2,
+            attempts: 0,
             settle_s: 20,
+            reboot_attempts: 4,
+            busy_checks: 20,
+            busy_wait_s: 60,
             rebind_controller: false,
         }
     }
@@ -706,12 +717,14 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # discovery = true
 # prefix = "homeassistant"
 
-# [usb_recovery]          # re-enumerate a USB hub that didn't come up at boot
+# [usb_recovery]          # reboot to try again when the USB hub didn't come up
 # enabled = true
 # boot_wait_s = 90
-# attempts = 2            # root hub re-probes
+# reboot_attempts = 4     # reboots in a row; 0 turns this off
+# busy_checks = 20        # waits for the pump and dosers to finish first,
+# busy_wait_s = 60        # then leaves this boot alone
+# attempts = 0            # root hub re-probes; none has ever helped this hub
 # settle_s = 20
-# rebind_controller = false   # one last attempt that rebinds the whole controller
 
 # Cameras get stable names from udev rules keyed on their USB port
 # (`hald --list-cameras`, `hald --camera-rules`); /dev/videoN is only a
@@ -879,7 +892,14 @@ capture_timeout_s = 0
         assert!(!keys.contains_key("usb_recovery"));
         let c: Config = toml::from_str(DEFAULT_CONFIG_TOML).unwrap();
         assert!(c.usb_recovery.enabled);
-        assert!(!c.usb_recovery.rebind_controller);
+        assert_eq!(c.usb_recovery.reboot_attempts, 4);
+    }
+
+    /// Dropping the key would make a `hal.toml` that set it crash-loop hald.
+    #[test]
+    fn a_hal_toml_that_set_rebind_controller_still_loads() {
+        let c: Config = toml::from_str("[usb_recovery]\nrebind_controller = true\n").unwrap();
+        assert!(c.usb_recovery.rebind_controller);
     }
 
     #[test]

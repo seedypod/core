@@ -1,7 +1,7 @@
 //! A line per boot that survives the boot. The journal is in RAM (ADR-0021), so a
 //! reboot wipes the evidence of why it happened. `hald --usb-recover` runs once per
-//! boot, as root, once the boot has settled and whatever recovery did, so it adds
-//! one line here: a few hundred bytes a boot. Core serves the file and
+//! boot, as root, once the boot has settled and just before any reboot it asks for,
+//! so it adds one line here: a few hundred bytes a boot. Core serves the file and
 //! reads the hub rate from it, which is how a cable swap gets judged.
 //!
 //! Only counts and hardware readings: no SSIDs, addresses or log text. The Pi has no
@@ -36,6 +36,8 @@ pub struct Facts {
     pub hub: Option<bool>,
     pub hprt0: Option<String>,
     pub cameras: usize,
+    /// Reboots in a row for a missing hub, this one included.
+    pub reboots: Option<u32>,
     /// Whether the last shutdown was clean.
     pub clean: Option<bool>,
     pub temp_c: Option<f64>,
@@ -58,7 +60,7 @@ impl Facts {
         let mut line = self.ts.clone();
         let _ = write!(
             line,
-            " clock={} up={} boot={} core_s={} hub={} hprt0={} cameras={} clean={} temp={} errors={} outcome={}",
+            " clock={} up={} boot={} core_s={} hub={} hprt0={} cameras={} reboots={} clean={} temp={} errors={} outcome={}",
             if self.clock_synced { "synced" } else { "stale" },
             self.up_s,
             or_dash(&self.boot_id),
@@ -66,6 +68,7 @@ impl Facts {
             flag(self.hub),
             or_dash(&self.hprt0),
             self.cameras,
+            or_dash(&self.reboots),
             flag(self.clean),
             or_dash(&self.temp_c.map(|t| format!("{t:.1}"))),
             or_dash(&self.errors),
@@ -112,6 +115,8 @@ fn outcome(recovery: &Recovery) -> &'static str {
     match recovery {
         Recovery::AlreadyUp => "up",
         Recovery::Recovered { .. } => "recovered",
+        Recovery::Reboot { .. } => "reboot",
+        Recovery::NotRebooting(_) => "held",
         Recovery::GaveUp { .. } => "gave-up",
         Recovery::NoAction(_) => "none",
     }
@@ -125,7 +130,14 @@ fn output(program: &str, args: &[&str]) -> Option<String> {
 }
 
 /// Read what this boot left behind. `root` and `sysfs` are `/` and `/sys` on a unit.
-pub fn gather(recovery: &Recovery, root: &Path, sysfs: &Path, ts: String, uptime: Duration) -> Facts {
+pub fn gather(
+    recovery: &Recovery,
+    root: &Path,
+    sysfs: &Path,
+    state_dir: &Path,
+    ts: String,
+    uptime: Duration,
+) -> Facts {
     let read = |path: &Path| std::fs::read_to_string(path).ok();
     Facts {
         ts,
@@ -147,6 +159,7 @@ pub fn gather(recovery: &Recovery, root: &Path, sysfs: &Path, ts: String, uptime
             .and_then(|c| read(&c.join("hprt0")))
             .and_then(|t| parse_hprt0(&t)),
         cameras: crate::cameras::discover(sysfs, &root.join("dev")).len(),
+        reboots: crate::usb::reboots_so_far(state_dir).ok(),
         clean: output(
             "journalctl",
             &["--boot", "--dmesg", "--quiet", "--no-pager", "--output=cat"],
@@ -231,14 +244,15 @@ mod tests {
             hub: Some(false),
             hprt0: Some("0x00001c00".into()),
             cameras: 0,
+            reboots: Some(2),
             clean: Some(true),
             temp_c: Some(48.312),
             errors: Some(3),
-            outcome: "gave-up",
+            outcome: "reboot",
         };
         assert_eq!(
             facts.line(),
-            "2026-11-07T04:42:17Z clock=synced up=92 boot=ab12cd34 core_s=41 hub=0 hprt0=0x00001c00 cameras=0 clean=1 temp=48.3 errors=3 outcome=gave-up"
+            "2026-11-07T04:42:17Z clock=synced up=92 boot=ab12cd34 core_s=41 hub=0 hprt0=0x00001c00 cameras=0 reboots=2 clean=1 temp=48.3 errors=3 outcome=reboot"
         );
         assert!(facts.line().len() < 200);
         let unknown = Facts {
@@ -248,7 +262,7 @@ mod tests {
         };
         assert_eq!(
             unknown.line(),
-            "1970-01-01T00:01:30Z clock=stale up=0 boot=- core_s=- hub=- hprt0=- cameras=0 clean=- temp=- errors=- outcome=none"
+            "1970-01-01T00:01:30Z clock=stale up=0 boot=- core_s=- hub=- hprt0=- cameras=0 reboots=- clean=- temp=- errors=- outcome=none"
         );
     }
 
@@ -275,7 +289,9 @@ mod tests {
     fn every_outcome_has_a_short_name() {
         assert_eq!(outcome(&Recovery::AlreadyUp), "up");
         assert_eq!(outcome(&Recovery::Recovered { attempts: 1 }), "recovered");
-        assert_eq!(outcome(&Recovery::GaveUp { attempts: 2 }), "gave-up");
+        assert_eq!(outcome(&Recovery::Reboot { attempt: 1, limit: 4 }), "reboot");
+        assert_eq!(outcome(&Recovery::NotRebooting("busy".into())), "held");
+        assert_eq!(outcome(&Recovery::GaveUp { reboots: 4 }), "gave-up");
         assert_eq!(outcome(&Recovery::NoAction("off".into())), "none");
     }
 
@@ -294,27 +310,44 @@ mod tests {
         std::fs::write(controller.join("hprt0"), "hprt0 = 0x00001c00\n").unwrap();
         std::fs::create_dir_all(sysfs.join("bus/platform/devices")).unwrap();
         std::os::unix::fs::symlink(&controller, sysfs.join("bus/platform/devices/20980000.usb")).unwrap();
+        std::fs::write(root.join("usb-reboots"), "2").unwrap();
 
-        let recovery = Recovery::GaveUp { attempts: 2 };
-        let facts = gather(&recovery, &root, &sysfs, "t".into(), Duration::from_secs(95));
+        let recovery = Recovery::Reboot { attempt: 2, limit: 4 };
+        let facts = gather(
+            &recovery,
+            &root,
+            &sysfs,
+            &root,
+            "t".into(),
+            Duration::from_secs(95),
+        );
         assert!(facts.clock_synced);
         assert_eq!(facts.up_s, 95);
         assert_eq!(facts.boot_id.as_deref(), Some("ab12cd34"));
         assert_eq!(facts.hub, Some(false));
         assert_eq!(facts.hprt0.as_deref(), Some("0x00001c00"));
         assert_eq!(facts.cameras, 0);
+        assert_eq!(facts.reboots, Some(2));
         assert_eq!(facts.temp_c, Some(51.0));
-        assert_eq!(facts.outcome, "gave-up");
+        assert_eq!(facts.outcome, "reboot");
         let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn a_unit_with_none_of_this_still_gets_a_line() {
         let root = scratch("bare");
-        let facts = gather(&Recovery::AlreadyUp, &root, &root, "t".into(), Duration::ZERO);
+        let facts = gather(
+            &Recovery::AlreadyUp,
+            &root,
+            &root,
+            &root,
+            "t".into(),
+            Duration::ZERO,
+        );
         assert!(!facts.clock_synced);
         assert_eq!(facts.hprt0, None);
         assert_eq!(facts.boot_id, None);
+        assert_eq!(facts.reboots, Some(0));
         let _ = std::fs::remove_dir_all(root);
     }
 

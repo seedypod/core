@@ -57,6 +57,16 @@ On our 3.0 the upper camera (hub port `1-1.3`) gave torn frames: horizontal band
 
 Lower resolutions didn't help, and neither did `uvcvideo quirks=128` or removing `snd_usb_audio`; stock falls back through lower resolutions and retries 5 times, so it may have been working around the same fault. It was a loose connection: after the connectors on the daughterboard were reseated on 2026-11-06, both cameras gave 7 of 7 clean frames with no `-71` errors, and later 10 of 10 on boots with the hub up. A torn frame is still a normal-looking JPEG on disk, and the `green-threshold` analyzer scored 7-13% green on empty pods from one. `fswebcam` re-encodes every frame, so the file can't show the damage; `hald` now checks the raw frame and refuses it ([Stills](hal.md#stills)).
 
+## Known issue: USB hub missing at boot
+
+On our 3.0 the hub came up on about 1 boot in 4, independently each time. On a boot
+it misses, `hprt0` is stuck at `0x1c00`, which is SE1: both data lines high, which a
+healthy USB link never holds. Toggling bus power, disabling the port, re-probing the
+root hub, and unbinding before a reboot all failed, and binding `dwc_otg` again
+segfaulted the kernel. Only a fresh boot gets another chance, so hald reboots a
+bounded number of times ([USB recovery](hal.md#usb-recovery)). That works around the
+fault without fixing it. **Swap the Pi-to-hub cable next.**
+
 ## Model detection
 
 DHT20 ACKs at 0x38 ⇒ Gardyn 3.0 or Studio; otherwise AM2320 ⇒ 1.0/2.0.
