@@ -87,7 +87,7 @@ describe('login-logo animation', () => {
     expect(r.out).toContain(lines[1])
     expect(r.seconds).toBeGreaterThan(1.2)
     expect(r.seconds).toBeLessThan(4)
-    expect(r.out.endsWith(`\x1b[20B\r\x1b[0m${SHOW_CURSOR}`)).toBe(true)
+    expect(r.out.endsWith(`\x1b[20B\r\r\n\x1b[0m${SHOW_CURSOR}`)).toBe(true)
   })
 
   it('writes the version and the address beside the logo', () => {
@@ -150,6 +150,10 @@ describe('login-logo still fallback', () => {
     expect(r).toMatchObject({ out: LINE, status: 0 })
   })
 
+  it('leaves out the blank lines on a terminal with no room for them', () => {
+    expect(pty({ rows: 22 }).out).toContain(`\x1b[20B\r\x1b[0m${SHOW_CURSOR}`)
+  })
+
   it('fits the longest it can at 80 columns and falls back past that', () => {
     expect(pty({ env: { HOSTNAME: 'x'.repeat(13) } }).out).toContain(`http://${'x'.repeat(13)}.local:3000`)
     expect(pty({ env: { HOSTNAME: 'x'.repeat(40) } }).out).not.toContain('\x1b')
@@ -196,7 +200,7 @@ describe('login-logo interruptions', () => {
     allFrames()
     const r = pty({ argv: ['bash', '-c', `trap : TERM; ${framed[2]}`, logo], signals: [[0.5, 15]] })
     expect(r.out).not.toContain(records()[1])
-    expect(r.out).toContain(`\x1b[20B\r\x1b[0m${SHOW_CURSOR}`)
+    expect(r.out).toContain(`\x1b[20B\r\r\n\x1b[0m${SHOW_CURSOR}`)
     expect(r.out).toMatch(COOKED)
   })
 })
