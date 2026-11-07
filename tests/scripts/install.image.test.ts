@@ -88,15 +88,17 @@ describe('unpacking over a prefix core owns', () => {
     expect(log().split('\n').filter(Boolean)).toEqual([
       'sudo mkdir -p /opt/seedypod',
       'sudo systemctl stop seedypod-core.service',
-      'sudo chown -R alice /opt/seedypod',
-      'sudo chown -R seedypod-core /opt/seedypod',
+      'sudo chown alice /opt/seedypod',
+      'sudo find /opt/seedypod -mindepth 1 -maxdepth 1 ! -name data -exec chown -R alice {} +',
+      'sudo chown seedypod-core /opt/seedypod',
+      'sudo find /opt/seedypod -mindepth 1 -maxdepth 1 ! -name data -exec chown -R seedypod-core {} +',
     ])
   })
 
   it('hands the prefix back and restarts core when an update dies partway', () => {
     const r = run('PREFIX=/opt/seedypod CORE_USER=seedypod-core; claim_prefix; trap abandon_update EXIT; exit 7', { USER: 'alice' })
     expect(r.code).toBe(7)
-    expect(log()).toContain('sudo chown -R seedypod-core /opt/seedypod')
+    expect(log()).toContain('sudo chown seedypod-core /opt/seedypod')
     expect(log()).toContain('sudo systemctl start seedypod-core.service')
   })
 
@@ -108,7 +110,8 @@ describe('unpacking over a prefix core owns', () => {
   it('downloads before it stops anything, so a dropped link costs nothing', () => {
     const body = readFileSync(script, 'utf8')
     expect(body.indexOf('curl -fsSL "$TARBALL_URL"')).toBeLessThan(body.indexOf('\nclaim_prefix\n'))
-    expect(body).toMatch(/claim_prefix\ntrap abandon_update EXIT/)
+    expect(body).toMatch(/trap abandon_update EXIT\nclaim_prefix/)
+    expect(body).toMatch(/systemctl restart seedypod-core.service\ntrap - EXIT/)
   })
 
   it('keeps pnpm on the store node_modules came from, or it would rebuild better-sqlite3', () => {

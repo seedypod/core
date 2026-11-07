@@ -320,15 +320,21 @@ claim_prefix() {
   sudo mkdir -p "$PREFIX"
   if [ "$CORE_USER" = "$USER" ]; then sudo chown "$USER" "$PREFIX"; return 0; fi
   sudo systemctl stop seedypod-core.service 2>/dev/null || true
-  sudo chown -R "$USER" "$PREFIX"
+  own_prefix "$USER"
   export npm_config_store_dir="$PREFIX/.pnpm-store"
 }
 finish_prefix() {
-  if [ "$CORE_USER" != "$USER" ]; then sudo chown -R "$CORE_USER" "$PREFIX"; fi
+  if [ "$CORE_USER" != "$USER" ]; then own_prefix "$CORE_USER"; fi
+}
+# Never data/: the tarball has none, and if this run dies with no sudo left to hand things
+# back, as in a power cut, core can still read its code and write its database.
+own_prefix() {
+  sudo chown "$1" "$PREFIX"
+  sudo find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name data -exec chown -R "$1" {} +
 }
 # An update that dies halfway must not leave core stopped, or unable to write its database.
 abandon_update() {
-  finish_prefix
+  finish_prefix || true
   if [ "$CORE_USER" != "$USER" ]; then sudo systemctl start seedypod-core.service 2>/dev/null || true; fi
 }
 if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
@@ -359,8 +365,8 @@ echo "→ seedypod core: branch=$BRANCH prefix=$PREFIX"
 CORE_USER="$(core_user)"
 TMP=$(mktemp -d)
 curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
-claim_prefix
 trap abandon_update EXIT
+claim_prefix
 if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf seedypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
 TARBALL="$TMP/pkg"
 [ ! -f "$TMP/seedypod-core.tar.gz" ] || TARBALL="$TMP/seedypod-core.tar.gz"
@@ -378,7 +384,6 @@ fi
 corepack enable >/dev/null 2>&1 || true
 install_deps
 finish_prefix
-trap - EXIT
 # Keyed on content, so a stale entry is only dead weight, but each update would leave a set of them.
 sudo rm -rf "$COMPILE_CACHE"
 
@@ -457,6 +462,7 @@ if [ "$FILE_CHANGED" = 1 ] || [ "$(systemctl show -p NeedDaemonReload --value se
 fi
 systemctl is-enabled --quiet seedypod-core.service || sudo systemctl enable seedypod-core.service >/dev/null
 sudo systemctl restart seedypod-core.service
+trap - EXIT
 prune_dist "$TARBALL" || echo "   couldn't clear old chunks" >&2
 install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
 if [ -n "$RESTORE" ]; then
