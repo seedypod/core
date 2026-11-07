@@ -301,12 +301,15 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
             ucfg.retry_delay = std::time::Duration::from_millis(c.capture_retry_ms);
             ucfg.attempt_timeout = std::time::Duration::from_secs(c.capture_timeout_s);
             ucfg.inspect_frames = c.inspect_frames;
-            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(hal_drivers::uvc::UvcCamera::new(
+            let name = c.name.clone();
+            let camera = hal_drivers::uvc::UvcCamera::new(
                 &c.name,
                 ucfg,
                 hal_drivers::uvc::ProcessRunner,
                 scratch.clone(),
-            ))));
+            )
+            .with_fallback_check(move |node| crate::cameras::check_fallback(&name, node));
+            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(camera)));
             (c.name.clone(), cam)
         })
         .collect();
@@ -347,6 +350,17 @@ fn probe_multi<S: hal_core::MultiSensor>(d: &mut S, s: &SensorEntry) -> anyhow::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Config::default()` names device nodes no simulator has: nothing may ask for them.
+    #[test]
+    fn simulated_cameras_need_no_device_node() {
+        let built = build_sim(&Config::default());
+        assert_eq!(built.cameras.len(), 2);
+        for cam in built.cameras.values() {
+            let mut cam = cam.lock().unwrap();
+            assert!(cam.capture().is_ok(), "{}", cam.name());
+        }
+    }
 
     #[test]
     fn stock_config_plans_the_documented_capability_set() {

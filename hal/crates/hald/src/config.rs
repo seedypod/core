@@ -141,6 +141,10 @@ pub struct HomeAssistant {
     pub prefix: String,
 }
 
+/// Which camera each hub port feeds, confirmed with markers on a 3.0. Only a
+/// default for naming a lone camera: pins in the udev rules always win.
+pub const STOCK_CAMERA_PORTS: [(&str, &str); 2] = [("upper", "1-1.3:1.0"), ("lower", "1-1.4:1.0")];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CameraEntry {
