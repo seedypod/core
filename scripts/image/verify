@@ -24,7 +24,7 @@ check "better-sqlite3 is the ARMv6 build" armv6 "$sqlite/build/Release/better_sq
 check "better-sqlite3 loads and writes" bash -c "cd /opt/seedypod && node -e \"new (require('better-sqlite3'))(':memory:').exec('create table t (x)')\""
 check "core's bundle is there" test -f /opt/seedypod/server/dist/index.js
 
-for unit in seedypod-first-boot hald seedypod-core seedypod-port80 mosquitto; do
+for unit in seedypod-first-boot seedypod-cloud-init-off hald seedypod-core seedypod-port80 seedypod-usb-recover mosquitto; do
   check "$unit is enabled" enabled "$unit.service"
 done
 check "first boot comes before hald and core" grep -q '^Before=hald.service seedypod-core.service' /etc/systemd/system/seedypod-first-boot.service
@@ -44,6 +44,8 @@ check "the ARMv6 kernel is there" test -f /boot/firmware/kernel.img
 check "first boot grows the root partition" grep -q '\bresize\b' /boot/firmware/cmdline.txt
 check "cameras get named when they appear" test -f /etc/udev/rules.d/71-seedypod-camera-sync.rules
 check "the journal stays off the card" grep -q '^Storage=volatile' /etc/systemd/journald.conf.d/50-seedypod-volatile.conf
+check "no swap file on the card" grep -q '^Mechanism=zram$' /etc/rpi/swap.conf.d/50-seedypod.conf
+check "cloud-init is on, or Imager's login and Wi-Fi would never apply" test ! -e /etc/cloud/cloud-init.disabled
 check "the login logo is in place" test -x /usr/local/share/seedypod/login-logo
 check "the port 80 forward is in place" test -f /usr/local/share/seedypod/port80.nft
 check "Mosquitto listens on loopback only" grep -q '^listener 1883 127.0.0.1$' /etc/mosquitto/conf.d/seedypod.conf

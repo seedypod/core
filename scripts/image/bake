@@ -25,15 +25,17 @@ apt-get update -q
 sed -i 's/raspberrypi/seedypod/g' /etc/hosts
 echo seedypod > /etc/hostname
 
-# --no-wear: its checks need a running system, so first boot applies them. Except the
-# journal: restarting journald alongside cloud-init can fail, so it's in place before
-# first boot and journald starts on it. The real unit proved the setting.
+# --no-wear: its checks need a running system, so first boot applies them. Except two
+# that only mean anything from the start of a boot. Restarting journald alongside
+# cloud-init can fail, and dropping rpi-swap's file on the card waits for the next boot,
+# so both are here for the first one. The real unit proved these settings.
 bash "$here/install-hal" --binary "$assets/hald-arm-unknown-linux-gnueabihf" --no-wear
 (
-  SUDO=
+  export SUDO=
   systemctl() { :; }
   SEEDYPOD_LIB_ONLY=1 . "$here/install-hal"
   wear_journald
+  boot_swap
 )
 
 # __UNIT_ID__ is the Pi's serial, which first boot fills in.
@@ -47,8 +49,8 @@ bash "$here/install" --port80
 mkdir -p "$lib"
 install -m 0644 "$here/install" "$here/install-hal" "$lib/"
 install -m 0755 "$here/first-boot" /usr/local/sbin/seedypod-first-boot
-install -m 0644 "$here/seedypod-first-boot.service" /etc/systemd/system/
-systemctl enable seedypod-first-boot.service
+install -m 0644 "$here/seedypod-first-boot.service" "$here/seedypod-cloud-init-off.service" /etc/systemd/system/
+systemctl enable seedypod-first-boot.service seedypod-cloud-init-off.service
 
 # ---- leave nothing behind ---------------------------------------------------------
 # Node's tarball carries uid 1000, which first boot gives to the login.

@@ -365,8 +365,9 @@ three ways, all because of what the first real install found.
   `scripts/install` inside the image under emulation, from the release's own tarball.
   So what they set up lands on the image with no second copy to keep in step, and
   only what can't happen in a chroot moves to first boot (`scripts/image/first-boot`):
-  the unit id, unblocking Wi-Fi, and the swap and mount checks, which need a running
-  system. The journal setting is baked in instead, because restarting journald
+  the unit id, unblocking Wi-Fi, the remaining wear checks, which need a running
+  system, and turning cloud-init off once it has run. The journal and swap settings
+  are baked in instead, so they hold from the first boot; restarting journald
   alongside cloud-init failed in one boot under emulation.
 
 Two accounts differ from a scripted install. The login doesn't exist until first boot,

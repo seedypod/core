@@ -42,8 +42,8 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-function boot() {
-  const r = spawnSync('bash', [join(scripts, 'image/first-boot')], {
+function boot(...args: string[]) {
+  const r = spawnSync('bash', [join(scripts, 'image/first-boot'), ...args], {
     encoding: 'utf8',
     env: { PATH: `${bin}:${process.env.PATH}`, SEEDYPOD_ROOT: root, SEEDYPOD_IMAGE_LIB: scripts, STATE: state },
   })
@@ -85,5 +85,33 @@ describe('the first boot', () => {
     boot()
     expect(unit()).toContain('HAL_UNIT_ID=gardyn-db753a85\n')
     expect(log()).toContain('disable seedypod-first-boot.service')
+  })
+})
+
+describe('cloud-init', () => {
+  const disabled = () => existsSync(join(root, 'etc/cloud/cloud-init.disabled'))
+
+  beforeEach(() => {
+    mkdirSync(join(root, 'etc/cloud'))
+    writeFileSync(join(bin, 'nmcli'), '#!/bin/sh\nprintf "802-11-wireless:/etc/NetworkManager/system-connections/seedypod-wifi.nmconnection\\n"\n')
+    chmodSync(join(bin, 'nmcli'), 0o755)
+  })
+
+  it('goes off once it has finished, so later boots skip it', () => {
+    mkdirSync(join(root, 'var/lib/cloud/instance'), { recursive: true })
+    writeFileSync(join(root, 'var/lib/cloud/instance/boot-finished'), '')
+    expect(boot('--cloud-init').code).toBe(0)
+    expect(disabled()).toBe(true)
+  })
+
+  it('stays on until then, or Imager\'s login and Wi-Fi would never apply', () => {
+    expect(boot('--cloud-init').code).toBe(0)
+    expect(disabled()).toBe(false)
+  })
+
+  it('leaves the once-only work alone', () => {
+    boot('--cloud-init')
+    expect(log()).not.toContain('rfkill')
+    expect(unit()).toContain('__UNIT_ID__')
   })
 })

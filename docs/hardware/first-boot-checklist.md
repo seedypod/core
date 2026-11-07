@@ -68,6 +68,9 @@ journalctl -b -u seedypod-first-boot --no-pager
       `findmnt -no OPTIONS /` has `noatime`.
 - [ ] `ls -l /dev/seedypod/` names the cameras, from `seedypod-camera-rules.service`.
 - [ ] `systemctl is-enabled seedypod-first-boot` says `disabled`, and a reboot doesn't run it.
+- [ ] `ls /etc/cloud/cloud-init.disabled` exists after first boot with Wi-Fi up. If Wi-Fi came
+      up after cloud-init finished, it appears after the next boot instead. The network
+      comes back after a reboot with it off.
 - [ ] An SSH login opens with the logo.
 - [ ] **Settings → About** shows the board and version; a capture and its analysis work.
 - [ ] `sudo` asks for the password you set in Imager.

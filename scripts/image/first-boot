@@ -2,8 +2,12 @@
 # What the seedypod OS image can only do on the unit it boots on, ahead of hald and
 # core (seedypod-first-boot.service). The functions are the installers' own, from
 # root-owned copies. It turns itself off once it has a unit id, and runs again next
-# boot if it doesn't.
+# boot if it doesn't. seedypod-cloud-init-off.service runs it with --cloud-init after
+# cloud-init has finished, on each boot until cloud-init can go off.
 set -uo pipefail
+
+stage="${1:-}"
+set --
 
 ROOT="${SEEDYPOD_ROOT:-}"
 LIB="${SEEDYPOD_IMAGE_LIB:-$ROOT/usr/local/lib/seedypod}"
@@ -12,6 +16,8 @@ export SUDO=
 SEEDYPOD_LIB_ONLY=1 . "$LIB/install"
 SEEDYPOD_LIB_ONLY=1 . "$LIB/install-hal"
 set +e
+
+if [ "$stage" = --cloud-init ]; then boot_cloud_init; exit 0; fi
 
 id="$(hal_unit_id)"
 if [ -z "$id" ]; then echo "hald gave no unit id; trying again next boot" >&2; exit 1; fi
