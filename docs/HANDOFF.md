@@ -66,3 +66,66 @@ Done since the pause: transfer and rename; repo settings; Vercel project; the `d
 ## 6. Conventions to keep
 
 Conventional commits; PRs to `main` titled `feat:`/`fix:`/`perf:`/`revert:`; small single-concern PRs; every actuator command through the safety layer; contract changes start with a fixture in `hal/contract/fixtures/`; OKF frontmatter on every doc; run the validator. `AGENTS.md` has the invariants.
+
+## 7. Real unit bring-up (2026-11-06)
+
+First run on real hardware: a Gardyn 3.0, Pi Zero W Rev 1.1, unit `gardyn-db753a85`, on `dev`.
+
+### Where it stands
+
+- The unit runs the OS image from `dev-latest`, built at #106, on a 64 GB card. Its login is `seedypod`, and it sits on a separate IoT network at `192.168.2.177`. Later `dev` changes such as #117 aren't on it yet. The tank is empty, so the pump has never run.
+- **Open:** #118, bounded automatic reboot when the hub is missing, reviewed at `677377f`, with `codecov/patch` still pending. Hold it until the hub question below is settled. The persistent boot log is written and passing on top of it in the `camera-fix` agent's worktree, unopened.
+- **Release:** `main` is far behind `dev`, and its installer has no ARMv6 path, so a Zero W needs the `dev` commands until `dev` is released. The release is the owner's call.
+
+### Measured
+
+| | Before | Now |
+|---|---|---|
+| New unit | About 1 hour by hand (53 min compiling `better-sqlite3`) | OS image: core serving 4m31s after power-on, SSH about 7.5 min, on first boot only |
+| Update | 6m13s | 1m24s |
+| Reboot to core serving | About 4 min | About 2.5 min |
+| Card writes | About 440 MB/day | About 63 MB/day (20-minute sample) |
+| Core at idle | 6.4% CPU, 90 MB | 3.4% CPU, 109 MB |
+
+Node and SQLite run fine on the Zero W: about 230 MB of RAM stays free, and queries take milliseconds. The compile was the only real pain, and the prebuilt package removes it.
+
+### Confirmed on hardware
+
+Fades, slider taps (touch emulation), port 80, login logo, Database page, Re-run clearing a torn still's scores, and the light surviving reboots. Top and bottom camera names were checked with black pod caps ([marker check](MAINTENANCE.md#check-which-camera-is-which)). Both cameras gave 10 of 10 clean frames on boots with the hub up.
+
+Bugs only the unit could show: the over-temp line reads active low; a first PWM open after boot hit `Permission denied` because udev is slow, so the light was lost until a restart; and fswebcam re-encodes torn frames into valid JPEGs, so only the raw frame shows damage.
+
+Not yet tested: the water sensor with a tank, and the first pump run. Don't run the pump dry. The power-up light flicker is also unexplained: note when it happens.
+
+### The USB hub: the one open fault
+
+The cameras sit behind a `1a40:0801` hub on a small `HUB_V1.1` board, fed by an OTG lead from the Pi's `USB` port. It enumerates on only some boots. Reseating its connectors cured a separate fault on the top camera (`-71`, torn frames), not this one.
+
+| Condition | Hub up |
+|---|---|
+| Stock logs, kernel 4.14 | 3 of 5 |
+| Logged series on the image | 3 of 16 |
+| Eight-reboot series on the image | 2 of 8 |
+| Stock's `force_turbo=1`, `over_voltage=6` on the image | 3 of 8 (stopped early) |
+
+- On a bad boot `hprt0` stays at `0x00001c00`, both data lines high, so nothing connects and the kernel logs nothing. dmesg matches good boots through `Init: Power Port (0)`; good boots then show `00001101`. No undervoltage: `throttled=0x0`, core 1.35 V.
+- **Tried, no effect:** root hub re-probe, `buspower` toggle, port disable, unbind then reboot (1 of 6), `dtoverlay=dwc2`. A period-5 pattern failed its prediction.
+- **Never use:** a `dwc_otg` rebind. The bind segfaults and takes USB down until a reboot. #118 removes that code path.
+- **Likely cause:** hub start-up or its connection, not Pi software. That's a judgement, not proven: an independent review (Codex) notes the Pi's own USB circuit isn't excluded. Pads `C8` and `C9` on the hub board look unpopulated in a photo, unverified.
+
+**Next, in order:**
+1. Rerun stock's settings for 20 or more boots against the same without them. 3 of 8 isn't conclusive. If it holds, a config line may be the fix.
+2. With the unit open, on a bad boot: unplug and replug the USB-A plug with the Pi running, which has never been tried.
+3. Measure 5 V at the hub board during boot, and D+ and D- on a bad boot.
+4. Swap the lead for a short micro-USB OTG one. Try the hub on a laptop. Consider a capacitor at `C8` once a meter shows what the pads connect to.
+5. Compare the stock card on this hardware if the above doesn't settle it.
+
+Logs for all of this are in `~/Documents/seedypod/bringup-logs-2026-11-06/`, and photos in `~/Documents/seedypod/doc-screenshots-2026-11-06/` (off-repo; the room shots show the owner's home).
+
+### Smaller follow-ups
+
+- `install --restore` on a unit where core has never run can leave `data/` owned by root: create it as the core account in `finish_prefix`.
+- A failed capture's alert can stay quiet if hald clears `camera_missing` first (`said` in `captures.ts`).
+- The first-boot SSH figure in [Installation](INSTALLATION.md) still says about 3 minutes: 7.5 on the image.
+- The Vercel team is blocked for fair use, so the demo isn't deploying and the `deploy` check fails on every PR. CodeRabbit's included reviews have run out on the `ng/seedypod-core` mirror (`ng/core` is sleepypod's: never push there).
+- The docs site hasn't been updated with this work. A Discord write-up was asked for: it needs a channel.
