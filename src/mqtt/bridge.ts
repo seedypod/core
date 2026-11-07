@@ -197,6 +197,40 @@ export function keepConnecting(connect: () => Promise<HaBridge | null>, on: { up
   }
 }
 
+/** The bridge for this core's lifetime: it keeps connecting, and starts over when settings change. */
+export function superviseBridge(connect: () => Promise<HaBridge | null>, events: EventBus) {
+  let bridge: HaBridge | null = null
+  let error: string | null = null
+  const start = () => keepConnecting(connect, {
+    up: (b) => {
+      bridge = b
+      error = null
+    },
+    failed: (e) => {
+      console.warn(`HA bridge: ${e.message}`)
+      error = e.message
+    },
+  })
+  let cancel = start()
+  const unsubscribe = events.subscribe((e) => {
+    if (e.kind === 'mutation' && e.path === 'settings') {
+      cancel()
+      bridge?.stop()
+      bridge = null
+      cancel = start()
+    }
+  })
+  return {
+    bridge: () => bridge,
+    error: () => error,
+    stop: () => {
+      unsubscribe()
+      cancel()
+      bridge?.stop()
+    },
+  }
+}
+
 /** Build a real mqtt.js connection from settings; returns null when the bridge is dormant. */
 export async function connectBridge(o: Omit<BridgeOptions, 'mqtt'>): Promise<HaBridge | null> {
   const s = o.store.settings.get()
