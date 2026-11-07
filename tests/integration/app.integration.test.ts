@@ -51,6 +51,15 @@ describe('core HTTP surface', () => {
     expect(Buffer.compare(Buffer.from(await r.arrayBuffer()), Buffer.from(byId))).toBe(0)
   })
 
+  it('serves the boot log as a download when hald has written one', async () => {
+    expect((await fetch(`${base}/api/system/boot-log`)).status).toBe(404)
+    const core = createCore({ hal, store: new MemoryStore(), events: createEventBus(), version: 'test', bootLog: async () => 't hub=1\n' })
+    const r = await createApp({ ctx: core.ctx }).app.fetch(new Request('http://unit/api/system/boot-log'))
+    expect(r.status).toBe(200)
+    expect(r.headers.get('content-disposition')).toContain('seedypod-boot-log.txt')
+    expect(await r.text()).toBe('t hub=1\n')
+  })
+
   it('serves the OpenAPI document', async () => {
     const doc = await fetch(`${base}/api/openapi.json`).then(r => r.json()) as { paths: Record<string, unknown> }
     expect(Object.keys(doc.paths)).toContain('/light')

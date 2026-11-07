@@ -4,6 +4,7 @@ import { SystemInfo } from '../../hardware/contract'
 import { bridgeStatus } from '../../mqtt/bridge'
 import { Check, systemChecks } from '../checks'
 import { publicProcedure, router } from '../trpc'
+import { summariseBootLog } from '../bootLog'
 
 /** Matches src/logging/policy.ts, which the browser demo can't import. */
 const MAX_DEBUG_MINUTES = 240
@@ -28,6 +29,13 @@ export const systemRouter = router({
     .meta({ openapi: { method: 'GET', path: '/system/checks', tags: ['system'], summary: 'One line per part of the unit (daemon, sensors, outputs, cameras, services): ok, idle, stalled or down' } })
     .output(z.object({ checks: z.array(Check) }))
     .query(async ({ ctx }) => ({ checks: await systemChecks(ctx) })),
+  bootLog: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/system/boot-log/summary', tags: ['system'], summary: 'Boots on record, and how often the USB hub came up by itself lately' } })
+    .output(z.object({ boots: z.number(), hub: z.object({ up: z.number(), of: z.number() }).nullable() }).nullable())
+    .query(async ({ ctx }) => {
+      const text = await ctx.bootLog?.()
+      return text ? summariseBootLog(text) : null
+    }),
   bridge: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/system/bridge', tags: ['system'], summary: 'Home Assistant MQTT bridge: off, connected or disconnected, the broker, and the last connect error' } })
     .output(z.object({ state: z.enum(['off', 'connected', 'disconnected']), broker: z.string().nullable(), since: z.string().nullable(), error: z.string().nullable() }))

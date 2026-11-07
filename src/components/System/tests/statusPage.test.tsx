@@ -32,7 +32,7 @@ vi.mock('@/src/utils/trpc', () => {
       return node(path ? `${path}.${k}` : k)
     },
   })
-  return { trpc: node('') }
+  return { trpc: node(''), apiBase: () => '' }
 })
 
 // 18:00 local on an ordinary day (no DST change), so minutes of the day are plain.
@@ -115,6 +115,20 @@ describe('health strip', () => {
     data.set('system.bridge', { state: 'connected', broker: 'ha.local', since: null, error: null })
     data.set('storage.flash', { usedBytes: 41, freeBytes: 59, uptimeS: 4 * 86400 + 6 * 3600 })
   }
+
+  it('shows the hub rate over recent boots, with the log to download, once there is one', () => {
+    page()
+    expect(screen.queryByText('USB hub')).toBeNull()
+    cleanup()
+    data.set('system.bootLog', { boots: 12, hub: { up: 3, of: 12 } })
+    page()
+    expect(screen.getByText('up on 3 of the last 12 boots')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Boot log' }).getAttribute('href')).toBe('/api/system/boot-log')
+    cleanup()
+    data.set('system.bootLog', { boots: 2, hub: null })
+    page()
+    expect(screen.getByText('2 boots logged')).toBeTruthy()
+  })
 
   it('rings the checks passing, heads with the issue count and the worst check, then the vitals', () => {
     vitals()

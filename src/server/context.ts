@@ -37,6 +37,8 @@ export interface Context {
   restore?: RestoreClient
   /** Runs the root update helper (ADR-0026); on the unit only. */
   update?: UpdateClient
+  /** hald's boot log, or null if it hasn't written one; on the unit only. */
+  bootLog?: () => Promise<string | null>
   /** The HomeKit bridge (ADR 0023); node hosts only, off until enabled in Settings. */
   homekit?: HomeKitControl
   /** The Home Assistant MQTT bridge (ADR-0013); node hosts only, where server/index.ts owns it. */
