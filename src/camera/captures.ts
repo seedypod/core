@@ -7,6 +7,7 @@
  */
 import type { HalClient } from '../hardware/types'
 import type { Capture, Store } from '../store/types'
+import { LinkWatch } from './linkHealth'
 
 export interface BlobSink {
   put(key: string, bytes: Uint8Array): Promise<string>
@@ -59,12 +60,20 @@ export class CaptureService {
   private readonly failing = new Map<Cam, string>()
   /** What `camera_missing` last said, so a camera that stays failing doesn't rewrite it on every still. */
   private said = ''
+  private readonly link: LinkWatch
   private timer: ReturnType<typeof setInterval> | null = null
 
   constructor(private readonly o: CaptureServiceOptions) {
     this.now = o.now ?? (() => new Date())
     this.keep = o.keep ?? 720
     this.minBytes = o.minBytes ?? 1024
+    this.link = new LinkWatch(o.store.alerts)
+  }
+
+  /** What this capture says about the link. `good` is a frame hald was happy with. */
+  private noteLink(camera: Cam, good: boolean, ts: string): void {
+    this.link.record(camera, this.o.hal.damagedFrames?.(camera) ?? 0, good, ts)
+    this.link.recordBoots(this.o.hal.hubBoots?.() ?? null, ts)
   }
 
   private fail(camera: Cam, detail: string, ts: string): void {
@@ -91,10 +100,13 @@ export class CaptureService {
     }
     catch (e) {
       const detail = `${camera} camera failed: ${(e as Error).message}`
-      this.fail(camera, detail, this.now().toISOString())
+      const failedAt = this.now().toISOString()
+      this.fail(camera, detail, failedAt)
+      this.noteLink(camera, false, failedAt)
       throw new Error(detail)
     }
     const ts = this.now().toISOString()
+    this.noteLink(camera, true, ts)
     if (bytes.byteLength < this.minBytes) {
       this.fail(camera, `${camera} camera returned ${bytes.byteLength} bytes`, ts)
       throw new Error(`${camera} camera returned no usable image`)

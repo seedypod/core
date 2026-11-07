@@ -206,6 +206,10 @@ describe('alert card', () => {
 
   it('names titles and sources from the kind', () => {
     expect(alertTitle(['pump_fault'])).toBe('Pump alert')
+    expect(alertTitle(['camera_link_upper'])).toBe('Camera alert')
+    expect(alertTitle(['camera_hub_flaky'])).toBe('Camera alert')
+    expect(alertSource('camera_link_lower', 'Bottom camera\'s connection may be failing')).toBe('lower')
+    expect(alertSource('camera_hub_flaky', 'The cameras\' USB hub')).toBe('usb hub')
     expect(alertTitle(['reminder_harvest'])).toBe('Reminder')
     expect(alertTitle([])).toBe(' alert')
     expect(alertSource('camera_missing', 'upper camera returned 0 bytes')).toBe('upper')

@@ -42,6 +42,8 @@ the end of its life.
 | **Dosing lockout** (`dose_fault`) | A doser hit its daily cap or its lockout count (ADR-0014). Latched. | Check the reservoir and the dosing schedule, then acknowledge. |
 | **Board over temperature** (`over_temp`) | The board's temperature sensor or its alert line tripped. The pump is refused. | Check ventilation and the PSU. It clears when the board cools. |
 | **Camera missing** (`camera_missing`) | A camera gave no usable still. The detail says which camera and why: `device not present` is unplugged or a stale device name; `no good frame: damaged frame` is a camera that's there but sending torn frames, usually a marginal USB path. | Reseat that camera's USB cable and check for damage along its run. `hald --list-cameras` should show both. If they swapped ports, regenerate the rules ([Camera names](hardware/hal.md#camera-names)). It clears when every camera has given a good still. A unit with one bad camera keeps working on the other; it's fine to leave it that way. |
+| **Top / Bottom camera connection** (`camera_link_upper`, `camera_link_lower`) | That camera is sending damaged frames, which usually means a failing cable or connector. It appears at 4 damaged frames in the last 20, and one photo can only add 3 however many times it retried, so one glitch can't raise it. "May be failing" means some photos still work; "has failed" means the last 6 were all damaged. An unplugged camera doesn't count: that's **Camera missing**. | [Reseat its cable](#reseat-a-camera-cable). It clears after 12 good frames in a row. Once you've reseated the cable you can dismiss it; it only comes back on a new pattern. |
+| **Camera hub connection** (`camera_hub_flaky`) | The USB hub the cameras share didn't come up by itself on at least 3 of the last 10 starts. It's the same physical link, so it often comes before camera trouble. | [Reseat the cables](#reseat-a-camera-cable). It clears once at most 1 of the last 10 starts missed. |
 | **Hardware daemon offline** (`hal_offline`) | Core lost `hald`: it crashed, the Pi rebooted, or the MQTT broker went away. | `journalctl -u hald -n 100`. `systemctl status mosquitto`. `hald` restarts itself (`Restart=always`). |
 | **Light fault** (`light_fault`) | The light didn't take a command. | Check the light-bar connector, then `journalctl -u hald`. |
 | **Backup overdue** (`backup_stale`) | No off-card backup has succeeded for 7 days. On a unit that never had one it reads "No off-card backup yet", 7 days after core first started. Also a problem sensor in Home Assistant. | **Settings → Backup → Download backup**, or set up the mirror for nightly backups. If the nightly upload is failing, Settings → Backup says why. It clears on the next backup. |
@@ -180,6 +182,24 @@ Marked photos also make a quick health check. If a photo is torn into bands,
 has a solid green or grey block, or a marker appears in the wrong place, the
 camera's cable is the first thing to reseat. Its image can't be trusted for
 **Analysis**, even though the file looks like a normal photo.
+
+## Reseat a camera cable
+
+Use this when **Alerts** or **Status** says a camera's connection may be failing.
+Photos with bands, a solid green or grey block, or a split image point the same way.
+
+1. Check which camera it is. The alert says top or bottom; if you aren't sure which
+   is which, do the [marker check](#check-which-camera-is-which).
+2. Turn the unit off at the wall.
+3. Unplug that camera's USB cable at both ends and plug it back in firmly. Look for
+   pinches, kinks and bent pins along its run.
+4. Reseat the connectors on the small board beside the Pi, which the cameras' USB
+   runs through.
+5. Turn the unit on and take a few photos from that camera on **Analysis**.
+
+The notice clears after 12 good frames in a row, which is about half a day at the
+default hourly photo. If damaged frames carry on after reseating, the cable or
+camera itself is the likely fault. The unit runs fine on one camera in the meantime.
 
 ## Power cuts
 

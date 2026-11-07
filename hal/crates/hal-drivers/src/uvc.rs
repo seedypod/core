@@ -56,6 +56,17 @@ pub fn failure_line(output: &str) -> Option<&str> {
         .map(str::trim)
 }
 
+/// Whether a refused attempt got a frame and it was bad, as opposed to getting no
+/// frame at all, which says nothing about the quality of the link.
+fn is_damage(e: &DeviceError) -> bool {
+    let DeviceError::Other(why) = e else {
+        return false;
+    };
+    why.starts_with("damaged frame")
+        || (why.starts_with("fswebcam reported")
+            && ["gd-jpeg", "Corrupt JPEG"].iter().any(|t| why.contains(t)))
+}
+
 /// SOI at the start, EOI at the end, and a sane size.
 pub fn jpeg_is_plausible(bytes: &[u8], min_len: usize) -> bool {
     bytes.len() >= min_len.max(4) && bytes.starts_with(&[0xFF, 0xD8]) && bytes.ends_with(&[0xFF, 0xD9])
@@ -209,6 +220,8 @@ pub struct UvcCamera<R: CommandRunner> {
     scratch: PathBuf,
     /// The last capture used up its attempts.
     failing: bool,
+    /// Attempts of the last capture that came back damaged.
+    damaged: u32,
     fallback_check: FallbackCheck,
 }
 
@@ -225,6 +238,7 @@ impl<R: CommandRunner> UvcCamera<R> {
             runner,
             scratch: scratch.into(),
             failing: false,
+            damaged: 0,
             fallback_check: Box::new(|_| Ok(())),
         }
     }
@@ -303,6 +317,7 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
     fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
         let attempts = if self.failing { 1 } else { self.cfg.attempts.max(1) };
         let mut last = None;
+        self.damaged = 0;
         for attempt in 1..=attempts {
             // Looked up each time: a camera that drops off the bus mid-retry is missing, not failing.
             let device = self.node()?;
@@ -316,6 +331,7 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
                 }
                 Err(e) => {
                     warn!(camera = %self.name, attempt, attempts, %e, "capture rejected");
+                    self.damaged += u32::from(is_damage(&e));
                     last = Some(e);
                 }
             }
@@ -328,6 +344,9 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
         // The kind of failure only: the specifics are in the log above.
         let kind = last.split_once(": ").map_or(last.as_str(), |(kind, _)| kind);
         Err(DeviceError::Other(format!("no good frame: {kind}")))
+    }
+    fn damaged_frames(&self) -> u32 {
+        self.damaged
     }
 }
 
@@ -622,6 +641,41 @@ mod tests {
         );
         let first = error(cam.capture());
         assert_eq!(error(cam.capture()), first);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn damaged_attempts_are_counted_even_when_a_retry_saves_the_capture() {
+        let dir = scratch("damaged");
+        let cut = GOOD_RAW.len() / 2;
+        let mut cam = camera(&dir, vec![torn_at(cut), torn_at(cut), good(), good()]);
+        assert!(cam.capture().is_ok());
+        assert_eq!(cam.damaged_frames(), 2);
+        // Per capture, not a running total.
+        assert!(cam.capture().is_ok());
+        assert_eq!(cam.damaged_frames(), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn only_a_frame_that_came_back_bad_counts_as_damaged() {
+        let dir = scratch("kinds");
+        let run = |printed| Run { printed, ..good() };
+        let gd = "GD Warning: gd-jpeg: JPEG library reports unrecoverable error: Not a JPEG file";
+        let mut cam = camera(
+            &dir,
+            vec![
+                run(gd),
+                run("Timed out waiting for frame!"),
+                Run {
+                    fails: true,
+                    ..Run::default()
+                },
+            ],
+        );
+        assert!(cam.capture().is_err());
+        assert_eq!(cam.damaged_frames(), 1);
+        assert!(!is_damage(&DeviceError::NotPresent));
         let _ = std::fs::remove_dir_all(dir);
     }
 

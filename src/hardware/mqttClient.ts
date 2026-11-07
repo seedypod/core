@@ -46,6 +46,8 @@ export class MqttHalClient implements HalClient {
   private readonly pendingCal = new Map<SensorId, { point: CalibrationCommand['point'], resolve: (r: CalibrationResult) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
   private readonly u: string
   private readonly timeoutMs: number
+  private readonly damaged = new Map<'upper' | 'lower', number>()
+  private boots: { missing: number, total: number } | null = null
   private readonly fetchImpl: typeof fetch
 
   constructor(private readonly o: MqttHalClientOptions) {
@@ -127,10 +129,23 @@ export class MqttHalClient implements HalClient {
   }
 
   async captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array> {
+    // First: if hald can't be reached, the last still's count mustn't count again.
+    this.damaged.set(camera, 0)
     const r = await this.fetchImpl(`${this.o.httpBase}/camera/${camera}.jpg`)
+    this.damaged.set(camera, Number(r.headers.get('x-seedypod-damaged-frames')) || 0)
+    const boots = /^(\d+)\/(\d+)$/.exec(r.headers.get('x-seedypod-hub-boots') ?? '')
+    this.boots = boots ? { missing: Number(boots[1]), total: Number(boots[2]) } : null
     // hald's 503 says why, and that's what the alert should show.
     if (!r.ok) throw new Error((await r.text().catch(() => '')).trim() || `HTTP ${r.status}`)
     return new Uint8Array(await r.arrayBuffer())
+  }
+
+  damagedFrames(camera: 'upper' | 'lower'): number {
+    return this.damaged.get(camera) ?? 0
+  }
+
+  hubBoots(): { missing: number, total: number } | null {
+    return this.boots
   }
 
   subscribe(listener: (event: HalEvent) => void): Unsubscribe {

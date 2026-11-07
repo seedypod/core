@@ -115,6 +115,17 @@ describe('alert helpers', () => {
     expect(categoryOf('reminder_harvest')).toBe('reminder')
     expect(categoryOf('mirror_failed')).toBe('service')
   })
+  it('shows a connection notice as hardware, with a way to the repair', () => {
+    expect(categoryOf('camera_link_upper')).toBe('hardware')
+    expect(categoryOf('camera_hub_flaky')).toBe('hardware')
+    const detail = 'Top camera\'s connection may be failing: 6 of its last 20 photos were damaged. Reseat its cable.'
+    expect(describeAlert({ kind: 'camera_link_upper', detail })).toEqual({ title: 'Top camera connection', detail })
+    data.set('open', [row(9, 'camera_link_upper', detail)])
+    render(<AlertsPage />)
+    expect(screen.getByRole('link', { name: 'How to reseat it' }).getAttribute('href')).toContain('/core/maintenance/#reseat-a-camera-cable')
+    expect(screen.getByRole('link', { name: 'View camera' }).getAttribute('href')).toBe('/cameras')
+  })
+
   it('falls back to the label and raw detail', () => {
     expect(describeAlert({ kind: 'over_temp', detail: 'board at 71°C' })).toEqual({ title: 'Board over temperature', detail: 'board at 71°C' })
     expect(describeAlert({ kind: 'camera_missing', detail: 'no camera' })).toEqual({ title: 'Camera not capturing', detail: 'no camera' })

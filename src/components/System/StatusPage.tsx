@@ -185,6 +185,8 @@ export function alertTitle(kinds: string[]): string {
 export function alertSource(kind: string, detail: string): string {
   const cam = /^(upper|lower) camera/.exec(detail)
   if (kind === 'camera_missing' && cam) return cam[1] as string
+  if (kind.startsWith('camera_link_')) return kind.slice('camera_link_'.length)
+  if (kind === 'camera_hub_flaky') return 'usb hub'
   if (kind.endsWith('_fault')) return kind.slice(0, -'_fault'.length)
   if (['water_low', 'over_temp', 'hal_offline'].includes(kind)) return 'hald'
   if (kind.startsWith('reminder_')) return 'grow'

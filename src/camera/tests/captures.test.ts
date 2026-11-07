@@ -104,6 +104,28 @@ describe('CaptureService', () => {
     expect(enqueued).toHaveLength(6)
   })
 
+  it('feeds what hald says about the link into the connection notice, on good stills and refused ones', async () => {
+    const store = new MemoryStore()
+    let damaged = 2
+    let fails = false
+    const hal = Object.assign(new SimHal({ tickMs: 0 }), { damagedFrames: () => damaged, hubBoots: () => ({ missing: 8, total: 10 }) })
+    hal.captureStill = async () => {
+      if (fails) throw new Error('no good frame: damaged frame')
+      return frame()
+    }
+    const svc = new CaptureService({ hal, store, sink: new MemorySink(), minBytes: 1024 })
+    const kinds = () => store.alerts.list({ activeOnly: true }).map(a => a.kind).sort()
+    await svc.capture('upper')
+    expect(kinds()).toEqual(['camera_hub_flaky'])
+    fails = true
+    await expect(svc.capture('upper')).rejects.toThrow('damaged frame')
+    expect(kinds()).toEqual(['camera_hub_flaky', 'camera_link_upper', 'camera_missing'])
+    fails = false
+    damaged = 0
+    await svc.capture('upper')
+    expect(kinds()).toEqual(['camera_hub_flaky', 'camera_link_upper'])
+  })
+
   it('names both cameras when both fail, and clears only once both have recovered', async () => {
     let bad: Array<'upper' | 'lower'> = ['upper', 'lower']
     const { svc, detail } = rig(c => (bad.includes(c) ? new Error('torn') : frame()))

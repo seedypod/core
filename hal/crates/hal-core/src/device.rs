@@ -59,6 +59,11 @@ pub trait BinarySensor: Send {
 pub trait Camera: Send {
     fn name(&self) -> &str;
     fn capture(&mut self) -> Result<Vec<u8>, DeviceError>;
+    /// Frames the last `capture` refused as damaged, whether or not a retry then
+    /// gave a good one. A link going bad shows here before captures start failing.
+    fn damaged_frames(&self) -> u32 {
+        0
+    }
 }
 
 /// One quantity from a device that reports several at once
