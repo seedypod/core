@@ -139,13 +139,16 @@ async fn main() -> anyhow::Result<()> {
 
     let mut cfg = config::Config::load(cli.config.as_deref())?;
     if cli.usb_recover {
-        let uptime = usb::uptime().unwrap_or_default();
-        let recovery = usb::recover(
-            Path::new("/sys"),
-            &cfg.usb_recovery,
-            uptime,
-            &mut std::thread::sleep,
-        );
+        let boot = usb::Boot {
+            sysfs: Path::new("/sys"),
+            state_dir: &cfg.state_dir,
+            root: Path::new("/"),
+            uptime: usb::uptime().unwrap_or_default(),
+            has_cameras: !cfg.camera.is_empty(),
+        };
+        let recovery = usb::recover(&boot, &cfg.usb_recovery, &mut std::thread::sleep, &mut || {
+            usb::in_use(&cfg.http_bind)
+        });
         if let Some(came_up) = recovery.hub_came_up() {
             if let Err(e) = usb::record_boot(&cfg.state_dir, came_up) {
                 warn!(%e, "couldn't record this boot's USB hub");
@@ -155,8 +158,13 @@ async fn main() -> anyhow::Result<()> {
             usb::Recovery::AlreadyUp => info!("USB bus came up by itself"),
             usb::Recovery::NoAction(why) => info!(%why, "no USB recovery needed"),
             usb::Recovery::Recovered { attempts } => info!(attempts, "USB bus recovered"),
-            usb::Recovery::GaveUp { attempts } => {
-                anyhow::bail!("USB bus still empty after {attempts} attempts; giving up until the next boot")
+            usb::Recovery::Reboot { attempt, limit } => {
+                warn!(attempt, limit, "USB hub missing; rebooting to try again");
+                usb::reboot()?;
+            }
+            usb::Recovery::NotRebooting(why) => warn!(%why, "USB hub missing; not rebooting this boot"),
+            usb::Recovery::GaveUp { reboots } => {
+                anyhow::bail!("USB hub missing after {reboots} reboots; waiting for it to be seen")
             }
         }
         return Ok(());
@@ -345,11 +353,13 @@ async fn main() -> anyhow::Result<()> {
     if !cli.sim && cfg.usb_recovery.enabled && !cfg.camera.is_empty() {
         let tx = inbound_tx.clone();
         let mut watch = usb::Watch::new(&cfg.usb_recovery);
+        let reboots_dir = state_dir.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(30)).await;
                 let uptime = usb::uptime().unwrap_or_default();
-                if let Some(alert) = watch.tick(&usb::bus_state(Path::new("/sys")), uptime) {
+                let reboots = usb::reboots_so_far(&reboots_dir).unwrap_or(0);
+                if let Some(alert) = watch.tick(&usb::bus_state(Path::new("/sys")), uptime, reboots) {
                     let _ = tx.send(alert);
                 }
             }
