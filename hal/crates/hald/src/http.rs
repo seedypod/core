@@ -6,13 +6,14 @@
 //! camera must not clear another's failure.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -67,6 +68,8 @@ pub struct AppState {
     pub snapshot: SharedSnapshot,
     pub cameras: Arc<BTreeMap<String, SharedCamera>>,
     pub camera_health: CameraHealth,
+    /// Where `usb::record_boot` keeps its record.
+    pub state_dir: PathBuf,
     pub started: Instant,
     pub mqtt_connected: Arc<AtomicBool>,
     pub inbound: Sender<Inbound>,
@@ -111,6 +114,22 @@ pub fn camera_name(file: &str) -> Option<&str> {
     })
 }
 
+/// What core tracks a link's health from, on every still, good or not: frames this
+/// capture refused as damaged, and `missing/total` boots the USB hub didn't come up.
+fn link_headers(damaged: u32, boots: Option<(usize, usize)>) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("x-seedypod-damaged-frames"),
+        HeaderValue::from(damaged),
+    );
+    if let Some((missing, total)) = boots {
+        if let Ok(value) = HeaderValue::from_str(&format!("{missing}/{total}")) {
+            headers.insert(HeaderName::from_static("x-seedypod-hub-boots"), value);
+        }
+    }
+    headers
+}
+
 async fn camera(State(s): State<AppState>, Path(file): Path<String>) -> Response {
     let Some(name) = camera_name(&file) else {
         return (StatusCode::NOT_FOUND, "expected /camera/<name>.jpg").into_response();
@@ -125,11 +144,13 @@ async fn camera(State(s): State<AppState>, Path(file): Path<String>) -> Response
         let result = c.capture();
         // Here, not after the await: a client that hangs up drops the handler, not this task.
         health.report(&name, result.as_ref().err().map(ToString::to_string), &engine);
-        result
+        (result, c.damaged_frames())
     })
     .await;
+    let boots = crate::usb::boot_record(&s.state_dir);
     match captured {
-        Ok(Ok(bytes)) => (
+        Ok((Ok(bytes), damaged)) => (
+            link_headers(damaged, boots),
             [
                 (header::CONTENT_TYPE, "image/jpeg".to_owned()),
                 (header::CACHE_CONTROL, "no-store".to_owned()),
@@ -137,7 +158,12 @@ async fn camera(State(s): State<AppState>, Path(file): Path<String>) -> Response
             bytes,
         )
             .into_response(),
-        Ok(Err(e)) => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response(),
+        Ok((Err(e), damaged)) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            link_headers(damaged, boots),
+            e.to_string(),
+        )
+            .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -173,7 +199,26 @@ mod tests {
         }
     }
 
+    /// A state with one camera, for calling the handler directly.
+    fn state_with(name: &str, camera: Box<dyn Camera>) -> (AppState, std::sync::mpsc::Receiver<Inbound>) {
+        let (state, rx, _) = app_state();
+        let mut cameras: BTreeMap<String, SharedCamera> = BTreeMap::new();
+        cameras.insert(name.into(), Arc::new(Mutex::new(camera)));
+        (
+            AppState {
+                cameras: Arc::new(cameras),
+                ..state
+            },
+            rx,
+        )
+    }
+
     fn app() -> (Router, std::sync::mpsc::Receiver<Inbound>, Arc<AtomicBool>) {
+        let (state, rx, connected) = app_state();
+        (router(state), rx, connected)
+    }
+
+    fn app_state() -> (AppState, std::sync::mpsc::Receiver<Inbound>, Arc<AtomicBool>) {
         let (tx, rx) = std::sync::mpsc::channel();
         let connected = Arc::new(AtomicBool::new(true));
         let mut cameras: BTreeMap<String, SharedCamera> = BTreeMap::new();
@@ -206,11 +251,12 @@ mod tests {
             snapshot,
             cameras: Arc::new(cameras),
             camera_health: CameraHealth::default(),
+            state_dir: std::env::temp_dir().join("hald-http-no-such-state"),
             started: Instant::now(),
             mqtt_connected: connected.clone(),
             inbound: tx,
         };
-        (router(state), rx, connected)
+        (state, rx, connected)
     }
 
     async fn get_path(app: &Router, path: &str) -> (StatusCode, Option<String>, Vec<u8>) {
@@ -379,6 +425,44 @@ mod tests {
             rx.iter().last(),
             Some(Inbound::CameraResult { ok: true, .. })
         ));
+    }
+
+    /// A still with `damaged` refused frames along the way.
+    struct Glitchy(u32);
+    impl Camera for Glitchy {
+        fn name(&self) -> &str {
+            "glitchy"
+        }
+        fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
+            Ok(vec![0xFF, 0xD8])
+        }
+        fn damaged_frames(&self) -> u32 {
+            self.0
+        }
+    }
+
+    #[test]
+    fn link_headers_carry_the_damage_and_the_boots_when_known() {
+        let h = link_headers(2, Some((8, 10)));
+        assert_eq!(h["x-seedypod-damaged-frames"], "2");
+        assert_eq!(h["x-seedypod-hub-boots"], "8/10");
+        let h = link_headers(0, None);
+        assert_eq!(h["x-seedypod-damaged-frames"], "0");
+        assert!(!h.contains_key("x-seedypod-hub-boots"));
+    }
+
+    #[tokio::test]
+    async fn every_still_says_how_many_frames_it_took() {
+        let (state, _rx) = state_with("glitchy", Box::new(Glitchy(2)));
+        let res = camera(State(state), Path("glitchy.jpg".to_owned())).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()["x-seedypod-damaged-frames"], "2");
+
+        // A refused capture says so too.
+        let (state, _rx) = state_with("lower", Box::new(Broken));
+        let res = camera(State(state), Path("lower.jpg".to_owned())).await;
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(res.headers()["x-seedypod-damaged-frames"], "0");
     }
 
     #[test]

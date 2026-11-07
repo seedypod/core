@@ -140,12 +140,19 @@ async fn main() -> anyhow::Result<()> {
     let mut cfg = config::Config::load(cli.config.as_deref())?;
     if cli.usb_recover {
         let uptime = usb::uptime().unwrap_or_default();
-        match usb::recover(
+        let recovery = usb::recover(
             Path::new("/sys"),
             &cfg.usb_recovery,
             uptime,
             &mut std::thread::sleep,
-        ) {
+        );
+        if let Some(came_up) = recovery.hub_came_up() {
+            if let Err(e) = usb::record_boot(&cfg.state_dir, came_up) {
+                warn!(%e, "couldn't record this boot's USB hub");
+            }
+        }
+        match recovery {
+            usb::Recovery::AlreadyUp => info!("USB bus came up by itself"),
             usb::Recovery::NoAction(why) => info!(%why, "no USB recovery needed"),
             usb::Recovery::Recovered { attempts } => info!(attempts, "USB bus recovered"),
             usb::Recovery::GaveUp { attempts } => {
@@ -297,6 +304,7 @@ async fn main() -> anyhow::Result<()> {
         snapshot,
         cameras: Arc::new(built.cameras),
         camera_health: http::CameraHealth::default(),
+        state_dir: state_dir.clone(),
         started: Instant::now(),
         mqtt_connected: mqtt_connected.clone(),
         inbound: inbound_tx.clone(),

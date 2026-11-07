@@ -23,6 +23,11 @@ const DWC_DRIVERS: [&str; 2] = ["dwc_otg", "dwc2"];
 /// How long a port is left unbound before binding it again.
 const UNBOUND: Duration = Duration::from_secs(1);
 
+/// One character per boot in the state dir, newest last: `+` if the hub came up by
+/// itself, `-` if not. One small write per boot.
+const BOOTS_FILE: &str = "usb-boots";
+const BOOTS_KEPT: usize = 10;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum BusState {
     /// Something besides the root hub is attached.
@@ -129,7 +134,9 @@ fn rebind(dir: &Path, name: &str, sleep: &mut impl FnMut(Duration)) -> Result<()
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Recovery {
-    /// Nothing was wrong, or nothing here to do; says why.
+    /// Something's on the bus, with no help needed.
+    AlreadyUp,
+    /// Nothing here to do; says why.
     NoAction(String),
     Recovered {
         attempts: u32,
@@ -152,7 +159,7 @@ pub fn recover(
     }
     sleep(Duration::from_secs(cfg.boot_wait_s).saturating_sub(uptime));
     let bus = match bus_state(sysfs) {
-        BusState::Populated => return Recovery::NoAction("USB bus is populated".into()),
+        BusState::Populated => return Recovery::AlreadyUp,
         BusState::NotApplicable(why) => return Recovery::NoAction(why.into()),
         BusState::Empty(bus) => bus,
     };
@@ -185,6 +192,35 @@ pub fn recover(
         }
     }
     Recovery::GaveUp { attempts }
+}
+
+impl Recovery {
+    /// Whether this boot says anything about the hub: was it up by itself?
+    pub fn hub_came_up(&self) -> Option<bool> {
+        match self {
+            Recovery::AlreadyUp => Some(true),
+            Recovery::Recovered { .. } | Recovery::GaveUp { .. } => Some(false),
+            Recovery::NoAction(_) => None,
+        }
+    }
+}
+
+/// Add this boot to the record, dropping the oldest.
+pub fn record_boot(state_dir: &Path, came_up: bool) -> std::io::Result<()> {
+    let path = state_dir.join(BOOTS_FILE);
+    let mut boots = std::fs::read_to_string(&path).unwrap_or_default();
+    boots.push(if came_up { '+' } else { '-' });
+    let keep = boots.len().saturating_sub(BOOTS_KEPT);
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, &boots[keep..])?;
+    std::fs::rename(&tmp, &path)
+}
+
+/// Of the boots on record, `(hub missing, total)`.
+pub fn boot_record(state_dir: &Path) -> Option<(usize, usize)> {
+    let boots = std::fs::read_to_string(state_dir.join(BOOTS_FILE)).ok()?;
+    let boots = boots.trim();
+    (!boots.is_empty()).then(|| (boots.matches('-').count(), boots.len()))
 }
 
 /// Seconds since boot, from the first field of `/proc/uptime`.
@@ -424,7 +460,7 @@ mod tests {
         plug_in(&root, "1-1");
         let mut slept = Duration::ZERO;
         let got = recover(&root, &cfg(), Duration::from_secs(30), &mut |d| slept += d);
-        assert_eq!(got, Recovery::NoAction("USB bus is populated".into()));
+        assert_eq!(got, Recovery::AlreadyUp);
         assert_eq!(slept, Duration::from_secs(60));
         assert_eq!(written(&root, USBCORE_BIND), None);
         assert_eq!(written(&root, "bus/usb/drivers/usb/unbind"), None);
@@ -510,6 +546,30 @@ mod tests {
         std::fs::remove_dir_all(root.join("bus/usb/drivers/usb")).unwrap();
         let got = recover(&root, &cfg(), Duration::from_secs(600), &mut |_| {});
         assert_eq!(got, Recovery::GaveUp { attempts: 2 });
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_boot_only_counts_when_it_says_something_about_the_hub() {
+        assert_eq!(Recovery::AlreadyUp.hub_came_up(), Some(true));
+        assert_eq!(Recovery::Recovered { attempts: 1 }.hub_came_up(), Some(false));
+        assert_eq!(Recovery::GaveUp { attempts: 2 }.hub_came_up(), Some(false));
+        assert_eq!(Recovery::NoAction("disabled".into()).hub_came_up(), None);
+    }
+
+    #[test]
+    fn boots_are_recorded_up_to_a_limit() {
+        let root = fake_sysfs("boots", "dwc_otg");
+        assert_eq!(boot_record(&root), None);
+        record_boot(&root, false).unwrap();
+        record_boot(&root, true).unwrap();
+        assert_eq!(boot_record(&root), Some((1, 2)));
+        for _ in 0..BOOTS_KEPT {
+            record_boot(&root, true).unwrap();
+        }
+        // The missed boot has aged out.
+        assert_eq!(boot_record(&root), Some((0, BOOTS_KEPT)));
+        assert!(record_boot(&root.join("nope"), true).is_err());
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import { bridgeStatus } from '../mqtt/bridge'
 import type { Context } from './context'
+import { HUB_ALERT, LINK_ALERT } from '../camera/linkHealth'
 
 export const CheckState = z.enum(['ok', 'idle', 'stalled', 'down'])
 export type CheckState = z.infer<typeof CheckState>
@@ -78,7 +79,9 @@ export async function systemChecks(ctx: Context): Promise<Check[]> {
 
   const cameras = caps?.cameras ?? []
   const last = ctx.store.captures.list(undefined, 1)[0]
+  const link = [...Object.values(LINK_ALERT), HUB_ALERT].map(k => alerts.get(k)).find(a => a)
   if (raised('camera_missing')) add('cameras', 'Cameras', 'down', alerts.get('camera_missing')?.detail ?? 'Not capturing', raised('camera_missing'))
+  else if (link) add('cameras', 'Cameras', 'stalled', link.detail, link.raisedAt)
   else if (!cameras.length) add('cameras', 'Cameras', 'idle', 'No cameras on this unit')
   else if (settings.captureIntervalMin <= 0) add('cameras', 'Cameras', 'idle', 'Periodic photos off', last?.ts ?? null)
   else if (!last) add('cameras', 'Cameras', 'stalled', 'No photos yet')

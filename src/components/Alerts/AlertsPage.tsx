@@ -1,26 +1,33 @@
 import { Link } from '@tanstack/react-router'
-import { Bell, CameraOff, Check, ChevronRight, CloudOff, Droplets, FlaskConical, Info, Scissors, Sprout, Sun, Thermometer, Unplug, Wheat, Waves, X } from 'lucide-react'
+import { Bell, Cable, CameraOff, Check, ChevronRight, CloudOff, Droplets, FlaskConical, Info, Scissors, Sprout, Sun, Thermometer, Unplug, Wheat, Waves, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/src/components/ds/core'
 import { SegmentedControl } from '@/src/components/ds/forms'
+import { DOCS_BASE } from '@/src/components/Search/docsIndex'
 import { fmtStamp, timeAgo } from '@/src/lib/timeAgo'
 import type { AppRouter } from '@/src/server/routers/app'
 import { trpc } from '@/src/utils/trpc'
 
 type AlertRow = inferRouterOutputs<AppRouter>['alerts']['list'][number]
 
+const LINK_GUIDE = `${DOCS_BASE}/core/maintenance/#reseat-a-camera-cable`
+
 const LABEL: Record<string, string> = {
+  camera_link_upper: 'Top camera connection', camera_link_lower: 'Bottom camera connection', camera_hub_flaky: 'Camera hub connection',
   water_low: 'Water low', pump_fault: 'Pump fault', dose_fault: 'Dosing lockout', over_temp: 'Board over temperature', camera_missing: 'Camera not capturing', hal_offline: 'Hardware daemon offline', mirror_failed: 'Off-device copy failed',
   reminder_thinning: 'Thin seedlings', reminder_root_check: 'Check roots', reminder_harvest: 'Harvest window', reminder_nutrients: 'Add nutrients', reminder_sow: 'Start new yCubes', light_fault: 'Light fault',
 }
 const ICON: Record<string, LucideIcon> = {
+  camera_link_upper: Cable, camera_link_lower: Cable, camera_hub_flaky: Cable,
   water_low: Droplets, pump_fault: Waves, dose_fault: FlaskConical, over_temp: Thermometer, camera_missing: CameraOff, hal_offline: Unplug, mirror_failed: CloudOff, light_fault: Sun,
   reminder_thinning: Scissors, reminder_root_check: Sprout, reminder_harvest: Wheat, reminder_nutrients: FlaskConical, reminder_sow: Sprout,
 }
-const HARDWARE = new Set(['water_low', 'pump_fault', 'dose_fault', 'over_temp', 'camera_missing', 'hal_offline', 'light_fault'])
+const HARDWARE = new Set(['water_low', 'pump_fault', 'dose_fault', 'over_temp', 'camera_missing', 'hal_offline', 'light_fault', 'camera_link_upper', 'camera_link_lower', 'camera_hub_flaky'])
+/** Notices with a repair to follow in the docs. */
+const GUIDE: Record<string, string> = { camera_link_upper: LINK_GUIDE, camera_link_lower: LINK_GUIDE, camera_hub_flaky: LINK_GUIDE }
 /** What acknowledging a latched fault turns back on, and what to fix first. */
 const LATCH: Record<string, string> = {
   water_low: 'Acknowledging re-enables the pump. Refill the tank first.',
@@ -32,6 +39,9 @@ const LATCH: Record<string, string> = {
 }
 const VIEW: Record<string, { to: string, label: string }> = {
   camera_missing: { to: '/cameras', label: 'View camera' },
+  camera_link_upper: { to: '/cameras', label: 'View camera' },
+  camera_link_lower: { to: '/cameras', label: 'View camera' },
+  camera_hub_flaky: { to: '/cameras', label: 'View cameras' },
   water_low: { to: '/water', label: 'View water' },
   pump_fault: { to: '/water', label: 'View water' },
   light_fault: { to: '/light', label: 'View light' },
@@ -123,6 +133,7 @@ export function AlertsPage() {
                 {a.active && (
                   <div className="flex flex-wrap gap-2">
                     {go && <Link to={go.to} className="rounded-ctl border border-line-2 px-3 py-[7px] text-[13px] text-fg hover:bg-active">{go.label}</Link>}
+                    {a.active && GUIDE[a.kind] && <a href={GUIDE[a.kind]} target="_blank" rel="noopener noreferrer" className="rounded-ctl border border-line-2 px-3 py-[7px] text-[13px] text-fg hover:bg-active">How to reseat it</a>}
                     <Button icon={X} className="px-3 py-[7px] text-fg-2" onClick={() => dismiss.mutate({ id: a.id })}>Dismiss</Button>
                     <Button variant="primary" icon={Check} className="px-3 py-[7px]" onClick={() => ack.mutate({ id: a.id })}>{cat === 'reminder' ? 'Done' : 'Acknowledge'}</Button>
                   </div>

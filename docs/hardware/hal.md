@@ -275,6 +275,14 @@ good frame, so a unit can run for months on one camera without the other costing
 it CPU. That also keeps the alert quiet: its detail says only what kind of failure
 it was (`no good frame: damaged frame`), and the log has the specifics.
 
+Every `/camera/<name>.jpg` response, good or not, says what it saw of the link:
+`X-Seedypod-Damaged-Frames` is how many of this capture's attempts came back
+damaged, and `X-Seedypod-Hub-Boots` is `missing/total` of the last 10 boots the USB
+hub didn't come up by itself. `hald --usb-recover` records those in `usb-boots` in
+the state dir, one small write per boot. Core turns both into a
+[connection notice](../MAINTENANCE.md#reseat-a-camera-cable). A retry hides damage
+from `camera_missing`, so the count comes from here.
+
 After the last attempt `/camera/<name>.jpg` returns `503` with the reason and
 `camera_missing` goes up naming the camera. It stays up until every camera that
 failed has produced a good frame, so one good camera can't hide the other. If

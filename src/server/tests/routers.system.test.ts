@@ -146,6 +146,17 @@ describe('system.checks', () => {
     expect(bare.pump.detail).toBe('Running')
   })
 
+  it('warns of a failing camera connection, and lets a missing camera outrank it', async () => {
+    const r = rig()
+    r.store.alerts.raise('camera_link_upper', 'Top camera\'s connection may be failing', iso(4))
+    expect((await r.checks()).cameras).toMatchObject({ state: 'stalled', detail: 'Top camera\'s connection may be failing', since: iso(4) })
+    r.store.alerts.raise('camera_missing', 'upper camera failed: no good frame: damaged frame', iso(2))
+    expect((await r.checks()).cameras).toMatchObject({ state: 'down', detail: 'upper camera failed: no good frame: damaged frame' })
+    const hub = rig()
+    hub.store.alerts.raise('camera_hub_flaky', 'The cameras\' USB hub didn\'t come up', iso(4))
+    expect((await hub.checks()).cameras).toMatchObject({ state: 'stalled', detail: 'The cameras\' USB hub didn\'t come up' })
+  })
+
   it('follows the cameras: missing, none fitted, photos off, none yet, behind', async () => {
     const missing = rig()
     missing.store.alerts.raise('camera_missing', 'upper camera returned 0 bytes', iso(4))

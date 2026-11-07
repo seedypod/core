@@ -116,6 +116,23 @@ describe('MqttHalClient', () => {
     await expect(still(async () => new Response('', { status: 500 }))).rejects.toThrow('HTTP 500')
   })
 
+  it('picks up what a still says about the link, whether or not it was good', async () => {
+    const answers = [
+      new Response(new Uint8Array(3000), { headers: { 'x-seedypod-damaged-frames': '2', 'x-seedypod-hub-boots': '8/10' } }),
+      new Response('no good frame', { status: 503, headers: { 'x-seedypod-damaged-frames': '1' } }),
+    ]
+    const client = new MqttHalClient({ unitId: U, mqtt: new FakeMqtt(), httpBase: '', fetchImpl: (async () => answers.shift()) as unknown as typeof fetch })
+    expect(client.damagedFrames('upper')).toBe(0)
+    expect(client.hubBoots()).toBeNull()
+    await client.captureStill('upper')
+    expect(client.damagedFrames('upper')).toBe(2)
+    expect(client.damagedFrames('lower')).toBe(0)
+    expect(client.hubBoots()).toEqual({ missing: 8, total: 10 })
+    await expect(client.captureStill('lower')).rejects.toThrow('no good frame')
+    expect(client.damagedFrames('lower')).toBe(1)
+    expect(client.hubBoots()).toBeNull()
+  })
+
   it('acknowledges alerts, fetches stills over HTTP, forwards button events, and drops garbage', async () => {
     const { mqtt, client } = make()
     const events: string[] = []
