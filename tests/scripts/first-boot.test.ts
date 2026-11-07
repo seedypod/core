@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 const scripts = resolve(import.meta.dirname, '../../scripts')
-const UNIT = 'etc/systemd/system/seedypod-core.service'
+const UNIT_ENV = 'var/lib/seedypod-image/unit.env'
 
 const STUBS: Record<string, string> = {
   systemctl: 'echo "systemctl $*" >> "$STATE/log"',
@@ -36,7 +36,6 @@ beforeEach(() => {
     writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`)
     chmodSync(join(bin, name), 0o755)
   }
-  writeFileSync(join(root, UNIT), 'Environment=HAL_MQTT_URL=mqtt://127.0.0.1:1883 HAL_UNIT_ID=__UNIT_ID__\nUser=seedypod-core\n')
   writeFileSync(join(root, 'etc/fstab'), 'PARTUUID=1-02 / ext4 defaults,noatime 0 1\n')
   writeFileSync(join(root, 'proc/swaps'), '/dev/zram0 partition 1 0 100\n')
 })
@@ -51,13 +50,18 @@ function boot(...args: string[]) {
 }
 
 const log = () => (existsSync(join(state, 'log')) ? readFileSync(join(state, 'log'), 'utf8') : '')
-const unit = () => readFileSync(join(root, UNIT), 'utf8')
+const unitId = () => (existsSync(join(root, UNIT_ENV)) ? readFileSync(join(root, UNIT_ENV), 'utf8') : '')
 
 describe('the first boot', () => {
-  it('points core at this Pi\'s hald, and tells systemd before core starts', () => {
+  it('points core at this Pi\'s hald', () => {
     expect(boot().code).toBe(0)
-    expect(unit()).toContain('HAL_UNIT_ID=gardyn-db753a85\n')
-    expect(log()).toContain('systemctl daemon-reload')
+    expect(unitId()).toBe('HAL_UNIT_ID=gardyn-db753a85\n')
+  })
+
+  it('never asks systemd to reload, which timed out with cloud-init running', () => {
+    boot()
+    expect(log()).not.toContain('daemon-reload')
+    expect(log()).toContain('systemctl disable --no-reload')
   })
 
   it('unblocks Wi-Fi, so the setup hotspot works on a card with no network set', () => {
@@ -73,18 +77,18 @@ describe('the first boot', () => {
 
   it('turns itself off, so later boots leave it all alone', () => {
     boot()
-    expect(log()).toContain('systemctl disable seedypod-first-boot.service')
+    expect(log()).toContain('disable --no-reload seedypod-first-boot.service')
   })
 
   it('tries again next boot when hald gives no unit id, and core keeps no made-up one', () => {
     writeFileSync(join(state, 'no-id'), '')
     expect(boot().code).toBe(1)
-    expect(unit()).toContain('HAL_UNIT_ID=__UNIT_ID__')
+    expect(unitId()).toBe('')
     expect(log()).not.toContain('disable seedypod-first-boot.service')
     rmSync(join(state, 'no-id'))
     boot()
-    expect(unit()).toContain('HAL_UNIT_ID=gardyn-db753a85\n')
-    expect(log()).toContain('disable seedypod-first-boot.service')
+    expect(unitId()).toBe('HAL_UNIT_ID=gardyn-db753a85\n')
+    expect(log()).toContain('disable --no-reload seedypod-first-boot.service')
   })
 })
 
@@ -112,6 +116,6 @@ describe('cloud-init', () => {
   it('leaves the once-only work alone', () => {
     boot('--cloud-init')
     expect(log()).not.toContain('rfkill')
-    expect(unit()).toContain('__UNIT_ID__')
+    expect(unitId()).toBe('')
   })
 })

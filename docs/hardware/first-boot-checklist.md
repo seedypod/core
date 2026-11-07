@@ -58,8 +58,8 @@ journalctl -b -u seedypod-first-boot --no-pager
 - [ ] No `sudo` needed for anything so far, and nothing compiled.
 - [ ] `df -h /` shows the whole card, and `lsblk` shows `mmcblk0p2` filling it.
 - [ ] `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` differs between two cards.
-- [ ] `grep HAL_UNIT_ID /etc/systemd/system/seedypod-core.service` shows
-      `gardyn-<serial>`, not `__UNIT_ID__`, and it matches `hald --check`.
+- [ ] `cat /var/lib/seedypod-image/unit.env` shows `gardyn-<serial>`, it matches
+      `hald --check`, and core shows live sensors.
 - [ ] `systemctl status hald seedypod-core mosquitto seedypod-port80` are all active.
 - [ ] `ps -o user= -C hald` says `seedypod-hal`; `ps -o user= -C node` says `seedypod-core`.
 - [ ] `ls /dev/i2c-1` and the sensors read in the app, with no reboot since first boot.

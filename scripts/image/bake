@@ -38,7 +38,10 @@ bash "$here/install-hal" --binary "$assets/hald-arm-unknown-linux-gnueabihf" --n
   boot_swap
 )
 
-# __UNIT_ID__ is the Pi's serial, which first boot fills in.
+# The unit id is the Pi's serial. First boot writes it to a file core reads on each start,
+# which overrides this placeholder and needs no daemon-reload.
+mkdir -p /etc/systemd/system/seedypod-core.service.d
+printf '[Service]\nEnvironmentFile=-/var/lib/seedypod-image/unit.env\n' > /etc/systemd/system/seedypod-core.service.d/unit-id.conf
 SEEDYPOD_TARBALL_URL="file://$assets/seedypod-core.tar.gz" SEEDYPOD_RELEASE_URL="file://$assets" \
   SEEDYPOD_HAL_UNIT_ID=__UNIT_ID__ bash "$here/install" --branch "$branch"
 # A chroot has no device tree to say it's a Pi, so ask for this by name.

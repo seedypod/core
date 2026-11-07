@@ -29,7 +29,8 @@ for unit in seedypod-first-boot seedypod-cloud-init-off hald seedypod-core seedy
 done
 check "first boot comes before hald and core" grep -q '^Before=hald.service seedypod-core.service' /etc/systemd/system/seedypod-first-boot.service
 check "root owns what first boot runs" test "$(stat -c %U /usr/local/sbin/seedypod-first-boot /usr/local/lib/seedypod/install /usr/local/lib/seedypod/install-hal | sort -u)" = root
-check "core waits for first boot to fill in its unit id" grep -q 'HAL_UNIT_ID=__UNIT_ID__' /etc/systemd/system/seedypod-core.service
+check "core takes its unit id from first boot" grep -q 'unit.env' /etc/systemd/system/seedypod-core.service.d/unit-id.conf
+check "no unit id on the image" test ! -e /var/lib/seedypod-image/unit.env
 check "core runs as seedypod-core" grep -q '^User=seedypod-core$' /etc/systemd/system/seedypod-core.service
 check "hald runs as seedypod-hal" grep -q '^User=seedypod-hal$' /etc/systemd/system/hald.service
 check "seedypod-core owns /opt/seedypod" test "$(stat -c %U /opt/seedypod/package.json)" = seedypod-core
