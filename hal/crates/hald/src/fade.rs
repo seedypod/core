@@ -26,6 +26,8 @@ const FRAME: Duration = Duration::from_millis(20);
 const RETRY: Duration = Duration::from_secs(1);
 /// How long a shutdown waits for the light to land. The pump is already off by then.
 const FINISH_WAIT: Duration = Duration::from_millis(250);
+/// A ramp this far past its end means a write has hung, which has no error to report.
+const STALLED: Duration = Duration::from_secs(3);
 /// What the light's state reports, which core raises as `light_fault`.
 const WRITE_FAULT: &str = "light driver write failed";
 
@@ -215,9 +217,16 @@ impl LightFader {
             .probe()
     }
 
-    /// What `actuator/light/state` reports as its fault; clears on the next good write.
+    /// What `actuator/light/state` reports as its fault: a write that failed or never
+    /// came back. Clears on the next good write.
     pub fn fault(&self) -> Option<&'static str> {
-        self.shared.plan().write_failing.then_some(WRITE_FAULT)
+        let plan = self.shared.plan();
+        let now = (plan.clock)();
+        let stalled = plan
+            .ramp
+            .as_ref()
+            .is_some_and(|r| now > r.start + r.duration + STALLED);
+        (plan.write_failing || stalled).then_some(WRITE_FAULT)
     }
 
     /// Fades from wherever the light is right now, so a change mid-fade has no jump.
@@ -462,6 +471,19 @@ mod tests {
         frames(&f, &t, 1);
         assert_eq!(f.fault(), Some(WRITE_FAULT));
         frames(&f, &t, 1);
+        assert_eq!(f.fault(), None);
+    }
+
+    #[test]
+    fn a_ramp_long_past_its_end_is_a_fault_because_a_hung_write_reports_nothing() {
+        let fake = Fake::default();
+        let (f, t) = by_hand(&fake);
+        f.fade_to(100.0);
+        *t.lock().unwrap() += Duration::from_millis(800) + STALLED;
+        assert_eq!(f.fault(), None, "right at the limit");
+        *t.lock().unwrap() += Duration::from_millis(1);
+        assert_eq!(f.fault(), Some(WRITE_FAULT));
+        f.step();
         assert_eq!(f.fault(), None);
     }
 
