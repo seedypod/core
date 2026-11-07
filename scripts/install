@@ -325,6 +325,11 @@ claim_prefix() {
 }
 finish_prefix() {
   if [ "$CORE_USER" != "$USER" ]; then own_prefix "$CORE_USER"; fi
+  # Restore may run before core's first start creates data/. Create it as core
+  # now, so the root restore helper never becomes its owner.
+  if [ ! -d "$PREFIX/data" ]; then
+    sudo -u "$CORE_USER" mkdir -p "$PREFIX/data"
+  fi
 }
 # Never data/: the tarball has none, and if this run dies with no sudo left to hand things
 # back, as in a power cut, core can still read its code and write its database.
