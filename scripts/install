@@ -527,7 +527,7 @@ TMP=$(mktemp -d)
 mark_busy
 trap clear_busy EXIT
 curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
-trap 'clear_busy; abandon_update' EXIT
+trap 'abandon_update; clear_busy' EXIT
 claim_prefix
 if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf seedypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
 TARBALL="$TMP/pkg"
