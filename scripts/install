@@ -113,7 +113,7 @@ prune_dist() {
   local keep file
   keep="$(tar tzf "$1" 2>/dev/null | sed 's#^\./##' | grep '^server/dist/.')" || return 0
   find server/dist -type f | sort | comm -23 - <(printf '%s\n' "$keep" | sort) | while IFS= read -r file; do
-    rm -f "$file"
+    sudo rm -f "$file" || return 1
   done
 }
 
@@ -403,7 +403,7 @@ if [ "$FILE_CHANGED" = 1 ] || [ "$(systemctl show -p NeedDaemonReload --value se
 fi
 systemctl is-enabled --quiet seedypod-core.service || sudo systemctl enable seedypod-core.service >/dev/null
 sudo systemctl restart seedypod-core.service
-prune_dist "$TARBALL"
+prune_dist "$TARBALL" || echo "   couldn't clear old chunks" >&2
 install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
 if [ -n "$RESTORE" ]; then
   BUNDLE="$RESTORE"
