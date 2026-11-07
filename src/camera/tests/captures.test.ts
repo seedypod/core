@@ -104,6 +104,15 @@ describe('CaptureService', () => {
     expect(enqueued).toHaveLength(6)
   })
 
+  it('raises a persistent capture failure again after hald clears the shared alert', async () => {
+    const { store, svc, detail } = rig(c => (c === 'upper' ? new Error('torn') : frame()))
+    await svc.captureAll()
+    store.alerts.clear('camera_missing', new Date().toISOString())
+    expect(detail()).toBeUndefined()
+    await svc.captureAll()
+    expect(detail()).toBe('upper camera failed: torn')
+  })
+
   it('feeds what hald says about the link into the connection notice, on good stills and refused ones', async () => {
     const store = new MemoryStore()
     let damaged = 2
