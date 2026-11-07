@@ -12,7 +12,12 @@ function rig() {
   const good = (n: number, camera: 'upper' | 'lower' = 'upper') => {
     for (let i = 0; i < n; i++) watch.record(camera, 0, true, TS)
   }
-  return { store, watch, detail, good }
+  /** Two captures with some damage each: the least that raises a notice. */
+  const pattern = (camera: 'upper' | 'lower' = 'upper') => {
+    watch.record(camera, 2, true, TS)
+    watch.record(camera, 2, true, TS)
+  }
+  return { store, watch, detail, good, pattern }
 }
 
 describe('LinkWatch', () => {
@@ -22,6 +27,14 @@ describe('LinkWatch', () => {
     watch.record('upper', 3, false, TS)
     good(5)
     expect(detail()).toBeUndefined()
+  })
+
+  it('one capture can\'t raise it however many attempts it was set to make', () => {
+    const { watch, detail } = rig()
+    watch.record('upper', 9, false, TS)
+    expect(detail()).toBeUndefined()
+    watch.record('upper', 1, false, TS)
+    expect(detail()).toMatch(/^Top camera's connection may be failing: 4 of its last 4/)
   })
 
   it('a pattern across captures raises a plain notice with the count', () => {
@@ -65,8 +78,8 @@ describe('LinkWatch', () => {
   })
 
   it('stays up through a run that isn\'t long enough, so it doesn\'t flap', () => {
-    const { watch, detail, good } = rig()
-    watch.record('upper', 4, true, TS)
+    const { watch, detail, good, pattern } = rig()
+    pattern()
     good(LINK_CLEAR_RUN - 2)
     expect(detail()).toBeDefined()
     watch.record('upper', 1, true, TS)
@@ -75,8 +88,8 @@ describe('LinkWatch', () => {
   })
 
   it('clears after a sustained good run, and needs a fresh pattern to come back', () => {
-    const { watch, detail, good } = rig()
-    watch.record('upper', 4, true, TS)
+    const { watch, detail, good, pattern } = rig()
+    pattern()
     good(LINK_CLEAR_RUN - 2)
     expect(detail()).toBeDefined()
     good(1)
@@ -87,10 +100,10 @@ describe('LinkWatch', () => {
   })
 
   it('only writes to the card when it raises and clears', () => {
-    const { store, watch, good } = rig()
+    const { store, watch, good, pattern } = rig()
     const raise = vi.spyOn(store.alerts, 'raise')
     const lastOptions = () => (raise.mock.calls.at(-1) as unknown[])[3]
-    watch.record('upper', 4, true, TS)
+    pattern()
     expect(lastOptions()).toBeUndefined()
     for (let i = 0; i < 5; i++) {
       watch.record('upper', 1, true, TS)
@@ -113,9 +126,22 @@ describe('LinkWatch', () => {
     store.alerts.raise(LINK_ALERT.upper, 'from before', TS)
     const after = new LinkWatch(store.alerts)
     after.record('upper', 0, true, TS)
-    expect(detail()).toMatch(/0 of its last 1 photos/)
-    for (let i = 0; i < LINK_CLEAR_RUN; i++) after.record('upper', 0, true, TS)
+    expect(detail()).toBe('from before')
+    for (let i = 1; i < LINK_CLEAR_RUN; i++) after.record('upper', 0, true, TS)
     expect(detail()).toBeUndefined()
+  })
+
+  it('a notice closed by hand doesn\'t come back from the frames that raised it', () => {
+    const { store, watch, detail, good, pattern } = rig()
+    pattern()
+    store.alerts.clear(LINK_ALERT.upper, TS)
+    good(1)
+    expect(detail()).toBeUndefined()
+    // Nor does one more bad frame bring it back: it takes a new pattern.
+    watch.record('upper', 1, true, TS)
+    expect(detail()).toBeUndefined()
+    pattern()
+    expect(detail()).toBeDefined()
   })
 
   it('a failed run is long enough that a single full round of retries isn\'t one', () => {
@@ -130,6 +156,18 @@ describe('LinkWatch', () => {
       watch.recordBoots({ missing: 4, total: 4 }, TS)
       watch.recordBoots({ missing: 2, total: 10 }, TS)
       expect(detail(HUB_ALERT)).toBeUndefined()
+    })
+
+    it('stays closed by hand until another boot changes the record', () => {
+      const { store, watch, detail } = rig()
+      watch.recordBoots({ missing: 8, total: 10 }, TS)
+      store.alerts.clear(HUB_ALERT, TS)
+      watch.recordBoots({ missing: 8, total: 10 }, TS)
+      expect(detail(HUB_ALERT)).toBeUndefined()
+      watch.recordBoots({ missing: 8, total: 10 }, TS)
+      expect(detail(HUB_ALERT)).toBeUndefined()
+      watch.recordBoots({ missing: 9, total: 10 }, TS)
+      expect(detail(HUB_ALERT)).toMatch(/on 9 of the last 10/)
     })
 
     it('raises on a pattern, holds, and clears with hysteresis', () => {

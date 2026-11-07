@@ -129,6 +129,8 @@ export class MqttHalClient implements HalClient {
   }
 
   async captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array> {
+    // First: if hald can't be reached, the last still's count mustn't count again.
+    this.damaged.set(camera, 0)
     const r = await this.fetchImpl(`${this.o.httpBase}/camera/${camera}.jpg`)
     this.damaged.set(camera, Number(r.headers.get('x-seedypod-damaged-frames')) || 0)
     const boots = /^(\d+)\/(\d+)$/.exec(r.headers.get('x-seedypod-hub-boots') ?? '')

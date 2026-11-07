@@ -133,6 +133,24 @@ describe('MqttHalClient', () => {
     expect(client.hubBoots()).toBeNull()
   })
 
+  it('doesn\'t repeat the last still\'s damage when hald can\'t be reached', async () => {
+    let up = true
+    const client = new MqttHalClient({
+      unitId: U,
+      mqtt: new FakeMqtt(),
+      httpBase: '',
+      fetchImpl: (async () => {
+        if (!up) throw new Error('fetch failed')
+        return new Response(new Uint8Array(3000), { headers: { 'x-seedypod-damaged-frames': '3' } })
+      }) as unknown as typeof fetch,
+    })
+    await client.captureStill('upper')
+    expect(client.damagedFrames('upper')).toBe(3)
+    up = false
+    await expect(client.captureStill('upper')).rejects.toThrow('fetch failed')
+    expect(client.damagedFrames('upper')).toBe(0)
+  })
+
   it('acknowledges alerts, fetches stills over HTTP, forwards button events, and drops garbage', async () => {
     const { mqtt, client } = make()
     const events: string[] = []
