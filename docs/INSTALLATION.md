@@ -1,7 +1,7 @@
 ---
 type: "Guide"
 title: "Installation"
-description: "Back up the stock card, flash Raspberry Pi OS, install hald and core, connect Home Assistant."
+description: "Back up the stock card, flash seedypod OS or install hald and core by script, connect Home Assistant."
 status: "draft"
 generated: {"by": "claude/fable-5.1", "at": "2026-10-31T04:40:00+00:00"}
 sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "iot-root/garden-of-eden (reference implementation, GPL-3; no code copied)"}, {"resource": "/adr/index.md", "title": "Architecture decision records"}]
@@ -11,6 +11,11 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 
 **Back up the stock microSD card first** ([step 0](#0-back-up)). With that image,
 a failed install is a 5-minute reflash back to stock.
+
+Then [flash seedypod OS](#flash-seedypod-os-recommended). It's the recommended way
+onto a new card: hald, core and everything else are already on it, so there's
+nothing to compile and no `sudo` step. Steps 1 to 3 are the scripts, for a unit
+that's already running, or a board the image doesn't cover.
 
 ## Which Pi
 
@@ -31,6 +36,17 @@ the last line with 32-bit ARM builds. CI runs the tests and the build on both.
 Node 22 gets security fixes until **April 2027**; after that a Pi Zero W should
 move to a Pi Zero 2 W on 64-bit Raspberry Pi OS. `scripts/install --check`
 prints which Node a machine gets.
+
+seedypod OS is 32-bit for both boards, so it's on Node 22 even on a Zero 2 W. It
+runs the ARMv6 build from unofficial-builds.nodejs.org, which is a community
+build, not a Node.js release. The image doesn't change that clock:
+
+- A card flashed today stops getting Node security fixes in April 2027, and core
+  has no auth on your LAN, so after that date the unit relies on your network.
+- Nothing on the unit updates itself. Node and core move when you reflash or
+  rerun the installers, and Raspberry Pi OS packages when you run `apt`.
+- The Zero W has no way onto Node 24. The Zero 2 W does: flash 64-bit Raspberry Pi
+  OS Lite and use the scripts below.
 
 On a Pi Zero W:
 
@@ -69,15 +85,110 @@ been timed.
 | Core install, with the prebuilt binary | not timed yet; it skips that compile |
 | Update (rerunning the core installer) | about 2 minutes |
 | Reboot, until core serves pages | about 4 minutes |
+| seedypod OS, first boot until core serves pages | not timed on a real unit yet |
 
 ## 0. Back up
 
 1. Power off, open the base, remove the Pi's microSD.
 2. On a computer: `sudo dd if=/dev/<card> of=gardyn-stock.img bs=4M status=progress` and keep the image.
 
+## Flash seedypod OS (recommended)
+
+Raspberry Pi OS Lite (32-bit, trixie) with `hald`, core and its production
+dependencies, Node 22, the ARMv6 `better-sqlite3`, Mosquitto, the port 80 forward,
+the SD card settings, the login logo and the camera naming already on it. It runs
+on a **Pi Zero W** and a **Pi Zero 2 W**, and it's 32-bit on both, so it can't be the
+64-bit mistake below. For a 64-bit OS on a Zero 2 W, use the [scripts](#1-flash).
+
+Use a high-endurance card, as in [step 1](#1-flash). The download is about 650 MB and
+needs a card of at least 4 GB; it grows to fill the card on first boot.
+
+### With Raspberry Pi Imager
+
+This is the way to get a login and Wi-Fi onto the card. In Imager 2.0:
+
+1. **App Options → Content Repository → Edit → Use custom URL**, and paste one of
+   these, then **Apply & Restart**.
+   - The latest release: `https://github.com/seedypod/core/releases/latest/download/seedypod-os-imager.json`
+   - The `dev` build: `https://github.com/seedypod/core/releases/download/dev-latest/seedypod-os-imager.json`
+
+   `rpi-imager --repo <url>` does the same. To go back, pick the Raspberry Pi
+   repository in the same dialog.
+2. Pick your device. Only the Pi Zero W and Zero 2 W are offered, and **seedypod OS**
+   is the only OS.
+3. In the customisation steps set a username and password, Wi-Fi (2.4 GHz on a Zero
+   W), and turn on SSH with a key or password if you want a shell. The hostname is
+   already `seedypod`. Imager keeps what you entered last time, so read what's there.
+4. Write the card and reseat it. `scripts/check-image --card /Volumes/bootfs` reads it
+   back: it says whether it will boot a Zero W, and which login and network it got.
+
+### Without Imager
+
+Check the download, then write it with anything that writes images:
+
+```sh
+gh release download dev-latest -R seedypod/core -p 'seedypod-os.img.xz*'
+scripts/check-image seedypod-os.img.xz
+```
+
+`sha256sum -c seedypod-os.img.xz.sha256` checks the sha256 on its own.
+`seedypod-os-manifest.txt` beside it lists the commit, the base image and every
+package. In Imager, **Use custom** on a local file skips the customisation, so a card
+written that way has [no login](#no-login-on-the-card) and needs the hotspot.
+
+### First boot
+
+Power on and leave it. The card grows, makes its own SSH host keys, reads the unit id
+from the Pi and starts `hald` and core: no step of yours, and no reboot, because I²C
+and hardware PWM are already set. Then open `http://seedypod.local/`.
+
+Nothing that belongs to one unit is on the image. SSH host keys, the unit id and the
+machine id are made on the unit, the login and Wi-Fi come from Imager, and core's
+database starts empty on **Welcome**, where you can restore a backup. No password is
+built in, and the broker has none to leak: it only listens on the Pi itself until you
+run `scripts/install-hal --mqtt-lan`, which makes one on the unit.
+
+### The login
+
+There is no default login. The account is the username you gave Imager, with your
+password or key, and `sudo` asks for that password. Any name works, `seedypod`
+included, because `hald` and core have accounts of their own, `seedypod-hal` and
+`seedypod-core`, which nobody logs in to.
+
+### No login on the card
+
+The unit works without one: all of it is in the app, and `pi` stays locked. To get a
+shell later, without reflashing, power off and put two files on the card's `bootfs`:
+
+```sh
+touch /Volumes/bootfs/ssh
+echo "yourname:$(openssl passwd -6)" > /Volumes/bootfs/userconf.txt
+```
+
+Boot, and `ssh yourname@seedypod.local`.
+
+### No Wi-Fi on the card
+
+Hold the unit's button for **10 seconds** and join `seedypod-setup-xxxx`, as in
+[Change Wi-Fi](#change-wi-fi). It doesn't open by itself, because an open network
+should need someone at the unit.
+
+### Updating
+
+Rerun the installers from your login, as with any other unit. They keep core on
+`seedypod-core` and `hald` on `seedypod-hal`, and don't recompile anything:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/dev/scripts/install-hal | bash -s -- --version dev-latest
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/dev/scripts/install | bash -s -- --branch dev
+```
+
+Core stops while it updates. `scripts/deploy` doesn't work on a flashed unit, because
+the login doesn't own `/opt/seedypod`.
+
 ## 1. Flash
 
-Use a **high-endurance** microSD card, the kind rated for continuous video
+For a card that isn't seedypod OS. Use a **high-endurance** microSD card, the kind rated for continuous video
 recording (SanDisk High Endurance, Samsung PRO Endurance or similar). It costs
 a few dollars more than a standard card and is the cheapest reliability gain
 there is. `install-hal` also cuts what the unit writes (below), and
@@ -133,8 +244,8 @@ as long as your Wi-Fi is shown to come back without it, and nothing that runs th
 pump and lights waits for Wi-Fi. `--no-boot` skips these
 ([details](hardware/hal.md#install)).
 
-`hald` runs as its own locked `seedypod` account, so don't name your login
-`seedypod` in Imager. If you did, `install-hal` warns and uses that login for
+`hald` runs as its own locked `seedypod` account (`seedypod-hal` on seedypod OS, where
+none of this applies), so don't name your login `seedypod` in Imager. If you did, `install-hal` warns and uses that login for
 hald: it works, but hald then has the login's groups and shell, and shares an
 account with core. Nothing migrates it; reflash with another username to keep
 them apart.
@@ -238,7 +349,8 @@ Either way the device appears in HA with no further setup. See
 ## Won't come online
 
 **No SSH and no `seedypod.local`, ever.** On a Pi Zero W, suspect a 64-bit OS. It
-never boots and gives no error. Put the card in a computer and look for these:
+never boots and gives no error. Put the card in a computer and run
+`scripts/check-image --card /Volumes/bootfs`, or look for these:
 
 - The root partition is still 2.5 GB, because first boot never grew it.
 - `bootfs` has only `kernel8.img` and `kernel_2712.img`.
@@ -255,7 +367,7 @@ after power on, later than mDNS.
 
 **SSH says permission denied.** The login is what Imager had, not necessarily
 `pi`. If you've forgotten it, `user-data` on the card's `bootfs` has it under
-`user: name`.
+`user: name`, and `scripts/check-image --card` prints it.
 
 **The browser says connection refused.** That's normal until step 3 finishes:
 SSH works from first boot, but nothing serves pages before core is installed.

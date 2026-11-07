@@ -22,7 +22,7 @@ Format follows [sleepypod/core](https://sleepypod.github.io/) (`# ADR NNNN: Titl
 - [0018 Runtime sensor inventory](0018-runtime-sensor-inventory.md)
 - [0019 Pluggable capture analysis](0019-pluggable-capture-analysis.md)
 - [0020 Autopilot — reactive automations](0020-autopilot-reactive-automations.md)
-- [0021 SD card wear and fast recovery](0021-sd-card-wear-and-recovery.md) — phases 1–3 accepted, phase 4 (SD image) proposed
+- [0021 SD card wear and fast recovery](0021-sd-card-wear-and-recovery.md) — phases 1–3 accepted, phase 4 (SD image) built as amended
 - [0022 Harvest outlook from the camera, with optional plant profiles](0022-harvest-outlook.md)
 - [0023 HomeKit bridge and per-unit identity](0023-homekit.md)
 - [0024 Pod planner and Gardyn plant catalog](0024-pod-planner.md)

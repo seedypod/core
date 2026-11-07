@@ -16,6 +16,9 @@
 #   --no-port80           only remove that forward, and keep it off on later installs
 # The Rust HAL (hald) is installed separately by scripts/install-hal; on a new
 # card, run it first so the restore brings hald's state back too.
+# scripts/image/bake runs this while building the OS image, with no network for
+# what the build already made: SEEDYPOD_TARBALL_URL and SEEDYPOD_RELEASE_URL point
+# at them, and SEEDYPOD_CORE_USER is the account core runs as.
 set -euo pipefail
 
 BRANCH="${SEEDYPOD_BRANCH:-__BRANCH__}"
@@ -63,6 +66,7 @@ fetch_sqlite_prebuilt() {
   asset="better-sqlite3-v$version-node-v$abi-linux-armv6.tar.gz"
   base="https://github.com/$REPO/releases/download/dev-latest"
   [ "$BRANCH" != main ] || base="https://github.com/$REPO/releases/latest/download"
+  base="${SEEDYPOD_RELEASE_URL:-$base}"
   mkdir -p "$dir/prebuilds"
   if ! curl -fsSL --retry 3 "$base/$asset" -o "$dir/$asset" || ! curl -fsSL --retry 3 "$base/$asset.sha256" -o "$dir/$asset.sha256"; then
     echo "   no prebuilt $asset in this release" >&2; return 1
@@ -284,6 +288,55 @@ install_login_logo() {
     && sudo chmod 0755 "$share/login-logo" \
     && sudo chmod 0644 "$share/logo.frames" "$share/version" "$profile"
 }
+
+# ---- who runs core -----------------------------------------------------------
+# The login that installs it, unless this machine already runs core as another
+# account. The OS image does: its login doesn't exist until first boot, so core has
+# seedypod-core there, and an update run from the login has to keep that.
+CORE_UNIT="$ROOT/etc/systemd/system/seedypod-core.service"
+HALD_UNIT="$ROOT/etc/systemd/system/hald.service"
+core_user() {
+  local user="${SEEDYPOD_CORE_USER:-}"
+  [ -n "$user" ] || user="$(sed -n 's/^User=//p' "$CORE_UNIT" 2>/dev/null | head -1 || true)"
+  echo "${user:-$USER}"
+}
+# The group that reads hald's files, which install-hal names after hald's account.
+hal_group() {
+  local group
+  group="$(sed -n 's/^Group=//p' "$HALD_UNIT" 2>/dev/null | head -1 || true)"
+  echo "${group:-seedypod}"
+}
+
+# Core addresses hald by its unit id (the Pi's serial).
+hal_unit_id() {
+  hald --config /etc/seedypod/hal.toml --check 2>/dev/null | sed -n 's/.*"unit_id": *"\([^"]*\)".*/\1/p' | head -1 || true
+}
+
+# Only the account that owns $PREFIX can unpack over it, so when that's not this
+# login, core stops, the login borrows it, and finish_prefix hands it back. pnpm's
+# store sits inside, so both accounts find the one that node_modules was linked
+# from: on another, pnpm would rebuild node_modules and with it better-sqlite3.
+claim_prefix() {
+  sudo mkdir -p "$PREFIX"
+  if [ "$CORE_USER" = "$USER" ]; then sudo chown "$USER" "$PREFIX"; return 0; fi
+  sudo systemctl stop seedypod-core.service 2>/dev/null || true
+  own_prefix "$USER"
+  export npm_config_store_dir="$PREFIX/.pnpm-store"
+}
+finish_prefix() {
+  if [ "$CORE_USER" != "$USER" ]; then own_prefix "$CORE_USER"; fi
+}
+# Never data/: the tarball has none, and if this run dies with no sudo left to hand things
+# back, as in a power cut, core can still read its code and write its database.
+own_prefix() {
+  sudo chown "$1" "$PREFIX"
+  sudo find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name data -exec chown -R "$1" {} +
+}
+# An update that dies halfway must not leave core stopped, or unable to write its database.
+abandon_update() {
+  finish_prefix || true
+  if [ "$CORE_USER" != "$USER" ]; then sudo systemctl start seedypod-core.service 2>/dev/null || true; fi
+}
 if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 if [ "$LOGIN_LOGO" = 1 ]; then install_login_logo; exit $?; fi
 if [ "$PORT80" != auto ]; then install_port80; exit $?; fi
@@ -298,7 +351,9 @@ case "$RESTORE" in
     RESTORE="$(cd "$(dirname "$RESTORE")" && pwd)/$(basename "$RESTORE")" ;;
 esac
 
-if [ "$BRANCH" = "main" ]; then
+if [ -n "${SEEDYPOD_TARBALL_URL:-}" ]; then
+  TARBALL_URL="$SEEDYPOD_TARBALL_URL"
+elif [ "$BRANCH" = "main" ]; then
   TARBALL_URL="https://github.com/$REPO/releases/latest/download/seedypod-core.tar.gz"
 elif [ "$BRANCH" = "dev" ]; then
   TARBALL_URL="https://github.com/$REPO/releases/download/dev-latest/seedypod-core.tar.gz"
@@ -307,9 +362,11 @@ else
 fi
 
 echo "→ seedypod core: branch=$BRANCH prefix=$PREFIX"
-sudo mkdir -p "$PREFIX" && sudo chown "$USER" "$PREFIX"
+CORE_USER="$(core_user)"
 TMP=$(mktemp -d)
 curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
+trap abandon_update EXIT
+claim_prefix
 if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf seedypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
 TARBALL="$TMP/pkg"
 [ ! -f "$TMP/seedypod-core.tar.gz" ] || TARBALL="$TMP/seedypod-core.tar.gz"
@@ -326,6 +383,7 @@ if ! command -v node >/dev/null || [ "$(node -v)" != "v$NODE_WANT" ]; then
 fi
 corepack enable >/dev/null 2>&1 || true
 install_deps
+finish_prefix
 # Keyed on content, so a stale entry is only dead weight, but each update would leave a set of them.
 sudo rm -rf "$COMPILE_CACHE"
 
@@ -335,7 +393,7 @@ if command -v nmcli >/dev/null 2>&1 && [ -d /etc/polkit-1/rules.d ]; then
   sudo tee /etc/polkit-1/rules.d/50-seedypod-network.rules >/dev/null <<RULES
 // seedypod core may manage Wi-Fi (setup hotspot, joining a network). Written by scripts/install.
 polkit.addRule(function (action, subject) {
-  if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 && subject.user === "$USER") return polkit.Result.YES;
+  if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 && subject.user === "$CORE_USER") return polkit.Result.YES;
 });
 RULES
 fi
@@ -345,7 +403,7 @@ fi
 # set in the unit for a hald elsewhere.
 HAL_UNIT_ID="${SEEDYPOD_HAL_UNIT_ID:-}"
 if [ -z "$HAL_UNIT_ID" ] && command -v hald >/dev/null 2>&1; then
-  HAL_UNIT_ID="$(hald --config /etc/seedypod/hal.toml --check 2>/dev/null | sed -n 's/.*"unit_id": *"\([^"]*\)".*/\1/p' | head -1 || true)"
+  HAL_UNIT_ID="$(hal_unit_id)"
 fi
 if [ -n "$HAL_UNIT_ID" ]; then
   HAL_ENV="Environment=HAL_MQTT_URL=mqtt://127.0.0.1:1883 HAL_UNIT_ID=$HAL_UNIT_ID"
@@ -371,7 +429,7 @@ $HAL_ENV
 ExecStart=/usr/local/bin/node server/dist/index.js
 Restart=always
 RestartSec=3
-User=$USER
+User=$CORE_USER
 
 [Install]
 WantedBy=multi-user.target
@@ -383,7 +441,7 @@ sed "s#__PREFIX__#$PREFIX#" "$PREFIX/scripts/seedypod-restore.cjs" | sudo tee "$
 sudo chown root:root "$HELPER"
 sudo chmod 0755 "$HELPER"
 SUDOERS_TMP=$(mktemp)
-echo "$USER ALL=(root) NOPASSWD: $HELPER" > "$SUDOERS_TMP"
+echo "$CORE_USER ALL=(root) NOPASSWD: $HELPER" > "$SUDOERS_TMP"
 if sudo visudo -cf "$SUDOERS_TMP" >/dev/null; then
   sudo install -m 0440 -o root -g root "$SUDOERS_TMP" /etc/sudoers.d/seedypod-restore
 else
@@ -393,7 +451,8 @@ rm -f "$SUDOERS_TMP"
 
 # Backups read hal.toml, hald's state and the broker password through the seedypod
 # group that install-hal creates (ADR-0021); install-hal adds us too if it runs later.
-if getent group seedypod >/dev/null 2>&1; then sudo usermod -aG seedypod "$USER"; fi
+HAL_GROUP="$(hal_group)"
+if getent group "$HAL_GROUP" >/dev/null 2>&1; then sudo usermod -aG "$HAL_GROUP" "$CORE_USER"; fi
 
 install_login_logo || echo "   couldn't install the login logo; logins work as before" >&2
 
@@ -403,6 +462,7 @@ if [ "$FILE_CHANGED" = 1 ] || [ "$(systemctl show -p NeedDaemonReload --value se
 fi
 systemctl is-enabled --quiet seedypod-core.service || sudo systemctl enable seedypod-core.service >/dev/null
 sudo systemctl restart seedypod-core.service
+trap - EXIT
 prune_dist "$TARBALL" || echo "   couldn't clear old chunks" >&2
 install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
 if [ -n "$RESTORE" ]; then

@@ -41,6 +41,8 @@ jobs:
     needs: [hal, sqlite-armv6]
     # Without the binary a Pi Zero W compiles it, which beats no release at all.
     if: ${{ !cancelled() && needs.hal.result == 'success' && needs.sqlite-armv6.result != 'cancelled' }}
+    outputs:
+      tag: ${{ steps.published.outputs.tag }}
     permissions:
       contents: write # to be able to publish a GitHub release
       issues: write # to be able to comment on released issues
@@ -107,6 +109,12 @@ jobs:
           fi
           [ "$(file -b --mime-type "$RUNNER_TEMP/tarball/web/dist/brand/icon-64.png")" = image/png ]
 
+      - uses: actions/upload-artifact@v6
+        with:
+          name: seedypod-core
+          path: seedypod-core.tar.gz
+          retention-days: 1
+
       - name: Download hald binaries
         uses: actions/download-artifact@v8
         with:
@@ -128,3 +136,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm exec semantic-release
+
+      - name: Find the tag it made, if it made one
+        id: published
+        run: echo "tag=$(git tag --points-at HEAD --list 'v*' | sort -V | tail -1)" >> "$GITHUB_OUTPUT"
+
+  os-image:
+    needs: [release]
+    if: ${{ needs.release.outputs.tag != '' }}
+    permissions:
+      contents: write # to attach the image to the release
+    uses: ./.github/workflows/os-image.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+      branch: main

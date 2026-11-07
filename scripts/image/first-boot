@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# What the seedypod OS image can only do on the unit it boots on, ahead of hald and
+# core (seedypod-first-boot.service). The functions are the installers' own, from
+# root-owned copies. Writing the unit id comes last and is what ends it, so a boot that
+# doesn't get that far tries again. It stays clear of systemctl: cloud-init and userconf
+# reload systemd on first boot, and a call caught by that fails with "Transport endpoint
+# is not connected". seedypod-cloud-init-off.service runs it with --cloud-init after
+# cloud-init has finished, on each boot until cloud-init can go off.
+set -uo pipefail
+
+stage="${1:-}"
+set --
+
+ROOT="${SEEDYPOD_ROOT:-}"
+LIB="${SEEDYPOD_IMAGE_LIB:-$ROOT/usr/local/lib/seedypod}"
+UNIT_ENV="$ROOT/var/lib/seedypod-image/unit.env"
+export SUDO=
+
+SEEDYPOD_LIB_ONLY=1 . "$LIB/install"
+SEEDYPOD_LIB_ONLY=1 . "$LIB/install-hal"
+set +e
+
+if [ "$stage" = --cloud-init ]; then boot_cloud_init; exit 0; fi
+
+id="$(hal_unit_id)"
+if [ -z "$id" ] || [ "$id" = gardyn-unknown ]; then echo "hald gave no unit id; trying again next boot" >&2; exit 1; fi
+# So the setup hotspot can come up on a card that was never given a country or a network.
+rfkill unblock wifi
+apply_wear_settings
+mkdir -p "$(dirname "$UNIT_ENV")"
+# Atomic: a power cut right after first boot must not leave an empty file that looks finished.
+echo "HAL_UNIT_ID=$id" > "$UNIT_ENV.tmp"
+sync "$UNIT_ENV.tmp"
+mv -f "$UNIT_ENV.tmp" "$UNIT_ENV"
+echo "→ unit id $id"
