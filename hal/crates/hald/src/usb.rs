@@ -153,7 +153,7 @@ pub enum Recovery {
     AlreadyUp,
     /// Nothing here to do; says why.
     NoAction(String),
-    /// A re-probe brought it back.
+    /// The hub appeared after the initial check; `attempts` may be zero.
     Recovered { attempts: u32 },
     /// The count is on the card: the caller should reboot now.
     Reboot { attempt: u32, limit: u32 },
@@ -277,7 +277,20 @@ fn reboot_for_hub(
     if done >= cfg.reboot_attempts {
         return Recovery::GaveUp { reboots: done };
     }
-    if let Err(why) = wait_until_clear(boot, cfg, sleep, running) {
+    let clear = wait_until_clear(boot, cfg, sleep, running);
+    // A hub can enumerate late while a pump, update or setup keeps us waiting.
+    // Recheck before spending a reboot, including when the busy wait timed out.
+    match bus_state(boot.sysfs) {
+        BusState::Populated => {
+            reset_reboots(boot.state_dir);
+            return Recovery::Recovered {
+                attempts: cfg.attempts,
+            };
+        }
+        BusState::NotApplicable(why) => return Recovery::NoAction(why.into()),
+        BusState::Empty(_) => {}
+    }
+    if let Err(why) = clear {
         return Recovery::NotRebooting(why);
     }
     match save_reboots(boot.state_dir, done + 1) {
@@ -894,6 +907,25 @@ mod tests {
         });
         assert_eq!(got, Recovery::Reboot { attempt: 1, limit: 4 });
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_hub_that_appears_during_the_busy_wait_cancels_the_reboot() {
+        for stays_busy in [false, true] {
+            let root = fake_sysfs(&format!("late-hub-{stays_busy}"), "dwc_otg");
+            save_reboots(&root, 2).unwrap();
+            let mut looks = 0;
+            let got = boot_with(&root, &reboot_cfg(), &mut || {
+                looks += 1;
+                if looks == 2 {
+                    plug_in(&root, "1-1");
+                }
+                Ok(stays_busy || looks < 3)
+            });
+            assert_eq!(got, Recovery::Recovered { attempts: 0 });
+            assert_eq!(counted(&root), None);
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     #[test]
