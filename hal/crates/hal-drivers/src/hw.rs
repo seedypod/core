@@ -1,6 +1,7 @@
 //! rppal-backed implementations of the bus traits. Only compiled with the
 //! `hardware` feature; constructors fail at runtime off a Raspberry Pi.
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use hal_core::DeviceError;
@@ -9,6 +10,7 @@ use rppal::i2c::I2c;
 use rppal::pwm::{Channel, Polarity, Pwm};
 
 use crate::bus::{DigitalIn, DigitalOut, I2cBus, PwmOut};
+use crate::pwm::found_duty;
 
 fn bus_err<E: std::fmt::Display>(e: E) -> DeviceError {
     DeviceError::Bus(e.to_string())
@@ -100,8 +102,21 @@ impl HwPwm {
             3 => Channel::Pwm3,
             n => return Err(DeviceError::Other(format!("no PWM channel {n}"))),
         };
-        let pwm = Pwm::with_frequency(ch, hz, 0.0, Polarity::Normal, true).map_err(bus_err)?;
+        // Before `Pwm::new`, which always disables the channel. Back on at that duty straight
+        // after, so a restart is a few syscalls of dark, and never at a stale frequency.
+        let duty = found_duty(Path::new("/sys/class/pwm"), channel);
+        let mut pwm = Pwm::new(ch).map_err(bus_err)?;
+        // The light stays as it is when hald stops, so an update doesn't turn off a grow light.
+        pwm.set_reset_on_drop(false);
+        pwm.set_frequency(hz, duty).map_err(bus_err)?;
+        pwm.set_polarity(Polarity::Normal).map_err(bus_err)?;
+        pwm.enable().map_err(bus_err)?;
         Ok(Self(pwm))
+    }
+
+    /// The duty the channel is running at, 0–1.
+    pub fn duty(&self) -> f64 {
+        self.0.duty_cycle().unwrap_or(0.0)
     }
 }
 

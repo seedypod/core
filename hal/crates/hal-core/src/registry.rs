@@ -39,6 +39,9 @@ impl Registry {
     pub fn actuator_mut(&mut self, id: ActuatorId) -> Option<&mut Box<dyn Actuator>> {
         self.actuators.get_mut(&key(&id))
     }
+    pub fn remove_actuator(&mut self, id: ActuatorId) -> Option<Box<dyn Actuator>> {
+        self.actuators.remove(&key(&id))
+    }
     pub fn remove_sensor(&mut self, id: SensorId) -> Option<Box<dyn Sensor>> {
         self.sensors.remove(&key(&id))
     }
