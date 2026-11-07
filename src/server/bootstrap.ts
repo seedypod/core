@@ -47,6 +47,8 @@ export interface CoreOptions {
   backup?: BackupService
   /** Restores a backup through the root helper (ADR-0021); node hosts only. */
   restore?: RestoreClient
+  /** Reads hald's boot log; node hosts only. */
+  bootLog?: () => Promise<string | null>
   /** The SD card's write counter (ADR-0021); omitted off a Pi. */
   flashSource?: FlashSource | null
   /** Metadata about the database for the Database view; a real scan on node hosts, sample data in the demo. */
@@ -91,7 +93,7 @@ export function createCore(o: CoreOptions): Core {
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, bootLog: o.bootLog, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const retention = new TelemetryRetention({ store: o.store, now: o.now })

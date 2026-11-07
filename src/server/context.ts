@@ -34,6 +34,8 @@ export interface Context {
   backup?: BackupService
   /** Runs the root restore helper; on the unit only. */
   restore?: RestoreClient
+  /** hald's boot log, or null if it hasn't written one; on the unit only. */
+  bootLog?: () => Promise<string | null>
   /** The HomeKit bridge (ADR 0023); node hosts only, off until enabled in Settings. */
   homekit?: HomeKitControl
   /** The Home Assistant MQTT bridge (ADR-0013); node hosts only, where server/index.ts owns it. */
