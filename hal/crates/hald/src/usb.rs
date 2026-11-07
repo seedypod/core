@@ -8,7 +8,8 @@
 //! after `boot_wait_s` it asks for a reboot, up to `reboot_attempts` in a row. That
 //! count is on the card, written and synced first, and only resets when the hub is
 //! seen, so nothing here can loop: no count, no reboot. It won't reboot while the
-//! pump or a doser runs, or before an image's first boot has finished.
+//! pump, a doser or the setup hotspot is in use, during an update or a restore, or
+//! before an image's first boot has finished.
 //!
 //! The daemon itself is unprivileged, so it only watches, and raises
 //! `camera_missing` once the bus is still empty after recovery must be over.
@@ -40,6 +41,13 @@ const BOOTS_KEPT: usize = 10;
 
 /// How many reboots in a row this has asked for, in the state dir.
 const REBOOTS_FILE: &str = "usb-reboots";
+
+/// `install`, `install-hal` and the restore helper each leave a file here while
+/// they run. It's in `/run`, so one that died mid-way can't hold reboots for good.
+const BUSY_DIR: &str = "run/seedypod-busy";
+
+/// core's setup hotspot, as NetworkManager names it (`src/network/wifi.ts`).
+const SETUP_CONNECTION: &str = "seedypod-setup";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BusState {
@@ -211,9 +219,27 @@ fn reset_reboots(state_dir: &Path) {
     }
 }
 
-/// Wait until nothing that a reboot would cut short is running, up to the limit.
-/// Not knowing counts as running: this only reboots on a clear no.
-fn wait_until_idle(
+/// What a reboot would cut short right now, if anything. Not knowing counts: this
+/// only reboots on a clear no.
+fn in_the_way(root: &Path, running: &mut impl FnMut() -> Result<bool, String>) -> Option<String> {
+    if let Some(why) = setup_pending(root) {
+        return Some(why.to_owned());
+    }
+    let busy = std::fs::read_dir(root.join(BUSY_DIR));
+    if busy.is_ok_and(|mut files| files.next().is_some()) {
+        return Some("an update or a restore is running".to_owned());
+    }
+    match running() {
+        Ok(false) => None,
+        Ok(true) => Some("the pump, a doser or the setup hotspot is in use".to_owned()),
+        Err(e) => Some(format!("can't tell if the pump is running: {e}")),
+    }
+}
+
+/// Wait until nothing is in the way, up to the limit. Setup is looked at here too: a
+/// new card's first boot is usually still going when this first looks.
+fn wait_until_clear(
+    boot: &Boot,
     cfg: &UsbRecovery,
     sleep: &mut impl FnMut(Duration),
     running: &mut impl FnMut() -> Result<bool, String>,
@@ -223,10 +249,9 @@ fn wait_until_idle(
         if check > 0 {
             sleep(Duration::from_secs(cfg.busy_wait_s));
         }
-        match running() {
-            Ok(false) => return Ok(()),
-            Ok(true) => last = "the pump or a doser is running".to_owned(),
-            Err(e) => last = format!("can't tell if the pump is running: {e}"),
+        match in_the_way(boot.root, running) {
+            None => return Ok(()),
+            Some(why) => last = why,
         }
     }
     Err(last)
@@ -245,9 +270,6 @@ fn reboot_for_hub(
     if !boot.has_cameras {
         return Recovery::NotRebooting("no cameras configured".into());
     }
-    if let Some(why) = setup_pending(boot.root) {
-        return Recovery::NotRebooting(why.into());
-    }
     let done = match reboots_so_far(boot.state_dir) {
         Ok(done) => done,
         Err(e) => return Recovery::NotRebooting(e),
@@ -255,7 +277,7 @@ fn reboot_for_hub(
     if done >= cfg.reboot_attempts {
         return Recovery::GaveUp { reboots: done };
     }
-    if let Err(why) = wait_until_idle(cfg, sleep, running) {
+    if let Err(why) = wait_until_clear(boot, cfg, sleep, running) {
         return Recovery::NotRebooting(why);
     }
     match save_reboots(boot.state_dir, done + 1) {
@@ -349,6 +371,25 @@ pub fn pump_or_dose_running(http_bind: &str) -> Result<bool, String> {
     actuators_running(body)
 }
 
+fn hotspot_in(active_connections: &str) -> bool {
+    active_connections
+        .lines()
+        .any(|name| name.trim() == SETUP_CONNECTION)
+}
+
+/// Someone may be mid-way through setting up Wi-Fi. No NetworkManager means no hotspot.
+fn setup_hotspot_up() -> bool {
+    std::process::Command::new("nmcli")
+        .args(["-t", "-f", "NAME", "connection", "show", "--active"])
+        .output()
+        .is_ok_and(|out| hotspot_in(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// Everything a reboot would interrupt that this process has to ask about.
+pub fn in_use(http_bind: &str) -> Result<bool, String> {
+    Ok(setup_hotspot_up() || pump_or_dose_running(http_bind)?)
+}
+
 /// Clean, so hald stops the pump and the card is synced on the way down.
 pub fn reboot() -> std::io::Result<()> {
     let status = std::process::Command::new("systemctl").arg("reboot").status()?;
@@ -400,6 +441,16 @@ pub fn uptime() -> Option<Duration> {
     parse_uptime(&std::fs::read_to_string("/proc/uptime").ok()?)
 }
 
+/// In words that only change when a reboot happens, so the alert isn't rewritten.
+fn hub_missing(reboots: u32) -> String {
+    let tried = match reboots {
+        0 => String::new(),
+        1 => ", even after an automatic restart".to_owned(),
+        n => format!(", even after {n} automatic restarts"),
+    };
+    format!("it didn't come up{tried}, so there are no cameras. Reseat or replace the cable between the Pi and the hub, then restart the unit")
+}
+
 /// Raises `camera_missing` for an empty bus once recovery must have finished, and
 /// clears it when the bus fills. Runs in the daemon, which can't touch the bus.
 pub struct Watch {
@@ -416,14 +467,14 @@ impl Watch {
     }
 
     /// While the bus is empty this repeats, so a camera's own failure doesn't bury the cause.
-    pub fn tick(&mut self, state: &BusState, uptime: Duration) -> Option<Inbound> {
+    pub fn tick(&mut self, state: &BusState, uptime: Duration, reboots: u32) -> Option<Inbound> {
         match state {
             BusState::Empty(_) if uptime >= self.grace => {
                 self.raised = true;
                 Some(Inbound::CameraResult {
                     name: "USB hub".into(),
                     ok: false,
-                    detail: "it didn't come up, even with automatic restarts, so there are no cameras. Reseat or replace the cable between the Pi and the hub, then restart the unit (journalctl -u seedypod-usb-recover)".into(),
+                    detail: hub_missing(reboots),
                 })
             }
             BusState::Populated if self.raised => {
@@ -587,7 +638,7 @@ mod tests {
         assert_eq!(bus.controller, "20980000.usb");
         // So the daemon raises the alert.
         let mut watch = Watch::new(&cfg());
-        let up = watch.tick(&bus_state(&root), Duration::from_secs(600));
+        let up = watch.tick(&bus_state(&root), Duration::from_secs(600), 0);
         assert!(failed(up).starts_with("USB hub: it didn't come up"));
         let _ = std::fs::remove_dir_all(root);
     }
@@ -825,7 +876,7 @@ mod tests {
         });
         assert_eq!(
             got,
-            Recovery::NotRebooting("the pump or a doser is running".into())
+            Recovery::NotRebooting("the pump, a doser or the setup hotspot is in use".into())
         );
         // The first look and one per wait, and no more.
         assert_eq!(looks, 3);
@@ -843,6 +894,82 @@ mod tests {
         });
         assert_eq!(got, Recovery::Reboot { attempt: 1, limit: 4 });
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_update_or_restore_holds_the_reboot_until_it_ends() {
+        let root = fake_sysfs("busy", "dwc_otg");
+        let busy = root.join(BUSY_DIR);
+        std::fs::create_dir_all(&busy).unwrap();
+        // An empty directory is what's left once every script has finished.
+        assert_eq!(boot(&root), Recovery::Reboot { attempt: 1, limit: 4 });
+
+        std::fs::write(busy.join("install-hal"), "").unwrap();
+        assert_eq!(
+            boot(&root),
+            Recovery::NotRebooting("an update or a restore is running".into())
+        );
+        assert_eq!(counted(&root).as_deref(), Some("1"));
+
+        // It finishes while this waits.
+        let marker = busy.join("install-hal");
+        let what = Boot {
+            sysfs: &root,
+            state_dir: &root,
+            root: &root,
+            uptime: Duration::from_secs(600),
+            has_cameras: true,
+        };
+        let mut sleeps = 0;
+        let mut sleep = |_| {
+            sleeps += 1;
+            if sleeps == 2 {
+                std::fs::remove_file(&marker).unwrap();
+            }
+        };
+        let got = recover(&what, &reboot_cfg(), &mut sleep, &mut || Ok(false));
+        assert_eq!(got, Recovery::Reboot { attempt: 2, limit: 4 });
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn first_boot_finishing_during_the_wait_lets_the_reboot_go_ahead() {
+        let root = fake_sysfs("first-boot-wait", "dwc_otg");
+        std::fs::create_dir_all(root.join("usr/local/sbin")).unwrap();
+        std::fs::write(root.join("usr/local/sbin/seedypod-first-boot"), "").unwrap();
+        std::fs::create_dir_all(root.join("var/lib/seedypod-image")).unwrap();
+        let unit_env = root.join("var/lib/seedypod-image/unit.env");
+        let what = Boot {
+            sysfs: &root,
+            state_dir: &root,
+            root: &root,
+            uptime: Duration::from_secs(600),
+            has_cameras: true,
+        };
+        let mut sleeps = 0;
+        let mut sleep = |_| {
+            sleeps += 1;
+            if sleeps == 2 {
+                std::fs::write(&unit_env, "HAL_UNIT_ID=u1\n").unwrap();
+            }
+        };
+        let got = recover(&what, &reboot_cfg(), &mut sleep, &mut || Ok(false));
+        assert_eq!(got, Recovery::Reboot { attempt: 1, limit: 4 });
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_setup_hotspot_is_found_by_its_connection_name() {
+        assert!(hotspot_in("seedypod-setup\nlo\n"));
+        assert!(!hotspot_in("seedypod-wifi\nlo\n"));
+        assert!(!hotspot_in(""));
+    }
+
+    #[test]
+    fn the_alert_only_claims_restarts_that_happened() {
+        assert!(hub_missing(0).starts_with("it didn't come up, so there are no cameras."));
+        assert!(hub_missing(1).starts_with("it didn't come up, even after an automatic restart, so"));
+        assert!(hub_missing(4).starts_with("it didn't come up, even after 4 automatic restarts, so"));
     }
 
     #[test]
@@ -1049,20 +1176,20 @@ mod tests {
         let mut watch = Watch::new(&cfg());
         // 90 s wait, two re-probes of 3 + 2 s, 30 s margin.
         assert_eq!(watch.grace, Duration::from_secs(130));
-        assert!(watch.tick(&empty, Duration::from_secs(129)).is_none());
+        assert!(watch.tick(&empty, Duration::from_secs(129), 0).is_none());
         assert!(watch
-            .tick(&BusState::Populated, Duration::from_secs(200))
+            .tick(&BusState::Populated, Duration::from_secs(200), 0)
             .is_none());
-        let up = failed(watch.tick(&empty, Duration::from_secs(130)));
+        let up = failed(watch.tick(&empty, Duration::from_secs(130), 0));
         assert!(up.starts_with("USB hub: it didn't come up"), "{up}");
-        assert_eq!(failed(watch.tick(&empty, Duration::from_secs(160))), up);
+        assert_eq!(failed(watch.tick(&empty, Duration::from_secs(160), 0)), up);
 
         assert!(matches!(
-            watch.tick(&BusState::Populated, Duration::from_secs(190)),
+            watch.tick(&BusState::Populated, Duration::from_secs(190), 0),
             Some(Inbound::CameraResult { ok: true, .. })
         ));
         assert!(watch
-            .tick(&BusState::Populated, Duration::from_secs(220))
+            .tick(&BusState::Populated, Duration::from_secs(220), 0)
             .is_none());
     }
 
@@ -1070,6 +1197,6 @@ mod tests {
     fn the_alert_stays_out_of_it_on_a_bus_this_doesnt_manage() {
         let mut watch = Watch::new(&cfg());
         let other = BusState::NotApplicable("not a Pi USB controller");
-        assert!(watch.tick(&other, Duration::from_secs(9999)).is_none());
+        assert!(watch.tick(&other, Duration::from_secs(9999), 0).is_none());
     }
 }

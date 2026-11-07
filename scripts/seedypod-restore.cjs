@@ -36,6 +36,7 @@ const P = {
   passwd: env('SEEDYPOD_MOSQUITTO_PASSWD') ?? '/etc/mosquitto/seedypod.passwd',
   mosquittoConf: env('SEEDYPOD_MOSQUITTO_CONF') ?? '/etc/mosquitto/conf.d/seedypod.conf',
   work: env('SEEDYPOD_RESTORE_WORK') ?? '/var/lib/seedypod-restore',
+  busy: env('SEEDYPOD_BUSY_DIR') ?? '/run/seedypod-busy',
 }
 const STAGING = path.join(P.work, 'staging')
 const PRE = path.join(P.work, 'pre-restore')
@@ -303,7 +304,24 @@ function ensureLanListener() {
   return true
 }
 
+// hald --usb-recover won't reboot for the USB hub while a file is here. Unlike
+// status.json it's in /run, so a power cut mid-restore can't hold reboots for good.
+function markBusy(busy) {
+  const marker = path.join(P.busy, 'restore')
+  try {
+    if (busy) {
+      fs.mkdirSync(P.busy, { recursive: true })
+      fs.writeFileSync(marker, '')
+    }
+    else fs.rmSync(marker, { force: true })
+  }
+  catch {
+    // Only a guard against a reboot: never worth failing a restore for.
+  }
+}
+
 function writeStatus(s) {
+  markBusy(!['done', 'failed', 'refused'].includes(s.state))
   fs.mkdirSync(P.work, { recursive: true, mode: 0o755 })
   const tmp = `${STATUS}.tmp`
   fs.writeFileSync(tmp, `${JSON.stringify({ ...s, at: new Date().toISOString() })}\n`, { mode: 0o644 })

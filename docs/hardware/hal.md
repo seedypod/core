@@ -460,11 +460,17 @@ more tries after fixing the cable, `sudo rm /var/lib/seedypod/usb-reboots`.
 
 It won't reboot:
 
-- While the pump or a doser is running. It looks at `hald`'s `/state`, and if `hald`
-  can't say, that counts as running. It waits `busy_wait_s` and looks again, up to
-  `busy_checks` times, which outlasts a full pump run, then leaves this boot alone.
+- While the pump or a doser is running, or the Wi-Fi setup hotspot is up. It looks at
+  `hald`'s `/state`, and if `hald` can't say, that counts as running.
+- During an update or a restore: `install`, `install-hal` and the restore helper
+  each keep a file in `/run/seedypod-busy` while they run. It's in `/run`, so one that
+  died mid-way is cleared by the next boot and can't hold reboots for good.
 - Before an image's first boot has finished (`unit.env` is written last), or while
   cloud-init is enabled and hasn't finished.
+
+For all of these it waits `busy_wait_s` and looks again, up to `busy_checks` times,
+which outlasts a full pump run, then leaves this boot alone. It also won't reboot:
+
 - On a unit with no cameras (`camera = []`). The stock pair is the default, so a Pi
   that really has no hub reboots 4 times once and then never again; set
   `reboot_attempts = 0` on one.
@@ -484,8 +490,12 @@ echo usb1 | sudo tee /sys/bus/usb/drivers/usb/unbind   # drops the hub and camer
 ls /sys/bus/usb/devices                                # no 1-1 or 1-1.*: usb1 remains
 sudo hald --config /etc/seedypod/hal.toml --usb-recover
 cat /var/lib/seedypod/usb-reboots                      # after it's back: gone if the hub came up
-journalctl -b -1 -u seedypod-usb-recover               # the reboot, logged at warn
+cat /var/lib/seedypod/usb-boots                        # one character a boot, newest last
 ```
+
+The journal is in RAM, so the reboot takes its own log with it. These two files are
+the record: `usb-reboots` counts reboots in a row, and in `usb-boots` a `+` is a boot
+where the hub came up by itself and a `-` is one where it didn't.
 
 ## Verification status
 

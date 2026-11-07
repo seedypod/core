@@ -487,6 +487,11 @@ install_podvision() {
 }
 
 # An update that dies halfway must not leave core stopped, or unable to write its database.
+# hald --usb-recover won't reboot for the USB hub while a file is in here. It's in
+# /run, so if this dies mid-way a reboot clears it. Never worth failing an install for.
+BUSY_DIR="${SEEDYPOD_ROOT:-}/run/seedypod-busy"
+mark_busy() { { sudo mkdir -p "$BUSY_DIR" && sudo touch "$BUSY_DIR/install"; } 2>/dev/null || true; }
+clear_busy() { sudo rm -f "$BUSY_DIR/install" 2>/dev/null || true; }
 abandon_update() {
   finish_prefix || true
   if [ "$CORE_USER" != "$USER" ]; then sudo systemctl start seedypod-core.service 2>/dev/null || true; fi
@@ -519,8 +524,10 @@ fi
 step "seedypod core: branch=$BRANCH prefix=$PREFIX"
 CORE_USER="$(core_user)"
 TMP=$(mktemp -d)
+mark_busy
+trap clear_busy EXIT
 curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
-trap abandon_update EXIT
+trap 'clear_busy; abandon_update' EXIT
 claim_prefix
 if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf seedypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
 TARBALL="$TMP/pkg"
@@ -620,6 +627,7 @@ fi
 systemctl is-enabled --quiet seedypod-core.service || sudo systemctl enable seedypod-core.service >/dev/null
 sudo systemctl restart seedypod-core.service
 trap - EXIT
+trap clear_busy EXIT
 prune_dist "$TARBALL" || warn "   couldn't clear old chunks"
 install_port80 || warn "   couldn't forward port 80; core is on :3000"
 if [ -n "$RESTORE" ]; then

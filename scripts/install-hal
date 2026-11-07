@@ -377,6 +377,13 @@ warn_shared_login() {
   warn "  hald still works. To keep them apart, reflash with another username (docs/INSTALLATION.md#2-enable-ic-and-install-the-hal)."
 }
 
+# ---- nothing reboots mid-install -----------------------------------------------
+# hald --usb-recover won't reboot for the USB hub while a file is in here. It's in
+# /run, so if this dies mid-way a reboot clears it. Never worth failing an install for.
+BUSY_DIR="$ROOT/run/seedypod-busy"
+mark_busy() { { $SUDO mkdir -p "$BUSY_DIR" && $SUDO touch "$BUSY_DIR/$1"; } 2>/dev/null || true; }
+clear_busy() { $SUDO rm -f "$BUSY_DIR/$1" 2>/dev/null || true; }
+
 # ---- USB hub recovery -----------------------------------------------------------
 # The hub doesn't always enumerate at boot. Runs as root because hald can't write
 # to sysfs; it waits boot_wait_s itself, and simple keeps that wait out of the boot.
@@ -504,7 +511,8 @@ fi
 
 # ---- download ---------------------------------------------------------------
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+mark_busy install-hal
+trap 'rm -rf "$TMP"; clear_busy install-hal' EXIT
 if [ -n "$BINARY" ]; then
   cp "$BINARY" "$TMP/hald"
 else

@@ -148,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
             has_cameras: !cfg.camera.is_empty(),
         };
         let recovery = usb::recover(&boot, &cfg.usb_recovery, &mut std::thread::sleep, &mut || {
-            usb::pump_or_dose_running(&cfg.http_bind)
+            usb::in_use(&cfg.http_bind)
         });
         if let Some(came_up) = recovery.hub_came_up() {
             if let Err(e) = usb::record_boot(&cfg.state_dir, came_up) {
@@ -366,11 +366,13 @@ async fn main() -> anyhow::Result<()> {
     if !cli.sim && cfg.usb_recovery.enabled && !cfg.camera.is_empty() {
         let tx = inbound_tx.clone();
         let mut watch = usb::Watch::new(&cfg.usb_recovery);
+        let reboots_dir = state_dir.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(30)).await;
                 let uptime = usb::uptime().unwrap_or_default();
-                if let Some(alert) = watch.tick(&usb::bus_state(Path::new("/sys")), uptime) {
+                let reboots = usb::reboots_so_far(&reboots_dir).unwrap_or(0);
+                if let Some(alert) = watch.tick(&usb::bus_state(Path::new("/sys")), uptime, reboots) {
                     let _ = tx.send(alert);
                 }
             }
