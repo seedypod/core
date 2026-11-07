@@ -281,6 +281,18 @@ try {
     return `${s.system.model}, limits ${JSON.stringify(s.system.limits)}`
   })
 
+  // Its chunk only loads here, and a CommonJS package in it breaks only in the bundle.
+  await check('MCP answers from its lazily loaded chunk', async () => {
+    const res = await fetch(`${api}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'accept': 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'bringup', version: '1' } } }),
+    })
+    const body = await res.json()
+    assert(res.ok && body.result?.serverInfo?.name === 'seedypod', `initialize: ${res.status} ${JSON.stringify(body)}`)
+    return `server ${body.result.serverInfo.name}, protocol ${body.result.protocolVersion}`
+  })
+
   await check('telemetry flows hald → MQTT → core', async () => {
     const s = await until('readings', async () => {
       const r = await get('/sensors')

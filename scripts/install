@@ -106,6 +106,17 @@ check_sqlite() {
 # on a Pi Zero to find that out. A failed install leaves no stamp, so it's tried again.
 deps_stamp() { echo "node_modules/.seedypod-lock-$(node -v)"; }
 
+# tar never deletes, and every build names its chunks anew, so on a small card they'd
+# pile up. Run after the restart, because the old core loads chunks on first use. If
+# the listing comes back empty, nothing is removed.
+prune_dist() {
+  local keep file
+  keep="$(tar tzf "$1" 2>/dev/null | sed 's#^\./##' | grep '^server/dist/.')" || return 0
+  find server/dist -type f | sort | comm -23 - <(printf '%s\n' "$keep" | sort) | while IFS= read -r file; do
+    rm -f "$file"
+  done
+}
+
 install_deps() {
   if cmp -s pnpm-lock.yaml "$(deps_stamp)" && { [ "$NODE_FROM_SOURCE" != 1 ] || sqlite_works; }; then
     echo "→ dependencies unchanged"
@@ -300,6 +311,8 @@ sudo mkdir -p "$PREFIX" && sudo chown "$USER" "$PREFIX"
 TMP=$(mktemp -d)
 curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
 if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf seedypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
+TARBALL="$TMP/pkg"
+[ ! -f "$TMP/seedypod-core.tar.gz" ] || TARBALL="$TMP/seedypod-core.tar.gz"
 
 cd "$PREFIX"
 NODE_WANT=$NODE_VERSION
@@ -390,6 +403,7 @@ if [ "$FILE_CHANGED" = 1 ] || [ "$(systemctl show -p NeedDaemonReload --value se
 fi
 systemctl is-enabled --quiet seedypod-core.service || sudo systemctl enable seedypod-core.service >/dev/null
 sudo systemctl restart seedypod-core.service
+prune_dist "$TARBALL"
 install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
 if [ -n "$RESTORE" ]; then
   BUNDLE="$RESTORE"

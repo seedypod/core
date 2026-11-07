@@ -1,7 +1,11 @@
 // Bundles core and its dependencies into server/dist. Node spends most of a cold
 // start resolving node_modules, not running them, so a bundle is what makes a Pi
 // Zero start quickly. `await import()` becomes a chunk that loads on first use.
+import { rmSync } from 'node:fs'
 import { build } from 'esbuild'
+
+// Chunks are named by content, so a build would otherwise leave the last one's behind.
+rmSync('server/dist', { recursive: true, force: true })
 
 await build({
   entryPoints: ['server/index.ts', 'src/vision/visionWorker.ts', 'src/db/inspectWorker.ts'],
