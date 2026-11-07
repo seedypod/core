@@ -58,8 +58,6 @@ export class CaptureService {
   private readonly minBytes: number
   /** Why each failing camera failed. `camera_missing` covers both, so it only clears once this is empty. */
   private readonly failing = new Map<Cam, string>()
-  /** What `camera_missing` last said, so a camera that stays failing doesn't rewrite it on every still. */
-  private said = ''
   private readonly link: LinkWatch
   private timer: ReturnType<typeof setInterval> | null = null
 
@@ -89,8 +87,12 @@ export class CaptureService {
   private report(ts: string): void {
     const detail = [...this.failing.values()].join('; ')
     if (!detail) this.o.store.alerts.clear('camera_missing', ts)
-    else if (detail !== this.said) this.o.store.alerts.raise('camera_missing', detail, ts)
-    this.said = detail
+    else {
+      // hald can clear this shared alert between captures. Check the store,
+      // so an unchanged capture failure is reported again after that happens.
+      const active = this.o.store.alerts.list({ activeOnly: true }).find(a => a.kind === 'camera_missing')
+      if (active?.detail !== detail) this.o.store.alerts.raise('camera_missing', detail, ts)
+    }
   }
 
   async capture(camera: Cam): Promise<Capture> {
