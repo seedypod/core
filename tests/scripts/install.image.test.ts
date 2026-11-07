@@ -92,6 +92,7 @@ describe('unpacking over a prefix core owns', () => {
       'sudo find /opt/seedypod -mindepth 1 -maxdepth 1 ! -name data -exec chown -R alice {} +',
       'sudo chown seedypod-core /opt/seedypod',
       'sudo find /opt/seedypod -mindepth 1 -maxdepth 1 ! -name data -exec chown -R seedypod-core {} +',
+      'sudo -u seedypod-core mkdir -p /opt/seedypod/data',
     ])
   })
 
@@ -104,7 +105,20 @@ describe('unpacking over a prefix core owns', () => {
 
   it('leaves core alone on an abandoned update when the login owns it', () => {
     run('PREFIX=/opt/seedypod CORE_USER=alice; abandon_update', { USER: 'alice' })
+    expect(log()).toBe('sudo -u alice mkdir -p /opt/seedypod/data\n')
+  })
+
+  it('creates first-run data as core before a restore, and preserves existing data', () => {
+    const prefix = join(dir, 'prefix')
+    mkdirSync(prefix)
+    // Execute mkdir for real; record the requested account without needing sudo.
+    writeFileSync(join(bin, 'sudo'), '#!/bin/sh\necho "sudo $*" >> "$STATE/log"\nif [ "$1" = -u ]; then shift 2; exec "$@"; fi\n')
+    expect(run(`PREFIX="${prefix}" CORE_USER=alice; finish_prefix`).code).toBe(0)
+    writeFileSync(join(prefix, 'data', 'keep'), 'database')
+    writeFileSync(join(state, 'log'), '')
+    expect(run(`PREFIX="${prefix}" CORE_USER=alice; finish_prefix`).code).toBe(0)
     expect(log()).toBe('')
+    expect(readFileSync(join(prefix, 'data', 'keep'), 'utf8')).toBe('database')
   })
 
   it('downloads before it stops anything, so a dropped link costs nothing', () => {
