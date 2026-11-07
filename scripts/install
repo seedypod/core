@@ -347,8 +347,8 @@ FILE_CHANGED=0
 put_file /etc/systemd/system/seedypod-core.service <<UNIT
 [Unit]
 Description=seedypod core (tRPC/MCP/web)
-After=network-online.target
-Wants=network-online.target
+# Not network-online.target: schedules run the pump and lights, with or without Wi-Fi.
+After=hald.service mosquitto.service
 
 [Service]
 WorkingDirectory=$PREFIX

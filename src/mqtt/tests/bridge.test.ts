@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { createEventBus } from '../../lib/eventBus'
 import { MemoryStore } from '../../store/memory'
-import { bridgeStatus, HaBridge } from '../bridge'
+import { bridgeStatus, HaBridge, keepConnecting, superviseBridge } from '../bridge'
 import type { MqttLike } from '../../hardware/mqttClient'
 
 class FakeMqtt implements MqttLike {
@@ -94,6 +94,136 @@ describe('HaBridge', () => {
     mqtt.fire('offline')
     mqtt.fire('close')
     expect(bridge.link()).toEqual({ connected: false, since: '2026-10-31T00:02:00.000Z' })
+  })
+})
+
+describe('keepConnecting', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const bridge = () => ({ stop: vi.fn() }) as unknown as HaBridge
+  const quiet = { up: () => undefined, failed: () => undefined }
+
+  it('retries with growing gaps until it connects, without holding up the caller', async () => {
+    const up = bridge()
+    const connect = vi.fn(async (): Promise<HaBridge | null> => {
+      if (connect.mock.calls.length < 3) throw new Error('no route to host')
+      return up
+    })
+    const on = { up: vi.fn(), failed: vi.fn() }
+    keepConnecting(connect, on)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(on.failed).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(connect).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(connect).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(connect).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(on.up).toHaveBeenCalledWith(up)
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(connect).toHaveBeenCalledTimes(3)
+  })
+
+  it('backs off to 5 minutes at most', async () => {
+    const connect = vi.fn(async (): Promise<HaBridge | null> => {
+      throw new Error('down')
+    })
+    keepConnecting(connect, quiet)
+    await vi.advanceTimersByTimeAsync(3_600_000)
+    const calls = connect.mock.calls.length
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(connect.mock.calls.length).toBe(calls + 1)
+  })
+
+  it('stops trying when cancelled', async () => {
+    const connect = vi.fn(async (): Promise<HaBridge | null> => {
+      throw new Error('down')
+    })
+    const cancel = keepConnecting(connect, quiet)
+    await vi.advanceTimersByTimeAsync(0)
+    cancel()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a bridge that arrives after being cancelled, and ignores a late failure', async () => {
+    const late = bridge()
+    let settle: (b: HaBridge) => void = () => undefined
+    const on = { up: vi.fn(), failed: vi.fn() }
+    keepConnecting(() => new Promise<HaBridge>((resolve) => {
+      settle = resolve
+    }), on)()
+    settle(late)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(late.stop).toHaveBeenCalled()
+    expect(on.up).not.toHaveBeenCalled()
+    keepConnecting(async () => {
+      throw new Error('down')
+    }, on)()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(on.failed).not.toHaveBeenCalled()
+  })
+
+  it('takes a dormant bridge as connected', async () => {
+    const on = { up: vi.fn(), failed: vi.fn() }
+    keepConnecting(async () => null, on)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(on.up).toHaveBeenCalledWith(null)
+  })
+})
+
+describe('superviseBridge', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const bridge = () => ({ stop: vi.fn() }) as unknown as HaBridge
+
+  it('holds the bridge, and the last error until it connects', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const up = bridge()
+    const connect = vi.fn(async (): Promise<HaBridge | null> => {
+      if (connect.mock.calls.length === 1) throw new Error('no route to host')
+      return up
+    })
+    const s = superviseBridge(connect, createEventBus())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.error()).toBe('no route to host')
+    expect(s.bridge()).toBeNull()
+    expect(warn).toHaveBeenCalledWith('HA bridge: no route to host')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(s.bridge()).toBe(up)
+    expect(s.error()).toBeNull()
+    warn.mockRestore()
+    s.stop()
+    expect(up.stop).toHaveBeenCalled()
+  })
+
+  it('starts over when settings change, and only then', async () => {
+    const events = createEventBus()
+    const first = bridge()
+    const second = bridge()
+    const connect = vi.fn(async (): Promise<HaBridge | null> => (connect.mock.calls.length === 1 ? first : second))
+    const s = superviseBridge(connect, events)
+    await vi.advanceTimersByTimeAsync(0)
+    events.emit({ kind: 'mutation', path: 'grow' })
+    expect(connect).toHaveBeenCalledTimes(1)
+    events.emit({ kind: 'mutation', path: 'settings' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(first.stop).toHaveBeenCalled()
+    expect(s.bridge()).toBe(second)
+    s.stop()
+  })
+
+  it('stops listening when stopped, with no bridge to stop', async () => {
+    const events = createEventBus()
+    const connect = vi.fn(async (): Promise<HaBridge | null> => null)
+    const s = superviseBridge(connect, events)
+    await vi.advanceTimersByTimeAsync(0)
+    s.stop()
+    events.emit({ kind: 'mutation', path: 'settings' })
+    expect(connect).toHaveBeenCalledTimes(1)
   })
 })
 

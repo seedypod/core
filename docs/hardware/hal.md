@@ -351,7 +351,7 @@ PWM overlay (`dtoverlay=pwm,pin=18,func=2`, reboot required once), installs
 (`/etc/udev/rules.d/70-seedypod-cameras.rules`, see [Camera names](#camera-names)), installs Mosquitto with a listener on
 `127.0.0.1:1883` and no password (`/etc/mosquitto/conf.d/seedypod.conf`,
 written once), and installs/enables `hald.service` (`Restart=always`,
-`After=network-online.target mosquitto.service`, hardened). `--binary ./hald` installs a local
+`After=mosquitto.service`, hardened). `--binary ./hald` installs a local
 build; `--version vX.Y.Z` pins a release; `--no-enable` skips starting it.
 `--mqtt-lan` adds a password-protected listener on port 1884 for Home
 Assistant on another machine and prints the `homeassistant` password once;
@@ -369,6 +369,37 @@ reapplies them:
 | `noatime` on `/` | adds it to the `/` line in `/etc/fstab`, then `mount -o remount,noatime /` | `findmnt --verify` accepts the file and `/` shows `noatime`, or `fstab` is restored. Skipped when it's already there (stock Raspberry Pi OS) |
 
 `--no-wear` leaves all three alone.
+
+It also shortens boot. These are checked and undone the same way, but no check
+run during the install can see the next boot, so the rollback can't catch a unit
+that comes up without Wi-Fi. What protects a headless unit is the precheck: cloud-init
+only goes off if every active connection is shown to come back without it, and
+anything less leaves it on.
+
+| Change | How | Check, and the rollback if it fails |
+|---|---|---|
+| cloud-init off | `touch /etc/cloud/cloud-init.disabled`, once first boot is finished | Every active connection must come back without it: a keyfile in `/etc/NetworkManager/system-connections`, or a `netplan-*` one with `/etc/netplan/*.yaml` and netplan's generator present (Imager's Wi-Fi). Otherwise, or if nmcli can't say, it stays on. The file is removed if `daemon-reload` or that check fails after it |
+| No swap file on the card | `/etc/rpi/swap.conf.d/50-seedypod.conf` (`Mechanism=zram`) | The zram swap unit still exists and no longer needs the loop device, or the file is removed. Skipped when `Mechanism` is already set, or under `--no-wear` |
+| Mosquitto not waiting for the network | a copy of the vendor unit in `/etc/systemd/system` without `network-online.target` (a drop-in can't remove a dependency) | systemd no longer orders it after the target, or the copy is removed |
+
+`hald` and core don't wait for `network-online.target` either, because the pump
+and lights have to run without Wi-Fi. `--no-boot` leaves the three above alone.
+That start order needs three things, none of which `--no-boot` turns off:
+
+- `hald` opens its hardware once, so `ExecStartPre` waits up to 30 s for
+  `/sys/class/pwm/pwmchip0` and the I²C bus to be usable by its user, then starts
+  regardless.
+- Core's Home Assistant bridge retries with backoff (5 s up to 5 minutes), because
+  the broker may be out of reach until Wi-Fi is up.
+- There's no RTC, so after a power cut the clock is wrong until NTP answers. For the
+  first 3 minutes after boot, or until `systemd-timesyncd` has synced, pump schedules
+  and Autopilot's `timeOfDay` triggers wait. A pump slot in that window is skipped, and
+  a `timeOfDay` trigger fires within its usual grace. Dosing only runs through Autopilot.
+
+Imager's user, password, Wi-Fi and hostname are written once on first boot and
+stay, so cloud-init has nothing left to do; it would only ever act again if
+`meta-data` on `bootfs` got a new instance id. To turn it back on:
+`sudo rm /etc/cloud/cloud-init.disabled`.
 
 For core's backups, the user core runs as (the one who ran the installer, or
 the owner of `/opt/seedypod`; `SEEDYPOD_CORE_USER` overrides) joins the

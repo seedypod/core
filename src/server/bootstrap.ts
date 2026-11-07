@@ -58,6 +58,8 @@ export interface CoreOptions {
   /** How much core and hald log; node hosts only. */
   logging?: LoggingControl
   host?: Context['host']
+  /** False while the clock can't be believed yet (no RTC, NTP hasn't answered); node hosts only. */
+  clockTrusted?: () => boolean
   /** HomeKit (ADR 0023); node hosts only. Attached to the context here, unpublished on stop. */
   homekit?: HomeKitControl & { attach(ctx: Context): void, shutdown(): Promise<void> }
 }
@@ -87,13 +89,13 @@ export function createCore(o: CoreOptions): Core {
   const captures = new CaptureService({ hal: o.hal, store: o.store, sink, now: o.now, minBytes: o.captureMinBytes, analysis })
   // The light's single owner: manual > Autopilot > schedule (ADR-0020).
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
-  const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, log: m => console.warn(m) })
+  const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
   const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const retention = new TelemetryRetention({ store: o.store, now: o.now })
-  const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now })
+  const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now, clockTrusted: o.clockTrusted })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })
 
   let growTimer: ReturnType<typeof setInterval> | null = null

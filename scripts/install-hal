@@ -2,7 +2,7 @@
 # seedypod HAL (hald) installer for a Raspberry Pi running Raspberry Pi OS.
 # Usage: curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 #        scripts/install-hal [--version vX.Y.Z] [--binary ./hald] [--no-enable]
-#                            [--mqtt-lan | --no-broker] [--no-wear]
+#                            [--mqtt-lan | --no-broker] [--no-wear] [--no-boot]
 #
 # Downloads the hald binary for this CPU from the latest GitHub Release of
 # seedypod/core, installs it to /usr/local/bin, writes a commented
@@ -11,14 +11,16 @@
 # Mosquitto MQTT broker (127.0.0.1:1883, for hald and core on this Pi), and
 # installs and enables hald.service. It also cuts SD card writes (ADR-0021):
 # the journal moves to RAM, swap moves to zram, and / is mounted noatime; each
-# change is checked and undone if it doesn't take. Re-running upgrades the
-# binary, reapplies those settings and leaves hal.toml and the broker config
-# alone.
+# change is checked and undone if it doesn't take. It also shortens boot:
+# cloud-init goes off once it's done its work, and nothing that runs the
+# hardware waits for Wi-Fi. Re-running upgrades the binary, reapplies those
+# settings and leaves hal.toml and the broker config alone.
 #   --mqtt-lan   also open port 1884 to the LAN with a password, for Home
 #                Assistant on another machine (prints the password once)
 #   --no-broker  skip Mosquitto: you point hald and core at another broker,
 #                such as Home Assistant's Mosquitto add-on
 #   --no-wear    leave journald, swap and the root mount options as they are
+#   --no-boot    leave cloud-init, rpi-swap's swap file and Mosquitto's start order as they are
 set -euo pipefail
 
 # ---- SD card wear (ADR-0021) ---------------------------------------------------
@@ -178,6 +180,119 @@ RULE
   fi
 }
 
+# ---- boot time ---------------------------------------------------------------
+# A Pi Zero took 4 minutes from power to core. Each change is checked and undone like
+# the wear settings, but no check run now can see the next boot, so that isn't what
+# protects a headless unit: cloud-init only goes off if the connection in use is first
+# shown to come back without it, and anything less leaves it on.
+# tests/scripts/install-hal.boot.test.ts runs them the same way.
+CLOUD_DISABLED="$ROOT/etc/cloud/cloud-init.disabled"
+RPI_SWAP_GENERATOR="$ROOT/usr/lib/systemd/system-generators/rpi-swap-generator"
+RPI_SWAP_CONF="$ROOT/etc/rpi/swap.conf.d/50-seedypod.conf"
+MOSQ_VENDOR_UNIT="$ROOT/usr/lib/systemd/system/mosquitto.service"
+MOSQ_UNIT="$ROOT/etc/systemd/system/mosquitto.service"
+
+# Imager's Wi-Fi reaches NetworkManager through /etc/netplan, which cloud-init wrote
+# once and netplan's own generator reads on every boot, with or without cloud-init.
+# Anything else, or nothing to go on, counts as not coming back.
+network_survives_cloud_init() {
+  local lines line found=0
+  lines="$(nmcli -g TYPE,FILENAME connection show --active 2>/dev/null)" || return 1
+  while IFS= read -r line; do
+    case "$line" in
+      loopback:*|"") continue ;;
+      *:/etc/NetworkManager/system-connections/*) ;;
+      *:/run/NetworkManager/system-connections/netplan-*)
+        [ -e "$ROOT/usr/lib/systemd/system-generators/netplan" ] || return 1
+        compgen -G "$ROOT/etc/netplan/*.yaml" >/dev/null || return 1 ;;
+      *) return 1 ;;
+    esac
+    found=1
+  done <<<"$lines"
+  [ "$found" -eq 1 ]
+}
+
+# It runs ahead of everything on every boot, yet Imager's settings only apply once.
+boot_cloud_init() {
+  [ -d "$ROOT/etc/cloud" ] || return 0
+  if [ -e "$CLOUD_DISABLED" ]; then
+    echo "→ cloud-init already off"; return 0
+  fi
+  if [ ! -e "$ROOT/var/lib/cloud/instance/boot-finished" ]; then
+    echo "   cloud-init hasn't finished first boot, so it's left on; rerun install-hal to turn it off" >&2
+    return 1
+  fi
+  if ! network_survives_cloud_init; then
+    echo "   can't show this network comes back without cloud-init, so it's left on" >&2
+    return 1
+  fi
+  $SUDO touch "$CLOUD_DISABLED"
+  if $SUDO systemctl daemon-reload && network_survives_cloud_init; then
+    echo "→ cloud-init off now first boot is done (to undo: sudo rm $CLOUD_DISABLED)"
+    return 0
+  fi
+  $SUDO rm -f "$CLOUD_DISABLED"
+  $SUDO systemctl daemon-reload || true
+  echo "   turning cloud-init off didn't take; left it on" >&2
+  return 1
+}
+
+# rpi-swap's default gives zram a file on the card: 20 s of resizing each boot, and a
+# daily writeback to the card. Only zram itself suits a unit, and the file goes at the
+# next boot. Masking the resize unit instead would stop zram, which requires it.
+boot_swap() {
+  [ -e "$RPI_SWAP_GENERATOR" ] || return 0
+  local want=$'[Main]\nMechanism=zram'
+  if [ -f "$RPI_SWAP_CONF" ] && grep -v '^#' "$RPI_SWAP_CONF" | cmp -s - <(printf '%s\n' "$want"); then
+    echo "→ swap already zram alone"; return 0
+  fi
+  if grep -rqs '^Mechanism=' "$ROOT/etc/rpi/swap.conf" "$(dirname "$RPI_SWAP_CONF")"; then
+    echo "→ rpi-swap has its own Mechanism set, so it's left alone"; return 0
+  fi
+  $SUDO mkdir -p "$(dirname "$RPI_SWAP_CONF")"
+  printf '%s\n' "# Written by seedypod scripts/install-hal: no swap file on the SD card." "$want" | $SUDO tee "$RPI_SWAP_CONF" >/dev/null
+  if $SUDO systemctl daemon-reload && systemctl cat dev-zram0.swap >/dev/null 2>&1 \
+    && ! systemctl show -p Requires --value systemd-zram-setup@zram0.service | grep rpi-setup-loop >/dev/null; then
+    echo "→ swap is zram alone from the next boot (no swap file on the card)"
+    return 0
+  fi
+  $SUDO rm -f "$RPI_SWAP_CONF"
+  $SUDO systemctl daemon-reload || true
+  echo "   zram alone didn't take; swap left as it was" >&2
+  return 1
+}
+
+# Debian orders the broker after network-online.target, so without Wi-Fi hald and core
+# would wait out the timeout for a broker that only listens on this Pi. A drop-in can't
+# remove a dependency, so this is a whole copy of the vendor unit.
+boot_broker() {
+  [ -f "$MOSQ_VENDOR_UNIT" ] || return 0
+  local want
+  want="$(printf '%s\n' "# Written by seedypod scripts/install-hal: the vendor unit, not waiting for the network."; grep -v 'network-online.target' "$MOSQ_VENDOR_UNIT")"
+  if [ -f "$MOSQ_UNIT" ] && cmp -s "$MOSQ_UNIT" <(printf '%s\n' "$want"); then
+    echo "→ Mosquitto already starts without waiting for the network"; return 0
+  fi
+  printf '%s\n' "$want" | $SUDO tee "$MOSQ_UNIT" >/dev/null
+  if $SUDO systemctl daemon-reload && ! systemctl show -p After --value mosquitto.service | grep network-online >/dev/null; then
+    echo "→ Mosquitto starts without waiting for the network"
+    return 0
+  fi
+  $SUDO rm -f "$MOSQ_UNIT"
+  $SUDO systemctl daemon-reload || true
+  echo "   Mosquitto's start order didn't take; left it as it was" >&2
+  return 1
+}
+
+apply_boot_settings() {
+  local failed=0
+  boot_cloud_init || failed=1
+  # Swap is --no-wear's to leave alone too.
+  if [ "${WEAR:-1}" -eq 1 ]; then boot_swap || failed=1; fi
+  boot_broker || failed=1
+  if [ "$failed" -ne 0 ]; then echo "   some boot settings were skipped (above); the rest are in place" >&2; fi
+  return 0
+}
+
 # The login Imager set can be called seedypod too. useradd then has nothing to do and
 # hald runs as that login. It works, so warn rather than touch someone's account.
 warn_shared_login() {
@@ -273,6 +388,7 @@ BINARY=""
 ENABLE=1
 BROKER=local
 WEAR=1
+BOOT=1
 PREFIX=/usr/local/bin
 CONF_DIR=/etc/seedypod
 STATE_DIR=/var/lib/seedypod
@@ -286,6 +402,7 @@ while [ $# -gt 0 ]; do
     --mqtt-lan) BROKER=lan; shift ;;
     --no-broker) BROKER=none; shift ;;
     --no-wear) WEAR=0; shift ;;
+    --no-boot) BOOT=0; shift ;;
     -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -452,16 +569,26 @@ fi
 # ---- USB hub recovery ----------------------------------------------------------
 install_usb_recovery "$PREFIX/hald" "$CONF_DIR/hal.toml" "$ENABLE"
 
+# ---- boot time ---------------------------------------------------------------------
+if [ "$BOOT" -eq 1 ] && [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then
+  apply_boot_settings
+fi
+
 # ---- systemd ---------------------------------------------------------------
+I2C_BUS="$(sed -n 's/^bus *= *\([0-9]*\).*/\1/p' "$CONF_DIR/hal.toml" | head -1)"
 UNIT_CHANGED=0
 put_unit /etc/systemd/system/hald.service <<UNIT
 [Unit]
 Description=seedypod hardware daemon (hald)
 Documentation=https://github.com/$REPO/blob/main/docs/hardware/hal.md
-After=network-online.target mosquitto.service
-Wants=network-online.target
+# Not network-online.target: the pump and lights must run without Wi-Fi, and hald's
+# broker is on this Pi. mDNS picks an address up whenever one arrives.
+After=mosquitto.service
 
 [Service]
+# hald opens its hardware once, and starts before Wi-Fi now, so it can beat the PWM overlay
+# and udev's group ownership. Bounded, then on regardless: the pump's interlocks fail safe.
+ExecStartPre=-/usr/bin/timeout 30 /bin/sh -c 'until [ -w /sys/class/pwm/pwmchip0/export ] && [ -r /dev/i2c-${I2C_BUS:-1} ]; do sleep 1; done'
 ExecStart=$PREFIX/hald --config $CONF_DIR/hal.toml
 Environment=RUST_LOG=info SEEDYPOD_RECORDING_POLICY_FILE=/opt/seedypod/data/recording-policy.json
 User=$SERVICE_USER

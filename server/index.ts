@@ -15,9 +15,10 @@ import { createHal } from '../src/hardware/factory'
 import { HomeKitService } from '../src/homekit/service'
 import { createEventBus } from '../src/lib/eventBus'
 import { installRecordingPolicy, policyPath, RecordingPolicy } from '../src/logging/policy'
-import { bridgeStatus, connectBridge, type HaBridge } from '../src/mqtt/bridge'
+import { bridgeStatus, connectBridge, superviseBridge } from '../src/mqtt/bridge'
 import { CoreAdvertiser } from '../src/network/mdns'
 import { NmcliWifi } from '../src/network/wifi'
+import { nodeClockTrusted } from '../src/scheduler/clock'
 import { createCore } from '../src/server/bootstrap'
 import { defaultMigrationsFolder, SqliteStore } from '../src/store/sqlite'
 import { nodeDiskUsage, nodeFlashSource } from '../src/telemetry/flashSource'
@@ -66,29 +67,8 @@ const restore = new RestoreClient({ command: restoreCommand(), workDir: process.
 const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA_DIR, 'homekit') })
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 // System › Status reads its state, and the last connect error, through the context.
-let bridge: HaBridge | null = null
-let bridgeError: string | null = null
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, bridge, bridgeError), host: { hostname: hostname(), arch: arch() } })
-
-const bridgeUp = (b: HaBridge | null) => {
-  bridge = b
-  bridgeError = null
-}
-bridge = await connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }).catch((e: Error) => {
-  console.warn(`HA bridge not started: ${e.message}`)
-  bridgeError = e.message
-  return null
-})
-events.subscribe((e) => {
-  if (e.kind === 'mutation' && e.path === 'settings') {
-    bridge?.stop()
-    bridge = null
-    void connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? 'sim' }).then(bridgeUp).catch((err: Error) => {
-      console.warn(`HA bridge: ${err.message}`)
-      bridgeError = err.message
-    })
-  }
-})
+const haBridge = superviseBridge(() => connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }), events)
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
 
 const { app, injectWebSocket } = createApp({ ctx: core.ctx, staticRoot: './web/dist' })
 
@@ -106,7 +86,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     // First, so a teardown step that hangs or fails can't cost the held telemetry.
     store.telemetry.flush()
-    bridge?.stop()
+    haBridge.stop()
     void mdns.stop().then(() => core.stop()).then(() => vision?.close()).finally(() => {
       server.close()
       process.exit(0)
