@@ -4,6 +4,7 @@
 //! here (ADR-0009).
 
 use std::path::Path;
+use std::time::Duration;
 
 use hal_core::{Actuator, ActuatorId, DeviceError};
 
@@ -85,6 +86,23 @@ impl<P: PwmOut> Actuator for PwmActuator<P> {
     }
 }
 
+/// Run `op` up to `tries` times, `wait` apart, for as long as `transient` calls its error passing.
+pub fn retry_while<T, E>(
+    tries: u32,
+    wait: Duration,
+    transient: impl Fn(&E) -> bool,
+    mut op: impl FnMut() -> Result<T, E>,
+) -> Result<T, E> {
+    let mut left = tries.max(1);
+    loop {
+        left -= 1;
+        match op() {
+            Err(e) if left > 0 && transient(&e) => std::thread::sleep(wait),
+            done => return done,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +178,51 @@ mod tests {
         a.probe().unwrap();
         a.set_level(0.0).unwrap();
         assert_eq!(a.out.duties, vec![0.75, 0.75, 0.0]);
+    }
+
+    #[test]
+    fn retries_a_passing_error_until_it_clears() {
+        let mut calls = 0;
+        let got = retry_while(
+            5,
+            Duration::ZERO,
+            |e: &&str| *e == "busy",
+            || {
+                calls += 1;
+                if calls < 3 {
+                    Err("busy")
+                } else {
+                    Ok(calls)
+                }
+            },
+        );
+        assert_eq!(got, Ok(3));
+    }
+
+    #[test]
+    fn stops_at_the_limit_and_on_any_other_error() {
+        let mut calls = 0;
+        let got: Result<(), &str> = retry_while(
+            4,
+            Duration::ZERO,
+            |e: &&str| *e == "busy",
+            || {
+                calls += 1;
+                Err("busy")
+            },
+        );
+        assert_eq!((got, calls), (Err("busy"), 4));
+
+        let mut calls = 0;
+        let got: Result<(), &str> = retry_while(
+            4,
+            Duration::ZERO,
+            |e: &&str| *e == "busy",
+            || {
+                calls += 1;
+                Err("gone")
+            },
+        );
+        assert_eq!((got, calls), (Err("gone"), 1));
     }
 }
