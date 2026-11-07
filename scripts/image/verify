@@ -46,6 +46,9 @@ check "first boot grows the root partition" grep -q '\bresize\b' /boot/firmware/
 check "cameras get named when they appear" test -f /etc/udev/rules.d/71-seedypod-camera-sync.rules
 check "the journal stays off the card" grep -q '^Storage=volatile' /etc/systemd/journald.conf.d/50-seedypod-volatile.conf
 check "no swap file on the card" grep -q '^Mechanism=zram$' /etc/rpi/swap.conf.d/50-seedypod.conf
+for pkg in cloud-init netplan.io network-manager openssh-server avahi-daemon; do
+  check "$pkg survived the clean-up" dpkg-query -W -f='${Status}' "$pkg"
+done
 check "cloud-init is on, or Imager's login and Wi-Fi would never apply" test ! -e /etc/cloud/cloud-init.disabled
 check "the login logo is in place" test -x /usr/local/share/seedypod/login-logo
 check "the port 80 forward is in place" test -f /usr/local/share/seedypod/port80.nft

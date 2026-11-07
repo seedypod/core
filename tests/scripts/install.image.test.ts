@@ -93,6 +93,24 @@ describe('unpacking over a prefix core owns', () => {
     ])
   })
 
+  it('hands the prefix back and restarts core when an update dies partway', () => {
+    const r = run('PREFIX=/opt/seedypod CORE_USER=seedypod-core; claim_prefix; trap abandon_update EXIT; exit 7', { USER: 'alice' })
+    expect(r.code).toBe(7)
+    expect(log()).toContain('sudo chown -R seedypod-core /opt/seedypod')
+    expect(log()).toContain('sudo systemctl start seedypod-core.service')
+  })
+
+  it('leaves core alone on an abandoned update when the login owns it', () => {
+    run('PREFIX=/opt/seedypod CORE_USER=alice; abandon_update', { USER: 'alice' })
+    expect(log()).toBe('')
+  })
+
+  it('downloads before it stops anything, so a dropped link costs nothing', () => {
+    const body = readFileSync(script, 'utf8')
+    expect(body.indexOf('curl -fsSL "$TARBALL_URL"')).toBeLessThan(body.indexOf('\nclaim_prefix\n'))
+    expect(body).toMatch(/claim_prefix\ntrap abandon_update EXIT/)
+  })
+
   it('keeps pnpm on the store node_modules came from, or it would rebuild better-sqlite3', () => {
     expect(claim('seedypod-core').out).toBe('store=/opt/seedypod/.pnpm-store')
   })

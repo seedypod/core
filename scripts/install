@@ -326,6 +326,11 @@ claim_prefix() {
 finish_prefix() {
   if [ "$CORE_USER" != "$USER" ]; then sudo chown -R "$CORE_USER" "$PREFIX"; fi
 }
+# An update that dies halfway must not leave core stopped, or unable to write its database.
+abandon_update() {
+  finish_prefix
+  if [ "$CORE_USER" != "$USER" ]; then sudo systemctl start seedypod-core.service 2>/dev/null || true; fi
+}
 if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 if [ "$LOGIN_LOGO" = 1 ]; then install_login_logo; exit $?; fi
 if [ "$PORT80" != auto ]; then install_port80; exit $?; fi
@@ -352,9 +357,10 @@ fi
 
 echo "→ seedypod core: branch=$BRANCH prefix=$PREFIX"
 CORE_USER="$(core_user)"
-claim_prefix
 TMP=$(mktemp -d)
 curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
+claim_prefix
+trap abandon_update EXIT
 if file "$TMP/pkg" | grep -q Zip; then (cd "$TMP" && unzip -q pkg && tar xzf seedypod-core.tar.gz -C "$PREFIX"); else tar xzf "$TMP/pkg" -C "$PREFIX"; fi
 TARBALL="$TMP/pkg"
 [ ! -f "$TMP/seedypod-core.tar.gz" ] || TARBALL="$TMP/seedypod-core.tar.gz"
@@ -372,6 +378,7 @@ fi
 corepack enable >/dev/null 2>&1 || true
 install_deps
 finish_prefix
+trap - EXIT
 # Keyed on content, so a stale entry is only dead weight, but each update would leave a set of them.
 sudo rm -rf "$COMPILE_CACHE"
 

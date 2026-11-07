@@ -63,7 +63,7 @@ apt-get autoremove -y -q --purge >/dev/null
 apt-get clean
 rm -rf /var/lib/apt/lists/* /root/.cache /root/.npm /root/.local /root/.config /root/.bash_history
 find /var/log -type f -delete
-find /var/cache -type f -delete
+find /var/cache -type f -not -path '/var/cache/debconf/*' -delete
 rm -f /etc/ssh/ssh_host_* /var/lib/systemd/random-seed /var/lib/dbus/machine-id
 printf 'uninitialized\n' > /etc/machine-id
 

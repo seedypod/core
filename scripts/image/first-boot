@@ -23,10 +23,13 @@ set +e
 if [ "$stage" = --cloud-init ]; then boot_cloud_init; exit 0; fi
 
 id="$(hal_unit_id)"
-if [ -z "$id" ]; then echo "hald gave no unit id; trying again next boot" >&2; exit 1; fi
+if [ -z "$id" ] || [ "$id" = gardyn-unknown ]; then echo "hald gave no unit id; trying again next boot" >&2; exit 1; fi
 # So the setup hotspot can come up on a card that was never given a country or a network.
 rfkill unblock wifi
 apply_wear_settings
 mkdir -p "$(dirname "$UNIT_ENV")"
-echo "HAL_UNIT_ID=$id" > "$UNIT_ENV"
+# Atomic: a power cut right after first boot must not leave an empty file that looks finished.
+echo "HAL_UNIT_ID=$id" > "$UNIT_ENV.tmp"
+sync "$UNIT_ENV.tmp"
+mv -f "$UNIT_ENV.tmp" "$UNIT_ENV"
 echo "→ unit id $id"

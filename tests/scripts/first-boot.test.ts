@@ -93,6 +93,19 @@ describe('cloud-init', () => {
     chmodSync(join(bin, 'nmcli'), 0o755)
   })
 
+  it('takes hald\'s fallback id for no id, so two units never share one', () => {
+    writeFileSync(join(bin, 'hald'), '#!/bin/sh\necho \'{ "unit_id": "gardyn-unknown" }\'\n')
+    chmodSync(join(bin, 'hald'), 0o755)
+    expect(boot().code).toBe(1)
+    expect(unitId()).toBe('')
+  })
+
+  it('writes the unit id in one step, so a power cut can\'t leave an empty file', () => {
+    expect(boot().code).toBe(0)
+    expect(existsSync(join(root, `${UNIT_ENV}.tmp`))).toBe(false)
+    expect(unitId()).toContain('HAL_UNIT_ID=')
+  })
+
   it('goes off once it has finished, so later boots skip it', () => {
     mkdirSync(join(root, 'var/lib/cloud/instance'), { recursive: true })
     writeFileSync(join(root, 'var/lib/cloud/instance/boot-finished'), '')
