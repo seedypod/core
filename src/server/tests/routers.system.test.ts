@@ -66,6 +66,15 @@ describe('storage.database', () => {
   })
 })
 
+describe('system.bootLog', () => {
+  it('summarises the log when there is one, and is null when there isn\'t', async () => {
+    const line = 't hub=0\nt hub=1\n'
+    expect(await rig({ bootLog: async () => line }).c.system.bootLog()).toEqual({ boots: 2, hub: { up: 1, of: 2 } })
+    expect(await rig({ bootLog: async () => null }).c.system.bootLog()).toBeNull()
+    expect(await rig().c.system.bootLog()).toBeNull()
+  })
+})
+
 describe('system.logging', () => {
   const state = { mode: 'debug', loggingMode: 'quiet', debugUntil: '2026-11-01T12:10:00.000Z' } as const
 

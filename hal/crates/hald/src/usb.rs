@@ -126,7 +126,7 @@ pub fn bus_state(sysfs: &Path) -> BusState {
 }
 
 /// The board's one USB controller, whether or not a driver holds it.
-fn platform_controller(sysfs: &Path) -> Option<PathBuf> {
+pub fn platform_controller(sysfs: &Path) -> Option<PathBuf> {
     let entries = std::fs::read_dir(sysfs.join("bus/platform/devices")).ok()?;
     let mut usb = entries
         .flatten()

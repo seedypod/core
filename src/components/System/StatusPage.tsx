@@ -2,7 +2,7 @@ import { TriangleAlert } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { describeAlert } from '@/src/components/Alerts/AlertsPage'
-import { trpc } from '@/src/utils/trpc'
+import { apiBase, trpc } from '@/src/utils/trpc'
 import { checkSummary, worstState } from './checkState'
 import { StatusCards } from './StatusCards'
 import { coreBuild, fmtAgo, fmtUptime, healthHeadline, wifiBars } from './statusData'
@@ -93,6 +93,7 @@ function HealthStrip() {
   const scan = trpc.network.scan.useQuery(undefined, { refetchInterval: 60_000 })
   const bridge = trpc.system.bridge.useQuery(undefined, { refetchInterval: 30_000 })
   const flash = trpc.storage.flash.useQuery(undefined, { refetchInterval: 60_000 })
+  const bootLog = trpc.system.bootLog.useQuery()
   const list = checks.data?.checks ?? []
   const summary = checkSummary(list)
   const worstKind = worstState(list)
@@ -129,6 +130,12 @@ function HealthStrip() {
           {core?.build ?? '—'}
           {core && <span className="rounded border border-line px-[5px] text-[11px] text-fg-3">{core.channel}</span>}
         </Stat>
+        {bootLog.data && (
+          <Stat label="USB hub">
+            {bootLog.data.hub ? `up on ${bootLog.data.hub.up} of the last ${bootLog.data.hub.of} boots` : `${bootLog.data.boots} boots logged`}
+            <a href={`${apiBase()}/api/system/boot-log`} className="underline">Boot log</a>
+          </Stat>
+        )}
         <Stat label="Hardware">{info.data ? (info.data.halOnline && sys ? `hald ${sys.halVersion} · v${sys.contract}` : 'offline') : '—'}</Stat>
         <Stat label="Wi-Fi">
           {wifi.data?.available && wifi.data.mode === 'client'

@@ -21,6 +21,13 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
   # … reproduce, reboot, then: journalctl -b -1 -u hald -u seedypod-core
   sudo rm /etc/systemd/journald.conf.d/99-debug-persistent.conf && sudo systemctl restart systemd-journald
   ```
+- **A line per boot survives.** Each boot adds one line to `/var/lib/seedypod/boot-log`, written when the boot has settled (about 90 s in) and before any reboot for the USB hub. Download it from **Status**, or `curl localhost:3000/api/system/boot-log`. It keeps about the last 500 boots.
+
+  ```text
+  2026-11-07T04:42:17Z clock=synced up=92 boot=ab12cd34 core_s=41 hub=0 hprt0=0x00001c00 cameras=0 reboots=2 clean=1 temp=48.3 errors=3 outcome=reboot
+  ```
+
+  `clock=stale` means the unit hadn't reached a time server, so the timestamp may be wrong; `up` is seconds since boot either way. `core_s` is when core's service came up. `hub` is whether the USB hub came up by itself, and `hprt0` is the port register (`0x00001c00` is the stuck SE1 state). `reboots` counts reboots in a row for a missing hub. `clean=0` means the last shutdown wasn't clean, going by ext4 replaying its journal. `errors` counts log lines at error level so far this boot. `outcome` is what recovery did: `up`, `recovered`, `reboot`, `held` (a reboot was needed but not safe), `gave-up` or `none`. `-` means not known. There are no network names, addresses or log text in it.
 - **Logs are quiet by default.** On a unit, core and `hald` keep warnings and errors, so pump faults, refusals and raised alerts always show, and drop the routine lines before formatting them. The journal is already in RAM, so this saves CPU and memory rather than card wear. For more, open a timed window; it ends by itself and goes back to what was set:
 
   ```sh

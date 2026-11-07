@@ -88,6 +88,13 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     return c.body(tarStream(datasetEntries(ctx, w)), 200, { 'content-type': 'application/x-tar', 'content-disposition': `attachment; filename="${name}.tar"` })
   })
 
+  // A line per boot from hald, for reading away from the unit. Read-only: nothing in it is secret.
+  app.get('/api/system/boot-log', async (c) => {
+    const text = await ctx.bootLog?.()
+    if (!text) return c.json({ error: 'no boot log on this core yet' }, 404)
+    return c.body(text, 200, { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': 'attachment; filename="seedypod-boot-log.txt"' })
+  })
+
   // Backup bundle (ADR-0021): streamed; counts as an off-card backup once fully sent.
   app.get('/api/backup/download', async (c) => {
     if (!ctx.backup) return c.json({ error: 'this core has no backups (demo or tests)' }, 404)

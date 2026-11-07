@@ -7,6 +7,7 @@
 //! * `--sim` swaps every driver for `hal-sim` and runs on virtual time.
 
 mod board;
+mod boot_log;
 mod cameras;
 mod config;
 mod devices;
@@ -153,6 +154,18 @@ async fn main() -> anyhow::Result<()> {
             if let Err(e) = usb::record_boot(&cfg.state_dir, came_up) {
                 warn!(%e, "couldn't record this boot's USB hub");
             }
+        }
+        // Before any reboot, which would take the journal with it. It must never stop one.
+        let facts = boot_log::gather(
+            &recovery,
+            Path::new("/"),
+            Path::new("/sys"),
+            &cfg.state_dir,
+            Now::real().ts(),
+            usb::uptime().unwrap_or_default(),
+        );
+        if let Err(e) = boot_log::append(&cfg.state_dir, &facts.line()) {
+            warn!(%e, "couldn't add to the boot log");
         }
         match recovery {
             usb::Recovery::AlreadyUp => info!("USB bus came up by itself"),
