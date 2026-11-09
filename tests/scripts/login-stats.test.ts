@@ -115,7 +115,8 @@ describe('login-stats', () => {
       ['camera', '-:44m ago'],
       ['sensors', '-:4s ago', 'warn:1 stale'],
       ['alerts', 'warn:2 active'],
-      ['free', '-:186M ram', '-:53.4G disk'],
+      ['ram', 'bar-ok:56', '-:56% 240M/426M'],
+      ['disk', 'bar-ok:4', '-:4% 2.0G/57.9G'],
       ['power', 'ok:ok'],
     ])
   })
@@ -146,7 +147,8 @@ describe('login-stats', () => {
     stub('vcgencmd', 'echo throttled=0x50005')
     const { facts } = await stats()
     expect(facts).toContainEqual(['board', '-:36°C', 'bad:cpu 81°C'])
-    expect(facts).toContainEqual(['free', 'warn:29M ram', 'bad:39M disk'])
+    expect(facts).toContainEqual(['ram', 'bar-warn:93', 'warn:93% 397M/426M'])
+    expect(facts).toContainEqual(['disk', 'bar-bad:96', 'bad:96% 927M/976M'])
     expect(facts).toContainEqual(['power', 'bad:under-voltage'])
     stub('vcgencmd', 'echo throttled=0x50000')
     expect((await stats()).facts).toContainEqual(['power', 'warn:under-voltage since boot'])
@@ -158,7 +160,7 @@ describe('login-stats', () => {
     rmSync(join(root, 'sys/fs/cgroup/system.slice/seedypod-core.service'), { recursive: true })
     const r = await stats()
     expect(r.err).toBe('')
-    expect(r.facts.map(f => f[0])).toEqual(['web', 'status', 'uptime', 'board', 'free', 'power'])
+    expect(r.facts.map(f => f[0])).toEqual(['web', 'status', 'uptime', 'board', 'ram', 'disk', 'power'])
     expect(r.facts).toContainEqual(['status', 'bad:core down', 'ok:hald up'])
     // A refused connection doesn't wait out the deadline.
     expect(r.ms).toBeLessThan(4000)
@@ -189,7 +191,7 @@ describe('login-stats', () => {
     rmSync(join(bin, 'vcgencmd'))
     core.body = { ...SUMMARY, unitId: null, tankPct: null, captureAgeS: null, airC: null, humidityPct: null }
     const { facts } = await stats({ SSH_CONNECTION: undefined })
-    expect(facts.map(f => f[0])).toEqual(['version', 'status', 'outputs', 'board', 'sensors', 'alerts', 'free'])
+    expect(facts.map(f => f[0])).toEqual(['version', 'status', 'outputs', 'board', 'sensors', 'alerts', 'disk'])
     expect(facts).toContainEqual(['status', 'ok:core up', 'ok:hald up'])
     expect(facts).toContainEqual(['board', '-:36°C'])
   })
@@ -202,15 +204,44 @@ describe('login-logo with login-stats', () => {
     return { out: Buffer.from(output, 'base64').toString('utf8'), status, ms }
   }
 
-  it('writes the facts under the address, beside the logo and past it, then ends below them', async () => {
+  it('writes the word, version and address from the logo\'s top row, the facts under them', async () => {
     const r = await pty({ rows: 40 })
     expect(r.status).toBe(0)
+    // The word is in the frame's top row; the version goes one row down.
+    expect(r.out).toContain('\x1b[1B\r\x1b[46C\x1b[38;5;245mdev@081abf0')
     const after = r.out.slice(r.out.indexOf('http://seedypod.local:3000'))
     expect(after).toContain('\x1b[0m\r\n\r\n\r\x1b[46C\x1b[38;5;72munit    \x1b[0mgardyn-db753a85\r\n')
     expect(after).toContain('\x1b[38;5;72mstatus  \x1b[0m\x1b[38;5;114mcore up\x1b[0m\x1b[38;5;245m · \x1b[0m\x1b[38;5;114mhald up\x1b[0m')
     expect(after).toContain('\x1b[38;5;221m2 active\x1b[0m')
-    // Thirteen facts from row 12 run past the 20-row logo: no jump back to its corner.
-    expect(after.endsWith('power   \x1b[0m\x1b[38;5;114mok\x1b[0m\r\n\r\r\n\x1b[0m\x1b[?25h')).toBe(true)
+    // Fourteen facts on rows 4 to 17 fit beside the 20-row logo: back to its corner, then below it.
+    expect(after.endsWith('power   \x1b[0m\x1b[38;5;114mok\x1b[0m\r\x1b[17A\x1b[20B\r\r\n\x1b[0m\x1b[?25h')).toBe(true)
+  })
+
+  it('carries on past the bottom of the logo when there are more facts than rows', async () => {
+    writeFileSync(join(share, 'login-stats'), `#!/bin/sh\nfor i in $(seq 20); do printf "f$i\\t-:x\\n"; done\n`)
+    const r = await pty({ rows: 40 })
+    // Rows 4 to 23: no jump back to the logo's corner.
+    expect(r.out.endsWith('f20     \x1b[0mx\r\n\r\r\n\x1b[0m\x1b[?25h')).toBe(true)
+  })
+
+  it('draws ram and disk as bars, shaded by how full they are', async () => {
+    const r = await pty({ cols: 140 })
+    expect(r.out).toContain('\x1b[38;5;72mram     \x1b[0m[\x1b[38;5;29m██\x1b[38;5;35m██\x1b[38;5;78m█\x1b[38;5;114m█\x1b[38;5;240m░░░░\x1b[0m] 56% 240M/426M\r\n')
+    expect(r.out).toContain('\x1b[38;5;72mdisk    \x1b[0m[\x1b[38;5;240m░░░░░░░░░░\x1b[0m] 4% 2.0G/57.9G\r\n')
+    files({ 'proc/meminfo': 'MemTotal: 437120 kB\nMemAvailable: 30000 kB\n' })
+    stub('df', 'echo h; echo "/dev/root 1000000 950000 40000 96% /"')
+    const low = await pty({ cols: 140 })
+    expect(low.out).toContain('[\x1b[38;5;172m███\x1b[38;5;214m███\x1b[38;5;220m██\x1b[38;5;222m█\x1b[38;5;240m░\x1b[0m] \x1b[38;5;221m93% 397M/426M\x1b[0m')
+    expect(low.out).toContain('[\x1b[38;5;167m███\x1b[38;5;203m███\x1b[38;5;209m███\x1b[38;5;216m█\x1b[0m] \x1b[38;5;203m96% 927M/976M\x1b[0m')
+  })
+
+  it('narrows the bars to make room, then leaves them out', async () => {
+    const at = async (cols: number) => (await pty({ cols, env: { NO_COLOR: '1' } })).out.split('\r\n').filter(l => /^(ram|disk) /.test(l))
+    // 80 columns leaves 33 beside the logo.
+    expect((await pty()).out).toContain('ram     \x1b[0m[\x1b[38;5;29m██\x1b[38;5;35m█\x1b[38;5;78m█\x1b[38;5;114m█\x1b[38;5;240m░░░░\x1b[0m] 56% 240M/426M')
+    expect(await at(30)).toEqual(['ram     [███░░░] 56% 240M/426M', 'disk    [░░░░░░] 4% 2.0G/57.9G'])
+    expect(await at(24)).toEqual(['ram     56% 240M/426M', 'disk    4% 2.0G/57.9G'])
+    expect((await pty({ cols: 30, env: { LANG: 'C' } })).out).toContain('ram     [###---] 56% 240M/426M')
   })
 
   it('prints the version core runs, not the file a web update left behind', async () => {
@@ -224,8 +255,8 @@ describe('login-logo with login-stats', () => {
     core.body = { halOnline: true }
     const r = await pty({ env: { SSH_CONNECTION: undefined } })
     expect(r.out).toContain('\x1b[38;5;72mstatus  \x1b[0m')
-    // status, free and power: rows 12 to 14.
-    expect(r.out.endsWith('\r\x1b[14A\x1b[20B\r\r\n\x1b[0m\x1b[?25h')).toBe(true)
+    // status, disk and power: rows 4 to 6.
+    expect(r.out.endsWith('\r\x1b[6A\x1b[20B\r\r\n\x1b[0m\x1b[?25h')).toBe(true)
   })
 
   it('cuts what doesn\'t fit at 80 columns', async () => {
@@ -250,7 +281,8 @@ describe('login-logo with login-stats', () => {
       'camera  44m ago',
       'sensors 4s ago · 1 stale',
       'alerts  2 active',
-      'free    186M ram · 53.4G disk',
+      'ram     [██████░░░░] 56% 240M/426M',
+      'disk    [░░░░░░░░░░] 4% 2.0G/57.9G',
       'power   ok',
       '',
     ])

@@ -54,31 +54,59 @@ gather() {
 }
 
 # Sets $facts to one line per fact, the labels in a column, cut to $1 columns;
-# coloured when $2 is 1. Each fact is login-stats' label TAB state:text...
+# coloured when $2 is 1. Each fact is login-stats' label TAB state:text...; a
+# first segment bar-<state>:<percent> is drawn as a bar, the text after it beside.
 facts=()
 fact_lines() {
-  local width=$1 colour=$2 fact label seg state text line used need sep=', '
-  local -a segs
+  local width=$1 colour=$2 fact label seg state text line used need sep=', ' full='#' empty='-'
+  local i c cells filled shade pen glued next
+  local -a segs shades
   local -A tint=([ok]=114 [warn]=221 [bad]=203 [dim]=245)
+  # Four shades a state, darkest first, as on sleepypod's welcome screen.
+  local -A ramp=([ok]='29 35 78 114' [warn]='172 214 220 222' [bad]='167 203 209 216')
   [ "$width" -gt 12 ] || return 0
-  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) sep=' · ' ;; esac
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) sep=' · ' full='█' empty='░' ;; esac
   for fact in "${stats[@]}"; do
     IFS=$'\t' read -r -a segs <<< "$fact"
     [ "${#segs[@]}" -gt 1 ] || continue
     printf -v label '%-8s' "${segs[0]:0:7}"
-    line="" used=8
+    line="" used=8 glued=""
     [ "$colour" = 1 ] && line=$'\e[38;5;72m'
     line+=$label
     [ "$colour" = 1 ] && line+=$'\e[0m'
-    for seg in "${segs[@]:1}"; do
+    for ((i = 1; i < ${#segs[@]}; i++)); do
+      seg=${segs[i]}
       state=${seg%%:*} text=${seg#*:}
+      if [[ $state == bar-* ]]; then
+        # Ten cells, fewer when the text after it needs the room, and none under four.
+        [ "$used" -eq 8 ] && [[ $text =~ ^[0-9]{1,3}$ ]] || continue
+        next=${segs[i + 1]:-} next=${next#*:}
+        cells=$((width - used - 3 - ${#next}))
+        [ "$cells" -le 10 ] || cells=10
+        [ "$cells" -ge 4 ] || continue
+        filled=$(((text * cells + 50) / 100))
+        [ "$filled" -le "$cells" ] || filled=$cells
+        read -r -a shades <<< "${ramp[${state#bar-}]:-${ramp[ok]}}"
+        line+='[' pen=""
+        for ((c = 0; c < cells; c++)); do
+          if [ "$colour" = 1 ]; then
+            if [ "$c" -lt "$filled" ]; then shade=${shades[filled > 1 ? c * 3 / (filled - 1) : 0]}; else shade=240; fi
+            [ "$shade" = "$pen" ] || line+=$'\e[38;5;'"${shade}m" pen=$shade
+          fi
+          if [ "$c" -lt "$filled" ]; then line+="$full"; else line+="$empty"; fi
+        done
+        [ -n "$pen" ] && line+=$'\e[0m'
+        line+='] '
+        used=$((used + cells + 3)) glued=1
+        continue
+      fi
       need=${#text}
-      [ "$used" -gt 8 ] && need=$((need + ${#sep}))
+      [ "$used" -gt 8 ] && [ -z "$glued" ] && need=$((need + ${#sep}))
       if [ $((used + need)) -gt "$width" ]; then
         [ "$used" -gt 8 ] && break
         text="${text:0:$((width - used - 2))}.." need=$((width - used))
       fi
-      if [ "$used" -gt 8 ]; then
+      if [ "$used" -gt 8 ] && [ -z "$glued" ]; then
         if [ "$colour" = 1 ]; then line+=$'\e[38;5;245m'"$sep"$'\e[0m'; else line+=$sep; fi
       fi
       if [ "$colour" = 1 ] && [ -n "${tint[$state]:-}" ]; then
@@ -86,7 +114,7 @@ fact_lines() {
       else
         line+=$text
       fi
-      used=$((used + need))
+      used=$((used + need)) glued=""
     done
     facts+=("$line")
   done
@@ -112,6 +140,8 @@ case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;;
 
 # SSH passes TERM and little else: Debian's sshd accepts COLORTERM but a stock
 # client doesn't send it, so most truecolor terminals arrive as xterm-256color.
+# Those get the still logo: the terminal isn't asked. A query it doesn't know
+# (DECRQSS, say) is printed as text by some, macOS Terminal among them.
 depth=0
 case "${TERM:-}" in
   ""|dumb|unknown) plain ;;
@@ -138,15 +168,6 @@ trap 'exit 0' HUP TERM
 # login shell, which then abandons /etc/profile and the user's dotfiles with it.
 stty -echo -icanon -isig min 1 time 0
 printf '\e[?25l'
-
-# A 256color terminal may still do truecolor: set a colour and ask for it back.
-# Terminals that can't either don't answer or forget it; all answer DA1, which
-# ends the wait. The timeout is for a slow link, not a slow terminal.
-if [ "$depth" = 256 ]; then
-  printf '\e[38;2;1;2;3m\eP$qm\e\\\e[0m\e[c'
-  IFS= read -r -d c -t 0.4 reply
-  [[ "${reply:-}" == *[:\;]1[:\;]2[:\;]3m* ]] && depth=24
-fi
 
 mapfile -t lines < "$frames"
 [ "${#lines[@]}" -gt 3 ] || exit 0
