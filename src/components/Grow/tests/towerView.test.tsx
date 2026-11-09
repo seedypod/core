@@ -128,6 +128,23 @@ describe('TowerView', () => {
     expect(screen.queryByTestId('zone-legend')).toBeNull()
   })
 
+  it('holds the zones on or off when told to, with no toggle and whatever this browser chose', async () => {
+    localStorage.setItem('seedypod.lightZones', 'off')
+    const { unmount } = render(<TowerView pods={pods} waterPct={null} lightLevel={0} zones onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Light zones' })).toBeNull()
+    expect(screen.getByTestId('zone-legend')).toBeTruthy()
+    expect(mounted.updates.at(-1)?.zones).toBe(true)
+    unmount()
+    localStorage.setItem('seedypod.lightZones', 'on')
+    render(<TowerView pods={pods} waterPct={null} lightLevel={0} zones={false} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Light zones' })).toBeNull()
+    expect(screen.queryByTestId('zone-legend')).toBeNull()
+    expect(mounted.updates.at(-1)?.zones).toBe(false)
+    localStorage.clear()
+  })
+
   it('puts the aside down the right', async () => {
     render(<TowerView pods={pods} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} aside={<section aria-label="Cycle">Day 19</section>} />)
     await waitFor(() => expect(mounted.opts).not.toBeNull())

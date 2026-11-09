@@ -199,10 +199,10 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
  * (unless `legend` is false) and the hint along the bottom.
  * `aside` is a panel down the right on a wide view, with the tower moved over
  * to centre in the rest. The light-zone toggle by the legend colours the pods
- * by how much light they get, for placing plants. Calls `onUnavailable`
- * without WebGL.
+ * by how much light they get, for placing plants; `zones` fixes that on or
+ * off and drops the toggle. Calls `onUnavailable` without WebGL.
  */
-export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onClose, onPart, partLabels, controls, status, podAction, aside, legend = true, onUnavailable }: {
+export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onClose, onPart, partLabels, controls, status, podAction, aside, legend = true, zones: fixedZones, onUnavailable }: {
   pods: PodState[]
   waterPct: number | null
   lightLevel: number
@@ -219,6 +219,8 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   podAction?: ReactNode
   aside?: ReactNode
   legend?: boolean
+  /** Colour by light zone (true) or status (false) throughout, with no toggle. */
+  zones?: boolean
   onUnavailable: () => void
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -237,11 +239,12 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   const podCount = pods.length || 30
   const [preloaded, setPreloaded] = useState<Promise<typeof RendererModule | null> | null>(null)
   const hovered = hover?.kind === 'pod' ? hover.slot : null
-  const [zones, setZones] = useState(savedZones)
+  const [chosenZones, setZones] = useState(savedZones)
+  const zones = fixedZones ?? chosenZones
   const toggleZones = () => {
-    setZones(!zones)
+    setZones(!chosenZones)
     try {
-      localStorage.setItem(ZONES_KEY, zones ? 'off' : 'on')
+      localStorage.setItem(ZONES_KEY, chosenZones ? 'off' : 'on')
     }
     catch {
       // private window: the choice lasts for this visit
@@ -340,15 +343,17 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         )}
       </div>
       <div className="pointer-events-none absolute inset-x-[22px] bottom-4 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-2">
-        <button
-          type="button"
-          aria-pressed={zones}
-          onClick={toggleZones}
-          className={cn('pointer-events-auto flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]', zones ? 'border-fg-2 bg-active text-fg' : 'border-line-2 bg-surface/80 text-fg-2 hover:text-fg')}
-        >
-          <Sun size={12} aria-hidden="true" />
-          Light zones
-        </button>
+        {fixedZones === undefined && (
+          <button
+            type="button"
+            aria-pressed={zones}
+            onClick={toggleZones}
+            className={cn('pointer-events-auto flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]', zones ? 'border-fg-2 bg-active text-fg' : 'border-line-2 bg-surface/80 text-fg-2 hover:text-fg')}
+          >
+            <Sun size={12} aria-hidden="true" />
+            Light zones
+          </button>
+        )}
         {zones && (
           <span data-testid="zone-legend" className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-fg-3">{MODEL_NAME[model]}</span>

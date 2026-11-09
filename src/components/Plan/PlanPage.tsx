@@ -1,7 +1,10 @@
-import { LayoutGrid, Minus, Pencil, Plus, Sprout, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Box, LayoutGrid, Minus, Pencil, Plus, Sprout, Trash2 } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
+import type { PodStatus } from '@/src/components/Grow/towerLayout'
+import type { PodState } from '@/src/components/Grow/towerScene'
+import { TowerView } from '@/src/components/Grow/TowerView'
 import { Badge, Button, Card, CardHeader, GhostIcon, SectionLabel } from '@/src/components/ds/core'
 import { Modal } from '@/src/components/ds/feedback'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
@@ -23,6 +26,62 @@ const CATS: { value: Category | 'all', label: string }[] = [
   { value: 'fruiting', label: 'Fruiting' }, { value: 'vegetable', label: 'Veg' }, { value: 'legume', label: 'Beans' }, { value: 'flower', label: 'Flowers' },
 ]
 
+type View = '3d' | '2d'
+export const VIEW_KEY = 'seedypod.planView'
+const VIEWS: { value: View, label: ReactNode }[] = [
+  { value: '3d', label: [<Box key="i" size={14} aria-hidden="true" />, '3D'] },
+  { value: '2d', label: [<LayoutGrid key="i" size={14} aria-hidden="true" />, '2D'] },
+]
+
+/** The view this browser last picked; the 3D tower until it picks the grid. */
+function savedView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === '2d' ? '2d' : '3d'
+  }
+  catch {
+    return '3d'
+  }
+}
+
+interface Slot { slot: number, zone: string | null }
+interface Assignment { slot: number, plantName: string, reason: string, fallback: number }
+interface Planted { slot: number, status: PodStatus, plant: string | null }
+
+/** The flat grid of slots, tinted by zone: planned plants upright, planted ones italic, fallbacks outlined. */
+function PlanGrid({ cols, slots, bySlot, existing }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, existing: Map<number, string> }) {
+  return (
+    <div data-testid="plan-grid" className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+      {slots.map((s) => {
+        const a = bySlot.get(s.slot)
+        const ex = existing.get(s.slot)
+        const z = (s.zone ?? 'medium') as Zone
+        return (
+          <div key={s.slot} className={cn('flex min-h-[46px] flex-col justify-center rounded-[var(--radius-ctl)] border px-2 py-1', a?.fallback ? 'outline outline-1 outline-[var(--status-warn)]' : '')} style={zoneStyle(z)} title={a?.reason ?? ex ?? `${ZONE_LABEL[z]} light`}>
+            <div className="flex items-center justify-between font-mono text-[10px] text-fg-3">
+              <span>{s.slot}</span>
+              <span>{z === 'medium' ? 'med' : z}</span>
+            </div>
+            <div className={cn('truncate text-[12px] leading-tight', a ? 'text-fg' : ex ? 'text-fg-2 italic' : 'text-fg-3')}>{a?.plantName ?? ex ?? ''}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * The same slots on the 3D tower, collars coloured by zone. A planned pod shows
+ * its plant as a seedling, with why it sits there in its callout; a planted one
+ * keeps its own state.
+ */
+export function planPods(slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>): PodState[] {
+  return slots.map((s): PodState => {
+    const a = bySlot.get(s.slot)
+    if (a) return { slot: s.slot, status: 'seeded', plant: a.plantName, harvest: { state: 'unknown', window: null, cover: null, targetCover: 0, daysToReady: null, daysLeft: null, reason: `Planned: ${a.reason}.` } }
+    return planted.get(s.slot) ?? { slot: s.slot, status: 'empty', plant: null }
+  })
+}
+
 export function PlanPage() {
   const utils = trpc.useUtils()
   const [model, setModel] = useState<Model>('home')
@@ -35,6 +94,18 @@ export function PlanPage() {
   const [editing, setEditing] = useState<EditablePlant | 'new' | null>(null)
   // A saved plan loaded for editing: saving updates it, with its own start date and overrides, so it lays out and sows as saved.
   const [opened, setOpened] = useState<{ id: string, start: string | null, overrides?: Overrides } | null>(null)
+  const [view, setView] = useState<View>(savedView)
+  const [noWebGL, setNoWebGL] = useState(false)
+  const [selected, setSelected] = useState<number | null>(null)
+  const chooseView = (v: View) => {
+    setView(v)
+    try {
+      localStorage.setItem(VIEW_KEY, v)
+    }
+    catch {
+      // private window: the choice lasts for this visit
+    }
+  }
 
   const zones = trpc.planner.zones.useQuery({ model })
   const catalog = trpc.planner.catalog.useQuery({ q: q || undefined, category: cat === 'all' ? undefined : cat })
@@ -57,12 +128,31 @@ export function PlanPage() {
   const total = request.reduce((s, r) => s + r.count, 0)
   const free = zones.data ? zones.data.slots.length - (pods.data ?? []).filter(p => p.status !== 'empty' && p.slot <= zones.data.slots.length).length : 0
   const bySlot = new Map((layout.data?.assignments ?? []).map(a => [a.slot, a]))
-  const existing = new Map((pods.data ?? []).filter(p => p.status !== 'empty').map(p => [p.slot, p.plant ?? '']))
+  const planted = new Map((pods.data ?? []).filter(p => p.status !== 'empty').map(p => [p.slot, { slot: p.slot, status: p.status, plant: p.plant }]))
+  const existing = new Map([...planted].map(([slot, p]) => [slot, p.plant ?? '']))
   const bump = (id: string, d: number) => setPicks(p => ({ ...p, [id]: Math.max(0, (p[id] ?? 0) + d) }))
+  const shown: View = noWebGL ? '2d' : view
+  const fallbacks = (layout.data?.assignments ?? []).some(a => a.fallback)
 
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-4">
-      <PageHeader title="Plan" right={<SegmentedControl<Model> size="sm" value={model} onChange={setModel} options={[{ value: 'home', label: 'Home · 30' }, { value: 'studio', label: 'Studio · 16' }]} />} />
+      <PageHeader
+        title="Plan"
+        right={(
+          <div className="flex flex-wrap gap-2">
+            {!noWebGL && <SegmentedControl<View> size="sm" ariaLabel="Plan view" value={shown} onChange={chooseView} options={VIEWS} />}
+            <SegmentedControl<Model>
+              size="sm"
+              value={model}
+              onChange={(m) => {
+                setModel(m)
+                setSelected(null)
+              }}
+              options={[{ value: 'home', label: 'Home · 30' }, { value: 'studio', label: 'Studio · 16' }]}
+            />
+          </div>
+        )}
+      />
 
       <div className="grid gap-4 min-[900px]:grid-cols-[1fr_360px]">
         <Card>
@@ -82,26 +172,29 @@ export function PlanPage() {
               </div>
             )}
           />
-          {zones.data && (
-            <div className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${zones.data.cols}, minmax(0, 1fr))` }}>
-              {zones.data.slots.map((s) => {
-                const a = bySlot.get(s.slot)
-                const ex = existing.get(s.slot)
-                const z = (s.zone ?? 'medium') as Zone
-                return (
-                  <div key={s.slot} className={cn('flex min-h-[46px] flex-col justify-center rounded-[var(--radius-ctl)] border px-2 py-1', a?.fallback ? 'outline outline-1 outline-[var(--status-warn)]' : '')} style={zoneStyle(z)} title={a?.reason ?? ex ?? `${ZONE_LABEL[z]} light`}>
-                    <div className="flex items-center justify-between font-mono text-[10px] text-fg-3">
-                      <span>{s.slot}</span>
-                      <span>{z === 'medium' ? 'med' : z}</span>
-                    </div>
-                    <div className={cn('truncate text-[12px] leading-tight', a ? 'text-fg' : ex ? 'text-fg-2 italic' : 'text-fg-3')}>{a?.plantName ?? ex ?? ''}</div>
-                  </div>
-                )
-              })}
+          {zones.data && shown === '2d' && <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} existing={existing} />}
+          {zones.data && shown === '3d' && (
+            <div className="mt-3">
+              <TowerView
+                pods={planPods(zones.data.slots, bySlot, planted)}
+                waterPct={null}
+                // Lit, so the zones read, whatever the light is doing now.
+                lightLevel={100}
+                zones
+                selected={selected}
+                onSelect={setSelected}
+                onClose={() => setSelected(null)}
+                onUnavailable={() => setNoWebGL(true)}
+              />
             </div>
           )}
+          {noWebGL && <p className="mt-2 text-xs text-fg-3">The 3D tower needs WebGL, which this browser doesn&apos;t offer, so the plan is shown as a grid.</p>}
           <Unplaced unplaced={layout.data?.unplaced ?? []} suggestions={layout.data?.suggestions ?? []} />
-          <p className="mt-2 text-[12px] text-fg-3">{`Italic = already planted.${(layout.data?.assignments ?? []).some(a => a.fallback) ? ' Outlined pods sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`}</p>
+          <p className="mt-2 text-[12px] text-fg-3">
+            {shown === '2d'
+              ? `Italic = already planted.${fallbacks ? ' Outlined pods sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`
+              : `Planned pods show as seedlings; click one for why it sits there.${fallbacks ? ' Some sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`}
+          </p>
         </Card>
 
         <Card>
