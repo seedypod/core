@@ -26,3 +26,18 @@ test('plan: add plants, see the zone layout, save and apply onto the pods', asyn
   const seeded = pods.filter(p => p.status === 'seeded').map(p => p.plant)
   expect(seeded).toEqual(expect.arrayContaining(['Basil', 'Mint']))
 })
+
+test('plan: opens on the 3D tower, and the 2D grid is remembered and leaves three.js alone', async ({ page }) => {
+  await page.goto('/plan')
+  await expect(page.getByTestId('tower-3d')).toBeVisible()
+  await page.getByRole('tab', { name: '2D' }).click()
+  await expect(page.getByTestId('plan-grid')).toBeVisible()
+  const scripts: string[] = []
+  page.on('request', r => r.url().endsWith('.js') && scripts.push(r.url()))
+  await page.reload()
+  await expect(page.getByTestId('plan-grid')).toBeVisible()
+  await expect(page.getByRole('tab', { name: '2D' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('tower-3d')).toHaveCount(0)
+  await page.waitForTimeout(500)
+  expect(scripts.filter(u => /towerRenderer/.test(u))).toEqual([])
+})

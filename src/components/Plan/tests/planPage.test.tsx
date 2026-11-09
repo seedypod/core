@@ -1,7 +1,18 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PlanPage } from '../PlanPage'
+import type { PodState } from '@/src/components/Grow/towerScene'
+import { PlanPage, VIEW_KEY } from '../PlanPage'
+
+// The 3D view is covered by towerView.test.tsx and the browser tests; here it reports what it was given.
+const { tower } = vi.hoisted(() => ({ tower: { props: null as null | Record<string, unknown>, unavailable: false } }))
+vi.mock('@/src/components/Grow/TowerView', () => ({
+  TowerView: (props: Record<string, unknown>) => {
+    tower.props = props
+    if (tower.unavailable) queueMicrotask(() => (props.onUnavailable as () => void)())
+    return <div data-testid="tower" />
+  },
+}))
 
 // The hooks answer from the real planner, so the page renders real layouts and sowing dates.
 const { state, calls, invalidate } = vi.hoisted(() => ({
@@ -65,11 +76,19 @@ beforeEach(() => {
   state.applied = null
   state.custom = []
   for (const f of [...Object.values(calls), invalidate]) f.mockReset()
+  tower.props = null
+  tower.unavailable = false
+  localStorage.clear()
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 const add = (name: string) => fireEvent.click(screen.getByRole('button', { name: `Add ${name}` }))
 const search = (q: string) => fireEvent.change(screen.getByLabelText('Search plants'), { target: { value: q } })
+const flat = () => fireEvent.click(screen.getByRole('tab', { name: '2D' }))
+const towerPods = () => tower.props?.pods as PodState[]
 
 describe('PlanPage', () => {
   it('shows the tower’s zones, the catalog, and how to start', () => {
@@ -126,6 +145,7 @@ describe('PlanPage', () => {
   it('keeps planted pods, outlines fallbacks and reports what does not fit', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }, { slot: 2, plant: null, status: 'empty' }]
     render(<PlanPage />)
+    flat()
     expect(screen.getByText(/0 planned · 29 free/)).toBeTruthy()
     expect(screen.getByText('Mint')).toBeTruthy()
     search('jalapeño')
@@ -202,6 +222,7 @@ describe('PlanPage', () => {
     const overrides = { pins: [{ slot: 4, plantId: 'basil' }] }
     state.plans = [{ id: 'mcp-1', name: 'Gardyn order', model: 'studio', mode: 'staggered', appliedAt: null, start: '2026-10-01', layout: { model: 'studio', assignments: [{ slot: 4 }, { slot: 7 }], unplaced: [], free: [], overrides }, request: [{ plantId: 'basil', count: 2 }] }]
     render(<PlanPage />)
+    flat()
     fireEvent.click(screen.getByRole('button', { name: 'Open' }))
     expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 2 }], respectExisting: true, overrides })
     expect(screen.getByText('High 5')).toBeTruthy()
@@ -215,5 +236,97 @@ describe('PlanPage', () => {
     add('Basil')
     expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 1 }], respectExisting: true })
     expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy()
+  })
+
+  it('opens on the 3D tower, lit and coloured by zone, with the grid’s slots', () => {
+    render(<PlanPage />)
+    expect(screen.getByRole('tab', { name: '3D' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByTestId('tower')).toBeTruthy()
+    expect(screen.queryByTestId('plan-grid')).toBeNull()
+    expect(tower.props).toMatchObject({ zones: true, lightLevel: 100, waterPct: null, selected: null })
+    expect(towerPods().map(p => p.slot)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1))
+    expect(screen.getByText('High 12')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Studio · 16' }))
+    expect(towerPods()).toHaveLength(16)
+    flat()
+    expect(screen.getByTestId('plan-grid').children).toHaveLength(16)
+  })
+
+  it('shows planned, planted and empty pods on the tower, and what did not fit', () => {
+    state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
+    render(<PlanPage />)
+    search('jalapeño')
+    for (let i = 0; i < 14; i++) add('Jalapeño')
+    search('mint')
+    for (let i = 0; i < 6; i++) add('Mint')
+    const pods = towerPods()
+    expect(pods.find(p => p.slot === 1)).toEqual({ slot: 1, status: 'growing', plant: 'Mint' })
+    const planned = pods.filter(p => p.status === 'seeded')
+    expect(planned.filter(p => p.plant === 'Jalapeño')).toHaveLength(14)
+    // Some of the six Mint fit and the rest are reported below.
+    expect(planned.filter(p => p.plant === 'Mint').length).toBeGreaterThan(0)
+    expect(planned.length).toBeLessThan(20)
+    expect(pods.filter(p => p.status === 'empty')).toHaveLength(30 - 1 - planned.length)
+    expect(planned.every(p => p.harvest?.state === 'unknown' && /^Planned: .+\.$/.test(p.harvest.reason))).toBe(true)
+    expect(planned.some(p => p.harvest?.reason.includes('one zone lower'))).toBe(true)
+    expect(screen.getByText(/^Didn’t fit: Mint/)).toBeTruthy()
+    expect(screen.getByText(/click one for why it sits there\. Some sit one zone lower than ideal/)).toBeTruthy()
+    flat()
+    expect(screen.getByText(/Didn’t fit: Mint/)).toBeTruthy()
+    expect(screen.getByText(/Outlined pods sit one zone lower than ideal/)).toBeTruthy()
+  })
+
+  it('leaves unplanned pods empty on the tower', () => {
+    render(<PlanPage />)
+    expect(towerPods().every(p => p.status === 'empty' && p.plant === null)).toBe(true)
+    expect(screen.getByText('Planned pods show as seedlings; click one for why it sits there.')).toBeTruthy()
+  })
+
+  it('pins a pod’s callout and unpins it, and forgets it on another model', () => {
+    render(<PlanPage />)
+    act(() => (tower.props?.onSelect as (slot: number) => void)(4))
+    expect(tower.props?.selected).toBe(4)
+    act(() => (tower.props?.onClose as () => void)())
+    expect(tower.props?.selected).toBeNull()
+    act(() => (tower.props?.onSelect as (slot: number) => void)(20))
+    fireEvent.click(screen.getByRole('tab', { name: 'Studio · 16' }))
+    expect(tower.props?.selected).toBeNull()
+  })
+
+  it('remembers the view in this browser', () => {
+    const { unmount } = render(<PlanPage />)
+    flat()
+    expect(localStorage.getItem(VIEW_KEY)).toBe('2d')
+    expect(screen.getByTestId('plan-grid')).toBeTruthy()
+    expect(screen.queryByTestId('tower')).toBeNull()
+    unmount()
+    render(<PlanPage />)
+    expect(screen.getByRole('tab', { name: '2D' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByTestId('plan-grid')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: '3D' }))
+    expect(localStorage.getItem(VIEW_KEY)).toBe('3d')
+    expect(screen.getByTestId('tower')).toBeTruthy()
+  })
+
+  it('opens on 3D and still switches when storage is blocked', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    render(<PlanPage />)
+    expect(screen.getByTestId('tower')).toBeTruthy()
+    flat()
+    expect(screen.getByTestId('plan-grid')).toBeTruthy()
+  })
+
+  it('falls back to the grid, without the toggle, when there is no WebGL', async () => {
+    tower.unavailable = true
+    render(<PlanPage />)
+    expect(await screen.findByText(/needs WebGL/)).toBeTruthy()
+    expect(screen.getByTestId('plan-grid')).toBeTruthy()
+    expect(screen.queryByRole('tablist', { name: 'Plan view' })).toBeNull()
+    expect(screen.getByText(/^Italic = already planted\./)).toBeTruthy()
   })
 })
