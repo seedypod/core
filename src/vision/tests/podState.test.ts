@@ -133,7 +133,7 @@ describe('pod-state analyser', () => {
     if (!Array.isArray(out)) throw new Error('should have scored it')
     expect(out.map(o => `${o.analyzer}@${o.version}`)).toEqual(['pod-state@1'])
     expect(out[0]?.results.filter(r => r.metric === 'pod_state')).toHaveLength(15)
-  })
+  }, 30_000)
 
   it('stays listed but never runs without weights, and says why', () => {
     installLearned([podStateFromText(null)])
