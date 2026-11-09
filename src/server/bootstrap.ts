@@ -6,6 +6,7 @@
 import type { AutopilotEngine } from '../autopilot/engine'
 import type { BackupService } from '../backup/service'
 import type { RestoreClient } from '../backup/restore'
+import type { UpdateClient } from '../update/client'
 import { createAutopilot } from '../autopilot/instance'
 import { CaptureService, MemorySink, type BlobSink } from '../camera/captures'
 import type { MirroredSink } from '../camera/mirrorSink'
@@ -47,6 +48,8 @@ export interface CoreOptions {
   backup?: BackupService
   /** Restores a backup through the root helper (ADR-0021); node hosts only. */
   restore?: RestoreClient
+  /** Updates core and hald through the root helper (ADR-0026); node hosts only. */
+  update?: UpdateClient
   /** The SD card's write counter (ADR-0021); omitted off a Pi. */
   flashSource?: FlashSource | null
   /** Metadata about the database for the Database view; a real scan on node hosts, sample data in the demo. */
@@ -91,7 +94,7 @@ export function createCore(o: CoreOptions): Core {
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, update: o.update, homekit: o.homekit, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const retention = new TelemetryRetention({ store: o.store, now: o.now })

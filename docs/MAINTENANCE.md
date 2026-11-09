@@ -224,10 +224,14 @@ to one interval.
 
 ## Updates
 
-The update helper installs the newest release of your channel (stable, or dev
-for `dev-latest`) without building anything on the unit. It checks each
-download's sha256, keeps the previous version, and puts it back by itself if
-core isn't healthy afterwards ([ADR 0026](adr/0026-web-update.md)). Over SSH:
+**Settings → Updates** installs the newest release of your channel (stable, or
+dev for `dev-latest`) without building anything on the unit. Pick the channel,
+**Check for updates**, then **Update**. The card shows each step and the log
+while it runs, and what happened when it's over. It checks each download's
+sha256, keeps the previous version, and puts it back by itself if core isn't
+healthy afterwards ([ADR 0026](adr/0026-web-update.md)). The unit stops for as
+long as core takes to start again, a few minutes on a Pi Zero. Nothing checks
+for updates unless you press the button. Over SSH, the same helper:
 
 ```sh
 sudo seedypod-update --check            # what's installed and what the channel has

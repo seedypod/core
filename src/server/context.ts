@@ -11,6 +11,7 @@ import type { FlashMeter } from '../telemetry/flash'
 import type { BackupService } from '../backup/service'
 import type { DatabaseInspector } from '../db/inspect'
 import type { RestoreClient } from '../backup/restore'
+import type { UpdateClient } from '../update/client'
 import type { HomeKitControl } from '../homekit/types'
 import type { BridgeStatus } from '../mqtt/bridge'
 import type { LoggingControl } from '../logging/policy'
@@ -34,6 +35,8 @@ export interface Context {
   backup?: BackupService
   /** Runs the root restore helper; on the unit only. */
   restore?: RestoreClient
+  /** Runs the root update helper (ADR-0026); on the unit only. */
+  update?: UpdateClient
   /** The HomeKit bridge (ADR 0023); node hosts only, off until enabled in Settings. */
   homekit?: HomeKitControl
   /** The Home Assistant MQTT bridge (ADR-0013); node hosts only, where server/index.ts owns it. */

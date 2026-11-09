@@ -9,6 +9,8 @@ export type CoreEvent
   = | { kind: 'hal', event: HalEvent }
     | { kind: 'mutation', path: string }
     | { kind: 'schedule', action: 'fired' | 'changed', id: string }
+    // A step of an update (ADR-0026), with the helper's new log lines.
+    | { kind: 'update', state: string, lines: string[] }
 
 export interface EventBus {
   emit(e: CoreEvent): void

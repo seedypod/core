@@ -65,6 +65,11 @@ describe('touchedBy', () => {
     expect(touchedBy(mutation('network'))).toContain('system')
   })
 
+  it('keeps an update\'s steps and its mutations to the update router', () => {
+    expect(touchedBy({ kind: 'update', state: 'downloading', lines: ['downloading seedypod-core.tar.gz'] })).toEqual(['update'])
+    expect(touchedBy(mutation('update'))).toEqual(['update'])
+  })
+
   it('refreshes everything for settings, read nearly everywhere, and for a path nobody listed', () => {
     expect(touchedBy(mutation('settings'))).toBe('all')
     expect(touchedBy(mutation('something.new'))).toBe('all')

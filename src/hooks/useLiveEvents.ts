@@ -36,12 +36,14 @@ const TOUCHES = new Map<string, readonly Area[]>([
   ['plants', ['plants', 'grow']],
   ['pods', ['grow', 'planner', 'vision']],
   ['sensors', ['sensors', 'devices']],
+  ['update', ['update']],
 ])
 
 /** What an event makes stale. */
 export function touchedBy(e: CoreEvent): readonly Area[] | 'all' {
   if (e.kind === 'mutation') return TOUCHES.get(e.path) ?? TOUCHES.get(e.path.replace(/\..*/, '')) ?? 'all'
   if (e.kind === 'schedule') return ['schedules', 'light']
+  if (e.kind === 'update') return ['update']
   switch (e.event.type) {
     // Carries its reading, so the cache takes the value and nothing needs fetching.
     case 'sensor': return []

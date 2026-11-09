@@ -18,6 +18,7 @@ import { settingsRouter } from './settings'
 import { storageRouter } from './storage'
 import { systemRouter } from './system'
 import { telemetryRouter } from './telemetry'
+import { updateRouter } from './update'
 import { visionRouter } from './vision'
 
 export const appRouter = router({
@@ -39,6 +40,7 @@ export const appRouter = router({
   datasets: datasetsRouter,
   storage: storageRouter,
   backup: backupRouter,
+  update: updateRouter,
   homekit: homekitRouter,
   alerts: alertsRouter,
   events: eventsRouter,
