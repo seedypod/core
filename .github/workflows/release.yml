@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   hal:
-    name: hald ${{ matrix.target }}
+    name: hald + podvision ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -36,6 +36,17 @@ jobs:
           path: |
             hal/hald-${{ matrix.target }}
             hal/hald-${{ matrix.target }}.sha256
+      # The native pod-state runner (#191): its own binary, never linked into hald. It ships inside
+      # seedypod-core.tar.gz (bin/), so the installer and the update helper swap and roll it back with core.
+      - run: cross build --release --target ${{ matrix.target }} -p podvision
+      - run: cp target/${{ matrix.target }}/release/podvision podvision-${{ matrix.target }}
+      - run: sha256sum podvision-${{ matrix.target }} > podvision-${{ matrix.target }}.sha256
+      - uses: actions/upload-artifact@v6
+        with:
+          name: podvision-${{ matrix.target }}
+          path: |
+            hal/podvision-${{ matrix.target }}
+            hal/podvision-${{ matrix.target }}.sha256
 
   sqlite-armv6:
     uses: ./.github/workflows/sqlite-armv6.yml
@@ -89,6 +100,22 @@ jobs:
       - name: Set install script default branch
         run: sed -i 's/__BRANCH__/${{ github.ref_name }}/' scripts/install
 
+      - name: Download podvision binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: podvision-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/podvision
+
+      - name: Put podvision in the tarball's bin/
+        # Artifacts lose the executable bit; core finds bin/podvision-<target> next to server/ (#191).
+        run: |
+          (cd "$RUNNER_TEMP/podvision" && sha256sum -c podvision-*.sha256)
+          mkdir -p bin
+          for t in arm-unknown-linux-gnueabihf aarch64-unknown-linux-gnu; do
+            install -m 0755 "$RUNNER_TEMP/podvision/podvision-$t" "bin/podvision-$t"
+          done
+
       - name: Create deploy tarball
         run: |
           tar czf /tmp/seedypod-core.tar.gz \
@@ -114,6 +141,12 @@ jobs:
           fi
           [ "$(file -b --mime-type "$RUNNER_TEMP/tarball/web/dist/brand/icon-64.png")" = image/png ]
 
+      - name: Check the tarball carries podvision, executable
+        run: |
+          for t in arm-unknown-linux-gnueabihf aarch64-unknown-linux-gnu; do
+            [ -x "$RUNNER_TEMP/tarball/bin/podvision-$t" ] || { echo "::error::bin/podvision-$t is missing or not executable"; exit 1; }
+          done
+
       - uses: actions/upload-artifact@v6
         with:
           name: seedypod-core
@@ -126,6 +159,9 @@ jobs:
           pattern: hald-*
           merge-multiple: true
           path: release-assets
+
+      - name: Publish podvision next to hald
+        run: cp -f "$RUNNER_TEMP"/podvision/podvision-* release-assets/
 
       - name: Download the ARMv6 better-sqlite3
         uses: actions/download-artifact@v8

@@ -1,0 +1,18 @@
+[package]
+name = "podvision"
+description = "seedypod's native pod-state runner: decodes a still, crops the pods and runs the seedypod-cnn models as a low-priority child of core (#191). Never part of hald."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "podvision"
+path = "src/main.rs"
+
+[dependencies]
+serde_json.workspace = true
+base64 = "0.22"
+# No rayon: the Pi Zero W has one core, and core runs this at nice 19 beside itself.
+jpeg-decoder = { version = "0.3", default-features = false }

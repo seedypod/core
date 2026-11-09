@@ -29,6 +29,10 @@
           { "path": "release-assets/hald-arm-unknown-linux-gnueabihf.sha256", "label": "hald (Pi Zero W, armv6) sha256" },
           { "path": "release-assets/hald-aarch64-unknown-linux-gnu", "label": "hald (Pi Zero 2 W / Pi 4 / Pi 5, aarch64)" },
           { "path": "release-assets/hald-aarch64-unknown-linux-gnu.sha256", "label": "hald (Pi Zero 2 W / Pi 4 / Pi 5, aarch64) sha256" },
+          { "path": "release-assets/podvision-arm-unknown-linux-gnueabihf", "label": "podvision (Pi Zero W, armv6; also in the tarball's bin/)" },
+          { "path": "release-assets/podvision-arm-unknown-linux-gnueabihf.sha256", "label": "podvision (Pi Zero W, armv6) sha256" },
+          { "path": "release-assets/podvision-aarch64-unknown-linux-gnu", "label": "podvision (aarch64; also in the tarball's bin/)" },
+          { "path": "release-assets/podvision-aarch64-unknown-linux-gnu.sha256", "label": "podvision (aarch64) sha256" },
           { "path": "release-assets/better-sqlite3-*.tar.gz", "label": "better-sqlite3 (Pi Zero W, armv6)" },
           { "path": "release-assets/better-sqlite3-*.tar.gz.sha256", "label": "better-sqlite3 (Pi Zero W, armv6) sha256" }
         ]

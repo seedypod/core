@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/hal-core", "crates/hal-sim", "crates/hal-drivers", "crates/hald"]
+# podvision is its own binary that core runs per capture (#191); nothing in hald depends on it (ADR 0004, 0019).
+members = ["crates/hal-core", "crates/hal-sim", "crates/hal-drivers", "crates/hald", "crates/podvision"]
 
 [workspace.package]
 version = "0.1.0"
@@ -28,3 +29,10 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# hald stays small; podvision's decode and forward pass are hot loops on a Pi Zero W's one core.
+[profile.release.package.podvision]
+opt-level = 3
+
+[profile.release.package.jpeg-decoder]
+opt-level = 3

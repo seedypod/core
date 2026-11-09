@@ -58,9 +58,10 @@ function tree(commit: string, overrides: Record<string, string> = {}): Record<st
 }
 
 /** A release tarball the way CI makes one: `tar czf … .` of the built tree. */
-function release(files: Record<string, string>, opts: { sumFile?: boolean | string, digest?: boolean | string } = {}) {
+function release(files: Record<string, string>, opts: { sumFile?: boolean | string, digest?: boolean | string, executable?: string[] } = {}) {
   const src = mkdtempSync(join(dir, 'src-'))
   put(src, files)
+  for (const rel of opts.executable ?? []) chmodSync(join(src, rel), 0o755)
   const out = join(dir, `release-${Math.random().toString(36).slice(2)}.tar.gz`)
   const r = spawnSync('tar', ['-czf', out, '-C', src, '.'])
   expect(r.status).toBe(0)
@@ -293,6 +294,21 @@ describe('updating', () => {
     expect(String(status().error)).toMatch(/core did not answer within 1 s/)
     expect(existsSync(`${prefix}.previous`)).toBe(false)
     expect(existsSync(join(dir, 'sbin/seedypod-update'))).toBe(false)
+  })
+
+  // podvision (#191) ships inside the tarball, so the helper installed today brings it on the first update and rolls it back.
+  it('brings the release\'s bin/podvision, executable, and puts the previous one back on a rollback', async () => {
+    const bin = 'bin/podvision-arm-unknown-linux-gnueabihf'
+    release(tree(NEW, { [bin]: 'podvision new' }), { executable: [bin] })
+    expect(await run('--now')).toMatchObject({ code: 0, out: { ok: true } })
+    expect(read(bin)).toBe('podvision new')
+    expect(statSync(p(bin)).mode & 0o111).toBe(0o111)
+    releaseCommit = `cccccccc${'e'.repeat(32)}`
+    release(tree('ccccccc', { 'server/dist/index.js': 'core broken', [bin]: 'podvision broken' }), { executable: [bin] })
+    envs.SEEDYPOD_UPDATE_HEALTH_TIMEOUT = '1'
+    expect(await run('--now')).toMatchObject({ code: 1, out: { code: 'rolled-back' } })
+    expect(read(bin)).toBe('podvision new')
+    expect(statSync(p(bin)).mode & 0o111).toBe(0o111)
   })
 
   it('installs changed dependencies as core, and puts the old ones back if that fails', async () => {

@@ -75,3 +75,9 @@ jobs:
           name: hald-${{ matrix.target }}
           path: hal/target/${{ matrix.target }}/release/hald
           retention-days: 14
+      - run: cross build --release --target ${{ matrix.target }} -p podvision
+      - uses: actions/upload-artifact@v6
+        with:
+          name: podvision-${{ matrix.target }}
+          path: hal/target/${{ matrix.target }}/release/podvision
+          retention-days: 14

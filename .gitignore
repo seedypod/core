@@ -27,6 +27,8 @@ data/
 
 # Rust
 hal/target
+# podvision binaries CI puts in the release tarball (#191)
+/bin/
 
 # Python (uv)
 .venv

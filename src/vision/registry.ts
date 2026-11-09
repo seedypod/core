@@ -40,11 +40,13 @@ export interface RegistryState extends Selection {
 }
 
 export interface ModelFiles {
-  /** The release's weights file, or why there is none. */
-  shipped(): { text: string | null, missing?: string }
+  /** The release's weights file, or why there is none, and where it is when it's a file. */
+  shipped(): { text: string | null, missing?: string, path?: string }
   /** Uploaded weights files' sha256s. */
   list(): string[]
   read(sha256: string): string | null
+  /** Where an uploaded file is on disk, for the native runner (#191); storage that isn't files leaves it out. */
+  path?(sha256: string): string
   write(sha256: string, text: string): void
   remove(sha256: string): void
   readState(): RegistryState | null
@@ -90,11 +92,11 @@ const NO_FILE = 'shipped'
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
 
-interface Loaded { info: Revision, text: string | null }
+interface Loaded { info: Revision, text: string | null, path?: string }
 
 export class ModelRegistry {
   private readonly now: () => Date
-  private shippedMemo?: { text: string | null, missing?: string, sha: string | null }
+  private shippedMemo?: { text: string | null, missing?: string, path?: string, sha: string | null }
   private readonly headers = new Map<string, Omit<ModelFile, 'tensors'> | Error>()
 
   constructor(private readonly o: ModelRegistryOptions) {
@@ -114,7 +116,7 @@ export class ModelRegistry {
   specs(): LearnedSpec[] {
     return this.load()
       .filter(l => l.info.enabled || (l.info.source === 'shipped' && l.info.disabled))
-      .map(l => ({ id: l.info.analyzer, label: label(l.info), text: l.text, ...(l.info.disabled ? { missing: l.info.disabled } : {}) }))
+      .map(l => ({ id: l.info.analyzer, label: label(l.info), text: l.text, ...(l.info.disabled ? { missing: l.info.disabled } : {}), ...(l.text !== null && l.path ? { path: l.path } : {}) }))
   }
 
   /**
@@ -218,7 +220,7 @@ export class ModelRegistry {
   }
 
   /** The release's file doesn't change while core runs: read and hash it once. */
-  private shipped(): { text: string | null, missing?: string, sha: string | null } {
+  private shipped(): { text: string | null, missing?: string, path?: string, sha: string | null } {
     if (!this.shippedMemo) {
       const s = this.o.files.shipped()
       this.shippedMemo = { ...s, sha: s.text === null ? null : this.o.sha256(s.text) }
@@ -267,10 +269,10 @@ export class ModelRegistry {
   private load(): Loaded[] {
     const st = this.state()
     const shipped = this.shipped()
-    const out: Loaded[] = [this.describe(shipped.text, shipped.sha, 'shipped', st, null, shipped.missing)]
+    const out: Loaded[] = [{ ...this.describe(shipped.text, shipped.sha, 'shipped', st, null, shipped.missing), path: shipped.path }]
     for (const sha of this.o.files.list()) {
       if (sha === shipped.sha) continue
-      out.push(this.describe(this.o.files.read(sha), sha, 'uploaded', st, st.uploaded[sha.slice(0, 12)] ?? null))
+      out.push({ ...this.describe(this.o.files.read(sha), sha, 'uploaded', st, st.uploaded[sha.slice(0, 12)] ?? null), path: this.o.files.path?.(sha) })
     }
     return out.sort((a, b) => (a.info.source === b.info.source ? (a.info.uploadedAt ?? '').localeCompare(b.info.uploadedAt ?? '') : a.info.source === 'shipped' ? -1 : 1))
   }

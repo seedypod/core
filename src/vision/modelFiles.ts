@@ -27,16 +27,20 @@ export class FsModelFiles implements ModelFiles {
   }
 
   read(sha: string): string | null {
-    const path = join(this.dir, `${sha}.json`)
+    const path = this.path(sha)
     return existsSync(path) ? readFileSync(path, 'utf8') : null
   }
 
+  path(sha: string): string {
+    return join(this.dir, `${sha}.json`)
+  }
+
   write(sha: string, text: string): void {
-    this.atomic(join(this.dir, `${sha}.json`), text)
+    this.atomic(this.path(sha), text)
   }
 
   remove(sha: string): void {
-    rmSync(join(this.dir, `${sha}.json`), { force: true })
+    rmSync(this.path(sha), { force: true })
   }
 
   readState(): RegistryState | null {

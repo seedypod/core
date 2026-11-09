@@ -27,7 +27,9 @@ import { nodeDiskUsage, nodeFlashSource } from '../src/telemetry/flashSource'
 import { UpdateClient, updateCommand } from '../src/update/client'
 import { installLearned } from '../src/vision/analyzer'
 import { FsModelFiles, sha256 } from '../src/vision/modelFiles'
-import { learnedAnalyzers } from '../src/vision/podState'
+import { inlineExecutor } from '../src/vision/execute'
+import { learnedAnalyzers, type LearnedSpec } from '../src/vision/podState'
+import { withPodvision } from '../src/vision/podvision'
 import { ModelRegistry } from '../src/vision/registry'
 import { createWorkerExecutor } from '../src/vision/workerExecutor'
 import { createApp } from './app'
@@ -52,16 +54,21 @@ if (process.env.SEED_DEMO === '1' && seedIfFresh(store, hal)) console.log('seede
 // Learned pod-state models (#185, #186): the release's models/pod-state.json plus any uploaded under DATA_DIR/models.
 // This thread lists the enabled ones and the worker runs them, both from the same files' text.
 const workerScript = new URL('./visionWorker.js', import.meta.url)
+let learned: LearnedSpec[] = []
 const models = new ModelRegistry({
   files: new FsModelFiles(join(DATA_DIR, 'models')),
   sha256,
   onChange: (specs) => {
+    learned = specs
     installLearned(learnedAnalyzers(specs))
     vision?.configure(specs)
   },
 })
-installLearned(learnedAnalyzers(models.specs()))
-const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(workerScript, undefined, models.specs()) : null
+learned = models.specs()
+installLearned(learnedAnalyzers(learned))
+const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(workerScript, undefined, learned) : null
+// The native runner (#191) scores the learned ones at nice 19 when the release carries it; the worker stays the fallback.
+const analysisExecutor = withPodvision(vision?.run ?? inlineExecutor, () => learned)
 // The Database view scans read-only on a worker thread, the same way.
 const inspectScript = new URL('./inspectWorker.js', import.meta.url)
 const database = new NodeDatabaseInspector({ path: dbPath, migrationsFolder: defaultMigrationsFolder(), worker: existsSync(fileURLToPath(inspectScript)) ? inspectScript : null })
@@ -90,7 +97,7 @@ const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA
 const haBridge = superviseBridge(() => connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim', stills: camera => latestStill(store, mirror, camera) }), events)
 // hald's boot log survives the reboots the journal doesn't; world-readable, so core can read it.
 const bootLog = () => readFile(join(backupPaths(process.env, DATA_DIR).stateDir, 'boot-log'), 'utf8').catch(() => null)
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, update, bootLog, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, models, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, update, bootLog, homekit, startServices: process.env.CI !== '1', analysisExecutor, models, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
 
 const { app, injectWebSocket } = createApp({ ctx: core.ctx, staticRoot: './web/dist' })
 

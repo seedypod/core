@@ -75,24 +75,30 @@ export function brightness(img: Rgba): number {
   return n ? sum / n / 255 : 0
 }
 
-/** Score each pod: its most likely state, the confidence, and every class's probability in `detail`. Nothing for a dark still. */
+/**
+ * One pod's rows from its class probabilities: the most likely state, the
+ * confidence, and every class's probability in `detail`. The native runner's
+ * output goes through here too (#191), so both store the same rows.
+ */
+export function podRows(classes: readonly string[], revision: string, slot: number, p: ArrayLike<number>): PodResult[] {
+  let best = 0
+  for (let i = 1; i < p.length; i++) if ((p[i] as number) > (p[best] as number)) best = i
+  const confidence = round3(p[best] as number)
+  const probabilities = Object.fromEntries(classes.map((c, i) => [c, round3(p[i] as number)]))
+  const detail = { state: classes[best], confidence, probabilities, revision }
+  return [
+    { slot, metric: 'pod_state', value: best, detail },
+    { slot, metric: 'pod_state_confidence', value: confidence },
+  ]
+}
+
+/** Score each pod (`podRows`). Nothing for a dark still. */
 export function classifyPods(model: CnnModel, img: Rgba, pods: Record<number, Rect>): PodResult[] {
   const { classes, input, revision, minBrightness } = model.file
   // A still taken with the grow light off says nothing about the pods, and the model was never trained on one.
   if (minBrightness !== undefined && brightness(img) < minBrightness) return []
   const buf = new Float32Array(input.width * input.height * input.channels)
-  return Object.keys(pods).map(Number).flatMap((slot) => {
-    const p = softmax(forward(model, cropInput(img, pods[slot] as Rect, input, buf)))
-    let best = 0
-    for (let i = 1; i < p.length; i++) if ((p[i] as number) > (p[best] as number)) best = i
-    const confidence = round3(p[best] as number)
-    const probabilities = Object.fromEntries(classes.map((c, i) => [c, round3(p[i] as number)]))
-    const detail = { state: classes[best], confidence, probabilities, revision }
-    return [
-      { slot, metric: 'pod_state', value: best, detail },
-      { slot, metric: 'pod_state_confidence', value: confidence },
-    ]
-  })
+  return Object.keys(pods).map(Number).flatMap(slot => podRows(classes, revision, slot, softmax(forward(model, cropInput(img, pods[slot] as Rect, input, buf)))))
 }
 
 /** What the analyser listing says when it can't run. */
@@ -160,8 +166,11 @@ export function podStateFromText(text: string | null, missing: string = NO_WEIGH
   }
 }
 
-/** A learned analyser as it crosses to the vision worker: the weights file's text, and what it runs as. */
-export interface LearnedSpec { id: string, label: string, text: string | null, missing?: string }
+/**
+ * A learned analyser as it crosses to the vision worker: the weights file's text, and what it runs as.
+ * `path` is where that file is on disk, for the native runner (#191); a spec without one runs in TypeScript.
+ */
+export interface LearnedSpec { id: string, label: string, text: string | null, missing?: string, path?: string }
 
 export function learnedAnalyzers(specs: LearnedSpec[]): CaptureAnalyzer[] {
   return specs.map(s => podStateFromText(s.text, s.missing, { id: s.id, label: s.label }))

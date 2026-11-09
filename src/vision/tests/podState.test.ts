@@ -174,7 +174,7 @@ describe('shipped weights file', () => {
     const file = join(dir, 'pod-state.json')
     expect(readPodStateModel([file]).missing).toContain(file)
     writeFileSync(file, '{"x":1}')
-    expect(readPodStateModel([join(dir, 'nope.json'), file]).text).toBe('{"x":1}')
+    expect(readPodStateModel([join(dir, 'nope.json'), file])).toEqual({ text: '{"x":1}', path: file })
     expect(readPodStateModel([dir]).missing).toMatch(/could not be read/)
   })
 

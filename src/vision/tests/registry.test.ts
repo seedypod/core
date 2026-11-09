@@ -174,6 +174,19 @@ describe('model files on disk', () => {
     files.remove(sha256(text))
     expect(files.read(sha256(text))).toBeNull()
   })
+
+  it('tells the native runner where each enabled weights file is (#191)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'models-'))
+    const files = new FsModelFiles(join(dir, 'models'), () => ({ text: shippedText, path: '/opt/seedypod/models/pod-state.json' }))
+    const r = new ModelRegistry({ files, sha256 })
+    const text = model('disk')
+    r.upload(text, sha256(text), { enable: true })
+    expect(r.specs().map(s => [s.id, s.path])).toEqual([['pod-state', '/opt/seedypod/models/pod-state.json'], ['pod-state-disk', join(dir, 'models', `${sha256(text)}.json`)]])
+    // Storage that isn't files gives none, and a revision that can't run has nothing to point at.
+    expect(registry().r.specs()[0]).not.toHaveProperty('path')
+    const broken = new ModelRegistry({ files: new FsModelFiles(join(dir, 'other'), () => ({ text: '{', path: '/x.json' })), sha256 })
+    expect(broken.specs()[0]).not.toHaveProperty('path')
+  })
 })
 
 describe('fetching a model from the LAN', () => {
