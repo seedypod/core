@@ -90,6 +90,15 @@ export function buildBridge(o: Pick<BridgeOptions, 'identity' | 'name' | 'versio
         .setCharacteristic(Characteristic.SerialNumber, `${username}-${a.id}`)
       for (const s of built.services) acc.addService(s)
       for (const c of built.controllers ?? []) acc.configureController(c)
+      const streaming = acc.getService(Service.CameraRTPStreamManagement)?.getCharacteristic(Characteristic.Active)
+      if (streaming) {
+        // hap-nodejs refuses every snapshot, without a word, while Home has the camera's streaming off.
+        const onChange = (c: { newValue: unknown }) => {
+          o.deps.log(`homekit: ${a.name}: Home turned streaming ${c.newValue ? 'on' : 'off'}${c.newValue ? '' : ', so its snapshots are refused'}`)
+        }
+        streaming.on('change', onChange)
+        stops.push(() => void streaming.removeListener('change', onChange))
+      }
       bridge.addBridgedAccessory(acc)
     }
   }
@@ -98,6 +107,34 @@ export function buildBridge(o: Pick<BridgeOptions, 'identity' | 'name' | 'versio
     throw e
   }
   return { bridge, stops }
+}
+
+interface ResourceRequest { 'resource-type'?: string, 'aid'?: number, 'image-width'?: number, 'image-height'?: number, 'reason'?: number }
+type ResourceCallback = (error?: { httpCode: number, status: number }, resource?: Buffer) => void
+interface ResourceHandling { handleResource(data: ResourceRequest, callback: ResourceCallback): void }
+
+/**
+ * Logs what HAP's `POST /resource` (Home's snapshot request) asked for and
+ * what went back: the first request per accessory and every change of outcome
+ * after it, so a refusal hap-nodejs only reports at debug level shows in the
+ * journal. Call before `publish`, which binds the handler.
+ */
+export function logResourceRequests(bridge: Bridge, log: (msg: string) => void, now: () => number = Date.now): void {
+  const target = bridge as unknown as ResourceHandling
+  const handle = target.handleResource.bind(bridge)
+  const last = new Map<number | undefined, string>()
+  target.handleResource = (data, callback) => {
+    const started = now()
+    handle(data, (error, resource) => {
+      const name = data.aid === undefined ? 'the bridge' : (bridge.bridgedAccessories.find(a => a.aid === data.aid)?.displayName ?? `aid ${data.aid}`)
+      const outcome = error ? `HTTP ${error.httpCode}, status ${error.status}` : `${(resource as Buffer).byteLength} bytes`
+      if (last.get(data.aid) !== outcome) {
+        log(`homekit: ${data['resource-type']} request for ${name}, ${data['image-width']}x${data['image-height']}, reason ${data.reason ?? 'none'}: ${outcome} in ${now() - started} ms`)
+      }
+      last.set(data.aid, outcome)
+      callback(error, resource)
+    })
+  }
 }
 
 /** HAP wants `x[.y[.z]]`; builds report a git describe or 'dev'. */
@@ -109,6 +146,7 @@ export async function publishBridge(o: BridgeOptions): Promise<PublishedBridge> 
   const hap = await import('hap-nodejs')
   initStorage(hap, o.dir)
   const { bridge, stops } = buildBridge({ ...o, deps: { ...o.deps, hap } })
+  logResourceRequests(bridge, o.deps.log)
   bridge.on('paired', o.onPaired)
   bridge.on('unpaired', o.onUnpaired)
   const stopAll = () => {
