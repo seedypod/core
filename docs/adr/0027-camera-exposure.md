@@ -153,3 +153,42 @@ contention reasons.
 - Not verified here: how the Home app and HA show these entities on the
   owner's devices. The HAP accessory tree, the snapshot path and the MQTT
   payloads are covered by tests.
+
+## Amendment (2026-11-09): snapshot-only cameras must still advertise a full camera
+
+**Supersedes** the camera's stream declaration in the Decision above ("one RTP
+stream service (H.264 baseline 3.1 …) and no microphone").
+
+As first shipped (#151), both camera tiles in the Home app read "No Response",
+and Home never sent a snapshot request (#182). The declared camera was:
+
+- one stream
+- 15 fps only, at five sizes
+- baseline H.264 at level 3.1 only
+- no audio, so hap-nodejs added no Microphone service
+
+The HAP debug log (#180) shows the home hub pairing, reading every
+accessory's firmware, and writing `Active = 1` on both cameras. It subscribed
+to nothing on the cameras and sent no `/resource`. The Mac never opened its
+own connection, and no snapshot request reached the unit with Garden open.
+
+After #181 the declaration matches homebridge-camera-ffmpeg:
+
+- two streams
+- HAP's 16:9 and 4:3 sizes at 30 fps, 320×180 to 1920×1080 and 1600×1200
+- baseline, main and high H.264 at levels 3.1, 3.2 and 4.0
+- AAC-ELD 16 kHz audio, which brings the Microphone service
+
+After the update, with Garden open in Home, the Mac connected to the bridge itself. It read
+both cameras' `SupportedVideoStreamConfiguration` and then sent `POST /resource`
+for each camera about every 10 s. Each request got the stored still
+(1280×720 requested, 202–223 KB, 55–87 ms).
+
+**Rule:** a snapshot-only camera still declares a full camera: two streams,
+the standard 30 fps sizes, the three H.264 profiles and levels, and an audio
+codec so the Microphone service exists. It then refuses live view in
+`prepareStream`. Declaring costs nothing, because nothing is encoded or sent.
+`camera.test.ts` pins the declaration.
+
+**Not isolated:** which missing element made Home give up. It was changed as
+one set and wasn't bisected on a device.
