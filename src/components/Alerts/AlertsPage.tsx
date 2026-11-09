@@ -20,12 +20,14 @@ const LABEL: Record<string, string> = {
   water_low: 'Water low', pump_fault: 'Pump fault', dose_fault: 'Dosing lockout', over_temp: 'Board over temperature', camera_missing: 'Camera not capturing', hal_offline: 'Hardware daemon offline', mirror_failed: 'Off-device copy failed',
   reminder_thinning: 'Thin seedlings', reminder_root_check: 'Check roots', reminder_harvest: 'Harvest window', reminder_nutrients: 'Add nutrients', reminder_sow: 'Start new yCubes', light_fault: 'Light fault',
   setup_light_schedule: 'No light schedule', setup_pump_schedule: 'No pump schedule', setup_water_sensor: 'Tank sensor',
+  chore_top_off: 'Top off the tank', chore_feed: 'Feed', chore_thin: 'Thin seedlings',
 }
 const ICON: Record<string, LucideIcon> = {
   camera_link_upper: Cable, camera_link_lower: Cable, camera_hub_flaky: Cable,
   water_low: Droplets, pump_fault: Waves, dose_fault: FlaskConical, over_temp: Thermometer, camera_missing: CameraOff, hal_offline: Unplug, mirror_failed: CloudOff, light_fault: Sun,
   reminder_thinning: Scissors, reminder_root_check: Sprout, reminder_harvest: Wheat, reminder_nutrients: FlaskConical, reminder_sow: Sprout,
   setup_light_schedule: CalendarClock, setup_pump_schedule: CalendarClock, setup_water_sensor: Waves,
+  chore_top_off: Droplets, chore_feed: FlaskConical, chore_thin: Scissors,
 }
 const HARDWARE = new Set(['water_low', 'pump_fault', 'dose_fault', 'over_temp', 'camera_missing', 'hal_offline', 'light_fault', 'camera_link_upper', 'camera_link_lower', 'camera_hub_flaky'])
 /** Notices with a repair to follow in the docs. */
@@ -52,10 +54,13 @@ const VIEW: Record<string, { to: string, label: string }> = {
   setup_light_schedule: { to: '/light', label: 'View light' },
   setup_pump_schedule: { to: '/water', label: 'View water' },
   setup_water_sensor: { to: '/sensors', label: 'View sensors' },
+  chore_top_off: { to: '/water', label: 'View water' },
+  chore_feed: { to: '/water', label: 'View water' },
+  chore_thin: { to: '/grow', label: 'View pods' },
 }
 const PODS = { upper: '1–15', lower: '16–30' } as const
 
-export const categoryOf = (kind: string): 'hardware' | 'reminder' | 'service' => (HARDWARE.has(kind) ? 'hardware' : kind.startsWith('reminder_') ? 'reminder' : 'service')
+export const categoryOf = (kind: string): 'hardware' | 'reminder' | 'service' => (HARDWARE.has(kind) ? 'hardware' : kind.startsWith('reminder_') || kind.startsWith('chore_') ? 'reminder' : 'service')
 
 /** Title and detail for an alert; a camera alert names the camera and the pods it covers. */
 export function describeAlert(a: Pick<AlertRow, 'kind' | 'detail'>): { title: string, detail: string } {

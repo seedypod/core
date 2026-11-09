@@ -60,6 +60,11 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: {},
   }, async () => text(await caller.care.setup()))
 
+  server.registerTool('list_chores', {
+    description: 'Chores the tower needs (ADR-0029): thin, trim_roots, top_off, refresh, feed, clean, each with state due | soon | ok | unknown and basis: reading (derived from a sensor the unit trusts now: tank level and how fast it falls, an EC probe, camera leaf cover on young pods) or timeline (a calendar guess; the reason says why, e.g. "Calendar guess, no EC probe"). A reading counts only when its quality is good and it is under 15 min old, so a top-off is never advised from a suspect tank level. Also the readings used, when it falls due, when it was last done (from the tank log), citations (the knowledge note and section behind every dose and target; quote only those, never a dose of your own) and doneKind: log a tank action of that kind with log_tank_action once the person has done it.',
+    inputSchema: {},
+  }, async () => text(await caller.care.chores()))
+
   server.registerTool('list_tank_actions', {
     description: 'The tank action log, newest first: what was done to the tank and when (kind feed | top_off | refresh | ph_down | ph_up | clean | trim_roots | thin | other, amount and unit, product, note, and whether a person or an agent logged it). Read it beside history to attribute a change in ec, ph or water_level_pct to an action. kind filters; limit defaults to 20.',
     inputSchema: { kind: TankActionKind.optional(), limit: z.number().int().min(1).max(500).optional() },

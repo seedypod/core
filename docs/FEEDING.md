@@ -68,6 +68,23 @@ minutes. Overshooting is the common mistake.
 The tank-level sensor shows real water use, so top off when the tank is low
 rather than on a weekly reminder.
 
+## Chores
+
+**Water → Chores** lists what the tower needs: thin, trim roots, top off,
+refresh, feed and clean. Each says whether it comes **from a reading** or the
+**calendar**:
+
+- With a trusted reading, the chore follows the tank. "Tank at 40 %, falling
+  8 % a day", or "EC 0.9 mS/cm, below the 1.2–2.0 for leafy greens". A due
+  chore also shows in **Needs you** and raises an alert.
+- Without one, it's a calendar guess and says why: "Calendar guess, no EC
+  probe", or "tank level reading suspect". A suspect or stale tank level is
+  never used to ask for a top-off.
+
+Every dose and target links the knowledge note it comes from. **Done** logs the
+chore in the tank log, and the chore counts from there. An agent reads the same
+list over MCP (`list_chores`).
+
 ## Keep a tank log
 
 **Water → Tank log → Log action** records what you did and when: fed 1 tsp

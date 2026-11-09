@@ -70,15 +70,17 @@ function Readings() {
   )
 }
 
-/** Pods that want something done: each one needing attention, then those ready to harvest as one line. */
+/** What wants doing: each pod needing attention, those ready to harvest as one line, then chores that are due (ADR-0029). */
 function NeedsYou() {
   const pods = trpc.grow.pods.useQuery()
   const harvest = trpc.grow.harvest.useQuery(undefined, { refetchInterval: 10 * 60_000 })
+  const chores = trpc.care.chores.useQuery(undefined, { refetchInterval: 5 * 60_000 })
+  const due = (chores.data ?? []).filter(c => c.state === 'due')
   const outlook = new Map((harvest.data ?? []).map(o => [o.slot, o]))
   const shown = (pods.data ?? []).map(p => ({ ...p, shown: podShown({ status: p.status, harvest: outlook.get(p.slot) ?? null }) }))
   const attention = shown.filter(p => p.shown === 'attention')
   const ready = shown.filter(p => p.shown === 'ready')
-  if (!attention.length && !ready.length) return null
+  if (!attention.length && !ready.length && !due.length) return null
   const names = ready.map(p => p.plant ?? `Pod ${p.slot}`)
   return (
     <div className="flex flex-col gap-0.5">
@@ -97,14 +99,17 @@ function NeedsYou() {
       {ready.length > 0 && (
         <NeedRow color="var(--pod-ready)" title={`${ready.length} ready to harvest`} sub={names.length > 2 ? `${names.slice(0, 2).join(', ')}, +${names.length - 2}` : names.join(', ')} />
       )}
+      {due.map(c => (
+        <NeedRow key={c.id} route={c.id === 'thin' ? '/grow' : '/water'} color="var(--pod-ready)" title={c.title} sub={c.reason} tag={c.basis === 'reading' ? undefined : 'calendar'} />
+      ))}
     </div>
   )
 }
 
 /** A pod's row; with `thumb` (its plant's picture) the status colour rides on the picture's corner. */
-function NeedRow({ to, color, thumb, title, sub, tag }: { to?: number, color: string, thumb?: ReactNode, title: string, sub: string, tag?: string }) {
+function NeedRow({ to, route = '/grow', color, thumb, title, sub, tag }: { to?: number, route?: '/grow' | '/water', color: string, thumb?: ReactNode, title: string, sub: string, tag?: string }) {
   return (
-    <Link to="/grow" search={to ? { pod: to } : {}} className="flex gap-2.5 rounded-lg px-2.5 py-2 hover:bg-active/60">
+    <Link to={route} search={to ? { pod: to } : {}} className="flex gap-2.5 rounded-lg px-2.5 py-2 hover:bg-active/60">
       {thumb
         ? (
             <span className="relative shrink-0 self-center">

@@ -137,6 +137,20 @@ describe('alert helpers', () => {
     expect(within(screen.getByTestId('alert-setup_water_sensor')).getByRole('link', { name: 'View sensors' }).getAttribute('href')).toBe('/sensors')
   })
 
+  it('shows a chore raised from a reading as a reminder, done from Alerts (ADR-0029)', () => {
+    expect(categoryOf('chore_top_off')).toBe('reminder')
+    data.set('open', [row(4, 'chore_top_off', 'Tank at 40%: below half, so top it off.'), row(5, 'chore_thin', '3 of 4 young pods show leaves on camera.'), row(3, 'chore_feed', 'EC 0.9 mS/cm.')])
+    render(<AlertsPage />)
+    const top = within(screen.getByTestId('alert-chore_top_off'))
+    expect(top.getByText('Top off the tank')).toBeTruthy()
+    expect(top.getByText('reminder')).toBeTruthy()
+    expect(top.getByRole('link', { name: 'View water' }).getAttribute('href')).toBe('/water')
+    expect(within(screen.getByTestId('alert-chore_thin')).getByRole('link', { name: 'View pods' }).getAttribute('href')).toBe('/grow')
+    expect(within(screen.getByTestId('alert-chore_feed')).getByText('Feed')).toBeTruthy()
+    fireEvent.click(top.getByText('Done'))
+    expect(calls.acknowledge).toHaveBeenCalledWith({ id: 4 })
+  })
+
   it('falls back to the label and raw detail', () => {
     expect(describeAlert({ kind: 'over_temp', detail: 'board at 71°C' })).toEqual({ title: 'Board over temperature', detail: 'board at 71°C' })
     expect(describeAlert({ kind: 'camera_missing', detail: 'no camera' })).toEqual({ title: 'Camera not capturing', detail: 'no camera' })

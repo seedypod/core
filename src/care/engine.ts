@@ -1,15 +1,28 @@
 /**
- * Care engine (ADR-0029): runs the setup check when something that can change
- * it happens (a schedule, a pod, the sensor inventory, hald coming and going,
- * the tank level turning suspect) and on a slow tick, and keeps one alert per
- * problem. Event-driven so an agent watching alerts wakes only on a change.
+ * Care engine (ADR-0029): runs the setup check and the chores when something
+ * that can change them happens (a schedule, a pod, the sensor inventory, hald
+ * coming and going, the tank level turning suspect, a logged tank action, a new
+ * capture) and on a slow tick, and keeps one alert per problem. A chore raises
+ * an alert only when a reading makes it due: calendar chores are the grow
+ * reminders' job, and a reading is news. Event-driven so an agent watching
+ * alerts wakes only on a change.
  */
 import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
-import type { Store } from '../store/types'
+import type { Store, TankActionKind } from '../store/types'
+import { chores, type Chore, type ChoreId } from './chores'
 import { SETUP_ALERTS, setupReport, type SetupReport } from './setup'
 
 const TICK_MS = 15 * 60_000
+
+/** The chores a reading can make due, and the alert each raises. */
+export const CHORE_ALERTS = { top_off: 'chore_top_off', feed: 'chore_feed', thin: 'chore_thin' } as const satisfies Partial<Record<ChoreId, string>>
+
+/** The tank action that marks a chore alert's chore done, for acknowledging it. */
+export function choreDoneKind(alert: string): TankActionKind | null {
+  const id = (Object.keys(CHORE_ALERTS) as Array<keyof typeof CHORE_ALERTS>).find(k => CHORE_ALERTS[k] === alert)
+  return id ?? null
+}
 
 export class CareEngine {
   private timer: ReturnType<typeof setInterval> | null = null
@@ -24,39 +37,51 @@ export class CareEngine {
     return (this.deps.now ?? (() => new Date()))()
   }
 
-  /** Raise, refresh or clear each setup alert to match the unit. Writes only on a change. */
-  tick(): SetupReport {
-    const { store, hal, events } = this.deps
-    const report = setupReport(store, hal.snapshot())
-    const ts = this.now().toISOString()
+  /** Raise, refresh or clear each setup and chore alert to match the unit. Writes only on a change. */
+  tick(): { setup: SetupReport, chores: Chore[] } {
+    const { store, hal } = this.deps
+    const snap = hal.snapshot()
+    const now = this.now()
+    const setup = setupReport(store, snap)
+    const list = chores(store, snap, now)
     const rows = store.alerts.list()
-    for (const kind of SETUP_ALERTS) {
-      const issue = report.issues.find(i => i.alert === kind)
-      const active = rows.find(a => a.kind === kind && a.active)
-      if (!issue) {
-        if (active) {
-          store.alerts.clear(kind, ts)
-          events.emit({ kind: 'mutation', path: `alerts.${kind}` })
-        }
-        this.resolvedAt.set(kind, ts)
-        continue
+    for (const kind of SETUP_ALERTS) this.sync(rows, kind, setup.issues.find(i => i.alert === kind)?.detail ?? null, false)
+    for (const [id, kind] of Object.entries(CHORE_ALERTS)) {
+      const c = list.find(x => x.id === id)
+      // A chore's detail carries the reading, so it changes every sample: held in memory, and dismissal goes by kind.
+      this.sync(rows, kind, c?.state === 'due' && c.basis === 'reading' ? c.reason : null, true)
+    }
+    return { setup, chores: list }
+  }
+
+  private sync(rows: ReturnType<Store['alerts']['list']>, kind: string, detail: string | null, live: boolean): void {
+    const { store, events } = this.deps
+    const ts = this.now().toISOString()
+    const active = rows.find(a => a.kind === kind && a.active)
+    if (detail === null) {
+      if (active) {
+        store.alerts.clear(kind, ts)
+        events.emit({ kind: 'mutation', path: `alerts.${kind}` })
       }
-      if (active?.detail === issue.detail) continue
-      // Dismissed stays dismissed until the problem changes or goes away and comes back.
+      this.resolvedAt.set(kind, ts)
+      return
+    }
+    if (active?.detail === detail) return
+    if (!active) {
+      // Dismissed stays dismissed until the problem changes (setup) or goes away and comes back.
       const last = rows.find(a => a.kind === kind)
       const resolved = this.resolvedAt.get(kind)
-      if (!active && last?.dismissedAt && last.detail === issue.detail && (!resolved || resolved < last.dismissedAt)) continue
-      store.alerts.raise(kind, issue.detail, ts)
-      events.emit({ kind: 'mutation', path: `alerts.${kind}` })
+      if (last?.dismissedAt && (live || last.detail === detail) && (!resolved || resolved < last.dismissedAt)) return
     }
-    return report
+    store.alerts.raise(kind, detail, ts, { live: live && !!active })
+    if (!active || !live) events.emit({ kind: 'mutation', path: `alerts.${kind}` })
   }
 
   start(): void {
     this.stop()
     this.unsub = this.deps.events.subscribe((e) => {
       const relevant = (e.kind === 'schedule' && e.action === 'changed')
-        || (e.kind === 'mutation' && (e.path === 'pods' || e.path === 'devices'))
+        || (e.kind === 'mutation' && (e.path === 'pods' || e.path === 'devices' || e.path === 'tank' || e.path === 'captures'))
         || (e.kind === 'hal' && (e.event.type === 'availability' || e.event.type === 'system' || e.event.type === 'devices'))
         // Turning suspect warns at once; turning good again clears on the tick, so a flapping sensor can't churn the card.
         || (e.kind === 'hal' && e.event.type === 'sensor' && e.event.id === 'water_level_pct' && e.event.reading.quality === 'suspect' && this.lastQuality !== 'suspect')
