@@ -18,7 +18,7 @@ vi.mock('@/src/utils/trpc', () => {
     if (name === 'capture') calls.capture(input, opts)
     if (name === 'summary') calls.summary(input)
     // Per camera or per capture when a test sets it so, else one answer for every input.
-    const by = name === 'frames' ? (input as { camera: string }).camera : name === 'capture' ? (input as { captureId: string }).captureId : null
+    const by = name === 'frames' ? (input as { camera: string }).camera : name === 'capture' ? (input as { captureId: string }).captureId : name === 'compare' ? (input as { metric: string }).metric : null
     const answer = by !== null && data.has(`${name}:${by}`) ? data.get(`${name}:${by}`) : data.get(name)
     return { data: opts?.enabled === false ? undefined : answer }
   } })
@@ -64,7 +64,7 @@ beforeEach(() => {
     { ...base, id: 'leaf-unet', version: 2, label: 'leaf-unet', description: 'Results posted by an off-device worker.', primary: false, source: 'remote', runsOn: ['remote'], metrics: [], captures: 0, rows: 0 },
   ])
   data.set('status', { running: null, waiting: [], dropped: 0, failed: 0, backfill: null })
-  data.set('compare', [
+  data.set('compare:green_fraction', [
     { analyzer: 'green-threshold', version: 1, source: 'device', points: [{ ts: '2026-01-01T00:00:00Z', value: 0.2, captureId: 'a' }, { ts: '2026-01-02T00:00:00Z', value: 0.4, captureId: 'b' }] },
     { analyzer: 'exg-otsu', version: 1, source: 'device', points: [{ ts: '2026-01-02T00:00:00Z', value: 0.52, captureId: 'b' }] },
   ])
@@ -113,7 +113,33 @@ describe('AnalysisPage', () => {
     expect(screen.getByRole('img', { name: 'green-threshold@1, exg-otsu@1' })).toBeTruthy()
     expect(screen.getByText('52%')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Pod'), { target: { value: '7' } })
-    expect(calls.compare).toHaveBeenLastCalledWith({ slot: 7, metric: 'green_fraction', limit: 200 })
+    expect(calls.compare).toHaveBeenCalledWith({ slot: 7, metric: 'green_fraction', limit: 200 })
+    expect(calls.compare).toHaveBeenLastCalledWith({ slot: 7, metric: 'pod_state', limit: 1 })
+  })
+
+  it('shows a learned analyser\'s pod states beside the green fractions', () => {
+    const state = (slot: number, value: number, detail: Record<string, unknown> | null) => ({ ...row('pod-state', slot, value), metric: 'pod_state', detail })
+    data.set('analyzers', [...(data.get('analyzers') as object[]), { ...base, id: 'pod-state', version: 1, label: 'Pod state (learned)', description: 'A small CNN.', primary: false, metrics: [{ name: 'pod_state', label: 'Pod state', description: '' }] }])
+    data.set('capture:upper-1', [row('green-threshold', 1, 0.4), state(1, 2, { state: 'growing', confidence: 0.87 }), state(2, 0, null)])
+    data.set('compare:pod_state', [{ analyzer: 'pod-state', version: 1, source: 'device', points: [{ ts: '2026-01-02T00:00:00Z', value: 1, captureId: 'b' }] }])
+    render(<AnalysisPage />)
+    const table = screen.getByRole('table')
+    expect([...table.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['POD', 'PLANT', 'LEAF COVER', 'THRESHOLD', 'OTSU', 'STATE'])
+    expect(podRows()[0]?.textContent).toContain('growing')
+    expect(podRows()[0]?.querySelector('td[title="growing · 87%"]')).toBeTruthy()
+    expect(podRows()[1]?.textContent).toContain('empty')
+    expect(screen.getByText('sprouted')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Analyser'), { target: { value: 'pod-state@1' } })
+    expect(screen.queryByText('Make primary')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'Pod bounds' }))
+    expect(screen.getAllByTestId('pod-bounds')[0]?.querySelector('[data-slot]')?.textContent).toBe('1 · growing')
+  })
+
+  it('says when an on-device analyser is off, and offers no re-run', () => {
+    data.set('analyzers', [{ ...base, id: 'pod-state', version: 1, label: 'Pod state (learned)', description: 'A small CNN.', primary: false, metrics: [], captures: 0, rows: 0, disabled: 'No weights file is installed, so this analyser is off.' }])
+    render(<AnalysisPage />)
+    expect(screen.getByText('Off. No weights file is installed, so this analyser is off.')).toBeTruthy()
+    expect(screen.queryByText('Re-run')).toBeNull()
   })
 
   it('shows both cameras\' stills and every analyser\'s green fraction per pod in one table, in listing order', () => {

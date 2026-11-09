@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { decodeJpeg } from '../analyze'
-import { DEVICE_ANALYZERS, excessGreen, exgOtsu, findAnalyzer, greenThreshold, info, maskPbm, otsu, runAnalyzers } from '../analyzer'
+import { RULE_ANALYZERS, excessGreen, exgOtsu, findAnalyzer, greenThreshold, info, maskPbm, otsu, runAnalyzers } from '../analyzer'
 import { execute } from '../execute'
 import { grid, jpeg, tower } from './fixtures'
 
@@ -12,9 +12,9 @@ const img = (bytes: Uint8Array) => {
 
 describe('analysers', () => {
   it('describe themselves completely and uniquely', () => {
-    const ids = DEVICE_ANALYZERS.map(a => a.id)
+    const ids = RULE_ANALYZERS.map(a => a.id)
     expect(new Set(ids).size).toBe(ids.length)
-    for (const a of DEVICE_ANALYZERS) {
+    for (const a of RULE_ANALYZERS) {
       const i = info(a)
       expect(i).not.toHaveProperty('run')
       expect(i.label && i.description && i.version >= 1).toBeTruthy()
@@ -26,7 +26,7 @@ describe('analysers', () => {
   })
 
   it('score the green column high and the soil column low', () => {
-    const out = runAnalyzers(img(jpeg(300, 250, true)), 'upper', DEVICE_ANALYZERS, { artifacts: false })
+    const out = runAnalyzers(img(jpeg(300, 250, true)), 'upper', RULE_ANALYZERS, { artifacts: false })
     expect(out.map(o => `${o.analyzer}@${o.version}`)).toEqual(['green-threshold@2', 'exg-otsu@2'])
     for (const o of out) {
       expect(o.results).toHaveLength(15)
@@ -41,7 +41,7 @@ describe('analysers', () => {
   })
 
   it('read an empty tower under a tinted light as empty (#132)', () => {
-    for (const o of runAnalyzers(img(tower(640, 480, [])), 'upper', DEVICE_ANALYZERS, { artifacts: false }, grid('upper'))) {
+    for (const o of runAnalyzers(img(tower(640, 480, [])), 'upper', RULE_ANALYZERS, { artifacts: false }, grid('upper'))) {
       expect(Math.max(...o.results.map(r => r.value))).toBeLessThanOrEqual(0.01)
     }
   })
@@ -52,7 +52,7 @@ describe('analysers', () => {
     // Pod 7 has a seedling of its own, off the middle of its region.
     const plant = { x: 320, y: 144, r: 180, ry: 75 }
     const still = img(tower(640, 480, [plant, { x: 50, y: 215, r: 8, colour: [120, 200, 80] }]))
-    for (const o of runAnalyzers(still, 'upper', DEVICE_ANALYZERS, { artifacts: false }, grid('upper'))) {
+    for (const o of runAnalyzers(still, 'upper', RULE_ANALYZERS, { artifacts: false }, grid('upper'))) {
       const bySlot = new Map(o.results.map(r => [r.slot, r.value]))
       expect(bySlot.get(5), o.analyzer).toBeGreaterThan(0.9)
       for (const empty of [1, 2, 3, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15]) expect(bySlot.get(empty), `${o.analyzer} pod ${empty}`).toBeLessThanOrEqual(0.01)
@@ -63,7 +63,7 @@ describe('analysers', () => {
   it('still count every pod of a tower whose leaves have grown together', () => {
     // Pod 4's own plant touches pod 5's, so they are one blob centred in pod 5.
     const still = img(tower(640, 480, [{ x: 320, y: 144, r: 180, ry: 75 }, { x: 106, y: 144, r: 60 }]))
-    for (const o of runAnalyzers(still, 'upper', DEVICE_ANALYZERS, { artifacts: false }, grid('upper'))) {
+    for (const o of runAnalyzers(still, 'upper', RULE_ANALYZERS, { artifacts: false }, grid('upper'))) {
       const bySlot = new Map(o.results.map(r => [r.slot, r.value]))
       expect(bySlot.get(4), o.analyzer).toBeGreaterThan(0.4)
       expect(bySlot.get(6), o.analyzer).toBeLessThanOrEqual(0.01)

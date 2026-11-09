@@ -14,6 +14,8 @@ const Analyzer = z.object({
   description: z.string(),
   metrics: z.array(Metric),
   runsOn: z.array(Source),
+  /** Why an on-device analyser is off, e.g. no weights file (#185). */
+  disabled: z.string().optional(),
   source: Source,
   primary: z.boolean(),
   rows: z.number(),

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { encode } from 'jpeg-js'
 import { describe, expect, it } from 'vitest'
 import { createWorkerExecutor } from '../workerExecutor'
@@ -24,6 +25,23 @@ describe('worker executor', () => {
     }
     finally {
       await w.close()
+    }
+  }, 20_000)
+
+  it('runs the learned analyser from the weights core passes it', async () => {
+    const text = readFileSync(new URL('../../../models/pod-state.json', import.meta.url), 'utf8')
+    const w = createWorkerExecutor(script, { execArgv: ['--import', 'tsx'], workerData: { podStateModel: { text } } })
+    const off = createWorkerExecutor(script, { execArgv: ['--import', 'tsx'], workerData: { podStateModel: { text: null } } })
+    try {
+      const out = await w.run({ bytes: jpeg(320, 240, true), camera: 'lower', analyzers: ['pod-state'], opts: { artifacts: false } })
+      if (!Array.isArray(out)) throw new Error('should have scored it')
+      expect(out[0]?.analyzer).toBe('pod-state')
+      expect(out[0]?.results.filter(r => r.metric === 'pod_state').map(r => r.slot)).toEqual(Array.from({ length: 15 }, (_, i) => 16 + i))
+      expect(await off.run({ bytes: jpeg(320, 240, true), camera: 'lower', analyzers: ['pod-state'], opts: { artifacts: false } })).toEqual([])
+    }
+    finally {
+      await w.close()
+      await off.close()
     }
   }, 20_000)
 

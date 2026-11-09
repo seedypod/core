@@ -26,6 +26,8 @@ export interface AnalyzerInfo {
   metrics: MetricInfo[]
   /** `device` runs on the unit after every capture; `remote` results arrive through the ingest API. */
   runsOn: Array<'device' | 'remote'>
+  /** Why an on-device analyser is off (no weights file, a bad one); absent when it runs. */
+  disabled?: string
 }
 
 /** One measurement of one pod by one analyser. */
@@ -58,7 +60,7 @@ export interface CaptureAnalyzer extends AnalyzerInfo {
 }
 
 export function info(a: CaptureAnalyzer): AnalyzerInfo {
-  return { id: a.id, version: a.version, label: a.label, description: a.description, metrics: a.metrics, runsOn: a.runsOn }
+  return { id: a.id, version: a.version, label: a.label, description: a.description, metrics: a.metrics, runsOn: a.runsOn, ...(a.disabled ? { disabled: a.disabled } : {}) }
 }
 
 const GREEN_FRACTION: MetricInfo = { name: 'green_fraction', label: 'Green area', description: 'Fraction of the pod crop classified as plant, 0–1.' }
@@ -119,13 +121,29 @@ function perPod(mask: Uint8Array, img: Rgba, pods: Record<number, Rect>, detail?
   return Object.keys(pods).map(Number).map(slot => ({ slot, metric: 'green_fraction', value: round3(cover[slot] ?? 0), ...(detail ? { detail } : {}) }))
 }
 
-/** Analysers that run on the unit, in the order they run. */
-export const DEVICE_ANALYZERS: CaptureAnalyzer[] = [greenThreshold, exgOtsu]
+/** The rule-based analysers, which need nothing but the code. */
+export const RULE_ANALYZERS: CaptureAnalyzer[] = [greenThreshold, exgOtsu]
+
+/** Learned analysers, installed at startup from their weights files (`installLearned`). */
+let learned: CaptureAnalyzer[] = []
+
+/**
+ * Set the learned analysers on this thread. Core does it at startup and the
+ * vision worker from the same weights, so both list and run the same ones.
+ */
+export function installLearned(list: CaptureAnalyzer[]): void {
+  learned = list
+}
+
+/** Analysers on the unit, in the order they run, including disabled ones (listed, never run). */
+export function deviceAnalyzers(): CaptureAnalyzer[] {
+  return [...RULE_ANALYZERS, ...learned]
+}
 
 export const DEFAULT_PRIMARY = greenThreshold.id
 
 export function findAnalyzer(id: string): CaptureAnalyzer | undefined {
-  return DEVICE_ANALYZERS.find(a => a.id === id)
+  return deviceAnalyzers().find(a => a.id === id)
 }
 
 /** Run every given analyser over one decoded still, on the camera's pod boxes (fractions of the frame). */

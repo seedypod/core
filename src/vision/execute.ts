@@ -3,7 +3,7 @@
  * the inline executor (tests, browser demo) and the worker thread (the unit),
  * so both paths score a still identically.
  */
-import { DEVICE_ANALYZERS, runAnalyzers, type AnalyzerOptions, type AnalyzerOutput } from './analyzer'
+import { deviceAnalyzers, runAnalyzers, type AnalyzerOptions, type AnalyzerOutput } from './analyzer'
 import { decodeJpeg, hasZeroFilledRows } from './analyze'
 import type { PodRegions } from './regions'
 
@@ -29,7 +29,7 @@ export function execute(job: AnalysisJob): JobResult {
   const img = decodeJpeg(job.bytes)
   if (!img) return null
   if (hasZeroFilledRows(img)) return DAMAGED
-  return runAnalyzers(img, job.camera, DEVICE_ANALYZERS.filter(a => job.analyzers.includes(a.id)), job.opts, job.regions)
+  return runAnalyzers(img, job.camera, deviceAnalyzers().filter(a => !a.disabled && job.analyzers.includes(a.id)), job.opts, job.regions)
 }
 
 /** Runs a job somewhere: on this thread, or on a worker so the event loop never stalls. */

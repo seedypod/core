@@ -19,13 +19,14 @@ columns left to right, counted across then down from the top.
 
 ## On the unit
 
-Two analysers run after every capture, on a worker thread so the app stays
+Three analysers run after every capture, on a worker thread so the app stays
 responsive while a Pi decodes the photo:
 
 | Analyser | What it does |
 |---|---|
 | `green-threshold@2` | Excess-green index (2G − R − B) above a fixed cut-off. The original baseline; drifts with grow-light colour and exposure. |
 | `exg-otsu@2` | The same index with the cut-off chosen per photo by Otsu's method (the PlantCV approach), so a lighting change moves the threshold rather than the result. |
+| `pod-state@1` | A small learned model that names each pod empty, sprouted, growing, ready or unhealthy, with a confidence. See [the learned pod-state analyser](#the-learned-pod-state-analyser). |
 
 Both count only what can be a plant, in two steps (version 2, from
 [#132](https://github.com/seedypod/core/issues/132)):
@@ -118,6 +119,71 @@ with or without the photos. Scripts can use
 
 This is what you pull to a laptop to check an analyser against what you see,
 recalibrate a threshold, or train a model.
+
+## The learned pod-state analyser
+
+`pod-state` is a small convolutional network (three 3×3 convolutions of 16, 32
+and 64 channels, a global average pool and one dense layer, about 24,000
+weights) that reads each pod's crop shrunk to 64×64 and names its state:
+`empty`, `sprouted`, `growing`, `ready` or `unhealthy`. Per pod it stores two
+results: `pod_state`, the index of the most likely class (its `detail` names
+it and holds every class's probability), and `pod_state_confidence`, that
+class's probability. The Analysis screen shows the state in a column beside the
+green fractions, on the pod bounds when it is the chosen analyser, and the
+pod's latest state under **One pod over time**. It can't be primary, since pod
+trends follow a green fraction.
+
+**The shipped model is a bootstrap, not a validated classifier.** Revision
+`bootstrap-2026-11` was trained before anyone had labelled a pod and before
+any pod on the reference unit had sprouted, so its labels are weak: a pod
+counts as `empty` when the rule-based analysers read 0.5 % cover or less and
+it wasn't planted, or was planted too recently to have sprouted; the other four
+classes come from synthetic plants (leaf shapes of growing size, and
+yellow-brown ones for `unhealthy`) painted onto real empty-pod crops. It has
+learned roughly "how much plant, and what colour", the same thing the rule
+analysers measure, and it is a baseline for a model trained on real labels to
+beat. Its training block in the weights file (`training`) records the counts
+and held-out scores; on held-out real crops it called 251 of 252 empty pods
+empty (the rule analysers agree with those labels by construction, since they
+made them), and on held-out synthetic plants it got 89 % right, where leaf
+cover alone gets 49 %. Neither number says how it does on real seedlings.
+Stills taken with the grow light off are skipped, since it never saw one.
+
+It runs in plain TypeScript, not ONNX: the Pi Zero W has no ONNX runtime that
+fits ([ADR 0019](adr/0019-pluggable-capture-analysis.md), 2026-11-09
+amendment). On the unit that costs about 0.75 s per pod, about 23 s for a
+capture of 30 pods, on the vision worker.
+
+### Weights file
+
+The model ships with core as `models/pod-state.json`, so every release and the
+web updater carry it. The format is `seedypod-cnn` version 1: one JSON file
+with a header (the analyser id, a `version` results are stored under, a
+`revision` name, the class names, the input size and per-channel
+normalisation, the layer list) and each tensor as little-endian float32 in
+base64. It is about 130 KB. `POD_STATE_MODEL` points core at a different file;
+set it empty to run without one.
+
+Without the file, or with one that doesn't parse or lists other classes, the
+analyser is listed as off: the Analysis screen says why, and it is never run
+or re-run.
+
+### Train a better one
+
+Training lives in [seedypod/training](https://github.com/seedypod/training):
+export a dataset with photos, label pods on the Analysis screen when that
+lands, then
+
+```sh
+uv run --locked python scripts/train.py --pod seedypod.local --version 2 --revision my-model-2026-12
+```
+
+It writes `pod-state.json` and a `report.json` with held-out scores for the
+model and for the rule-based analysers. Give each new model a new `--version`,
+so its results sit beside the old ones instead of mixing with them. To ship it,
+replace `models/pod-state.json` in a core PR. The parity test
+(`src/vision/tests/podState.test.ts`) checks that core's forward pass matches
+PyTorch's within 1e-4 on a fixture the training repository generates.
 
 ## Mirror photos off the unit (opt-in)
 
