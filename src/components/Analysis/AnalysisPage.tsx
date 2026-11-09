@@ -11,6 +11,7 @@ import { isDemo } from '@/src/demo/mode'
 import { fmtStamp } from '@/src/lib/timeAgo'
 import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
+import { defaultPodRects } from '@/src/vision/greenArea'
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
 const key = (a: { analyzer: string, version: number }) => `${a.analyzer}@${a.version}`
@@ -137,6 +138,7 @@ export function gapSummary(rows: Result[], columns: string[], labels: Record<str
 function PerPod({ analyzers, colorOf }: { analyzers: Listing[], colorOf: (k: string) => string }) {
   const [camera, setCamera] = useState<'upper' | 'lower'>('upper')
   const [all, setAll] = useState(false)
+  const [bounds, setBounds] = useState(false)
   const list = trpc.camera.list.useQuery({ camera, limit: 1 })
   const pods = trpc.grow.pods.useQuery()
   const frame = list.data?.[0]
@@ -149,6 +151,7 @@ function PerPod({ analyzers, colorOf }: { analyzers: Listing[], colorOf: (k: str
   const slots = [...new Set(rows.map(r => r.slot))].sort((a, b) => a - b)
   const value = (slot: number, col: string) => rows.find(r => r.slot === slot && key(r) === col)?.value
   const plant = (slot: number) => pods.data?.find(p => p.slot === slot)?.plant ?? '—'
+  const empty = (slot: number) => pods.data?.find(p => p.slot === slot)?.status === 'empty'
   const labels = Object.fromEntries(analyzers.map(a => [key({ analyzer: a.id, version: a.version }), a.label]))
   const summary = gapSummary(rows, columns, labels)
   const shown = all ? slots : slots.slice(0, ROWS)
@@ -189,23 +192,30 @@ function PerPod({ analyzers, colorOf }: { analyzers: Listing[], colorOf: (k: str
                         const vals = columns.map(c => value(s, c)).filter((v): v is number => v !== undefined)
                         const lo = Math.min(...vals)
                         const hi = Math.max(...vals)
+                        // A pod marked empty has no leaf cover to report, whatever the camera sees there.
+                        const none = empty(s)
+                        const read = none ? `Marked empty; analysers read ${vals.map(pct).join(', ')}` : undefined
                         return (
                           <tr key={s}>
                             <td className={cn(cell, 'font-mono text-xs text-fg-3')}>{s}</td>
                             <td className={cn(cell, 'max-w-0 truncate pl-3.5')}>{plant(s)}</td>
-                            <td className={cn(cell, 'pl-3.5')}>
-                              <div className="relative h-2.5">
-                                <span className="absolute inset-x-0 top-0.5 h-1.5 rounded-[3px] bg-active" />
-                                <span className="absolute top-0.5 h-1.5 rounded-[3px] bg-line-2" style={{ left: pct(lo), width: pct(hi - lo) }} />
-                                {columns.map((c) => {
-                                  const v = value(s, c)
-                                  return v === undefined ? null : <span key={c} className="absolute top-0 h-2.5 w-0.5" style={{ left: pct(Math.min(1, v)), background: colorOf(c) }} />
-                                })}
-                              </div>
+                            <td className={cn(cell, 'pl-3.5')} title={read}>
+                              {none
+                                ? <span className="text-xs text-fg-3">Empty · no cover</span>
+                                : (
+                                    <div className="relative h-2.5">
+                                      <span className="absolute inset-x-0 top-0.5 h-1.5 rounded-[3px] bg-active" />
+                                      <span className="absolute top-0.5 h-1.5 rounded-[3px] bg-line-2" style={{ left: pct(lo), width: pct(hi - lo) }} />
+                                      {columns.map((c) => {
+                                        const v = value(s, c)
+                                        return v === undefined ? null : <span key={c} className="absolute top-0 h-2.5 w-0.5" style={{ left: pct(Math.min(1, v)), background: colorOf(c) }} />
+                                      })}
+                                    </div>
+                                  )}
                             </td>
                             {columns.map((c, ci) => {
                               const v = value(s, c)
-                              return <td key={c} className={cn(cell, 'pl-3.5 text-right font-mono text-xs')} style={ci > 0 ? { color: colorOf(c) } : undefined}>{v === undefined ? '—' : pct(v)}</td>
+                              return <td key={c} className={cn(cell, 'pl-3.5 text-right font-mono text-xs')} style={ci > 0 && !none ? { color: colorOf(c) } : undefined}>{v === undefined || none ? '—' : pct(v)}</td>
                             })}
                           </tr>
                         )
@@ -226,18 +236,44 @@ function PerPod({ analyzers, colorOf }: { analyzers: Listing[], colorOf: (k: str
           <div className="flex flex-wrap items-center gap-3">
             <span className="flex-1 text-[15px] font-medium">Latest photo</span>
             <span className="font-mono text-[11px] text-fg-3">{`${camera} · ${fmtStamp(frame.ts)}`}</span>
+            <label className="flex items-center gap-2 text-xs text-fg-2">
+              Pod bounds
+              <Toggle label="Pod bounds" on={bounds} onChange={setBounds} />
+            </label>
           </div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
             <div className="flex flex-col gap-1.5">
-              <div className="aspect-[16/10] overflow-hidden rounded-[10px] bg-code">
-                <img src={frame.path.startsWith('data:') ? frame.path : `${apiBase()}${frame.url}`} alt={`${camera} camera at ${frame.ts}`} className="size-full object-cover" />
+              <div className="relative overflow-hidden rounded-[10px] bg-code">
+                <img src={frame.path.startsWith('data:') ? frame.path : `${apiBase()}${frame.url}`} alt={`${camera} camera at ${frame.ts}`} className="block h-auto w-full" />
+                {bounds && <PodBounds camera={camera} />}
               </div>
-              <span className="text-xs text-fg-3">Original</span>
+              <span className="text-xs text-fg-3">{bounds ? 'Each pod counts plant inside its box that grows from it: centred in the box, or reaching the dashed middle.' : 'Original'}</span>
             </div>
           </div>
         </Panel>
       )}
     </>
+  )
+}
+
+/** Debug overlay (#132): the region each pod is scored on, and the core a plant must grow from, as the analysers use them. */
+export function PodBounds({ camera }: { camera: 'upper' | 'lower' }) {
+  const rects = Object.entries(defaultPodRects(camera, 1, 1))
+  const at = (n: number) => `${n * 100}%`
+  return (
+    <div className="pointer-events-none absolute inset-0" data-testid="pod-bounds">
+      <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 size-full" aria-hidden>
+        {rects.map(([slot, r]) => (
+          <g key={slot} fill="none" stroke="var(--pod-ready)" vectorEffect="non-scaling-stroke">
+            <rect x={r.x} y={r.y} width={r.w} height={r.h} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+            <rect x={r.x + r.w / 3} y={r.y + r.h / 3} width={r.w / 3} height={r.h / 3} strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+          </g>
+        ))}
+      </svg>
+      {rects.map(([slot, r]) => (
+        <span key={slot} className="absolute rounded-br-[4px] bg-pod-ready px-1 font-mono text-[10px] leading-[14px] text-inverse" style={{ left: at(r.x), top: at(r.y) }}>{slot}</span>
+      ))}
+    </div>
   )
 }
 

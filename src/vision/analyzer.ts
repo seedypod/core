@@ -5,7 +5,7 @@
  * can post results under its own id into the same table.
  */
 import type { Rect, Rgba } from './greenArea'
-import { defaultPodRects, greenFraction } from './greenArea'
+import { coverByPod, defaultPodRects, isGreen, isLeafColour } from './greenArea'
 
 export interface MetricInfo {
   /** Stable key, e.g. `green_fraction`. */
@@ -64,38 +64,58 @@ const GREEN_FRACTION: MetricInfo = { name: 'green_fraction', label: 'Green area'
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000
 
+/**
+ * Version 2 of both analysers (#132) keeps only pixels with a leaf's colour,
+ * not a colour cast's, and gives each blob of plant to one pod, so an empty pod
+ * under a tinted light or next to a large plant reads about 0.
+ */
+const V2 = 'Counts only pixels with a leaf\'s hue and saturation, and gives each blob of plant to the pod it grows from, so a neighbour\'s leaves or a tinted light don\'t read as cover.'
+
 /** The original Phase 7.2 baseline: excess green above a fixed threshold. */
 export const greenThreshold: CaptureAnalyzer = {
   id: 'green-threshold',
-  version: 1,
+  version: 2,
   label: 'Fixed green threshold',
-  description: 'Excess-green index (2G − R − B) above a fixed cut-off of 20. Transparent and cheap, but drifts with grow-light colour and exposure.',
+  description: `Excess-green index (2G − R − B) above a fixed cut-off of 20. Transparent and cheap, but drifts with grow-light colour and exposure. ${V2}`,
   metrics: [GREEN_FRACTION],
   runsOn: ['device'],
   run(img, pods) {
-    return { results: Object.entries(pods).map(([slot, rect]) => ({ slot: Number(slot), metric: 'green_fraction', value: round3(greenFraction(img, rect)) })) }
+    return { results: perPod(plantMask(img, (r, g, b) => isGreen(r, g, b)), img, pods) }
   },
 }
 
 /** Excess green with a per-image Otsu threshold (the PlantCV approach). */
 export const exgOtsu: CaptureAnalyzer = {
   id: 'exg-otsu',
-  version: 1,
+  version: 2,
   label: 'Excess green + Otsu',
-  description: 'Excess-green index with a threshold chosen per image by Otsu\'s method, so a change in lighting moves the cut-off instead of the result.',
+  description: `Excess-green index with a threshold chosen per image by Otsu's method, so a change in lighting moves the cut-off instead of the result. ${V2}`,
   metrics: [GREEN_FRACTION],
   runsOn: ['device'],
   run(img, pods, opts) {
     const exg = excessGreen(img)
     const threshold = otsu(exg)
-    const results = Object.entries(pods).map(([slot, rect]) => ({
-      slot: Number(slot),
-      metric: 'green_fraction',
-      value: round3(fractionAbove(exg, img.width, img.height, rect, threshold)),
-      detail: { threshold },
-    }))
-    return { results, artifacts: opts.artifacts ? [{ name: 'mask.pbm', bytes: maskPbm(exg, img.width, img.height, threshold) }] : undefined }
+    const mask = plantMask(img, (_r, _g, _b, p) => (exg[p] ?? 0) > threshold)
+    return { results: perPod(mask, img, pods, { threshold }), artifacts: opts.artifacts ? [{ name: 'mask.pbm', bytes: maskPbm(mask, img.width, img.height, 0) }] : undefined }
   },
+}
+
+/** 1 where `test` passes and the pixel has a leaf's colour. */
+function plantMask(img: Rgba, test: (r: number, g: number, b: number, p: number) => boolean): Uint8Array {
+  const n = img.width * img.height
+  const mask = new Uint8Array(n)
+  for (let p = 0; p < n; p++) {
+    const r = img.data[p * 4] ?? 0
+    const g = img.data[p * 4 + 1] ?? 0
+    const b = img.data[p * 4 + 2] ?? 0
+    if (test(r, g, b, p) && isLeafColour(r, g, b)) mask[p] = 1
+  }
+  return mask
+}
+
+function perPod(mask: Uint8Array, img: Rgba, pods: Record<number, Rect>, detail?: Record<string, unknown>): PodResult[] {
+  const cover = coverByPod(mask, img.width, img.height, pods)
+  return Object.keys(pods).map(Number).map(slot => ({ slot, metric: 'green_fraction', value: round3(cover[slot] ?? 0), ...(detail ? { detail } : {}) }))
 }
 
 /** Analysers that run on the unit, in the order they run. */
@@ -152,22 +172,6 @@ export function otsu(values: Uint8Array): number {
   }
   // An image with nothing green has no plant class; never call soil "plant" just because it is the brighter half.
   return Math.max(threshold, 128 + 10)
-}
-
-function fractionAbove(exg: Uint8Array, width: number, height: number, rect: Rect, threshold: number): number {
-  const x0 = Math.max(0, Math.floor(rect.x))
-  const y0 = Math.max(0, Math.floor(rect.y))
-  const x1 = Math.min(width, Math.ceil(rect.x + rect.w))
-  const y1 = Math.min(height, Math.ceil(rect.y + rect.h))
-  let above = 0
-  let total = 0
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      if ((exg[y * width + x] ?? 0) > threshold) above++
-      total++
-    }
-  }
-  return total === 0 ? 0 : above / total
 }
 
 /** 1-bit PBM (P4): plant pixels black. Viewable in any image tool, 1/32 the size of RGBA. */

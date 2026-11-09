@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeJpeg } from '../analyze'
 import { DEVICE_ANALYZERS, excessGreen, exgOtsu, findAnalyzer, greenThreshold, info, maskPbm, otsu, runAnalyzers } from '../analyzer'
 import { execute } from '../execute'
-import { jpeg } from './fixtures'
+import { jpeg, tower } from './fixtures'
 
 const img = (bytes: Uint8Array) => {
   const d = decodeJpeg(bytes)
@@ -27,7 +27,7 @@ describe('analysers', () => {
 
   it('score the green column high and the soil column low', () => {
     const out = runAnalyzers(img(jpeg(300, 250, true)), 'upper', DEVICE_ANALYZERS, { artifacts: false })
-    expect(out.map(o => `${o.analyzer}@${o.version}`)).toEqual(['green-threshold@1', 'exg-otsu@1'])
+    expect(out.map(o => `${o.analyzer}@${o.version}`)).toEqual(['green-threshold@2', 'exg-otsu@2'])
     for (const o of out) {
       expect(o.results).toHaveLength(15)
       const bySlot = new Map(o.results.map(r => [r.slot, r.value]))
@@ -38,6 +38,36 @@ describe('analysers', () => {
     }
     const lower = runAnalyzers(img(jpeg(300, 250, false)), 'lower', [greenThreshold], { artifacts: false })[0]
     expect(lower?.results.map(r => r.slot)).toEqual(Array.from({ length: 15 }, (_, i) => 16 + i))
+  })
+
+  it('read an empty tower under a tinted light as empty (#132)', () => {
+    for (const o of runAnalyzers(img(tower(640, 480, [])), 'upper', DEVICE_ANALYZERS, { artifacts: false })) {
+      expect(Math.max(...o.results.map(r => r.value))).toBeLessThanOrEqual(0.01)
+    }
+  })
+
+  it('read an empty pod next to a large plant as empty, and a seedling across the way as cover (#132)', () => {
+    // 640 × 480 upper still, regions 171 × 77 px on a 213 × 96 grid. Pod 5's plant,
+    // centred at (320, 144), spills 52 px into pods 4 and 6 and 17 px into 2 and 8.
+    // Pod 7 has a seedling of its own, off the middle of its region.
+    const plant = { x: 320, y: 144, r: 180, ry: 75 }
+    const still = img(tower(640, 480, [plant, { x: 50, y: 215, r: 8, colour: [120, 200, 80] }]))
+    for (const o of runAnalyzers(still, 'upper', DEVICE_ANALYZERS, { artifacts: false })) {
+      const bySlot = new Map(o.results.map(r => [r.slot, r.value]))
+      expect(bySlot.get(5), o.analyzer).toBeGreaterThan(0.9)
+      for (const empty of [1, 2, 3, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15]) expect(bySlot.get(empty), `${o.analyzer} pod ${empty}`).toBeLessThanOrEqual(0.01)
+      expect(bySlot.get(7), o.analyzer).toBeGreaterThan(0.005)
+    }
+  })
+
+  it('still count every pod of a tower whose leaves have grown together', () => {
+    // Pod 4's own plant touches pod 5's, so they are one blob centred in pod 5.
+    const still = img(tower(640, 480, [{ x: 320, y: 144, r: 180, ry: 75 }, { x: 106, y: 144, r: 60 }]))
+    for (const o of runAnalyzers(still, 'upper', DEVICE_ANALYZERS, { artifacts: false })) {
+      const bySlot = new Map(o.results.map(r => [r.slot, r.value]))
+      expect(bySlot.get(4), o.analyzer).toBeGreaterThan(0.4)
+      expect(bySlot.get(6), o.analyzer).toBeLessThanOrEqual(0.01)
+    }
   })
 
   it('exg-otsu reports its per-image threshold and emits a mask only when asked', () => {

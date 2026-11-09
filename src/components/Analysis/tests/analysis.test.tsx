@@ -108,6 +108,29 @@ describe('AnalysisPage', () => {
     expect(screen.getByAltText('upper camera at 2026-01-02T00:00:00Z')).toBeTruthy()
   })
 
+  it('reports a pod marked empty as no cover rather than a number', () => {
+    data.set('pods', [{ slot: 1, plant: null, status: 'empty' }, { slot: 2, plant: 'Basil', status: 'growing' }])
+    render(<AnalysisPage />)
+    const rows = [...screen.getByRole('table').querySelectorAll('tbody tr')]
+    expect(rows[0]?.textContent).toContain('Empty · no cover')
+    expect(rows[0]?.textContent).not.toContain('%')
+    expect(rows[0]?.querySelector('[title]')?.getAttribute('title')).toBe('Marked empty; analysers read 40%, 45%')
+    expect(rows[1]?.textContent).toContain('10%')
+  })
+
+  it('draws the bounds each pod is scored on over the photo, for the camera shown', () => {
+    render(<AnalysisPage />)
+    expect(screen.queryByTestId('pod-bounds')).toBeNull()
+    expect(screen.getByText('Original')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Pod bounds'))
+    const overlay = screen.getByTestId('pod-bounds')
+    expect(overlay.querySelectorAll('svg g')).toHaveLength(15)
+    expect([...overlay.querySelectorAll('span')].map(s => s.textContent)).toEqual(Array.from({ length: 15 }, (_, i) => `${i + 1}`))
+    expect(screen.getByText(/dashed middle/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Lower' }))
+    expect(screen.getByTestId('pod-bounds').querySelector('span')?.textContent).toBe('16')
+  })
+
   it('lists ten pods until asked for all of them', () => {
     data.set('capture', Array.from({ length: 15 }, (_, i) => row('green-threshold', i + 1, 0.3)))
     render(<AnalysisPage />)
