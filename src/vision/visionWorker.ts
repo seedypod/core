@@ -5,13 +5,16 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import { installLearned } from './analyzer'
 import { execute, type AnalysisJob } from './execute'
-import { podStateFromText } from './podState'
+import { learnedAnalyzers, type LearnedSpec } from './podState'
 
-// The same weights core read at startup, so the worker runs exactly what core lists.
-const model = (workerData as { podStateModel?: { text: string | null, missing?: string } } | null)?.podStateModel
-if (model) installLearned([podStateFromText(model.text, model.missing)])
+// The same weights files core lists, so the worker runs exactly what core shows; `configure` follows changes (#186).
+installLearned(learnedAnalyzers((workerData as { learned?: LearnedSpec[] } | null)?.learned ?? []))
 
-parentPort?.on('message', (m: { id: number, job: AnalysisJob }) => {
+parentPort?.on('message', (m: { id: number, job: AnalysisJob } | { configure: LearnedSpec[] }) => {
+  if ('configure' in m) {
+    installLearned(learnedAnalyzers(m.configure))
+    return
+  }
   try {
     const out = execute(m.job)
     const transfer = (Array.isArray(out) ? out : []).flatMap(o => (o.artifacts ?? []).map(a => a.bytes.buffer as ArrayBuffer))

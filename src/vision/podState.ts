@@ -10,7 +10,7 @@
  * unit what it saw in training.
  */
 import type { CaptureAnalyzer, MetricInfo, PodResult } from './analyzer'
-import { forward, parseModel, softmax, type CnnModel, type ModelInput } from './cnn'
+import { forward, ModelError, parseModel, softmax, type CnnModel, type ModelInput } from './cnn'
 import type { Rect, Rgba } from './greenArea'
 
 export const POD_STATE_ID = 'pod-state'
@@ -98,15 +98,20 @@ export function classifyPods(model: CnnModel, img: Rgba, pods: Record<number, Re
 /** What the analyser listing says when it can't run. */
 export const NO_WEIGHTS = 'No weights file is installed, so this analyser is off.'
 
+/** Which analyser a revision runs as: `pod-state` for the shipped model, its own id for an uploaded one (#186). */
+export interface RunsAs { id: string, label: string }
+
+const SHIPPED: RunsAs = { id: POD_STATE_ID, label: 'Pod state (learned)' }
+
 /**
  * The pod-state analyser for a weights file, or a disabled one that says why
  * (no file, or one that failed to parse). A disabled analyser stays listed so
  * the Analysis screen can say it is off.
  */
-export function podStateAnalyzer(model: CnnModel | null, disabled: string = NO_WEIGHTS): CaptureAnalyzer {
+export function podStateAnalyzer(model: CnnModel | null, disabled: string = NO_WEIGHTS, as: RunsAs = SHIPPED): CaptureAnalyzer {
   const base = {
-    id: POD_STATE_ID,
-    label: 'Pod state (learned)',
+    id: as.id,
+    label: as.label,
     metrics: METRICS,
     runsOn: ['device'] as Array<'device' | 'remote'>,
   }
@@ -128,17 +133,36 @@ export function podStateAnalyzer(model: CnnModel | null, disabled: string = NO_W
   }
 }
 
-/** Parse a weights file's text into an analyser; a bad file gives a disabled one naming the problem. */
-export function podStateFromText(text: string | null, missing: string = NO_WEIGHTS): CaptureAnalyzer {
-  if (text === null) return podStateAnalyzer(null, missing)
+/** Parse and check a pod-state weights file. Throws ModelError naming the problem. */
+export function parsePodStateModel(text: string): CnnModel {
+  let raw: unknown
   try {
-    const model = parseModel(JSON.parse(text))
-    if (model.file.analyzer !== POD_STATE_ID) return podStateAnalyzer(null, `The weights file is for ${model.file.analyzer}, not ${POD_STATE_ID}.`)
-    // Results store the class index, so every revision must keep the same classes in the same order.
-    if (model.file.classes.join() !== POD_STATES.join()) return podStateAnalyzer(null, `The weights file's classes must be ${POD_STATES.join(', ')}.`)
-    return podStateAnalyzer(model)
+    raw = JSON.parse(text)
   }
   catch (e) {
-    return podStateAnalyzer(null, `The weights file could not be loaded: ${(e as Error).message}`)
+    throw new ModelError(`not JSON: ${(e as Error).message}`)
   }
+  const model = parseModel(raw)
+  if (model.file.analyzer !== POD_STATE_ID) throw new ModelError(`the weights file is for ${model.file.analyzer}, not ${POD_STATE_ID}`)
+  // Results store the class index, so every revision must keep the same classes in the same order.
+  if (model.file.classes.join() !== POD_STATES.join()) throw new ModelError(`the weights file's classes must be ${POD_STATES.join(', ')}`)
+  return model
+}
+
+/** Parse a weights file's text into an analyser; a bad file gives a disabled one naming the problem. */
+export function podStateFromText(text: string | null, missing: string = NO_WEIGHTS, as: RunsAs = SHIPPED): CaptureAnalyzer {
+  if (text === null) return podStateAnalyzer(null, missing, as)
+  try {
+    return podStateAnalyzer(parsePodStateModel(text), NO_WEIGHTS, as)
+  }
+  catch (e) {
+    return podStateAnalyzer(null, `The weights file could not be loaded: ${(e as Error).message}.`, as)
+  }
+}
+
+/** A learned analyser as it crosses to the vision worker: the weights file's text, and what it runs as. */
+export interface LearnedSpec { id: string, label: string, text: string | null, missing?: string }
+
+export function learnedAnalyzers(specs: LearnedSpec[]): CaptureAnalyzer[] {
+  return specs.map(s => podStateFromText(s.text, s.missing, { id: s.id, label: s.label }))
 }

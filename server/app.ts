@@ -13,6 +13,7 @@ import { RestoreRefused } from '../src/backup/restore'
 import type { Context } from '../src/server/context'
 import { appRouter } from '../src/server/routers/app'
 import { IngestBatch, IngestRefused, ingestResults } from '../src/vision/ingest'
+import { MAX_MODEL_BYTES, ModelRefused } from '../src/vision/registry'
 import { apiKeyGuard, timingSafeEqual } from './auth'
 
 export interface CreateAppOptions {
@@ -57,6 +58,27 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     }
     catch (e) {
       if (e instanceof IngestRefused) return c.json({ error: e.message }, 409)
+      throw e
+    }
+  })
+
+  // Model uploads (#186) use the same token, so a training machine needs only that one secret.
+  app.post('/api/models', async (c) => {
+    const token = ctx.store.settings.get().analysisIngestToken
+    if (!token) return c.json({ error: 'uploads are off; set an ingest token in Settings' }, 404)
+    const given = c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
+    if (!given || !timingSafeEqual(given, token)) return c.json({ error: 'unauthorized' }, 401)
+    if (!ctx.models) return c.json({ error: 'the model registry runs only on a unit' }, 404)
+    if (Number(c.req.header('content-length') ?? 0) > MAX_MODEL_BYTES) return c.json({ error: `weights file over ${MAX_MODEL_BYTES} bytes` }, 413)
+    const sha = c.req.header('x-content-sha256') ?? c.req.query('sha256')
+    if (!sha) return c.json({ error: 'send the file\'s SHA-256 in X-Content-SHA256 or ?sha256=' }, 400)
+    try {
+      const out = ctx.models.upload(await c.req.text(), sha, { enable: c.req.query('enable') === '1' || c.req.query('enable') === 'true' })
+      ctx.events.emit({ kind: 'mutation', path: 'analyses' })
+      return c.json(out, 201)
+    }
+    catch (e) {
+      if (e instanceof ModelRefused) return c.json({ error: e.message }, e.status)
       throw e
     }
   })

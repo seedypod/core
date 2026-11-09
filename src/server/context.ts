@@ -12,6 +12,7 @@ import type { BackupService } from '../backup/service'
 import type { DatabaseInspector } from '../db/inspect'
 import type { RestoreClient } from '../backup/restore'
 import type { UpdateClient } from '../update/client'
+import type { ModelRegistry } from '../vision/registry'
 import type { HomeKitControl } from '../homekit/types'
 import type { BridgeStatus } from '../mqtt/bridge'
 import type { LoggingControl } from '../logging/policy'
@@ -41,6 +42,8 @@ export interface Context {
   bootLog?: () => Promise<string | null>
   /** The HomeKit bridge (ADR 0023); node hosts only, off until enabled in Settings. */
   homekit?: HomeKitControl
+  /** Pod-state model revisions (#186); on the unit only. */
+  models?: ModelRegistry
   /** The Home Assistant MQTT bridge (ADR-0013); node hosts only, where server/index.ts owns it. */
   bridge?: () => BridgeStatus
   /** How much core and hald log; node hosts only, where the policy file lives. */

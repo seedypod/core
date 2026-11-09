@@ -6,6 +6,7 @@ import { backupRouter } from './backup'
 import { cameraRouter } from './camera'
 import { careRouter } from './care'
 import { datasetsRouter } from './datasets'
+import { modelsRouter } from './models'
 import { devicesRouter } from './devices'
 import { eventsRouter } from './events'
 import { growRouter } from './grow'
@@ -42,6 +43,7 @@ export const appRouter = router({
   camera: cameraRouter,
   vision: visionRouter,
   datasets: datasetsRouter,
+  models: modelsRouter,
   storage: storageRouter,
   backup: backupRouter,
   update: updateRouter,
