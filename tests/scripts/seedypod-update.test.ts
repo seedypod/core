@@ -326,6 +326,18 @@ describe('updating', () => {
     expect(calls()).toEqual([])
   })
 
+  it('refuses a release from before updates from the web, and one missing its build', async () => {
+    const old = tree(NEW)
+    delete old['scripts/seedypod-update.cjs']
+    release(old)
+    expect((await run('--now')).out).toMatchObject({ code: 'needs-install', error: 'this release is older than updating from the web; install it over SSH with scripts/install' })
+    const unbuilt = tree(NEW)
+    delete unbuilt['server/dist/index.js']
+    release(unbuilt)
+    expect((await run('--now')).out).toMatchObject({ code: 'invalid', error: 'the release is missing server/dist/index.js' })
+    expect(calls()).toEqual([])
+  })
+
   it('refuses while another update holds the lock', async () => {
     release(tree(NEW))
     mkdirSync(join(dir, 'work'), { recursive: true })

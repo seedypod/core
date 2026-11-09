@@ -57,7 +57,8 @@ const META = path.join(P.previous, 'meta.json')
 // Never part of a release: core's data, the installed dependencies, pnpm's store and local env files.
 const KEEP = name => name === 'data' || name === 'node_modules' || name === '.pnpm-store' || name.startsWith('.env')
 const REQUIRED = ['server/dist/index.js', 'web/dist/index.html', 'package.json', 'pnpm-lock.yaml', '.git-info', 'scripts/seedypod-update.cjs', 'scripts/seedypod-restore.cjs']
-const HEALTH_TIMEOUT_S = Number(env('SEEDYPOD_UPDATE_HEALTH_TIMEOUT') ?? 300)
+// A Pi Zero W can take minutes to start core, more with migrations to run.
+const HEALTH_TIMEOUT_S = Number(env('SEEDYPOD_UPDATE_HEALTH_TIMEOUT') ?? 600)
 const POLL_MS = Number(env('SEEDYPOD_UPDATE_POLL_MS') ?? 2000)
 const PNPM_TIMEOUT_MS = 30 * 60_000
 const MAX_ASSET_BYTES = 512 * 1024 * 1024
@@ -477,6 +478,8 @@ async function unpack(tarball) {
   fs.mkdirSync(P.next, { recursive: true, mode: 0o755 })
   const r = await run('tar', ['-xzf', tarball, '-C', P.next, '--no-same-owner'])
   if (r.code !== 0) throw new Refused('invalid', `seedypod-core.tar.gz didn't unpack: ${r.out.trim()}`)
+  // A release from before ADR-0026 would leave the unit with no way to update from the web.
+  if (!fs.existsSync(path.join(P.next, 'scripts/seedypod-update.cjs'))) throw new Refused('needs-install', 'this release is older than updating from the web; install it over SSH with scripts/install')
   for (const f of REQUIRED) if (!fs.existsSync(path.join(P.next, f))) throw new Refused('invalid', `the release is missing ${f}`)
   for (const n of fs.readdirSync(P.next)) if (KEEP(n)) fs.rmSync(path.join(P.next, n), { recursive: true, force: true })
   const want = wantedNodeMajor(P.next)
