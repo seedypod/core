@@ -167,6 +167,15 @@ describe('caller overrides', () => {
     ])
   })
 
+  it('says which way a pod sits from its ideal zone: lower, higher, or not at all', () => {
+    const r = planLayout({ model: 'home', plants: [{ plantId: 'oregano', count: 7 }, { plantId: 'jalapeno', count: 13 }], overrides: { allowedZones: { oregano: ['low', 'medium'] } } })
+    const shifts = (id: string) => r.assignments.filter(a => a.plantId === id).map(a => [a.slotZone, a.fallback, a.shift])
+    expect(shifts('oregano')).toEqual(expect.arrayContaining([['low', 0, null], ['medium', 1, 'higher']]))
+    expect(shifts('oregano').filter(x => x[2] === 'higher')).toHaveLength(1)
+    expect(shifts('jalapeno').filter(x => x[2] === 'lower')).toEqual([['medium', 1, 'lower']])
+    expect(r.assignments.filter(a => a.fallback === 0).every(a => a.shift === null)).toBe(true)
+  })
+
   it('drops the cucumber’s bottom-centre start when the caller sets its zones', () => {
     const r = planLayout({ model: 'home', plants: [{ plantId: 'cucumber', count: 1 }], overrides: { allowedZones: { cucumber: ['high'] } } })
     expect(r.assignments[0]?.slotZone).toBe('high')

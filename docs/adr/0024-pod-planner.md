@@ -52,7 +52,10 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   (`plant_catalog`, `planner_zones`, `plan_layout`, `best_spot`, `save_plan`,
   `apply_plan`), on the Plan screen, and as a Home Assistant reminder.
 - **Explaining what did not fit** (#127): every plant gets its ideal zone
-  before any plant falls back, and a fallback is exactly one zone lower. A
+  before any plant falls back, and a fallback is exactly one zone lower. Each
+  assignment's `shift` says whether it sits lower or higher than its ideal
+  zone (higher only by the caller's allowed zones), and the Plan screen
+  outlines and captions the two apart. A
   layout carries a per-zone summary (rows, slots, planted, planned, free); each
   unplaced plant carries a code, the zones it could use and the pods in them;
   and suggestions name a pod to relocate to a slot its plant tolerates, or
