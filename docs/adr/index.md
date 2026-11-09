@@ -29,3 +29,4 @@ Format follows [sleepypod/core](https://sleepypod.github.io/) (`# ADR NNNN: Titl
 - [0025 Accessory sensor nodes](0025-accessory-sensor-nodes.md) — proposed
 - [0026 One-click update from the web UI](0026-web-update.md)
 - [0027 Cameras in HomeKit and Home Assistant](0027-camera-exposure.md)
+- [0028 Camera capture format for image analysis](0028-camera-capture-format.md) — proposed
