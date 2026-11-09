@@ -106,6 +106,11 @@ describe('a bridged camera over HAP\'s resource request', () => {
     const { bridge, log } = await setup()
     const got = await request(bridge, { 'resource-type': 'image', 'image-width': 640, 'image-height': 480, 'aid': 999 })
     expect(got.error).toEqual({ httpCode: 404, status: -70409 })
+    // Home asks again every ~10 s; the same answer isn't logged twice.
+    await request(bridge, { 'resource-type': 'image', 'image-width': 640, 'image-height': 480, 'aid': 999 })
     expect(log).toEqual([expect.stringMatching(/^homekit: image request for aid 999, 640x480, reason none: HTTP 404, status -70409 in \d+ ms$/)])
+    // No aid means the published accessory itself, which is the bridge and no camera.
+    expect((await request(bridge, { 'resource-type': 'image', 'image-width': 640, 'image-height': 480 })).error).toEqual({ httpCode: 404, status: -70409 })
+    expect(log.at(-1)).toMatch(/^homekit: image request for the bridge, 640x480, reason none: HTTP 404/)
   })
 })

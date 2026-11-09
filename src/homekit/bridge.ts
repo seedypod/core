@@ -93,8 +93,8 @@ export function buildBridge(o: Pick<BridgeOptions, 'identity' | 'name' | 'versio
       const streaming = acc.getService(Service.CameraRTPStreamManagement)?.getCharacteristic(Characteristic.Active)
       if (streaming) {
         // hap-nodejs refuses every snapshot, without a word, while Home has the camera's streaming off.
-        const onChange = (c: { oldValue: unknown, newValue: unknown }) => {
-          if (c.oldValue !== c.newValue) o.deps.log(`homekit: ${a.name}: Home turned streaming ${c.newValue ? 'on' : 'off'}${c.newValue ? '' : ', so its snapshots are refused'}`)
+        const onChange = (c: { newValue: unknown }) => {
+          o.deps.log(`homekit: ${a.name}: Home turned streaming ${c.newValue ? 'on' : 'off'}${c.newValue ? '' : ', so its snapshots are refused'}`)
         }
         streaming.on('change', onChange)
         stops.push(() => void streaming.removeListener('change', onChange))
@@ -125,17 +125,13 @@ export function logResourceRequests(bridge: Bridge, log: (msg: string) => void, 
   const last = new Map<number | undefined, string>()
   target.handleResource = (data, callback) => {
     const started = now()
-    let answered = false
     handle(data, (error, resource) => {
-      if (!answered) {
-        answered = true
-        const name = data.aid === undefined ? 'the bridge' : (bridge.bridgedAccessories.find(a => a.aid === data.aid)?.displayName ?? `aid ${data.aid}`)
-        const outcome = error ? `HTTP ${error.httpCode}, status ${error.status}` : `${resource?.byteLength ?? 0} bytes`
-        if (last.get(data.aid) !== outcome) {
-          log(`homekit: ${data['resource-type'] ?? 'resource'} request for ${name}, ${data['image-width']}x${data['image-height']}, reason ${data.reason ?? 'none'}: ${outcome} in ${now() - started} ms`)
-        }
-        last.set(data.aid, outcome)
+      const name = data.aid === undefined ? 'the bridge' : (bridge.bridgedAccessories.find(a => a.aid === data.aid)?.displayName ?? `aid ${data.aid}`)
+      const outcome = error ? `HTTP ${error.httpCode}, status ${error.status}` : `${(resource as Buffer).byteLength} bytes`
+      if (last.get(data.aid) !== outcome) {
+        log(`homekit: ${data['resource-type']} request for ${name}, ${data['image-width']}x${data['image-height']}, reason ${data.reason ?? 'none'}: ${outcome} in ${now() - started} ms`)
       }
+      last.set(data.aid, outcome)
       callback(error, resource)
     })
   }
