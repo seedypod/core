@@ -6,6 +6,7 @@
 #   truecolor, fits   animation, then the logo
 #   256 colours       the logo, no animation
 #   anything else     one line of text
+# Then the unit's live facts from login-stats, beside the logo or under the line.
 # Off with ~/.hushlogin or SEEDYPOD_NO_LOGO=1. Errors stay silent: this must never
 # get in the way of a login.
 exec 2>/dev/null
@@ -23,8 +24,79 @@ read -r version < "$dir/version"
 url="http://${HOSTNAME%%.*}.local"
 [ -e "$dir/port80.nft" ] || url="$url:3000"
 
+# The live facts beside the logo. login-stats gathers them while the logo
+# animates; whatever it hasn't said a second (SEEDYPOD_STATS_MS) after starting
+# is left out.
+stats=()
+stats_pid=""
+now() { now=${EPOCHREALTIME//[.,]/}; }
+if [ -x "$dir/login-stats" ] && now && [ -n "$now" ]; then
+  wait_ms=${SEEDYPOD_STATS_MS:-1000}
+  [[ $wait_ms =~ ^[0-9]{1,6}$ ]] || wait_ms=1000
+  stats_by=$((now + wait_ms * 1000))
+  # Not on the terminal: a straggler mustn't hold it open after the logo exits.
+  exec 4< <("$dir/login-stats" </dev/null)
+  stats_pid=$!
+fi
+gather() {
+  local left t line
+  [ -n "$stats_pid" ] || return 0
+  # Past the deadline, still take what's already in the pipe.
+  while now; left=$((stats_by - now)); [ "$left" -gt 1000 ] || left=1000; [ "${#stats[@]}" -lt 30 ]; do
+    printf -v t '%d.%06d' $((left / 1000000)) $((left % 1000000))
+    IFS= read -r -t "$t" -u 4 line || break
+    stats+=("$line")
+  done
+  kill "$stats_pid"
+  stats_pid=""
+  exec 4<&-
+}
+
+# Sets $facts to one line per fact, the labels in a column, cut to $1 columns;
+# coloured when $2 is 1. Each fact is login-stats' label TAB state:text...
+facts=()
+fact_lines() {
+  local width=$1 colour=$2 fact label seg state text line used need sep=', '
+  local -a segs
+  local -A tint=([ok]=114 [warn]=221 [bad]=203 [dim]=245)
+  [ "$width" -gt 12 ] || return 0
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) sep=' · ' ;; esac
+  for fact in "${stats[@]}"; do
+    IFS=$'\t' read -r -a segs <<< "$fact"
+    [ "${#segs[@]}" -gt 1 ] || continue
+    printf -v label '%-8s' "${segs[0]:0:7}"
+    line="" used=8
+    [ "$colour" = 1 ] && line=$'\e[38;5;72m'
+    line+=$label
+    [ "$colour" = 1 ] && line+=$'\e[0m'
+    for seg in "${segs[@]:1}"; do
+      state=${seg%%:*} text=${seg#*:}
+      need=${#text}
+      [ "$used" -gt 8 ] && need=$((need + ${#sep}))
+      if [ $((used + need)) -gt "$width" ]; then
+        [ "$used" -gt 8 ] && break
+        text="${text:0:$((width - used - 2))}.." need=$((width - used))
+      fi
+      if [ "$used" -gt 8 ]; then
+        if [ "$colour" = 1 ]; then line+=$'\e[38;5;245m'"$sep"$'\e[0m'; else line+=$sep; fi
+      fi
+      if [ "$colour" = 1 ] && [ -n "${tint[$state]:-}" ]; then
+        line+=$'\e[38;5;'"${tint[$state]}m$text"$'\e[0m'
+      else
+        line+=$text
+      fi
+      used=$((used + need))
+    done
+    facts+=("$line")
+  done
+}
+
 plain() {
   printf 'seedypod%s  %s\n' "${version:+ $version}" "$url"
+  gather
+  [ "${term_cols:-0}" -gt 0 ] || term_cols=80
+  fact_lines "$term_cols" 0
+  [ "${#facts[@]}" -eq 0 ] || printf '%s\n' "${facts[@]}"
   exit 0
 }
 
@@ -54,6 +126,7 @@ skip=""
 cursor_home=""
 restore() {
   [ -n "$cursor_home" ] && printf "\\e[%dB\\r$pad" "$rows"
+  [ -n "$stats_pid" ] && kill "$stats_pid"
   printf '\e[0m\e[?25h'
   stty "$saved"
 }
@@ -97,4 +170,21 @@ fi
 
 printf '\e[%dB' $((text_row + 1))
 [ -n "$version" ] && printf '\r\e[%dC\e[38;5;245m%s' "$text_col" "$version"
-printf '\n\r\e[%dC\e[38;5;72m%s\e[0m\r\e[%dA' "$text_col" "$url" $((text_row + 2))
+printf '\n\r\e[%dC\e[38;5;72m%s\e[0m' "$text_col" "$url"
+
+# The facts go under the address, a blank line down, and carry on past the
+# bottom of the logo if there are more of them than rows beside it.
+gather
+fact_lines $((term_cols - text_col - 1)) 1
+row=$((text_row + 2))
+if [ "${#facts[@]}" -gt 0 ]; then
+  printf '\n'
+  for fact in "${facts[@]}"; do printf '\n\r\e[%dC%s' "$text_col" "$fact"; done
+  row=$((row + 1 + ${#facts[@]}))
+fi
+if [ "$row" -lt "$rows" ]; then
+  printf '\r\e[%dA' "$row"
+else
+  printf "\\n\\r$pad"
+  cursor_home=""
+fi

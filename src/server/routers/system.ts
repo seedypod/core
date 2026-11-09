@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { SystemInfo } from '../../hardware/contract'
 import { bridgeStatus } from '../../mqtt/bridge'
 import { Check, systemChecks } from '../checks'
+import { LoginSummary, loginSummary } from '../loginSummary'
 import { publicProcedure, router } from '../trpc'
 
 /** Matches src/logging/policy.ts, which the browser demo can't import. */
@@ -28,6 +29,10 @@ export const systemRouter = router({
     .meta({ openapi: { method: 'GET', path: '/system/checks', tags: ['system'], summary: 'One line per part of the unit (daemon, sensors, outputs, cameras, services): ok, idle, stalled or down' } })
     .output(z.object({ checks: z.array(Check) }))
     .query(async ({ ctx }) => ({ checks: await systemChecks(ctx) })),
+  loginSummary: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/system/login-summary', tags: ['system'], summary: 'What the SSH login screen shows beside the logo, flat, with ages in seconds' } })
+    .output(LoginSummary)
+    .query(({ ctx }) => loginSummary(ctx)),
   bridge: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/system/bridge', tags: ['system'], summary: 'Home Assistant MQTT bridge: off, connected or disconnected, the broker, and the last connect error' } })
     .output(z.object({ state: z.enum(['off', 'connected', 'disconnected']), broker: z.string().nullable(), since: z.string().nullable(), error: z.string().nullable() }))

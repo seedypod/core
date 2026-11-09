@@ -359,11 +359,11 @@ install_login_logo() {
   branch="$(sed -n 's/.*"branch": *"\([^"]*\)".*/\1/p' "$PREFIX/.git-info" 2>/dev/null || true)"
   commit="$(sed -n 's/.*"commitHash": *"\([^"]*\)".*/\1/p' "$PREFIX/.git-info" 2>/dev/null || true)"
   sudo mkdir -p "$share" "$(dirname "$profile")" \
-    && sudo cp -f "$from/login-logo" "$from/logo.frames" "$share/" \
+    && sudo cp -f "$from/login-logo" "$from/login-stats" "$from/logo.frames" "$share/" \
     && sudo cp -f "$from/profile.sh" "$profile" \
     && echo "${branch:-dev}${commit:+@$commit}" | sudo tee "$share/version" >/dev/null \
-    && sudo chown root:root "$share" "$share/login-logo" "$share/logo.frames" "$share/version" "$profile" \
-    && sudo chmod 0755 "$share/login-logo" \
+    && sudo chown root:root "$share" "$share/login-logo" "$share/login-stats" "$share/logo.frames" "$share/version" "$profile" \
+    && sudo chmod 0755 "$share/login-logo" "$share/login-stats" \
     && sudo chmod 0644 "$share/logo.frames" "$share/version" "$profile"
 }
 

@@ -337,7 +337,7 @@ describe('scripts/install --login-logo', () => {
     root = join(dir, 'root')
     prefix = join(dir, 'opt')
     for (const d of [bin, root, join(prefix, 'scripts/login-logo')]) mkdirSync(d, { recursive: true })
-    for (const f of ['login-logo', 'logo.frames', 'profile.sh']) copyFileSync(join(source, f), join(prefix, 'scripts/login-logo', f))
+    for (const f of ['login-logo', 'login-stats', 'logo.frames', 'profile.sh']) copyFileSync(join(source, f), join(prefix, 'scripts/login-logo', f))
     writeFileSync(join(prefix, '.git-info'), JSON.stringify({ branch: 'main', commitHash: 'abc1234' }, null, 2))
     writeFileSync(join(bin, 'sudo'), '#!/bin/sh\nexec "$@"\n')
     writeFileSync(join(bin, 'chown'), `#!/bin/sh\necho "chown $*" >> "${join(dir, 'chowns')}"\n`)
@@ -354,8 +354,10 @@ describe('scripts/install --login-logo', () => {
     expect(readFileSync(hook(), 'utf8')).toBe(readFileSync(join(source, 'profile.sh'), 'utf8'))
     expect(readFileSync(join(installed(), 'version'), 'utf8')).toBe('main@abc1234\n')
     expect(statSync(join(installed(), 'login-logo')).mode & 0o777).toBe(0o755)
+    expect(readFileSync(join(installed(), 'login-stats'))).toEqual(readFileSync(join(source, 'login-stats')))
+    expect(statSync(join(installed(), 'login-stats')).mode & 0o777).toBe(0o755)
     expect(statSync(hook()).mode & 0o777).toBe(0o644)
-    expect(readFileSync(join(dir, 'chowns'), 'utf8')).toContain(`chown root:root ${installed()} ${join(installed(), 'login-logo')}`)
+    expect(readFileSync(join(dir, 'chowns'), 'utf8')).toContain(`chown root:root ${installed()} ${join(installed(), 'login-logo')} ${join(installed(), 'login-stats')}`)
   })
 
   it('replaces what a previous install left', () => {
