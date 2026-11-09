@@ -9,6 +9,7 @@ import type { RestoreClient } from '../backup/restore'
 import type { UpdateClient } from '../update/client'
 import { createAutopilot } from '../autopilot/instance'
 import { CaptureService, MemorySink, type BlobSink } from '../camera/captures'
+import { CareEngine } from '../care/engine'
 import type { MirroredSink } from '../camera/mirrorSink'
 import { LightArbiter } from '../control/light'
 import type { DatabaseInspector } from '../db/inspect'
@@ -74,6 +75,7 @@ export interface Core {
   recorder: Recorder
   scheduler: Scheduler
   grow: GrowEngine
+  care: CareEngine
   autopilot: AutopilotEngine
   stop(): Promise<void>
 }
@@ -103,6 +105,7 @@ export function createCore(o: CoreOptions): Core {
   const retention = new TelemetryRetention({ store: o.store, now: o.now })
   const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now, clockTrusted: o.clockTrusted })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })
+  const care = new CareEngine({ store: o.store, hal: o.hal, events, now: o.now })
 
   let growTimer: ReturnType<typeof setInterval> | null = null
   if (o.startServices) {
@@ -114,6 +117,7 @@ export function createCore(o: CoreOptions): Core {
     o.backup?.start()
     grow.tick()
     growTimer = setInterval(() => grow.tick(), 15 * 60_000)
+    care.start()
     captures.start(o.store.settings.get().captureIntervalMin)
     events.subscribe((e) => {
       if (e.kind === 'mutation' && e.path === 'settings') captures.start(o.store.settings.get().captureIntervalMin)
@@ -125,6 +129,7 @@ export function createCore(o: CoreOptions): Core {
     recorder,
     scheduler,
     grow,
+    care,
     autopilot,
     async stop() {
       await o.homekit?.shutdown()
@@ -139,6 +144,7 @@ export function createCore(o: CoreOptions): Core {
       await retention.stop()
       recorder.stop()
       if (growTimer) clearInterval(growTimer)
+      care.stop()
       await o.hal.close()
       o.store.close()
     },

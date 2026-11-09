@@ -4,6 +4,7 @@ import { alertsRouter } from './alerts'
 import { automationsRouter } from './automations'
 import { backupRouter } from './backup'
 import { cameraRouter } from './camera'
+import { careRouter } from './care'
 import { datasetsRouter } from './datasets'
 import { devicesRouter } from './devices'
 import { eventsRouter } from './events'
@@ -33,6 +34,7 @@ export const appRouter = router({
   schedules: schedulesRouter,
   automations: automationsRouter,
   grow: growRouter,
+  care: careRouter,
   plants: plantsRouter,
   planner: plannerRouter,
   camera: cameraRouter,

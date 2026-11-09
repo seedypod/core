@@ -126,6 +126,17 @@ describe('alert helpers', () => {
     expect(screen.getByRole('link', { name: 'View camera' }).getAttribute('href')).toBe('/cameras')
   })
 
+  it('shows a setup warning as service, with a way to where it is fixed (ADR-0029)', () => {
+    expect(categoryOf('setup_pump_schedule')).toBe('service')
+    data.set('open', [row(7, 'setup_pump_schedule', '3 pods planted but no pump schedule is on.'), row(8, 'setup_water_sensor', 'The tank level reads suspect.'), row(6, 'setup_light_schedule', '3 pods planted but no light schedule is on.')])
+    render(<AlertsPage />)
+    expect(within(screen.getByTestId('alert-setup_pump_schedule')).getByText('No pump schedule')).toBeTruthy()
+    expect(within(screen.getByTestId('alert-setup_pump_schedule')).getByRole('link', { name: 'View water' }).getAttribute('href')).toBe('/water')
+    expect(within(screen.getByTestId('alert-setup_light_schedule')).getByRole('link', { name: 'View light' }).getAttribute('href')).toBe('/light')
+    expect(within(screen.getByTestId('alert-setup_water_sensor')).getByText('Tank sensor')).toBeTruthy()
+    expect(within(screen.getByTestId('alert-setup_water_sensor')).getByRole('link', { name: 'View sensors' }).getAttribute('href')).toBe('/sensors')
+  })
+
   it('falls back to the label and raw detail', () => {
     expect(describeAlert({ kind: 'over_temp', detail: 'board at 71°C' })).toEqual({ title: 'Board over temperature', detail: 'board at 71°C' })
     expect(describeAlert({ kind: 'camera_missing', detail: 'no camera' })).toEqual({ title: 'Camera not capturing', detail: 'no camera' })

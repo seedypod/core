@@ -54,6 +54,11 @@ export function createMcpServer(ctx: Context): McpServer {
 
   server.registerTool('pods', { description: 'The 30 plant pods: slot, plant, planted date, status (empty, seeded, growing, harvest, attention) and notes.', inputSchema: {} }, async () => text(await caller.grow.pods()))
 
+  server.registerTool('setup_check', {
+    description: 'What a planted unit is missing (ADR-0029): pods planted with no light schedule or no pump schedule on, and a tank level sensor that is absent or reading suspect (a suspect level is never used to advise a top-off). Returns planted (pods not empty), issues (id, the alert kind it raises, title, detail, where it is fixed) and a one-line summary. Each issue is also an active alert in status until it is fixed.',
+    inputSchema: {},
+  }, async () => text(await caller.care.setup()))
+
   server.registerTool('captures', {
     description: 'Recent camera stills (newest first) with URLs relative to the core host. camera: upper or lower.',
     inputSchema: { camera: z.enum(['upper', 'lower']).optional(), limit: z.number().int().min(1).max(50).optional() },
