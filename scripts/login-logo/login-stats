@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # seedypod login stats: the live facts login-logo writes beside the logo. One
 # line per fact, in display order: the label, then tab-separated segments, each
-# "state:text" with state ok, warn, bad, dim or - for none. A fact with no source
+# "state:text" with state ok, warn, bad, dim or - for none, or "bar-state:percent"
+# for a bar, drawn before the text after it. A fact with no source
 # is left out. First, when core answers, comes "version", the build core runs:
 # login-logo prints it in place of the version file, which a web update doesn't touch. Read-only: it reads /proc and /sys, runs df and vcgencmd, and GETs
 # core's /api/system/login-summary.
@@ -168,28 +169,34 @@ if [ -n "$summary" ]; then
 fi
 
 # ---- the Pi ------------------------------------------------------------------
-free=()
+# ram and disk: a bar of what's used, then percent and used/total, tinted when low.
 total="" avail=""
 while read -r key value _; do
   case "$key" in MemTotal:) total=$value ;; MemAvailable:) avail=$value ;; esac
 done < "$root/proc/meminfo"
-if [[ $avail =~ ^[0-9]+$ ]] && [[ $total =~ ^[1-9][0-9]*$ ]]; then
+if [[ $avail =~ ^[0-9]+$ ]] && [[ $total =~ ^[1-9][0-9]*$ ]] && [ "$avail" -le "$total" ]; then
   [ $((avail * 10)) -lt "$total" ] && state=warn || state=-
-  free+=("$state:$((avail / 1024))M ram")
+  used=$((total - avail))
+  human "$used"
+  text="$r/"
+  human "$total"
+  emit ram "bar-${state/-/ok}:$((used * 100 / total))" "$state:$((used * 100 / total))% $text$r"
 fi
 
-size="" left=""
-{ read -r _; read -r _ size _ left _; } < <(df -Pk "${root:-/}")
-if [[ $size =~ ^[1-9][0-9]*$ ]] && [[ $left =~ ^[0-9]+$ ]]; then
+size="" taken="" left="" pct=""
+{ read -r _; read -r _ size taken left pct _; } < <(df -Pk "${root:-/}")
+pct=${pct%\%}
+if [[ $size =~ ^[1-9][0-9]*$ ]] && [[ $taken =~ ^[0-9]+$ ]] && [[ $left =~ ^[0-9]+$ ]] && [[ $pct =~ ^[0-9]{1,3}$ ]]; then
   # Core's storage check: under 15% free is low, under 5% full.
   if [ $((left * 20)) -lt "$size" ]; then state=bad
   elif [ $((left * 100)) -lt $((size * 15)) ]; then state=warn
   else state=-
   fi
-  human "$left"
-  free+=("$state:$r disk")
+  human "$taken"
+  text="$r/"
+  human "$size"
+  emit disk "bar-${state/-/ok}:$pct" "$state:$pct% $text$r"
 fi
-[ "${#free[@]}" -gt 0 ] && emit free "${free[@]}"
 
 # get_throttled: bits 0-3 are now (under-voltage, capped, throttled, soft
 # limit), bits 16-19 the same since boot.

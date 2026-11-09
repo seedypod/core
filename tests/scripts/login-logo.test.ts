@@ -114,26 +114,18 @@ describe('login-logo animation', () => {
     expect(count(pty({ env: { TERM: 'xterm-ghostty' } }).out, records()[4])).toBe(1)
     expect(count(pty({ env: { TERM: 'xterm-256color', LC_TERMINAL: 'iTerm2' } }).out, records()[4])).toBe(1)
   })
-
-  it('asks a 256color terminal, and animates if it remembers a truecolor colour', () => {
-    const r = pty({ env: { TERM: 'xterm-256color' }, replies: [['\x1b[c', '\x1bP1$r0;38:2:1:2:3m\x1b\\\x1b[?62;22c']] })
-    expect(r.out).toContain('\x1bP$qm\x1b\\')
-    expect(r.out).toContain(records()[4])
-  })
 })
 
 describe('login-logo still fallback', () => {
-  it('draws the 256-colour logo when the terminal answers without the colour', () => {
-    const r = pty({ env: { TERM: 'xterm-256color' }, replies: [['\x1b[c', '\x1b[?62;22c']] })
+  it('draws the 256-colour logo on a 256color terminal, without asking it anything', () => {
+    // macOS Terminal printed an unanswered DECRQSS's "$qm" above the logo.
+    const r = pty({ env: { TERM: 'xterm-256color' }, replies: [['\x1b[c', '\x1bP1$r0;38:2:1:2:3m\x1b\\\x1b[?62;22c']] })
     expect(r.out).toContain(records()[2])
     expect(r.out).not.toContain(records()[4])
+    expect(r.out).not.toContain('\x1bP')
+    expect(r.out).not.toContain('\x1b[c')
+    expect(r.out).not.toContain('$qm')
     expect(r.out.endsWith(SHOW_CURSOR)).toBe(true)
-  })
-
-  it('stops waiting for a terminal that never answers', () => {
-    const r = pty({ env: { TERM: 'xterm-256color' } })
-    expect(r.out).toContain(records()[2])
-    expect(r.seconds).toBeLessThan(2)
   })
 
   it.each<[string, Spec]>([
@@ -245,6 +237,11 @@ describe('logo.frames', () => {
     expect(logoCells.length).toBeGreaterThan(400)
     expect(new Set(logoCells)).toEqual(new Set(['▀', '▄', '█']))
     expect([...true24.values()].filter(ch => /[a-z]/.test(ch)).join('')).toBe('seedypod')
+    // The word, and the facts under it, start level with the top of the logo.
+    const [, textCol, textRow] = records()[0].split(' ').map(Number)
+    expect(textRow).toBe(0)
+    expect(true24.get(`0,${textCol}`)).toBe('s')
+    expect([...true24].some(([cell, ch]) => cell.startsWith('0,') && !/[a-z]/.test(ch))).toBe(true)
   })
 
   it('lands the animation exactly on the final frame, from the corner it started in', () => {

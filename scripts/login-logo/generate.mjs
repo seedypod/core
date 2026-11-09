@@ -26,7 +26,10 @@ const CROP = { x: 64, y: 50, cell: 22.75 }
 const ROWS = HEIGHT / 2
 const INDENT = 2
 const TEXT_COL = INDENT + WIDTH + 4
-const TEXT_ROW = 8
+// The login screen lists the unit's facts under the word, so it starts level with
+// the logo's top; the installers print one line under it, so theirs sits midway.
+const TEXT_ROW = 0
+const BANNER_TEXT_ROW = 8
 const WORD = 'seedypod'
 const COLS = TEXT_COL + WORD.length
 
@@ -219,7 +222,7 @@ function wordColours(f) {
 }
 
 /** Folds half-block pixels and the word into one grid of terminal cells. */
-function toCells(out, word) {
+function toCells(out, word, textRow = TEXT_ROW) {
   const grid = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => ({ ch: ' ', fg: null, bg: null, bold: false })))
   for (let row = 0; row < ROWS; row++) {
     for (let x = 0; x < WIDTH; x++) {
@@ -235,7 +238,7 @@ function toCells(out, word) {
     }
   }
   word.forEach((fg, i) => {
-    if (fg) Object.assign(grid[TEXT_ROW][TEXT_COL + i], { ch: WORD[i], fg, bold: true })
+    if (fg) Object.assign(grid[textRow][TEXT_COL + i], { ch: WORD[i], fg, bold: true })
   })
   return grid
 }
@@ -322,12 +325,12 @@ export const INSTALLERS = ['../install', '../install-hal'].map(f => fileURLToPat
  * it does, and every terminal that takes truecolor takes these.
  */
 export function banner(icon = ICON) {
-  const grid = toCells(sample(decodePng(icon)), wordColours(FRAMES + 8))
+  const grid = toCells(sample(decodePng(icon)), wordColours(FRAMES + 8), BANNER_TEXT_ROW)
   return [
     BANNER_START,
     `UI_LOGO_COLS=${COLS}`,
     `UI_LOGO_COL=${TEXT_COL}`,
-    `UI_LOGO_ROW=${TEXT_ROW}`,
+    `UI_LOGO_ROW=${BANNER_TEXT_ROW}`,
     'UI_LOGO=(',
     ...grid.map(row => `'${encodeRow(row, palette256)}'`),
     ')',
