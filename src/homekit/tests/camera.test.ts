@@ -104,7 +104,7 @@ describe('camera → snapshot-only CameraController', () => {
     expect((await snap(d)).buffer?.length).toBe(4)
     expect(await snap(d)).toEqual({ error: RESOURCE_DOES_NOT_EXIST, buffer: undefined })
     expect(capture).not.toHaveBeenCalled()
-    expect(log).toEqual(['homekit: upper snapshot failed: EIO'])
+    expect(log).toEqual(['homekit: upper camera: first snapshot served', 'homekit: upper snapshot failed: EIO'])
   })
 
   it('turns down live view', async () => {

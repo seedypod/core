@@ -175,11 +175,12 @@ describe('pump → Switch', () => {
 })
 
 describe('sensors', () => {
-  it('air temperature, humidity and the tank as a battery level', async () => {
+  it('air temperature, humidity and the tank, named Tank, as a battery level', async () => {
     const { deps, hal } = setup()
     const { char, services } = build(buildSensors, deps)
-    expect(services.map(s => s.UUID)).toEqual([hap.Service.TemperatureSensor.UUID, hap.Service.HumiditySensor.UUID, hap.Service.Battery.UUID, hap.Service.OccupancySensor.UUID])
-    expect(services[3]?.getCharacteristic(Characteristic.Name).value).toBe('Tank low')
+    expect(services.map(s => s.UUID)).toEqual([hap.Service.TemperatureSensor.UUID, hap.Service.HumiditySensor.UUID, hap.Service.Battery.UUID])
+    expect(char(2, Characteristic.Name).value).toBe('Tank')
+    expect(char(2, Characteristic.ConfiguredName).value).toBe('Tank')
     const snap = hal.snapshot()
     expect(await char(0, Characteristic.CurrentTemperature).handleGetRequest()).toBe(snap.sensors.air_temp?.value)
     expect(await char(0, Characteristic.StatusFault).handleGetRequest()).toBe(0)
@@ -187,17 +188,17 @@ describe('sensors', () => {
     expect(await char(2, Characteristic.BatteryLevel).handleGetRequest()).toBe(Math.round(snap.sensors.water_level_pct?.value ?? -1))
     expect(await char(2, Characteristic.StatusLowBattery).handleGetRequest()).toBe(0)
     expect(await char(2, Characteristic.ChargingState).handleGetRequest()).toBe(2)
-    expect(await char(3, Characteristic.OccupancyDetected).handleGetRequest()).toBe(0)
   })
 
-  it('low water raises the low-battery flag and Tank low from hald\'s water_low alert', async () => {
-    const { deps, hal } = setup({ limits: { waterLowCm: 0 } })
+  it('an empty tank never reads as a low battery', async () => {
+    const { deps, hal, events } = setup({ limits: { waterLowCm: 0 } })
     const { char } = build(buildSensors, deps)
     hal.tick(1)
-    expect(char(2, Characteristic.StatusLowBattery).value).toBe(1)
-    expect(await char(2, Characteristic.StatusLowBattery).handleGetRequest()).toBe(1)
-    expect(char(3, Characteristic.OccupancyDetected).value).toBe(1)
-    expect(await char(3, Characteristic.OccupancyDetected).handleGetRequest()).toBe(1)
+    expect(hal.snapshot().alerts.water_low?.active).toBe(true)
+    const ts = new Date().toISOString()
+    events.emit({ kind: 'hal', event: { type: 'alert', alert: { kind: 'water_low', active: true, ts, detail: '' } } })
+    expect(char(2, Characteristic.StatusLowBattery).value).toBe(0)
+    expect(await char(2, Characteristic.StatusLowBattery).handleGetRequest()).toBe(0)
   })
 
   it('pushes new readings and marks a stale one as a fault', () => {
@@ -207,24 +208,18 @@ describe('sensors', () => {
     events.emit({ kind: 'hal', event: { type: 'sensor', id: 'air_temp', reading: { ts, value: 27.5, unit: '°C', quality: 'stale' } } })
     events.emit({ kind: 'hal', event: { type: 'sensor', id: 'humidity', reading: { ts, value: 104, unit: '%', quality: 'good' } } })
     events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: { ts, value: 41.6, unit: '%', quality: 'good' } } })
-    events.emit({ kind: 'hal', event: { type: 'alert', alert: { kind: 'water_low', active: true, ts, detail: '' } } })
+    events.emit({ kind: 'hal', event: { type: 'sensor', id: 'pcb_temp', reading: { ts, value: 50, unit: '°C', quality: 'good' } } })
+    events.emit({ kind: 'mutation', path: 'settings' })
     expect(char(0, Characteristic.CurrentTemperature).value).toBe(27.5)
     expect(char(0, Characteristic.StatusFault).value).toBe(1)
     expect(char(1, Characteristic.CurrentRelativeHumidity).value).toBe(100)
     expect(char(2, Characteristic.BatteryLevel).value).toBe(42)
-    expect(char(2, Characteristic.StatusLowBattery).value).toBe(1)
-    expect(char(3, Characteristic.OccupancyDetected).value).toBe(1)
-    events.emit({ kind: 'hal', event: { type: 'alert', alert: { kind: 'water_low', active: false, ts, detail: '' } } })
-    events.emit({ kind: 'mutation', path: 'settings' })
-    expect(char(2, Characteristic.StatusLowBattery).value).toBe(0)
-    expect(char(3, Characteristic.OccupancyDetected).value).toBe(0)
   })
 
   it('answers No Response offline or with no reading yet', async () => {
     const { deps, hal } = setup()
     const { char } = build(buildSensors, { ...deps, hal: offline(hal) })
     await expect(char(0, Characteristic.CurrentTemperature).handleGetRequest()).rejects.toBe(-70402)
-    await expect(char(3, Characteristic.OccupancyDetected).handleGetRequest()).rejects.toBe(-70402)
     const empty = build(buildSensors, { ...deps, hal: { snapshot: () => ({ ...hal.snapshot(), sensors: {} }) } })
     await expect(empty.char(2, Characteristic.BatteryLevel).handleGetRequest()).rejects.toBe(-70402)
     expect(await empty.char(1, Characteristic.StatusFault).handleGetRequest()).toBe(1)

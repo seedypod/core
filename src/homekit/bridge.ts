@@ -131,6 +131,8 @@ export async function publishBridge(o: BridgeOptions): Promise<PublishedBridge> 
     stopAll()
     throw e
   }
+  // Home puts accessories that appear after pairing in the bridge's own room, so name what's there.
+  o.deps.log(`homekit: bridged ${bridge.bridgedAccessories.map(a => a.displayName).join(', ')}`)
   return {
     setupURI: bridge.setupURI(),
     async unpublish() {

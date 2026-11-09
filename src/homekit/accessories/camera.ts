@@ -49,9 +49,15 @@ export function snapshotDelegate(camera: Camera, d: Pick<AccessoryDeps, 'api' | 
     return fresh
   }
 
+  let served = false
   return {
     handleSnapshotRequest(_request, callback) {
-      snapshot().then(b => callback(undefined, b), (e: unknown) => {
+      snapshot().then((b) => {
+        // Once per run: shows in the journal that Home has found this camera.
+        if (!served) d.log(`homekit: ${camera} camera: first snapshot served`)
+        served = true
+        callback(undefined, b)
+      }, (e: unknown) => {
         if (e !== RESOURCE_DOES_NOT_EXIST) d.log(`homekit: ${camera} snapshot failed: ${(e as Error).message}`)
         callback(RESOURCE_DOES_NOT_EXIST)
       })

@@ -122,7 +122,19 @@ contention reasons.
   fails with "No Response". That is the intended outcome of refusing the
   stream, not a fault.
 - Adding the two camera accessories bumps the bridge's configuration number.
-  Home picks them up without re-pairing.
+  Home picks them up without re-pairing. It puts accessories that appear after
+  pairing in the **bridge's own room**, which is often "Default Room" even when
+  every earlier accessory was moved. Owners move the cameras, or set the
+  bridge's room first (Home → Settings → Hubs & Bridges → the bridge →
+  Room). HAP has no way to set a room. At publish, core logs the bridged
+  accessories (`homekit: bridged …`) and, once per run, each camera's first
+  snapshot (`homekit: <camera> camera: first snapshot served`). A camera that
+  never logs one hasn't been shown in Home.
+- The cameras stay bridged. Bridged cameras work in Home: Homebridge bridges
+  them by default, and its "unbridge" option exists only so a slow snapshot
+  can't stall the other accessories. Here a snapshot is a file read and never
+  blocks the bridge. Unbridging would need each camera added separately with
+  its own setup code.
 - With `captureIntervalMin` 0 and no stills, HomeKit takes one still per
   camera per 10 minutes while Home asks. HA shows nothing until a still is
   taken.

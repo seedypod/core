@@ -74,8 +74,7 @@ procedures the app calls. They never touch the HAL client or MQTT directly.
 | **Pump**: Switch | On | On calls `pump.runOnce` with 300 s, the Water page's default, and hald clamps it to `pumpMaxRunS`. Off calls `pump.stop`. When the HAL refuses (dry tank, over-temperature, a latched fault), or returns a state that isn't running, the switch reads off and the write fails with HAP's "not allowed in current state". The switch flips off when the run ends. |
 | **Sensors**: TemperatureSensor | CurrentTemperature, StatusFault | `air_temp` (°C). StatusFault is set when the reading isn't `good` quality. |
 | **Sensors**: HumiditySensor | CurrentRelativeHumidity, StatusFault | `humidity`. |
-| **Sensors**: Battery ("Water tank") | BatteryLevel, StatusLowBattery, ChargingState | BatteryLevel is `water_level_pct`. StatusLowBattery is hald's `water_low` alert. ChargingState is not chargeable. |
-| **Sensors**: OccupancySensor ("Tank low") | OccupancyDetected | hald's `water_low` alert (amendment 2026-11-08). |
+| **Sensors**: Battery ("Tank") | BatteryLevel, StatusLowBattery, ChargingState, ConfiguredName | BatteryLevel is `water_level_pct`. StatusLowBattery is always normal (amendment 2026-11-09). ChargingState is not chargeable. |
 
 While hald is offline, reads answer "No Response" rather than a stale value.
 
@@ -210,6 +209,8 @@ identity.
 
 ## Amendment (2026-11-08): a "Tank low" sensor next to the battery
 
+*Superseded by the amendment of 2026-11-09.*
+
 Home shows a Battery service's level only in the accessory's details. A low
 battery appears in the status summary as "Low battery". Owners couldn't find
 the tank (#136). The Sensors accessory now also carries an **Occupancy
@@ -234,3 +235,30 @@ Home Assistant already had both entities from hald's discovery (ADR 0007):
 `seedypod/<unit>/sensor/water_level_pct`, and `binary_sensor.<unit>_water_low`
 (`device_class: problem`) on the `water_low` alert topic. Core doesn't publish
 them again (ADR 0013).
+
+## Amendment (2026-11-09): the tank is a level, with no low flag in HomeKit
+
+On a paired unit (Home on macOS, tank empty), the room header showed **"Low
+Battery"** for StatusLowBattery and **"Occupancy · Detected"** for "Tank low".
+Home's header lists a sensor by its service type, not its name, so neither
+read as the tank.
+
+Home has no service for a level. These are the options that were weighed, and
+how Home shows each:
+
+| Option | Room header | Tile | Details | Verdict |
+|---|---|---|---|---|
+| Battery with StatusLowBattery (as built) | "Low Battery" when empty | none | "Battery 0%" | Header misleads |
+| Occupancy "Tank low" (2026-11-08) | "Occupancy · Detected" | "Tank low · Detected" | — | Header misleads |
+| Leak "Tank" | "Leak Detected" | drop icon | — | Home sends critical alerts for leak sensors (alarm sensors, through Focus and Do Not Disturb). A low tank isn't a leak |
+| Contact "Tank" | an open contact sensor, by type | "Tank · Open" | — | Same problem as Occupancy: the header names the type |
+| Filter Maintenance "Tank" (FilterLifeLevel %) | — | — | — | The Home app doesn't render this service on its own ("Not Supported"); it only appears inside an air purifier |
+| Humidity "Tank" (percent on the tile) | joins the room's humidity | "Tank 63%" | — | Corrupts the room's climate summary next to the tower's real humidity sensor |
+| **Battery "Tank", level only** | nothing | none | **"Tank" / battery 63%** | **Chosen** |
+
+The Battery service is named "Tank" (Name and ConfiguredName). It keeps
+BatteryLevel, the tank's percent full and live from `water_level_pct`, and
+StatusLowBattery stays normal. The Occupancy sensor is removed. HomeKit shows
+no low-tank state. That stays with the app's `water_low` alert and Home
+Assistant's `binary_sensor.<unit>_water_low`. Owners who want a Home
+automation on it can still use the level.
