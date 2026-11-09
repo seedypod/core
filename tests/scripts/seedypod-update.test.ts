@@ -136,6 +136,7 @@ if (unit === 'seedypod-core' && verb === 'start') {
   const pnpm = join(dir, 'pnpm.mjs')
   writeFileSync(pnpm, `import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 appendFileSync(${JSON.stringify(join(dir, 'pnpm.log'))}, process.argv.slice(2).join(' ') + ' in ' + process.cwd() + '\\n')
+writeFileSync(${JSON.stringify(join(dir, 'pnpm.prompt'))}, String(process.env.COREPACK_ENABLE_DOWNLOAD_PROMPT))
 if (existsSync(${JSON.stringify(join(dir, 'pnpm-fails'))})) process.exit(1)
 mkdirSync('node_modules/better-sqlite3', { recursive: true })
 writeFileSync('node_modules/better-sqlite3/package.json', '{"name":"better-sqlite3","main":"index.js"}')
@@ -299,6 +300,8 @@ describe('updating', () => {
     expect(ok.out).toMatchObject({ ok: true })
     // cwd is the real path, which on macOS is under /private.
     expect(readFileSync(join(dir, 'pnpm.log'), 'utf8')).toMatch(/^install --prod --frozen-lockfile in .*\/opt\/seedypod\n$/)
+    // Corepack must not stop to ask before downloading a newer pinned pnpm.
+    expect(readFileSync(join(dir, 'pnpm.prompt'), 'utf8')).toBe('0')
     expect(existsSync(p('node_modules/fresh'))).toBe(true)
     expect(read(`node_modules/.seedypod-lock-${process.version}`)).toContain('zod@4.1.0')
     expect(existsSync(`${prefix}.previous/node_modules/.seedypod-lock-${process.version}`)).toBe(true)

@@ -21,6 +21,9 @@
 # what the build already made: SEEDYPOD_TARBALL_URL and SEEDYPOD_RELEASE_URL point
 # at them, and SEEDYPOD_CORE_USER is the account core runs as.
 set -euo pipefail
+# The release can pin a pnpm newer than the one Corepack has, and Corepack would then
+# stop to ask before fetching it, which hangs the image bake and the update helper.
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 BRANCH="${SEEDYPOD_BRANCH:-__BRANCH__}"
 PREFIX="${SEEDYPOD_PREFIX:-/opt/seedypod}"

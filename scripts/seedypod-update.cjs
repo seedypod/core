@@ -525,7 +525,8 @@ async function installDeps(acct, sqlite) {
     fs.mkdirSync(home, { recursive: true })
     own(home, acct)
   }
-  const e = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: home, CI: 'true', npm_config_build_from_source: 'false' }
+  // Corepack would otherwise stop to ask before fetching a pnpm newer than the one it has.
+  const e = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: home, CI: 'true', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', npm_config_build_from_source: 'false' }
   if (store) e.npm_config_store_dir = store
   if (sqlite) e.npm_config_better_sqlite3_local_prebuilds = sqlite.dir
   const cmd = pnpmCommand()
