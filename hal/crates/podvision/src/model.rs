@@ -369,59 +369,68 @@ pub struct Scratch {
 
 /// conv3x3 + ReLU, HWC, zero padding. Four output channels at a time, so the
 /// FPU has independent sums in flight (the Pi Zero W's VFP has no SIMD and a
-/// long multiply-accumulate latency). Each sum adds its terms in the same
-/// order as cnn.ts: bias, then the taps row by row, channels innermost.
+/// long multiply-accumulate latency), and those four channels' weights are
+/// swept over the whole map before the next four: they stay in the 16 KB L1
+/// cache instead of every weight streaming from RAM once per pixel, which made
+/// the forward pass memory-bound on the unit. Each sum adds its terms in the
+/// same order as cnn.ts: bias, then the taps row by row, channels innermost.
 #[allow(clippy::too_many_arguments)]
 fn conv3x3(src: &[f32], h: usize, w: usize, c: usize, k: usize, wt: &[f32], bias: &[f32], dst: &mut [f32]) {
     let tap = 9 * c;
-    for y in 0..h {
-        let ys = y.saturating_sub(1)..(y + 2).min(h);
-        for x in 0..w {
-            let xs = x.saturating_sub(1)..(x + 2).min(w);
-            let o = (y * w + x) * k;
-            let mut kk = 0;
-            while kk + 4 <= k {
+    let mut kk = 0;
+    while kk + 4 <= k {
+        let block = &wt[kk * tap..(kk + 4) * tap];
+        let (w0, rest) = block.split_at(tap);
+        let (w1, rest) = rest.split_at(tap);
+        let (w2, w3) = rest.split_at(tap);
+        for y in 0..h {
+            let ys = y.saturating_sub(1)..(y + 2).min(h);
+            for x in 0..w {
+                let xs = x.saturating_sub(1)..(x + 2).min(w);
                 let (mut s0, mut s1, mut s2, mut s3) = (bias[kk], bias[kk + 1], bias[kk + 2], bias[kk + 3]);
                 for yy in ys.clone() {
                     let ky = yy + 1 - y;
                     for xx in xs.clone() {
-                        let kx = xx + 1 - x;
+                        let off = (ky * 3 + xx + 1 - x) * c;
                         let px = &src[(yy * w + xx) * c..][..c];
-                        let off = (ky * 3 + kx) * c;
-                        let w0 = &wt[kk * tap + off..][..c];
-                        let w1 = &wt[(kk + 1) * tap + off..][..c];
-                        let w2 = &wt[(kk + 2) * tap + off..][..c];
-                        let w3 = &wt[(kk + 3) * tap + off..][..c];
+                        let (a, b, cc, d) =
+                            (&w0[off..][..c], &w1[off..][..c], &w2[off..][..c], &w3[off..][..c]);
                         for ch in 0..c {
                             let v = px[ch];
-                            s0 += v * w0[ch];
-                            s1 += v * w1[ch];
-                            s2 += v * w2[ch];
-                            s3 += v * w3[ch];
+                            s0 += v * a[ch];
+                            s1 += v * b[ch];
+                            s2 += v * cc[ch];
+                            s3 += v * d[ch];
                         }
                     }
                 }
-                dst[o + kk] = s0.max(0.0);
-                dst[o + kk + 1] = s1.max(0.0);
-                dst[o + kk + 2] = s2.max(0.0);
-                dst[o + kk + 3] = s3.max(0.0);
-                kk += 4;
+                let o = (y * w + x) * k + kk;
+                dst[o] = s0.max(0.0);
+                dst[o + 1] = s1.max(0.0);
+                dst[o + 2] = s2.max(0.0);
+                dst[o + 3] = s3.max(0.0);
             }
-            while kk < k {
+        }
+        kk += 4;
+    }
+    for kk in kk..k {
+        let wk = &wt[kk * tap..(kk + 1) * tap];
+        for y in 0..h {
+            let ys = y.saturating_sub(1)..(y + 2).min(h);
+            for x in 0..w {
+                let xs = x.saturating_sub(1)..(x + 2).min(w);
                 let mut s = bias[kk];
                 for yy in ys.clone() {
                     let ky = yy + 1 - y;
                     for xx in xs.clone() {
-                        let kx = xx + 1 - x;
                         let px = &src[(yy * w + xx) * c..][..c];
-                        let wk = &wt[kk * tap + (ky * 3 + kx) * c..][..c];
+                        let wt = &wk[(ky * 3 + xx + 1 - x) * c..][..c];
                         for ch in 0..c {
-                            s += px[ch] * wk[ch];
+                            s += px[ch] * wt[ch];
                         }
                     }
                 }
-                dst[o + kk] = s.max(0.0);
-                kk += 1;
+                dst[(y * w + x) * k + kk] = s.max(0.0);
             }
         }
     }
