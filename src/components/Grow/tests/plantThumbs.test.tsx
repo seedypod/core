@@ -91,6 +91,8 @@ describe('podForm', () => {
     expect(podForm({ status: 'growing', green: 0.4 })).toBe('bush')
     expect(podForm({ status: 'attention', ageDays: 30 })).toBe('bush')
     expect(podForm({ status: 'harvest' })).toBe('full')
+    // A planned pod shows the plant grown, whatever its status.
+    expect(podForm({ status: 'seeded', planned: true })).toBe('full')
   })
 })
 

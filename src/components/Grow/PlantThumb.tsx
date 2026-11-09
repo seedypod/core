@@ -2,11 +2,11 @@ import { Leaf } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { cn } from '@/lib/utils'
 import { cachedThumb, plantThumb, thumbKey, threeLoaded } from './plantThumbs'
-import { plantForm, plantScale, type PlantForm, type PodStatus } from './towerLayout'
+import { PLANNED_FORM, plantForm, plantScale, type PlantForm, type PodStatus } from './towerLayout'
 
-/** The stage a pod's plant is drawn at, as the tower draws it: 'none' when the pod is empty. */
-export function podForm(p: { status: PodStatus, green?: number | null, ageDays?: number | null }): PlantForm {
-  return plantForm(p.status, plantScale(p.status, p.green, p.ageDays))
+/** The stage a pod's plant is drawn at, as the tower draws it: 'none' when the pod is empty, grown when it is only planned. */
+export function podForm(p: { status: PodStatus, green?: number | null, ageDays?: number | null, planned?: boolean }): PlantForm {
+  return p.planned ? PLANNED_FORM : plantForm(p.status, plantScale(p.status, p.green, p.ageDays))
 }
 
 const subscribeTheme = (cb: () => void) => {

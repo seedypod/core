@@ -100,6 +100,18 @@ describe('TowerView', () => {
     expect(screen.queryByTestId('pod-callout')).toBeNull()
   })
 
+  it('names a planned pod as planned, with why it sits there', async () => {
+    const planned = [{ slot: 1, status: 'seeded' as const, plant: 'Basil', planned: true, harvest: { state: 'unknown' as const, window: null, cover: null, targetCover: 0, daysToReady: null, daysLeft: null, reason: 'Planned: medium light, its ideal zone.' } }]
+    render(<TowerView pods={planned} waterPct={null} lightLevel={100} zones selected={1} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    mounted.at = { x: 120, y: 300 }
+    act(() => mounted.opts?.onRender?.())
+    const callout = screen.getByRole('group', { name: 'Pod 1' })
+    expect(callout.textContent).toContain('BasilPlanned')
+    expect(callout.textContent).toContain('Planned: medium light, its ideal zone.')
+    expect(callout.textContent).not.toContain('Seeded')
+  })
+
   it('toggles the light zones, remembering the choice, with the model\'s legend and the pinned pod\'s zone and placement advice', async () => {
     localStorage.clear()
     const mint = [{ slot: 1, status: 'growing' as const, plant: 'Mint' }, { slot: 2, status: 'empty' as const, plant: null }]

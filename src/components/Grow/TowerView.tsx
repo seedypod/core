@@ -165,7 +165,7 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
         <div className="flex items-center gap-2 text-[13px]">
           <span className="flex items-center gap-2 font-medium" style={{ color }}>
             <span className="size-[7px] rounded-full" style={{ background: color }} />
-            {SHOWN_LABEL[shown]}
+            {pod.planned ? 'Planned' : SHOWN_LABEL[shown]}
           </span>
           {timing && <span className="font-mono text-[11px] text-fg-3">{`· ${timing}`}</span>}
         </div>
