@@ -90,6 +90,11 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: { runs: z.number().int().min(0).max(100).optional() },
   }, async i => text({ rules: await caller.automations.list(), status: await caller.automations.status(), runs: await caller.automations.runs({ limit: i.runs ?? 20 }) }))
 
+  server.registerTool('starter_rules', {
+    description: 'Starter Autopilot rules sourced from the knowledge bundle (ADR-0029): pH outside 5.5–6.5, EC below the crop target (seedlings, leafy greens, herbs or fruiting, from what is planted), tank below half. Each is notify-only and comes with its citations, the sensors it needs and whether the unit has them (unavailable says why not), whether a rule of that name is already added, and the rule JSON. Read-only: offer one to the person, backtest it with backtest_automation (pass rule), and let them add it in the app (Autopilot → Starter rules), where it starts in dry-run until they arm it.',
+    inputSchema: {},
+  }, async () => text(await caller.care.starterRules()))
+
   server.registerTool('backtest_automation', {
     description: 'Replay an Autopilot rule over recorded history without touching hardware: by id, or a draft rule (same JSON shape as list_automations returns, without id). Returns the traces of every signal it reads, when it would have fired and what each action would have done (raw and clamped values), cooldown suppressions, and signals that are live-only (unknown in a backtest). Signal keys come from the catalog: sensor.<id>, light.level, pump.on, alert.<kind>, pod.<slot>.green, pod.<slot>.trend, grow.day.',
     inputSchema: { id: z.number().int().optional(), rule: z.unknown().optional(), hours: z.number().int().min(1).max(336).optional(), step_min: z.number().int().min(1).max(60).optional() },

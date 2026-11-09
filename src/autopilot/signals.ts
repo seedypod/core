@@ -88,8 +88,8 @@ export function podSignals(store: Store, slots: number[] = Array.from({ length: 
 export function liveSignals(hal: HalSnapshot, store: Store, now: Date, podSlots: number[]): Record<string, number> {
   const out: Record<string, number> = {}
   for (const [id, r] of Object.entries(hal.sensors)) {
-    // A stale reading is no reading: rules must not act on it.
-    if (r && r.quality !== 'stale') out[`sensor.${id}`] = r.value
+    // A stale or suspect reading is no reading: rules must not act on it (ADR-0029).
+    if (r && r.quality === 'good') out[`sensor.${id}`] = r.value
   }
   for (const [id, s] of Object.entries(hal.actuators)) {
     if (!s) continue

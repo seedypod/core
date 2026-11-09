@@ -64,6 +64,8 @@ minutes. Overshooting is the common mistake.
 3. **Let Autopilot watch** ([Autopilot](AUTOPILOT.md)). For example, notify
    when the one-hour average pH leaves 5.5–6.5, or when EC drops below 1.2.
    Backtest it against your recorded readings before you arm it.
+   **Autopilot → Starter rules** has both ready, with the note each threshold
+   comes from, plus one for a tank below half.
 
 The tank-level sensor shows real water use, so top off when the tank is low
 rather than on a weekly reminder.

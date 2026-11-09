@@ -11,13 +11,13 @@ import { BacktestPanel } from './BacktestPanel'
 import { fromRule, type Draft } from './builderModel'
 import { ActivityCard, LastDayCard, ModeControl, Sparkline } from './parts'
 import { RuleEditor } from './RuleEditor'
+import { StarterRules } from './StarterRules'
 
 const lit = (value: number) => ({ kind: 'literal' as const, value })
 const sig = (signal: string) => ({ kind: 'signal' as const, signal })
 
-/** Starters for an empty list; each opens the editor prefilled, in dry run. */
+/** Starters for an empty list; each opens the editor prefilled, in dry run. The tank notice is a starter rule from the knowledge bundle now. */
 const TEMPLATES: Array<{ id: string, title: string, description: string, rule: Omit<AutomationRule, 'id' | 'enabled' | 'dryRun'> }> = [
-  { id: 'tank', title: 'Tank getting low', description: 'Tell me when the tank drops below 30 %.', rule: { name: 'Tank getting low', priority: 50, cooldownMin: 240, trigger: { kind: 'tick', everyMin: 15 }, conditions: { kind: 'and', conditions: [{ kind: 'compare', op: '<', left: sig('sensor.water_level_pct'), right: lit(30) }] }, actions: [{ kind: 'notify', message: 'top up the tank' }] } },
   { id: 'hot', title: 'Dim when hot', description: 'Turn the light down to 60 % when the air is over 29 °C.', rule: { name: 'Dim when hot', priority: 60, cooldownMin: 30, trigger: { kind: 'tick', everyMin: 5 }, conditions: { kind: 'and', conditions: [{ kind: 'compare', op: '>', left: sig('sensor.air_temp'), right: lit(29) }] }, actions: [{ kind: 'setLight', level: lit(60) }] } },
   { id: 'ph', title: 'pH drifting up', description: 'Dose pH-down for 5 s when pH goes over 6.5.', rule: { name: 'pH drifting up', priority: 50, cooldownMin: 360, trigger: { kind: 'tick', everyMin: 10 }, conditions: { kind: 'and', conditions: [{ kind: 'compare', op: '>', left: sig('sensor.ph'), right: lit(6.5) }] }, actions: [{ kind: 'dose', doser: 'dose_1', durationS: lit(5) }] } },
 ]
@@ -158,6 +158,7 @@ export function AutopilotPage() {
           )
         })}
       </div>
+      <StarterRules onOpen={draft => setEditing({ id: null, draft })} />
       {(update.error ?? setGlobal.error) && <InlineError>{(update.error ?? setGlobal.error)?.message}</InlineError>}
 
       <ActivityCard runs={runs.data ?? []} names={names} idle={`No rule has acted in 24 h. ${plural(day.idle, 'check')} found nothing to do.`} />

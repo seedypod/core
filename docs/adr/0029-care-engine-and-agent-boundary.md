@@ -176,3 +176,24 @@ to act on them subscribes there, so a quiet tank costs no tokens.
   (ADR 0021).
 - Advice is only as good as `knowledge/`. Its gaps, such as no published EC
   for Gardyn's food, show up as calendar guesses rather than invented numbers.
+- Autopilot's signals now drop `suspect` readings as they already dropped
+  `stale` ones, so no rule, starter or otherwise, acts on a reading hald
+  doesn't trust.
+
+## Implementation
+
+- Setup check: `src/care/setup.ts`. Alerts `setup_light_schedule`,
+  `setup_pump_schedule` and `setup_water_sensor`; a **Setup** line on Status.
+- Tank action log: table `tank_actions` (migration 0014), `tank.*` router,
+  **Water → Tank log**.
+- Chores: `src/care/chores.ts`, with citations from `src/care/knowledge.ts`.
+  **Water → Chores** and **Needs you**. A reading that makes a chore due raises
+  `chore_top_off`, `chore_feed` or `chore_thin`; marking one done logs the
+  action.
+- Starter rules: `src/care/starters.ts`, **Autopilot → Starter rules**.
+- Engine: `src/care/engine.ts`, started with the other services in
+  `src/server/bootstrap.ts`.
+- API: `src/server/routers/care.ts` (`/care/setup`, `/care/chores`,
+  `/care/starter-rules`) and `src/server/routers/tank.ts` (`/tank/actions`).
+- Tests: `src/care/tests/`. `knowledge.test.ts` checks every cited note,
+  heading and number.
