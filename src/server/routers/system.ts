@@ -29,10 +29,6 @@ export const systemRouter = router({
     .meta({ openapi: { method: 'GET', path: '/system/checks', tags: ['system'], summary: 'One line per part of the unit (daemon, sensors, outputs, cameras, services): ok, idle, stalled or down' } })
     .output(z.object({ checks: z.array(Check) }))
     .query(async ({ ctx }) => ({ checks: await systemChecks(ctx) })),
-  loginSummary: publicProcedure
-    .meta({ openapi: { method: 'GET', path: '/system/login-summary', tags: ['system'], summary: 'What the SSH login screen shows beside the logo, flat, with ages in seconds' } })
-    .output(LoginSummary)
-    .query(({ ctx }) => loginSummary(ctx)),
   bridge: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/system/bridge', tags: ['system'], summary: 'Home Assistant MQTT bridge: off, connected or disconnected, the broker, and the last connect error' } })
     .output(z.object({ state: z.enum(['off', 'connected', 'disconnected']), broker: z.string().nullable(), since: z.string().nullable(), error: z.string().nullable() }))
@@ -53,4 +49,8 @@ export const systemRouter = router({
     .meta({ openapi: { method: 'GET', path: '/healthcheck', tags: ['system'] } })
     .output(z.object({ ok: z.literal(true), ts: z.string() }))
     .query(() => ({ ok: true as const, ts: new Date().toISOString() })),
+  loginSummary: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/system/login-summary', tags: ['system'], summary: 'What the SSH login screen shows beside the logo, flat, with ages in seconds' } })
+    .output(LoginSummary)
+    .query(({ ctx }) => loginSummary(ctx)),
 })
