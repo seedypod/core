@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PodState } from '@/src/components/Grow/towerScene'
-import { PlanPage, VIEW_KEY } from '../PlanPage'
+import { PlanPage, shiftNotes, VIEW_KEY } from '../PlanPage'
 import { UNDO_MS } from '../SavedPlans'
 
 // The 3D view is covered by towerView.test.tsx and the browser tests; here it reports what it was given.
@@ -22,6 +22,10 @@ const { state, calls, invalidate } = vi.hoisted(() => ({
     plans: [] as unknown[],
     applied: null as null | { seeded: number[], scheduled: { slot: number, plantName: string, sowOn: string }[] },
     custom: [] as unknown[],
+    /** The layout query has not answered yet; `loading` holds back every query. */
+    layoutPending: false,
+    podsPending: false,
+    loading: false,
   },
   calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn() },
   invalidate: vi.fn(),
@@ -47,13 +51,14 @@ vi.mock('@/src/utils/trpc', async () => {
     trpc: {
       useUtils: () => ({ planner: { invalidate, plans: { invalidate } }, grow: { invalidate } }),
       planner: {
-        zones: { useQuery: ({ model }: { model: Model }) => ({ data: { ...MODELS[model], slots: slots(model), counts: zoneCounts(model) } }) },
+        zones: { useQuery: ({ model }: { model: Model }) => ({ data: state.loading ? undefined : { ...MODELS[model], slots: slots(model), counts: zoneCounts(model) } }) },
         catalog: { useQuery: (i: { q?: string, category?: string }) => {
           calls.catalog(i)
           return { data: { plants: [...searchPlants(i as Parameters<typeof searchPlants>[0]).slice(0, 12), ...state.custom] } }
         } },
         layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[], overrides?: PlanOverrides }) => {
           calls.layout(i)
+          if (state.layoutPending || state.loading) return { data: undefined }
           const occupied = Object.fromEntries(state.pods.filter(p => p.status !== 'empty').map(p => [p.slot, 'planted']))
           return { data: planLayout({ model: i.model, plants: i.plants, occupied, overrides: i.overrides }) }
         } },
@@ -66,7 +71,7 @@ vi.mock('@/src/utils/trpc', async () => {
         updatePlant: mutation(calls.updatePlant),
         removePlant: mutation(calls.removePlant),
       },
-      grow: { pods: { useQuery: () => ({ data: state.pods }) } },
+      grow: { pods: { useQuery: () => ({ data: state.loading || state.podsPending ? undefined : state.pods }) } },
     },
   }
 })
@@ -76,6 +81,9 @@ beforeEach(() => {
   state.plans = []
   state.applied = null
   state.custom = []
+  state.layoutPending = false
+  state.loading = false
+  state.podsPending = false
   for (const f of [...Object.values(calls), invalidate]) f.mockReset()
   tower.props = null
   tower.unavailable = false
@@ -237,6 +245,36 @@ describe('PlanPage', () => {
     // 17 basil fit (medium 12, then the 5 low pods mint leaves); the 12 high pods stay empty, not the 29 unplanted today.
     expect(towerPods().filter(p => p.planned)).toHaveLength(17)
     expect(screen.getByText(/^20 planned · 12 empty ·/)).toBeTruthy()
+  })
+
+  it('counts the pods unplanted today until the layout answers, with nothing to say about zones', () => {
+    state.layoutPending = true
+    state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }, { slot: 2, plant: null, status: 'empty' }]
+    render(<PlanPage />)
+    expect(screen.getByText(/^0 planned · 29 empty ·/)).toBeTruthy()
+    expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there.')).toBeTruthy()
+    flat()
+    expect(screen.getByText('Italic = already planted.')).toBeTruthy()
+    cleanup()
+
+    // Nothing has answered: no count to give yet.
+    state.loading = true
+    render(<PlanPage />)
+    expect(screen.getByText(/^0 planned · 0 empty ·/)).toBeTruthy()
+    cleanup()
+
+    // The tower's zones but not its pods: every pod counts as empty.
+    state.loading = false
+    state.podsPending = true
+    render(<PlanPage />)
+    expect(screen.getByText(/^0 planned · 30 empty ·/)).toBeTruthy()
+  })
+
+  it('says “lower than ideal”, not “one zone lower”, once a pod sits two zones down', () => {
+    const at = (fallback: number, shift: 'lower' | 'higher' | null) => ({ slot: 1, plantName: 'Jalapeño', reason: '', fallback, shift })
+    expect(shiftNotes([at(1, 'lower'), at(2, 'lower')], '2d')).toBe(' Outlined pods sit lower than ideal — Gardyn’s rule when the ideal zone is full, or zones allowed for them.')
+    expect(shiftNotes([at(2, 'lower'), at(1, 'higher')], '3d')).toBe(' Some sit lower than ideal — Gardyn’s rule when the ideal zone is full, or zones allowed for them. Some sit higher than ideal, in more light, in a zone allowed for them.')
+    expect(shiftNotes([at(0, null)], '3d')).toBe('')
   })
 
   it('tells pods placed in a higher zone apart from ones placed lower', () => {
