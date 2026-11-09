@@ -35,7 +35,7 @@ const PlanOut = z.object({
   /** First sow date (YYYY-MM-DD): pass it back as `start` to recompute the same schedule. Null when nothing is sown. */
   start: z.string().nullable(),
 })
-const Candidate = z.object({ plantId: z.string(), plantName: z.string(), confidence: z.number() })
+const Candidate = z.object({ plantId: z.string(), plantName: z.string(), confidence: z.number(), reason: z.string().optional() })
 const OrderOut = z.object({
   matched: z.array(Candidate.extend({ line: z.string(), name: z.string(), count: z.number(), alternatives: z.array(Candidate) })),
   unmatched: z.array(z.object({ line: z.string(), name: z.string(), count: z.number(), suggestions: z.array(Candidate) })),
