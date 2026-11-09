@@ -1,13 +1,14 @@
 import { Link } from '@tanstack/react-router'
-import { Aperture, CameraOff, Info, Maximize2, ScanEye } from 'lucide-react'
+import { Aperture, CameraOff, Info, Maximize2, Pause, Play, ScanEye } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/src/components/ds/core'
 import { Modal } from '@/src/components/ds/feedback'
 import { fmtStamp, timeAgo } from '@/src/lib/timeAgo'
 import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
+import { useTimelapse } from './timelapse'
 
 type Cam = 'upper' | 'lower'
 type Frame = inferRouterOutputs<AppRouter>['camera']['list'][number]
@@ -63,7 +64,7 @@ function useCamera(camera: Cam) {
       void utils.alerts.invalidate()
     },
   })
-  const frames = [...(list.data ?? [])].reverse() // oldest → newest for the scrubber
+  const frames = useMemo(() => [...(list.data ?? [])].reverse(), [list.data]) // oldest → newest for the scrubber
   const local = capture.isError ? { ts: new Date(capture.submittedAt).toISOString(), message: capture.error.message } : null
   return { camera, frames, capture, local }
 }
@@ -126,7 +127,9 @@ function CameraCard({ camera, frames, failure, now, pending, onCapture }: {
   pending: boolean
   onCapture: () => void
 }) {
-  const [idx, setIdx] = useState<number | null>(null)
+  const stills = useMemo(() => frames.map(f => ({ id: f.id, src: srcOf(f) })), [frames])
+  const player = useTimelapse(stills)
+  const idx = player.index
   const [zoom, setZoom] = useState(false)
   const i = idx ?? Math.max(0, frames.length - 1)
   const frame = frames[i]
@@ -148,7 +151,7 @@ function CameraCard({ camera, frames, failure, now, pending, onCapture }: {
               </div>
             )
           : frame
-            ? <img src={srcOf(frame)} alt={`${camera} camera at ${frame.ts}`} className="size-full object-cover" />
+            ? <img src={player.src({ id: frame.id, src: srcOf(frame) })} alt={`${camera} camera at ${frame.ts}`} className="size-full object-cover" />
             : <span className="font-mono text-xs text-pod-empty">No frames yet</span>}
         <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-md bg-app/80 px-2 py-1 text-[11px] text-fg">
           <span className={cn('size-1.5 rounded-full', failure ? 'bg-pod-attention' : 'bg-pod-ok')} />
@@ -189,7 +192,7 @@ function CameraCard({ camera, frames, failure, now, pending, onCapture }: {
                   min={0}
                   max={frames.length - 1}
                   value={i}
-                  onChange={e => setIdx(Number(e.target.value))}
+                  onChange={e => player.seek(Number(e.target.value))}
                   className="absolute inset-0 size-full cursor-pointer opacity-0"
                   style={failure ? { width: `${(bars.length / (bars.length + 1)) * 100}%` } : undefined}
                 />
@@ -200,13 +203,22 @@ function CameraCard({ camera, frames, failure, now, pending, onCapture }: {
               <span>{failure ? 'latest capture failed' : idx !== null && frame ? fmtStamp(frame.ts) : frames.length > 1 ? 'drag to scrub' : ''}</span>
               <span>now</span>
             </div>
+            {frames.length > 1 && (
+              <div className="flex items-center gap-2">
+                <Button size="sm" icon={player.playing ? Pause : Play} aria-label={`${player.playing ? 'Pause' : 'Play'} ${camera} timelapse`} onClick={player.toggle}>
+                  {player.playing ? 'Pause' : 'Play'}
+                </Button>
+                <Button size="sm" variant="ghost" aria-label={`${cam.name} playback speed`} onClick={player.cycleSpeed}>{`${player.speed} fps`}</Button>
+                <span className="ml-auto font-mono text-[10px] text-fg-3">{player.waiting ? 'loading frames…' : `${i + 1} / ${frames.length}`}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {zoom && frame && (
         <Modal open onClose={() => setZoom(false)} title={`${cam.name} camera · ${fmtStamp(frame.ts)}`} width={960}>
-          <img src={srcOf(frame)} alt={`${camera} camera at ${frame.ts}`} className="w-full rounded-ctl" />
+          <img src={player.src({ id: frame.id, src: srcOf(frame) })} alt={`${camera} camera at ${frame.ts}`} className="w-full rounded-ctl" />
         </Modal>
       )}
     </div>
