@@ -204,6 +204,9 @@ identity.
   the simulator with a HAP controller: the wrong code is refused, the derived
   one pairs, writes reach the light and pump, pairings survive a restart, and
   a removal rotates the identity.
+- **Status update (2026-11-09):** pairing from the Home app has since worked on
+  the bring-up unit (Pi Zero W, seedypod OS). ciao's CPU use there and whether
+  `HOMEKIT_BIND` is needed haven't been measured.
 
 ## Amendment (2026-11-08): a "Tank low" sensor next to the battery
 

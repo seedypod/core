@@ -83,7 +83,7 @@ been timed.
 | First boot, until SSH opens | about 7.5 minutes on the Zero W image |
 | `install-hal` | about 4.5 minutes |
 | Core install, compiling `better-sqlite3` | about 56 minutes, 53 of them the compile |
-| Core install, with the prebuilt binary | not timed yet; it skips that compile |
+| Core install, with the prebuilt binary | about 3.5 minutes, measured as a redeploy; it skips that compile |
 | Update (rerunning the core installer) | 1 minute 24 seconds |
 | Reboot, until core serves pages | about 2.5 minutes |
 | seedypod OS, first boot until core serves pages | 4 minutes 31 seconds |

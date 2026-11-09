@@ -13,7 +13,8 @@ This page covers keeping a unit healthy and fixing it yourself. Two kinds of
 advice are mixed here:
 
 - **seedypod behaviour** (alerts, commands, files) comes from the code and is
-  tested on the simulator.
+  tested on the simulator. The light, sensor, camera and update steps have also
+  run on a real Gardyn 3.0; the pump and water-level steps haven't yet.
 - **Physical care** of the tower is general hydroponics practice. It isn't
   specific to, or verified on, every Gardyn model; where the hardware itself
   is unverified, the [hardware map](hardware/pin-map.md) says so.

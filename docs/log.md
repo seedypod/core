@@ -1,5 +1,9 @@
 # Docs update log
 
+## 2026-11-09
+
+- **Update**: Replaced "hasn't run on a real Gardyn" warnings with what the bring-up verified and what it didn't (pump, water level against water, button, the USB hub) in the README, [handoff](HANDOFF.md), [hald reference](hardware/hal.md#verification-status), [hardware map](hardware/pin-map.md), [Maintenance](MAINTENANCE.md), [Debugging](DEBUGGING.md) and [Installation](INSTALLATION.md#how-long-it-takes); added a status update to [ADR 0023](adr/0023-homekit.md). The README shows the web UI.
+
 ## 2026-11-08
 
 - **Update**: [Maintenance → Updates](MAINTENANCE.md#updates) covers **Settings → Updates**: channel, check, update, live progress and the rollback result.

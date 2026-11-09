@@ -482,7 +482,13 @@ echo "$C" | sudo tee "$D/unbind"; sleep 1; echo "$C" | sudo tee "$D/bind"
 
 ## Verification status
 
-Everything here is tested on the simulator and against a local Mosquitto;
-the real drivers compile for both targets but their register sequences,
-timings and the PWM/overlay details are **unverified on a unit** until the
-Phase 1 checklist in the [hardware map](pin-map.md) is done.
+Everything here is tested on the simulator and against a local Mosquitto.
+On a real Gardyn 3.0 (Pi Zero W, from 2026-11-06), `hald --features hardware`
+ran with MQTT and its I²C sensors answered; the light's hardware PWM on GPIO18
+matched the commanded duty, fades ran smoothly, and the level held across
+`hald` restarts and reboots; both UVC cameras took stills. Still **unverified
+on a unit**, because its tank is empty: the pump driver, the INA219 pump-power
+calibration and dry-run detection, and the ultrasonic level against water. The
+button is unverified too, and the cameras' USB hub comes up on only some boots
+([handoff](../HANDOFF.md#the-usb-hub-the-one-open-fault)). The
+[hardware map](pin-map.md) has the per-row status.

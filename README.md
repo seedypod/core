@@ -23,6 +23,9 @@
   <a href="https://seedypod.github.io/developers/">Developer docs</a> ·
   <a href="https://github.com/seedypod/core/issues">Issues</a>
 </p>
+<p align="center">
+  <img src="docs/media/web-ui-home.webp" width="880" alt="The seedypod web UI's Home screen: the tower in 3D under its lit grow light, on day 19 of a grow with 19 pods ready to harvest (demo data)" />
+</p>
 
 A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seedypod replaces the cloud with software that runs on that Pi. There's no account and no telemetry, and nothing leaves your LAN unless you turn it on. It's a sibling of [sleepypod](https://sleepypod.github.io/).
 
@@ -46,7 +49,7 @@ A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seed
 - **Wi-Fi setup:** hold the button for 10 seconds to start a setup hotspot.
 - **SD card care:** logs and swap stay in RAM, a meter shows the card's writes per day, and nightly backups go to your bucket. A dead card is a reflash plus **Welcome → Restore from a backup**.
 
-> **Status:** the software is complete and tested against the simulator, but it hasn't run on a real Gardyn yet. Confirming the pin map on hardware is the next step. See [`docs/hardware/pin-map.md`](docs/hardware/pin-map.md).
+> **Status:** running on a real Gardyn 3.0 (Pi Zero W) since 2026-11-06. Verified on that unit: both installers and seedypod OS, the grow light, the sensors, both cameras with image analysis, HomeKit pairing and the web UI. Not yet verified, because its tank is still empty: a pump run and the water-level reading against water. The cameras' USB hub still comes up on only some boots. See the [bring-up notes](docs/HANDOFF.md#7-real-unit-bring-up-2026-11-06) and the [hardware map](docs/hardware/pin-map.md).
 
 ## Install
 

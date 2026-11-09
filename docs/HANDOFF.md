@@ -24,7 +24,7 @@ Updated 2026-10-31 after the move to `github.com/seedypod/core` (from `ng/leafyp
 
 **Simulated Phase 1 done:** [`pnpm test:sim-bringup`](hardware/sim-bringup.md) runs the full stack against `hald --sim` over MQTT in CI (19 checks, including a backup → wipe → restore round trip). It caught a subscribe race that would have kept core from ever seeing a real `hald`.
 
-**Not done, needs hardware (Phase 1 / 2.10):** nothing has run on a real Gardyn. The pin map, I²C addresses, driver timing/CRCs, INA219 calibration, button/GPIO25 polarity, PWM overlay line, camera exposure and the install scripts' Raspberry Pi OS steps are all documented assumptions. The checklist is in `docs/hardware/pin-map.md`; the per-driver list is at the end of `docs/hardware/hal.md`.
+**Not done, needs hardware (Phase 1 / 2.10):** at this pause nothing had run on a real Gardyn. The pin map, I²C addresses, driver timing/CRCs, INA219 calibration, button/GPIO25 polarity, PWM overlay line, camera exposure and the install scripts' Raspberry Pi OS steps are all documented assumptions. **Status update (2026-11-09):** the bring-up in section 7 confirmed the install scripts and seedypod OS on Raspberry Pi OS trixie, the PWM overlay and light, the I²C sensors, GPIO25 (active low) and both cameras. INA219 calibration, the button and the water level against water are still unconfirmed, and the pump hasn't run. The checklist is in `docs/hardware/pin-map.md`; the per-driver list is at the end of `docs/hardware/hal.md`.
 
 **Known deliberate limits:** `hald` MQTT is plain TCP (LAN-only); over-temp uses a single threshold plus the GPIO25 line (latch provides anti-flap); the Next.js memory spike (plan 0.0) was not run — the plan is built on the Hono/Vite outcome.
 
@@ -95,7 +95,7 @@ Fades, slider taps (touch emulation), port 80, login logo, Database page, Re-run
 
 Bugs only the unit could show: the over-temp line reads active low; a first PWM open after boot hit `Permission denied` because udev is slow, so the light was lost until a restart; and fswebcam re-encodes torn frames into valid JPEGs, so only the raw frame shows damage.
 
-Not yet tested: the water sensor with a tank, and the first pump run. Don't run the pump dry. The power-up light flicker is also unexplained: note when it happens.
+Not yet tested, because the tank is still empty: the water-level reading against water, and the first pump run, with its pump-power reading and dry-run cutoff. Don't run the pump dry. The power-up light flicker is also unexplained: note when it happens.
 
 ### The USB hub: the one open fault
 
@@ -126,9 +126,8 @@ Logs for all of this are in `~/Documents/seedypod/bringup-logs-2026-11-06/`, and
 
 - `install --restore` on a unit where core has never run can leave `data/` owned by root: create it as the core account in `finish_prefix`.
 - A failed capture's alert can stay quiet if hald clears `camera_missing` first (`said` in `captures.ts`).
-- The first-boot SSH figure in [Installation](INSTALLATION.md) still says about 3 minutes: 7.5 on the image.
 - The Vercel team is blocked for fair use, so the demo isn't deploying and the `deploy` check fails on every PR. CodeRabbit's included reviews have run out on the `ng/seedypod-core` mirror (`ng/core` is sleepypod's: never push there).
-- The docs site hasn't been updated with this work. A Discord write-up was asked for: it needs a channel.
+- A Discord write-up was asked for: it needs a channel.
 
 
 ## 8. Controlled hub comparison (2026-11-07)
