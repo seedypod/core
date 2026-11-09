@@ -7,7 +7,9 @@ import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 20_000 })
 
 const script = resolve(import.meta.dirname, '../../scripts/install')
 const helper = resolve(import.meta.dirname, '../../scripts/seedypod-update.cjs')

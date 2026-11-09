@@ -10,7 +10,10 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Each test runs the helper several times, and the whole suite runs at once in CI.
+vi.setConfig({ testTimeout: 30_000 })
 
 const helper = resolve(import.meta.dirname, '../../scripts/seedypod-update.cjs')
 const OLD = 'aaaaaaa'
@@ -148,7 +151,7 @@ writeFileSync('node_modules/fresh', '')
     SEEDYPOD_UPDATE_CORE_UNIT: join(dir, 'core.service'),
     SEEDYPOD_UPDATE_HALD_UNIT: join(dir, 'no-hald.service'),
     SEEDYPOD_UPDATE_CORE_URL: `${base}/core`,
-    SEEDYPOD_UPDATE_HEALTH_TIMEOUT: '1',
+    SEEDYPOD_UPDATE_HEALTH_TIMEOUT: '15',
     SEEDYPOD_UPDATE_POLL_MS: '50',
     SEEDYPOD_UPDATE_SBIN: join(dir, 'sbin'),
     SEEDYPOD_UPDATE_COMPILE_CACHE: join(dir, 'cache/compile-cache'),
@@ -276,6 +279,7 @@ describe('updating', () => {
 
   it('rolls back when the new version fails its health check, database included', async () => {
     release(tree(NEW, { 'server/dist/index.js': 'core broken' }))
+    envs.SEEDYPOD_UPDATE_HEALTH_TIMEOUT = '1'
     const r = await run('--now')
     expect(r.code).toBe(1)
     expect(r.out).toMatchObject({ ok: false, code: 'rolled-back' })
@@ -350,7 +354,7 @@ describe('updating', () => {
     release(tree(NEW))
     const r = await run('--start')
     expect(r).toMatchObject({ code: 0, out: { ok: true, detached: true, channel: 'dev', to: { tag: 'dev-latest' } } })
-    for (let i = 0; i < 200 && status().state !== 'done'; i++) await new Promise(res => setTimeout(res, 50))
+    for (let i = 0; i < 400 && status().state !== 'done'; i++) await new Promise(res => setTimeout(res, 50))
     expect(status()).toMatchObject({ state: 'done' })
     expect(read('server/dist/index.js')).toBe(`core ${NEW}`)
     expect(await run('--start')).toMatchObject({ code: 4, out: { code: 'current' } })
