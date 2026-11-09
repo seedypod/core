@@ -21,7 +21,7 @@ const ZoneSummary = z.object({ zone: Zone, rows: z.array(z.number()), slots: z.a
 const Blocker = z.object({ slot: z.number(), zone: Zone, plantId: z.string(), plantName: z.string(), existing: z.boolean() })
 const Unplaced = z.object({ plantId: z.string(), plantName: z.string(), reason: z.string(), code: z.enum(['not_in_catalog', 'no_space', 'bad_pin']), wantZone: Zone.nullable(), zones: z.array(Zone), blocking: z.array(Blocker) })
 const Suggestion = z.object({
-  plantId: z.string(), plantName: z.string(), kind: z.enum(['relocate', 'allow_lower']), slot: z.number(), zone: Zone,
+  plantId: z.string(), plantName: z.string(), kind: z.enum(['relocate', 'allow_lower', 'allow_higher']), slot: z.number(), zone: Zone,
   move: z.object({ plantId: z.string(), plantName: z.string(), from: z.number(), to: z.number(), toZone: Zone, existing: z.boolean() }).nullable(),
   text: z.string(), overrides: Overrides.nullable(),
 })

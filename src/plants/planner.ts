@@ -24,8 +24,15 @@ import { BUILTIN, type Catalog, type Plant, SUCCESSION_GAP_DAYS, type Zone } fro
 import { type Model, MODELS, type Slot, slots } from './zones'
 
 const LOWER: Record<Zone, Zone | null> = { high: 'medium', medium: 'low', low: null }
+const HIGHER: Record<Zone, Zone | null> = { high: null, medium: 'high', low: 'medium' }
 const ZONE_RANK: Record<Zone, number> = { high: 0, medium: 1, low: 2 }
 const ZONES: Zone[] = ['high', 'medium', 'low']
+/**
+ * Categories that take more light than their zone without harm, so a planner
+ * may offer a higher zone when theirs is full. Not lettuces or leafy greens:
+ * Gardyn warns too much light can hasten bolting; nor vegetables (brassicas bolt too).
+ */
+const TAKES_MORE_LIGHT: ReadonlySet<Plant['category']> = new Set(['herb', 'flower', 'legume'])
 
 /** Caller overrides, honoured before the automatic rules. */
 export interface PlanOverrides {
@@ -95,8 +102,11 @@ export interface Suggestion {
   /** The plant that did not fit. */
   plantId: string
   plantName: string
-  /** relocate: move another pod to a slot it tolerates; allow_lower: let this plant go one zone further down than Gardyn's rule. */
-  kind: 'relocate' | 'allow_lower'
+  /**
+   * relocate: move another pod to a slot it tolerates; allow_lower: let this plant go one zone further down than Gardyn's rule;
+   * allow_higher: let a herb, flower or legume use a brighter zone with free pods.
+   */
+  kind: 'relocate' | 'allow_lower' | 'allow_higher'
   /** The slot the unplaced plant would take. */
   slot: number
   zone: Zone
@@ -322,7 +332,8 @@ interface LayoutState {
 /**
  * Moves that make room for plants that did not fit: relocate a pod whose
  * plant tolerates a free slot elsewhere (planned pods before planted ones),
- * or let the plant go one zone further down than Gardyn's rule.
+ * let the plant go one zone further down than Gardyn's rule, or, for a plant
+ * that takes more light, up into the nearest brighter zone with free pods.
  */
 function suggest(model: Model, noSpace: Plant[], st: LayoutState): Suggestion[] {
   const all = slots(model)
@@ -378,8 +389,34 @@ function suggest(model: Model, noSpace: Plant[], st: LayoutState): Suggestion[] 
         },
       })
     }
+    const brighter = TAKES_MORE_LIGHT.has(plant.category) ? higherZones(plant.zone).filter(z => !tol.includes(z)) : []
+    for (const up of brighter) {
+      const free = all.filter(s => s.zone === up && !st.taken.has(s.slot))
+      if (!free[0]) continue
+      found.set('allow_higher', {
+        cost: 25,
+        s: {
+          plantId: plant.id,
+          plantName: plant.name,
+          kind: 'allow_higher',
+          slot: free[0].slot,
+          zone: up,
+          move: null,
+          text: `Allow ${plant.name} in the ${up} zone too (${free.length} free) — more light than its ideal ${plant.zone} zone, which ${plant.category}s tolerate.`,
+          overrides: { ...st.overrides, allowedZones: { ...st.overrides?.allowedZones, [plant.id]: [...tol, up] } },
+        },
+      })
+      break
+    }
     out.push(...[...found.values()].sort((a, b) => a.cost - b.cost).slice(0, 3).map(f => f.s))
   }
+  return out
+}
+
+/** Zones brighter than `zone`, nearest first. */
+function higherZones(zone: Zone): Zone[] {
+  const out: Zone[] = []
+  for (let z = HIGHER[zone]; z; z = HIGHER[z]) out.push(z)
   return out
 }
 
