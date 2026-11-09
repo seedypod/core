@@ -1,4 +1,4 @@
-import { Box, LayoutGrid, Minus, Pencil, Plus, Sprout, Trash2 } from 'lucide-react'
+import { Box, LayoutGrid, Minus, Pencil, Plus, Sprout } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
@@ -6,12 +6,12 @@ import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
 import { PLANNED_FORM, type PodStatus } from '@/src/components/Grow/towerLayout'
 import type { PodState } from '@/src/components/Grow/towerScene'
 import { TowerView } from '@/src/components/Grow/TowerView'
-import { Badge, Button, Card, CardHeader, GhostIcon, SectionLabel } from '@/src/components/ds/core'
-import { Modal } from '@/src/components/ds/feedback'
+import { Button, Card, CardHeader, GhostIcon, SectionLabel } from '@/src/components/ds/core'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
 import { trpc } from '@/src/utils/trpc'
 import { CustomPlantDialog, type EditablePlant } from '@/src/components/Plan/CustomPlantDialog'
+import { SavedPlans } from '@/src/components/Plan/SavedPlans'
 import { Unplaced } from '@/src/components/Plan/Unplaced'
 
 type Model = 'home' | 'studio'
@@ -97,7 +97,6 @@ export function PlanPage() {
   const [picks, setPicks] = useState<Record<string, number>>({})
   const [name, setName] = useState('My plan')
   const [mode, setMode] = useState<'staggered' | 'batch'>('staggered')
-  const [confirm, setConfirm] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditablePlant | 'new' | null>(null)
   // A saved plan loaded for editing: saving updates it, with its own start date and overrides, so it lays out and sows as saved.
   const [opened, setOpened] = useState<{ id: string, start: string | null, overrides?: Overrides } | null>(null)
@@ -115,6 +114,8 @@ export function PlanPage() {
   }
 
   const zones = trpc.planner.zones.useQuery({ model })
+  // Every plant, custom ones included, so saved plans can name theirs.
+  const everything = trpc.planner.catalog.useQuery({})
   const catalog = trpc.planner.catalog.useQuery({ q: q || undefined, category: cat === 'all' ? undefined : cat })
   const request = useMemo(() => Object.entries(picks).filter(([, n]) => n > 0).map(([plantId, count]) => ({ plantId, count })), [picks])
   const overrides = opened?.overrides
@@ -161,7 +162,7 @@ export function PlanPage() {
       />
 
       <div className="grid gap-4 min-[900px]:grid-cols-[1fr_360px]">
-        <Card>
+        <Card id="plan-layout" className="scroll-mt-4">
           <CardHeader
             title="Layout"
             subtitle={`${total} planned · ${free} free · zones from Gardyn’s light map`}
@@ -263,68 +264,22 @@ export function PlanPage() {
       )}
 
       <SectionLabel>Saved plans</SectionLabel>
-      {(plans.data ?? []).length === 0 && <Card dashed><p className="text-[13px] text-fg-2">Pick plants above, then save a plan. Applying it writes the layout onto your pods and schedules reminders for later waves.</p></Card>}
-      {(plans.data ?? []).map(p => (
-        <Card key={p.id} highlight={!!p.appliedAt}>
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <div className="text-[15px]">
-                {p.name}
-                {' '}
-                {p.appliedAt && <Badge variant="active">applied</Badge>}
-              </div>
-              <div className="text-[12px] text-fg-2">
-                {p.model}
-                {' '}
-                ·
-                {' '}
-                {p.layout.assignments.length}
-                {' '}
-                pods ·
-                {' '}
-                {p.request.map(r => `${r.count}× ${r.plantId}`).join(', ')}
-              </div>
-            </div>
-            <Button
-              size="sm"
-              onClick={() => {
-                setModel(p.model === 'studio' ? 'studio' : 'home')
-                setPicks(Object.fromEntries(p.request.map(r => [r.plantId, r.count])))
-                setMode(p.mode)
-                setName(p.name)
-                setOpened({ id: p.id, start: p.start, overrides: p.layout.overrides })
-              }}
-            >
-              Open
-            </Button>
-            <Button size="sm" variant="primary" onClick={() => setConfirm(p.id)}>Apply</Button>
-            <GhostIcon icon={Trash2} label="Delete plan" onClick={() => remove.mutate({ id: p.id })} />
-          </div>
-        </Card>
-      ))}
-
-      <Modal
-        open={!!confirm}
-        onClose={() => setConfirm(null)}
-        title="Apply plan to your pods?"
-        icon={LayoutGrid}
-        footer={(
-          <div className="flex gap-2">
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (confirm) apply.mutate({ id: confirm })
-                setConfirm(null)
-              }}
-            >
-              Apply
-            </Button>
-            <Button onClick={() => setConfirm(null)}>Cancel</Button>
-          </div>
-        )}
-      >
-        <p className="text-[13px] text-fg-2">This overwrites the planned pods. First-wave pods are marked seeded today; later waves are noted with their sow date and you’ll get a reminder when it arrives.</p>
-      </Modal>
+      <SavedPlans
+        plans={plans.data ?? []}
+        catalog={everything.data?.plants ?? []}
+        editing={opened?.id ?? null}
+        onOpen={(p) => {
+          setModel(p.model === 'studio' ? 'studio' : 'home')
+          setPicks(Object.fromEntries(p.request.map(r => [r.plantId, r.count])))
+          setMode(p.mode)
+          setName(p.name)
+          setOpened({ id: p.id, start: p.start, overrides: p.layout.overrides })
+          setSelected(null)
+          document.getElementById('plan-layout')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+        }}
+        onApply={id => apply.mutate({ id })}
+        onRemove={id => remove.mutate({ id })}
+      />
       <CustomPlantDialog open={editing !== null} plant={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
       {apply.data && (
         <p className="text-[12px] text-fg-2">{`Applied: ${apply.data.seeded.length} pods seeded${apply.data.scheduled.length ? `, ${apply.data.scheduled.length} scheduled` : ''}.`}</p>

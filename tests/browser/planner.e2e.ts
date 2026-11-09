@@ -19,15 +19,18 @@ test('plan: add plants, see the zone layout, save and apply onto the pods', asyn
   await expect(page.getByText(/^2 planned/)).toBeVisible()
   await expect(page.getByText(/sow \d{4}-\d{2}-\d{2} → harvest/).first()).toBeVisible()
   await page.getByRole('button', { name: 'Save plan' }).click()
-  await page.getByRole('button', { name: 'Apply', exact: true }).first().click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Apply' }).click()
+  const card = page.getByRole('group', { name: 'My plan' }).first()
+  await expect(card.getByRole('list', { name: 'Plants in My plan' })).toHaveText(/Basil.*Mint/)
+  await card.getByRole('button', { name: 'Apply to tower' }).click()
+  await expect(page.getByRole('dialog')).toContainText('2 pods marked seeded today.')
+  await page.getByRole('dialog').getByRole('button', { name: 'Apply to tower' }).click()
   await expect(page.getByText(/Applied: 2 pods seeded/)).toBeVisible()
   const pods = await (await page.request.get('/api/pods')).json() as { plant: string | null, status: string }[]
   const seeded = pods.filter(p => p.status === 'seeded').map(p => p.plant)
   expect(seeded).toEqual(expect.arrayContaining(['Basil', 'Mint']))
 })
 
-test('plan: opens on the 3D tower, and the 2D grid is remembered and leaves three.js alone', async ({ page }) => {
+test('plan: opens on the 3D tower, and the 2D grid is remembered and never loads the tower renderer', async ({ page }) => {
   await page.goto('/plan')
   await expect(page.getByTestId('tower-3d')).toBeVisible()
   await page.getByRole('tab', { name: '2D' }).click()

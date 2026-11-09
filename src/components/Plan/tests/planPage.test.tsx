@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PodState } from '@/src/components/Grow/towerScene'
 import { PlanPage, VIEW_KEY } from '../PlanPage'
+import { UNDO_MS } from '../SavedPlans'
 
 // The 3D view is covered by towerView.test.tsx and the browser tests; here it reports what it was given.
 const { tower } = vi.hoisted(() => ({ tower: { props: null as null | Record<string, unknown>, unavailable: false } }))
@@ -171,29 +172,38 @@ describe('PlanPage', () => {
     expect(moves[1]).toMatch(/^Allow Jalapeño in the low zone too/)
   })
 
-  it('applies a saved plan only after confirming, and deletes one', () => {
-    const layout = { model: 'home', assignments: [{ slot: 4 }, { slot: 5 }], unplaced: [], free: [] }
+  it('lists saved plans by plant name, applies one only after confirming, and deletes one with an undo', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const layout = { model: 'home', assignments: [{ slot: 4, plantId: 'basil', plantName: 'Basil' }, { slot: 5, plantId: 'basil', plantName: 'Basil' }], unplaced: [], free: [] }
     state.plans = [
-      { id: 'p1', name: 'Autumn', model: 'home', appliedAt: null, layout, request: [{ plantId: 'basil', count: 2 }] },
-      { id: 'p2', name: 'Spring', model: 'home', appliedAt: '2026-10-01T00:00:00Z', layout, request: [{ plantId: 'kale', count: 2 }] },
+      { id: 'p1', name: 'Autumn', model: 'home', appliedAt: null, layout, request: [{ plantId: 'basil', count: 2 }], sowing: [] },
+      { id: 'p2', name: 'Spring', model: 'home', appliedAt: '2026-10-01T00:00:00Z', layout: { ...layout, assignments: [] }, request: [{ plantId: 'italian-parsley', count: 1 }], sowing: [] },
     ]
     state.applied = { seeded: [4], scheduled: [{ slot: 5, plantName: 'Basil', sowOn: '2026-12-12' }] }
     render(<PlanPage />)
     expect(screen.getByText('applied')).toBeTruthy()
-    expect(screen.getByText(/home · 2 pods · 2× basil/)).toBeTruthy()
+    const autumn = within(screen.getByRole('group', { name: 'Autumn' }))
+    expect(autumn.getByTestId('plan-meta').textContent).toBe('Gardyn Home·2 of 30 pods')
+    expect(autumn.getByRole('list', { name: 'Plants in Autumn' }).textContent).toBe('Basil×2')
+    expect(within(screen.getByRole('group', { name: 'Spring' })).getByRole('list').textContent).toBe('Italian Parsley')
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[0] as HTMLElement)
+    fireEvent.click(autumn.getByRole('button', { name: 'Apply to tower' }))
+    expect(within(screen.getByRole('dialog')).getByText('2 pods marked seeded today.')).toBeTruthy()
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(calls.apply).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[0] as HTMLElement)
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Apply' }))
+    fireEvent.click(autumn.getByRole('button', { name: 'Apply to tower' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Apply to tower' }))
     expect(calls.apply).toHaveBeenCalledWith({ id: 'p1' })
     expect(screen.getByText('Applied: 1 pods seeded, 1 scheduled.')).toBeTruthy()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete plan' })[1] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Spring' }))
+    expect(screen.queryByRole('group', { name: 'Spring' })).toBeNull()
+    expect(screen.getByText('Deleted “Spring”')).toBeTruthy()
+    act(() => vi.advanceTimersByTime(UNDO_MS))
     expect(calls.remove).toHaveBeenCalledWith({ id: 'p2' })
+    vi.useRealTimers()
   })
 
   it('adds a plant of your own and edits or deletes one', () => {
@@ -223,7 +233,8 @@ describe('PlanPage', () => {
     state.plans = [{ id: 'mcp-1', name: 'Gardyn order', model: 'studio', mode: 'staggered', appliedAt: null, start: '2026-10-01', layout: { model: 'studio', assignments: [{ slot: 4 }, { slot: 7 }], unplaced: [], free: [], overrides }, request: [{ plantId: 'basil', count: 2 }] }]
     render(<PlanPage />)
     flat()
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open in planner' }))
+    expect(screen.getByText('editing')).toBeTruthy()
     expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 2 }], respectExisting: true, overrides })
     expect(screen.getByText('High 5')).toBeTruthy()
     expect((screen.getByLabelText('Plan name') as HTMLInputElement).value).toBe('Gardyn order')
