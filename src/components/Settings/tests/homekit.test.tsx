@@ -81,7 +81,8 @@ describe('Settings → HomeKit', () => {
     expect(screen.getByTestId('homekit-paired').textContent).toBe('no')
     expect(screen.getByText('on')).toBeTruthy()
     expect(state.refetch?.({ state: { data: running } })).toBe(5000)
-    expect(state.refetch?.({ state: { data: { ...running, pairedControllers: 1 } } })).toBe(false)
+    expect(state.refetch?.({ state: { data: { ...running, pairedControllers: 1 } } })).toBe(30_000)
+    expect(state.refetch?.({ state: { data: base } })).toBe(false)
     expect(state.refetch?.({ state: { data: undefined } })).toBe(false)
   })
 

@@ -1,6 +1,7 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SystemInfo } from '../../hardware/contract'
 import { SimHal } from '../../hardware/sim'
@@ -9,7 +10,7 @@ import { createEventBus, type CoreEvent } from '../../lib/eventBus'
 import { createCore } from '../../server/bootstrap'
 import { MemoryStore } from '../../store/memory'
 import type { BridgeOptions, PublishedBridge } from '../bridge'
-import { DEFAULT_PORT, HomeKitService, pickAdvertiser, pickBind, pickPort } from '../service'
+import { DEFAULT_PORT, HomeKitService, legacyStorageDir, pickAdvertiser, pickBind, pickPort } from '../service'
 
 let dir: string
 beforeEach(() => {
@@ -55,7 +56,7 @@ function fakeBridge() {
   }
 }
 
-function setup(o: { system?: SystemInfo | null, enabled?: boolean, systemWaitMs?: number } = {}) {
+function setup(o: { system?: SystemInfo | null, enabled?: boolean, systemWaitMs?: number, dir?: string, legacyDir?: string | null } = {}) {
   const hal = new SimHal({ tickMs: 0 })
   const system = o.system === undefined ? unit() : o.system
   const snapshot = hal.snapshot.bind(hal)
@@ -83,7 +84,7 @@ function setup(o: { system?: SystemInfo | null, enabled?: boolean, systemWaitMs?
   const bridge = fakeBridge()
   const log: string[] = []
   const svc = new HomeKitService({
-    store, hal, events, dir, version: 'test', env: {},
+    store, hal, events, dir: o.dir ?? dir, legacyDir: o.legacyDir, version: 'test', env: {},
     readFile: () => {
       throw new Error('ENOENT')
     },
@@ -96,8 +97,8 @@ function setup(o: { system?: SystemInfo | null, enabled?: boolean, systemWaitMs?
   return { svc, store, events, seen, bridge, log, core, hal, report, listeners }
 }
 
-const accessoryInfo = (username: string, clients: string[]) =>
-  writeFileSync(join(dir, `AccessoryInfo.${username.replace(/:/g, '')}.json`), JSON.stringify({ pairedClients: Object.fromEntries(clients.map(c => [c, {}])) }))
+const accessoryInfo = (username: string, clients: string[], at = dir) =>
+  writeFileSync(join(at, `AccessoryInfo.${username.replace(/:/g, '')}.json`), JSON.stringify({ pairedClients: Object.fromEntries(clients.map(c => [c, {}])) }))
 
 describe('HomeKitService', () => {
   it('is off by default: no bridge, no identity, nothing loaded at boot', async () => {
@@ -208,6 +209,56 @@ describe('HomeKitService', () => {
     writeFileSync(join(dir, 'identity.json'), JSON.stringify({ ...id, wasPaired: false }))
     await again.svc.startIfEnabled()
     expect(again.svc.ids.read()?.wasPaired).toBe(true)
+  })
+
+  it('a relative data dir reports the pairings hap-nodejs wrote, and hands hap-nodejs the absolute path', async () => {
+    const { svc, bridge } = setup({ enabled: true, dir: relative(process.cwd(), dir), legacyDir: null })
+    const id = svc.ids.loadOrCreate()
+    accessoryInfo(id.username, ['ios-1', 'hub-1'])
+    await svc.startIfEnabled()
+    expect((bridge.published[0] as BridgeOptions).dir).toBe(dir)
+    expect((await svc.status()).pairedControllers).toBe(2)
+  })
+
+  it('moves pairings an older core left under node-persist, so a paired unit stays paired', async () => {
+    const legacy = join(dir, 'legacy')
+    mkdirSync(legacy)
+    const { svc, bridge, log } = setup({ enabled: true, legacyDir: legacy })
+    const id = svc.ids.loadOrCreate()
+    svc.ids.markPaired()
+    const key = id.username.replace(/:/g, '')
+    accessoryInfo(id.username, ['ios-1', 'hub-1'], legacy)
+    writeFileSync(join(legacy, `IdentifierCache.${key}.json`), '{}')
+    await svc.startIfEnabled()
+    expect((bridge.published[0] as BridgeOptions).identity.username).toBe(id.username)
+    expect((await svc.status()).pairedControllers).toBe(2)
+    expect(existsSync(join(dir, `IdentifierCache.${key}.json`))).toBe(true)
+    expect(readdirSync(legacy)).toEqual([])
+    expect(log.join('\n')).toMatch(/moved .* pairings from/)
+  })
+
+  it('keeps its own pairing files over leftovers under node-persist', async () => {
+    const legacy = join(dir, 'legacy')
+    mkdirSync(legacy)
+    const { svc } = setup({ enabled: true, legacyDir: legacy })
+    const id = svc.ids.loadOrCreate()
+    accessoryInfo(id.username, ['ios-1'])
+    accessoryInfo(id.username, ['old-1', 'old-2'], legacy)
+    await svc.startIfEnabled()
+    expect((await svc.status()).pairedControllers).toBe(1)
+    expect(readdirSync(legacy)).toHaveLength(1)
+  })
+
+  it('finds where node-persist puts a relative storage path', () => {
+    const req = createRequire(createRequire(import.meta.url).resolve('hap-nodejs'))
+    const persist = req('node-persist') as { create(): { setOptions(o: { dir: string }): void, options: { dir: string } } }
+    const store = persist.create()
+    store.setOptions({ dir: 'data/homekit' })
+    expect(legacyStorageDir('./data/homekit')).toBe(store.options.dir)
+    expect(legacyStorageDir(dir)).toBeNull()
+    expect(legacyStorageDir('data/homekit', () => {
+      throw new Error('MODULE_NOT_FOUND')
+    })).toBeNull()
   })
 
   it('a bridge removed from Home while core was down gets a new identity before it publishes', async () => {

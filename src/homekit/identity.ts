@@ -11,7 +11,7 @@
  * Node-only. Nothing here logs the setup code or setup id.
  */
 import { hkdfSync, randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SystemInfo } from '../hardware/contract'
 
@@ -234,12 +234,31 @@ export class IdentityStore {
     }
   }
 
+  private hapFiles(username: string): string[] {
+    const key = this.key(username)
+    return [`AccessoryInfo.${key}.json`, `IdentifierCache.${key}.json`, `ControllerStorage.${key}.json`]
+  }
+
   /** Removes hap-nodejs's pairing state for `username` (its long-term keys, pairings and accessory ids). */
   clearPairings(username: string): void {
-    const key = this.key(username)
-    for (const name of [`AccessoryInfo.${key}.json`, `IdentifierCache.${key}.json`, `ControllerStorage.${key}.json`]) {
-      rmSync(join(this.dir, name), { force: true })
+    for (const name of this.hapFiles(username)) rmSync(join(this.dir, name), { force: true })
+  }
+
+  /**
+   * Moves hap-nodejs's files for `username` here from `from`, unless this
+   * directory already has its own. Returns whether anything moved.
+   */
+  adoptPairings(from: string, username: string): boolean {
+    const info = `AccessoryInfo.${this.key(username)}.json`
+    if (existsSync(join(this.dir, info)) || !existsSync(join(from, info))) return false
+    this.ensureDir()
+    for (const name of this.hapFiles(username)) {
+      const src = join(from, name)
+      if (!existsSync(src)) continue
+      copyFileSync(src, join(this.dir, name))
+      rmSync(src, { force: true })
     }
+    return true
   }
 
   /**
