@@ -22,6 +22,7 @@ import { nodeClockTrusted } from '../src/scheduler/clock'
 import { createCore } from '../src/server/bootstrap'
 import { defaultMigrationsFolder, SqliteStore } from '../src/store/sqlite'
 import { nodeDiskUsage, nodeFlashSource } from '../src/telemetry/flashSource'
+import { UpdateClient, updateCommand } from '../src/update/client'
 import { createWorkerExecutor } from '../src/vision/workerExecutor'
 import { createApp } from './app'
 import { flushCompileCacheSoon } from './compileCache'
@@ -63,12 +64,14 @@ const backup = new BackupService({
 })
 // Restores go through the root helper scripts/install puts in /usr/local/sbin (ADR-0021).
 const restore = new RestoreClient({ command: restoreCommand(), workDir: process.env.SEEDYPOD_RESTORE_WORK || '/var/lib/seedypod-restore', uploadDir: DATA_DIR })
+// Updates go through the root helper scripts/install puts in /usr/local/sbin (ADR-0026).
+const update = new UpdateClient({ command: updateCommand(), workDir: process.env.SEEDYPOD_UPDATE_WORK || '/var/lib/seedypod-update', version, events })
 // HomeKit (ADR 0023): off until turned on in Settings; hap-nodejs loads only then. Its files sit next to the database so backups carry them.
 const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA_DIR, 'homekit') })
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 // System › Status reads its state, and the last connect error, through the context.
 const haBridge = superviseBridge(() => connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }), events)
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, update, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
 
 const { app, injectWebSocket } = createApp({ ctx: core.ctx, staticRoot: './web/dist' })
 

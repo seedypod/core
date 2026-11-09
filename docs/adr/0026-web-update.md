@@ -111,7 +111,7 @@ it. In order:
    moved aside. Swap the hald binary by rename.
 5. Start the services. Core is healthy when `/api/healthcheck` answers,
    `/api/system` reports the new version, and core sees hald if it did
-   before. It has 5 minutes.
+   before. It has 10 minutes.
 
 Any failure in steps 3 to 5 puts back everything `meta.json` lists,
 including the database (a new core may have migrated it), then starts the

@@ -4,7 +4,7 @@
  * guides, ranked with BM25.
  */
 import type { LucideIcon } from 'lucide-react'
-import { Archive, BookOpen, CloudUpload, Code, Database, HardDrive, House, Info, KeyRound, Monitor, Radio, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
+import { Archive, BookOpen, CloudUpload, Code, Database, HardDrive, House, Info, KeyRound, Monitor, Radio, RefreshCw, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
 import { navItems } from '@/src/components/AppShell/navItems'
 import { createBm25Index, tokenize } from '@/src/lib/bm25'
 import { DOCS_BASE, type DocsIndex } from './docsIndex'
@@ -60,6 +60,7 @@ const SETTINGS: ReadonlyArray<Omit<SearchEntry, 'crumbs' | 'href'> & { anchor: s
   { id: 'ha', anchor: 'home-assistant', title: 'Home Assistant bridge', description: 'MQTT broker for grow events and services', keywords: 'home assistant hass mqtt broker tls integration', icon: Radio },
   { id: 'api', anchor: 'api', title: 'API access', description: 'A key for REST and MCP clients off the unit, and the token for results from other machines', keywords: 'api key token rest mcp auth authentication security ingest results remote worker', icon: KeyRound },
   { id: 'mirror', anchor: 'off-device', title: 'Off-device storage', description: 'Copy photos to an S3 bucket', keywords: 'mirror s3 r2 minio bucket off-device cloud', icon: CloudUpload },
+  { id: 'update', anchor: 'update', title: 'Updates', description: 'Check for a new release and update, from the stable or dev channel', keywords: 'update upgrade release version channel stable dev latest install rollback', icon: RefreshCw },
   { id: 'about', anchor: 'about', title: 'About', description: 'Core and hardware daemon versions, unit id', keywords: 'version core hald daemon unit id about', icon: Info },
 ]
 

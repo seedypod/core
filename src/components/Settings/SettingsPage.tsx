@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
-import { Archive, BellRing, Camera, ChevronDown, Cloud, CloudUpload, Download, Droplets, HardDrive, House, Info, KeyRound, Radio, Ruler, Settings2, Wifi } from 'lucide-react'
+import { Archive, BellRing, Camera, ChevronDown, Cloud, CloudUpload, Download, Droplets, HardDrive, House, Info, KeyRound, Radio, RefreshCw, Ruler, Settings2, Wifi } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { RestorePanel, RestoreProgress } from '@/src/components/Backup/RestorePanel'
 import { Button, KeyValue } from '@/src/components/ds/core'
@@ -9,6 +9,7 @@ import { SegmentedControl, Stepper, TextField, Toggle } from '@/src/components/d
 import { SubNav } from '@/src/components/ds/layout'
 import { HomeKitSection } from '@/src/components/Settings/HomeKitSection'
 import { Row, Section } from '@/src/components/Settings/Section'
+import { UpdateSection } from '@/src/components/Settings/UpdateSection'
 import type { inferRouterOutputs } from '@trpc/server'
 import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
@@ -16,7 +17,7 @@ import { apiBase, trpc } from '@/src/utils/trpc'
 type SettingsView = inferRouterOutputs<AppRouter>['settings']['get']
 type GrowView = inferRouterOutputs<AppRouter>['grow']['current']
 
-type SectionId = 'unit' | 'tank' | 'reminders' | 'cameras' | 'api' | 'off-device' | 'storage' | 'backup' | 'home-assistant' | 'homekit' | 'wifi' | 'about'
+type SectionId = 'unit' | 'tank' | 'reminders' | 'cameras' | 'api' | 'off-device' | 'storage' | 'backup' | 'home-assistant' | 'homekit' | 'wifi' | 'update' | 'about'
 
 /** In-page nav, in page order. Anchors are what ⌘K search links to. */
 const SECTIONS: ReadonlyArray<{ id: SectionId, label: string, icon: LucideIcon }> = [
@@ -31,6 +32,7 @@ const SECTIONS: ReadonlyArray<{ id: SectionId, label: string, icon: LucideIcon }
   { id: 'home-assistant', label: 'Home Assistant', icon: Radio },
   { id: 'homekit', label: 'Apple Home', icon: House },
   { id: 'wifi', label: 'Wi-Fi', icon: Wifi },
+  { id: 'update', label: 'Updates', icon: RefreshCw },
   { id: 'about', label: 'About', icon: Info },
 ]
 
@@ -237,6 +239,8 @@ function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
           <HomeKitSection />
 
           <Section id="wifi" title="Wi-Fi" sub="Hold the unit's button for 10 s to open a setup hotspot" right={<Link to="/wifi" className="text-[13px] text-fg underline-offset-2 hover:underline">Change network</Link>} />
+
+          <UpdateSection version={coreVersion} />
 
           <section id="about" aria-label="About" className="grid scroll-mt-7 grid-cols-2 gap-4 min-[600px]:grid-cols-3 rounded-[14px] border border-line bg-surface px-5 py-[18px]">
             <About label="Core" value={coreVersion ?? '…'} />

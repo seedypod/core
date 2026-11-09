@@ -29,6 +29,9 @@ const env = {
   // HomeKit's HAP port, off the default so a real bridge on this machine doesn't collide.
   HOMEKIT_PORT: '51831',
   SEEDYPOD_RESTORE_WORK: join(dataDir, 'restore'), SEEDYPOD_SYSTEMCTL: JSON.stringify(['true']),
+  // The real update helper, pointed at a GitHub that isn't there, so nothing leaves the machine.
+  SEEDYPOD_UPDATE_CMD: JSON.stringify([process.execPath, 'scripts/seedypod-update.cjs']),
+  SEEDYPOD_UPDATE_WORK: join(dataDir, 'update'), SEEDYPOD_UPDATE_API: 'http://127.0.0.1:9',
 }
 const server = spawn('node', ['server/dist/index.js'], { env, stdio: 'inherit' })
 let code = 1
