@@ -97,7 +97,7 @@ describe('PlanPage', () => {
     expect(screen.getByText('High 12')).toBeTruthy()
     expect(screen.getByText('Medium 12')).toBeTruthy()
     expect(screen.getByText('Low 6')).toBeTruthy()
-    expect(screen.getByText(/0 planned · 30 free/)).toBeTruthy()
+    expect(screen.getByText(/0 planned · 30 empty/)).toBeTruthy()
     expect(screen.getByText(/Pick plants above, then save a plan/)).toBeTruthy()
     expect(screen.queryByText('Sowing schedule')).toBeNull()
   })
@@ -147,7 +147,7 @@ describe('PlanPage', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }, { slot: 2, plant: null, status: 'empty' }]
     render(<PlanPage />)
     flat()
-    expect(screen.getByText(/0 planned · 29 free/)).toBeTruthy()
+    expect(screen.getByText(/0 planned · 29 empty/)).toBeTruthy()
     expect(screen.getByText('Mint')).toBeTruthy()
     search('jalapeño')
     for (let i = 0; i < 14; i++) add('Jalapeño')
@@ -226,6 +226,34 @@ describe('PlanPage', () => {
     expect((edit.getByLabelText('Name') as HTMLInputElement).value).toBe('Okra')
     fireEvent.click(edit.getByRole('button', { name: 'Delete' }))
     expect(calls.removePlant).toHaveBeenCalledWith({ id: 'okra' })
+  })
+
+  it('counts the pods a plan leaves empty, not the pods unplanted today', () => {
+    state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
+    render(<PlanPage />)
+    search('basil')
+    for (let i = 0; i < 20; i++) add('Basil')
+    // 17 basil fit (medium 12, then the 5 low pods mint leaves); the 12 high pods stay empty, not the 29 unplanted today.
+    expect(towerPods().filter(p => p.planned)).toHaveLength(17)
+    expect(screen.getByText(/^20 planned · 12 empty ·/)).toBeTruthy()
+  })
+
+  it('tells pods placed in a higher zone apart from ones placed lower', () => {
+    // An agent's plan: seven oregano with the medium zone allowed, so one sits higher than its ideal low.
+    const overrides = { allowedZones: { oregano: ['low', 'medium'] as ('low' | 'medium')[] } }
+    state.plans = [{ id: 'mcp-2', name: 'Herbs', model: 'home', mode: 'staggered', appliedAt: null, start: null, layout: { model: 'home', assignments: [], unplaced: [], free: [], overrides }, request: [{ plantId: 'oregano', count: 7 }] }]
+    render(<PlanPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open in planner' }))
+    expect(screen.getByText(/click one for why it sits there\. Some sit higher than ideal, in more light, in a zone allowed for them\.$/)).toBeTruthy()
+    expect(screen.queryByText(/lower than ideal/)).toBeNull()
+    expect(towerPods().filter(p => p.harvest?.reason === 'Planned: medium zone, allowed by the caller (ideal low).')).toHaveLength(1)
+    flat()
+    expect(screen.getByText(/^Italic = already planted\. Dashed outlines sit higher than ideal/)).toBeTruthy()
+    expect(screen.queryByText(/lower than ideal/)).toBeNull()
+    const higher = screen.getByTitle('medium zone, allowed by the caller (ideal low)')
+    expect(higher.className).toContain('outline-dashed')
+    expect(higher.className).not.toContain('outline-[var(--status-warn)]')
+    expect(screen.getAllByTitle('low light zone').every(e => !e.className.includes('outline'))).toBe(true)
   })
 
   it('opens a saved plan (e.g. one an agent saved) with its layout, overrides and schedule, and updates it in place', () => {

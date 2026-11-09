@@ -54,6 +54,8 @@ export interface Assignment {
   wantZone: Zone
   /** Zones away from the ideal (0 = ideal). */
   fallback: number
+  /** Which way it sits from its ideal zone: lower (less light), higher (more, only ever by the caller's say-so), or null in its ideal zone. */
+  shift: 'lower' | 'higher' | null
   reason: string
 }
 
@@ -206,7 +208,8 @@ export function planLayout(req: PlanRequest, catalog: Catalog = BUILTIN): PlanRe
   const assign = (s: Slot, plant: Plant, fallback: number, reason: string) => {
     taken.add(s.slot)
     placed.set(s.slot, plant)
-    assignments.push({ slot: s.slot, row: s.row, col: s.col, slotZone: s.zone, plantId: plant.id, plantName: plant.name, wantZone: plant.zone, fallback, reason })
+    const shift = !s.zone || s.zone === plant.zone ? null : ZONE_RANK[s.zone] > ZONE_RANK[plant.zone] ? 'lower' : 'higher'
+    assignments.push({ slot: s.slot, row: s.row, col: s.col, slotZone: s.zone, plantId: plant.id, plantName: plant.name, wantZone: plant.zone, fallback, shift, reason })
   }
 
   // 1. Pins: the caller's explicit slots, whatever the zone.

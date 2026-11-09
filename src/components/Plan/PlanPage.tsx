@@ -45,10 +45,35 @@ function savedView(): View {
 }
 
 interface Slot { slot: number, zone: string | null }
-interface Assignment { slot: number, plantName: string, reason: string, fallback: number }
+interface Assignment { slot: number, plantName: string, reason: string, fallback: number, shift?: 'lower' | 'higher' | null }
 interface Planted { slot: number, status: PodStatus, plant: string | null }
 
-/** The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), fallbacks outlined. */
+/** Outlines a pod placed away from its ideal zone: solid amber below it (less light), dashed above it (more light). */
+const SHIFT_OUTLINE = { lower: 'outline outline-1 outline-[var(--status-warn)]', higher: 'outline-dashed outline-1 outline-[var(--accent-light)]' }
+
+/**
+ * What the caption says about pods away from their ideal zone, lower and
+ * higher apart: "one zone lower" is Gardyn's own fallback; anything further,
+ * or higher, is a zone the plan allowed for that plant.
+ */
+export function shiftNotes(assignments: Assignment[], view: '2d' | '3d'): string {
+  const lower = assignments.filter(a => a.shift === 'lower')
+  const higher = assignments.some(a => a.shift === 'higher')
+  const lowerText = lower.every(a => a.fallback === 1) ? 'one zone lower than ideal — Gardyn’s rule when the ideal zone is full' : 'lower than ideal — Gardyn’s rule when the ideal zone is full, or zones allowed for them'
+  const higherText = 'higher than ideal, in more light, in a zone allowed for them'
+  if (view === '2d') {
+    return [
+      lower.length ? ` Outlined pods sit ${lowerText}.` : '',
+      higher ? ` Dashed outlines sit ${higherText}.` : '',
+    ].join('')
+  }
+  return [
+    lower.length ? ` Some sit ${lowerText}.` : '',
+    higher ? ` Some sit ${higherText}.` : '',
+  ].join('')
+}
+
+/** The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), pods away from their ideal zone outlined. */
 function PlanGrid({ cols, slots, bySlot, planted }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted> }) {
   return (
     <div data-testid="plan-grid" className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
@@ -58,7 +83,7 @@ function PlanGrid({ cols, slots, bySlot, planted }: { cols: number, slots: Slot[
         const z = (s.zone ?? 'medium') as Zone
         const plant = a?.plantName ?? ex?.plant ?? null
         return (
-          <div key={s.slot} data-slot={s.slot} className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', a?.fallback ? 'outline outline-1 outline-[var(--status-warn)]' : '')} style={zoneStyle(z)} title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}>
+          <div key={s.slot} data-slot={s.slot} className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', a?.shift ? SHIFT_OUTLINE[a.shift] : '')} style={zoneStyle(z)} title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}>
             <div className="flex items-center justify-between font-mono text-[10px] text-fg-3">
               <span>{s.slot}</span>
               <span>{z === 'medium' ? 'med' : z}</span>
@@ -134,12 +159,12 @@ export function PlanPage() {
   const remove = trpc.planner.removePlan.useMutation({ onSuccess: () => utils.planner.plans.invalidate() })
 
   const total = request.reduce((s, r) => s + r.count, 0)
-  const free = zones.data ? zones.data.slots.length - (pods.data ?? []).filter(p => p.status !== 'empty' && p.slot <= zones.data.slots.length).length : 0
+  // Pods the plan leaves empty: neither planted now nor planned.
+  const empty = layout.data?.free.length ?? (zones.data ? zones.data.slots.length - (pods.data ?? []).filter(p => p.status !== 'empty' && p.slot <= zones.data.slots.length).length : 0)
   const bySlot = new Map((layout.data?.assignments ?? []).map(a => [a.slot, a]))
   const planted = new Map((pods.data ?? []).filter(p => p.status !== 'empty').map(p => [p.slot, { slot: p.slot, status: p.status, plant: p.plant }]))
   const bump = (id: string, d: number) => setPicks(p => ({ ...p, [id]: Math.max(0, (p[id] ?? 0) + d) }))
   const shown: View = noWebGL ? '2d' : view
-  const fallbacks = (layout.data?.assignments ?? []).some(a => a.fallback)
 
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-4">
@@ -165,7 +190,7 @@ export function PlanPage() {
         <Card id="plan-layout" className="scroll-mt-4">
           <CardHeader
             title="Layout"
-            subtitle={`${total} planned · ${free} free · zones from Gardyn’s light map`}
+            subtitle={`${total} planned · ${empty} empty · zones from Gardyn’s light map`}
             icon={LayoutGrid}
             right={(
               <div className="flex gap-2 text-[11px]">
@@ -199,8 +224,8 @@ export function PlanPage() {
           <Unplaced unplaced={layout.data?.unplaced ?? []} suggestions={layout.data?.suggestions ?? []} />
           <p className="mt-2 text-[12px] text-fg-3">
             {shown === '2d'
-              ? `Italic = already planted.${fallbacks ? ' Outlined pods sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`
-              : `Planned pods show their plant grown, ringed by light zone; click one for why it sits there.${fallbacks ? ' Some sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`}
+              ? `Italic = already planted.${shiftNotes(layout.data?.assignments ?? [], '2d')}`
+              : `Planned pods show their plant grown, ringed by light zone; click one for why it sits there.${shiftNotes(layout.data?.assignments ?? [], '3d')}`}
           </p>
         </Card>
 
