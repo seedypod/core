@@ -59,6 +59,14 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   offer to allow one zone further down. Callers can pin pods to slots or set a
   plant's allowed zones; each suggestion carries the overrides that carry it
   out, and a saved plan keeps the overrides it was computed with.
+- **Custom plants** (#130): crops missing from Gardyn's list can be added on
+  the unit (name, category, light zone, first-harvest window, care level,
+  size; the succession group defaults from the category). They live in the
+  `custom_plants` table, so they travel in the database backup (ADR 0021),
+  and are merged after the built-in plants for the catalog, layouts, best
+  spots and sowing. Built-in plants stay read-only. Exposed as
+  `/api/planner/catalog` POST/PATCH/DELETE, the MCP tools `add_plant`,
+  `update_plant` and `remove_plant`, and "Add plant" on the Plan screen.
 
 ## Consequences
 

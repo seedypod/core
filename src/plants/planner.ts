@@ -20,7 +20,7 @@
  *
  * Pure and deterministic; no clock, no I/O.
  */
-import { getPlant, type Plant, SUCCESSION_GAP_DAYS, type Zone } from './catalog'
+import { BUILTIN, type Catalog, type Plant, SUCCESSION_GAP_DAYS, type Zone } from './catalog'
 import { type Model, MODELS, type Slot, slots } from './zones'
 
 const LOWER: Record<Zone, Zone | null> = { high: 'medium', medium: 'low', low: null }
@@ -187,7 +187,8 @@ export function rankSlots(model: Model, plant: Plant, taken: Set<number>, placed
   return out.sort((a, b) => a.score - b.score).map(({ slot, fallback, pref, reason }) => ({ slot, fallback, pref, reason }))
 }
 
-export function planLayout(req: PlanRequest): PlanResult {
+/** `catalog` defaults to Gardyn's built-in plants; pass `catalogFor(store)` to include the unit's custom ones. */
+export function planLayout(req: PlanRequest, catalog: Catalog = BUILTIN): PlanResult {
   const { model, overrides } = req
   const all = slots(model)
   const bySlot = new Map(all.map(s => [s.slot, s]))
@@ -195,7 +196,7 @@ export function planLayout(req: PlanRequest): PlanResult {
   const taken = new Set<number>(Object.keys(occupied).map(Number))
   const placed = new Map<number, Plant>()
   for (const [slot, id] of Object.entries(occupied)) {
-    const p = getPlant(id)
+    const p = catalog.get(id)
     if (p) placed.set(Number(slot), p)
   }
   const assignments: Assignment[] = []
@@ -211,7 +212,7 @@ export function planLayout(req: PlanRequest): PlanResult {
   // 1. Pins: the caller's explicit slots, whatever the zone.
   const pinsLeft = new Map<string, number>()
   for (const pin of overrides?.pins ?? []) {
-    const plant = getPlant(pin.plantId)
+    const plant = catalog.get(pin.plantId)
     if (!plant) {
       unplaced.push(missing(pin.plantId))
       continue
@@ -233,7 +234,7 @@ export function planLayout(req: PlanRequest): PlanResult {
 
   const queue: Plant[] = []
   for (const r of req.plants) {
-    const p = getPlant(r.plantId)
+    const p = catalog.get(r.plantId)
     if (!p) {
       unplaced.push(missing(r.plantId))
       continue
@@ -278,7 +279,7 @@ export function planLayout(req: PlanRequest): PlanResult {
       code: 'no_space',
       wantZone: plant.zone,
       zones: tol,
-      blocking: blockers(model, tol, occupied, assignments),
+      blocking: blockers(model, tol, occupied, assignments, catalog),
     })
   }
 
@@ -300,12 +301,12 @@ function summariseZones(model: Model, occupied: Record<number, string>, assignme
   })
 }
 
-function plantLabel(id: string): string {
-  return getPlant(id)?.name ?? id.replace(/^unknown:/, '')
+function plantLabel(id: string, catalog: Catalog): string {
+  return catalog.get(id)?.name ?? id.replace(/^unknown:/, '')
 }
 
-function blockers(model: Model, zones: Zone[], occupied: Record<number, string>, assignments: Assignment[]): Blocker[] {
-  const existing = slots(model).filter(s => occupied[s.slot] !== undefined).map(s => ({ slot: s.slot, zone: s.zone, plantId: occupied[s.slot] as string, plantName: plantLabel(occupied[s.slot] as string), existing: true }))
+function blockers(model: Model, zones: Zone[], occupied: Record<number, string>, assignments: Assignment[], catalog: Catalog): Blocker[] {
+  const existing = slots(model).filter(s => occupied[s.slot] !== undefined).map(s => ({ slot: s.slot, zone: s.zone, plantId: occupied[s.slot] as string, plantName: plantLabel(occupied[s.slot] as string, catalog), existing: true }))
   const planned = assignments.map(a => ({ slot: a.slot, zone: a.slotZone, plantId: a.plantId, plantName: a.plantName, existing: false }))
   return [...existing, ...planned].filter((b): b is Blocker => zones.includes(b.zone as Zone)).sort((a, b) => a.slot - b.slot)
 }
@@ -383,12 +384,12 @@ function suggest(model: Model, noSpace: Plant[], st: LayoutState): Suggestion[] 
 }
 
 /** Best free slots for adding one plant ("just want to replace a pod?"). */
-export function bestSpots(model: Model, plantId: string, occupied: Record<number, string> = {}, limit = 5) {
-  const plant = getPlant(plantId)
+export function bestSpots(model: Model, plantId: string, occupied: Record<number, string> = {}, limit = 5, catalog: Catalog = BUILTIN) {
+  const plant = catalog.get(plantId)
   if (!plant) return []
   const placed = new Map<number, Plant>()
   for (const [slot, id] of Object.entries(occupied)) {
-    const p = getPlant(id)
+    const p = catalog.get(id)
     if (p) placed.set(Number(slot), p)
   }
   return rankSlots(model, plant, new Set(Object.keys(occupied).map(Number)), placed).slice(0, limit).map(r => ({ slot: r.slot.slot, zone: r.slot.zone, fallback: r.fallback, reason: r.reason }))
@@ -415,10 +416,10 @@ function iso(d: Date): string {
  * same plant starts when the previous one reaches harvest-ready maturity
  * (window start) plus the group's gap. Flowers and single pods get one wave.
  */
-export function sowingPlan(plants: { plantId: string, count: number }[], start: Date, mode: 'staggered' | 'batch' = 'staggered'): SowingWave[] {
+export function sowingPlan(plants: { plantId: string, count: number }[], start: Date, mode: 'staggered' | 'batch' = 'staggered', catalog: Catalog = BUILTIN): SowingWave[] {
   const out: SowingWave[] = []
   for (const r of plants) {
-    const p = getPlant(r.plantId)
+    const p = catalog.get(r.plantId)
     if (!p) continue
     const gap = SUCCESSION_GAP_DAYS[p.succession]
     const cadence = mode === 'batch' || gap === null ? 0 : p.harvestMonths[0] * 30 + gap

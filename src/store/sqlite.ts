@@ -9,7 +9,7 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
@@ -184,6 +184,20 @@ export class SqliteStore implements Store {
       return row
     },
     remove: (name: string): boolean => this.db.delete(t.plantProfiles).where(eq(t.plantProfiles.key, profileKey(name))).run().changes > 0,
+  }
+
+  customPlants = {
+    list: (): CustomPlant[] => this.db.select().from(t.customPlants).orderBy(asc(t.customPlants.createdAt), asc(t.customPlants.id)).all().map(rowToCustomPlant),
+    get: (id: string): CustomPlant | null => {
+      const r = this.db.select().from(t.customPlants).where(eq(t.customPlants.id, id)).get()
+      return r ? rowToCustomPlant(r) : null
+    },
+    upsert: (p: Omit<CustomPlant, 'createdAt' | 'updatedAt'>, ts: string): CustomPlant => {
+      const cols = { name: p.name, category: p.category, zone: p.zone, harvestMinMonths: p.harvestMonths[0], harvestMaxMonths: p.harvestMonths[1], careLevel: p.careLevel, size: p.size, succession: p.succession, source: p.source, updatedAt: ts }
+      this.db.insert(t.customPlants).values({ ...cols, id: p.id, createdAt: ts }).onConflictDoUpdate({ target: t.customPlants.id, set: cols }).run()
+      return this.customPlants.get(p.id) as CustomPlant
+    },
+    remove: (id: string): boolean => this.db.delete(t.customPlants).where(eq(t.customPlants.id, id)).run().changes > 0,
   }
 
   captures = {
@@ -399,6 +413,10 @@ export class SqliteStore implements Store {
 
 function rowToSchedule(r: typeof t.schedules.$inferSelect): Schedule {
   return { ...r, spec: JSON.parse(r.spec) as LightSpec | PumpSpec }
+}
+
+function rowToCustomPlant({ harvestMinMonths, harvestMaxMonths, ...r }: typeof t.customPlants.$inferSelect): CustomPlant {
+  return { ...r, harvestMonths: [harvestMinMonths, harvestMaxMonths] }
 }
 
 function rowToPlan(r: typeof t.plans.$inferSelect): PlanRow {

@@ -123,6 +123,21 @@ for (const [name, make] of impls) {
       expect(store.plants.list().map(x => x.key)).toEqual(['basil'])
     })
 
+    it('custom plants upsert by id keeping createdAt, list oldest first, and remove', () => {
+      store = make()
+      const shiso = { id: 'purple-shiso', name: 'Purple Shiso', category: 'herb' as const, zone: 'medium' as const, harvestMonths: [2, 3] as [number, number], careLevel: null, size: 'normal' as const, succession: 'long-greens-herbs' as const, source: 'user' as const }
+      expect(store.customPlants.upsert(shiso, 't1')).toEqual({ ...shiso, createdAt: 't1', updatedAt: 't1' })
+      store.customPlants.upsert({ ...shiso, id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', size: 'large', succession: 'fast-fruiting', careLevel: 'expert' }, 't2')
+      const again = store.customPlants.upsert({ ...shiso, name: 'Shiso', harvestMonths: [1, 2], source: 'agent' }, 't3')
+      expect(again).toMatchObject({ id: 'purple-shiso', name: 'Shiso', harvestMonths: [1, 2], source: 'agent', createdAt: 't1', updatedAt: 't3' })
+      expect(store.customPlants.list().map(x => [x.id, x.careLevel])).toEqual([['purple-shiso', null], ['okra', 'expert']])
+      expect(store.customPlants.get('okra')).toMatchObject({ size: 'large', zone: 'high' })
+      expect(store.customPlants.get('nope')).toBeNull()
+      expect(store.customPlants.remove('okra')).toBe(true)
+      expect(store.customPlants.remove('okra')).toBe(false)
+      expect(store.customPlants.list().map(x => x.id)).toEqual(['purple-shiso'])
+    })
+
     it('pods: 30 slots seeded empty and updatable', () => {
       store = make()
       expect(store.pods.list()).toHaveLength(30)
@@ -363,6 +378,22 @@ describe('SqliteStore on disk', () => {
       expect(existsSync(join(root, 'copy.db-wal'))).toBe(false)
       const copy = new SqliteStore({ url: join(root, 'copy.db') })
       expect(copy.settings.get()).toMatchObject({ unitName: 'Kitchen', setupComplete: true })
+      copy.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('carries custom catalog plants in a backup (#130)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    try {
+      const store = new SqliteStore({ url: join(root, 'live.db') })
+      store.customPlants.upsert({ id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [2, 3], careLevel: null, size: 'large', succession: 'fast-fruiting', source: 'user' }, 't1')
+      await store.backupTo(join(root, 'copy.db'))
+      store.close()
+      const copy = new SqliteStore({ url: join(root, 'copy.db') })
+      expect(copy.customPlants.list()).toMatchObject([{ id: 'okra', name: 'Okra', harvestMonths: [2, 3], size: 'large' }])
       copy.close()
     }
     finally {

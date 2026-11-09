@@ -5,6 +5,7 @@
  */
 import type { AutomationRule, RunOutcome } from '../autopilot/types'
 import type { SensorId } from '../hardware/contract'
+import type { Category, Succession, Zone } from '../plants/catalog'
 import type { PlanResult, SowingWave } from '../plants/planner'
 
 export interface DeviceSettings {
@@ -118,6 +119,24 @@ export interface PlantProfile {
   updatedAt: string
 }
 
+/** A plant added to the planner catalog on this unit (#130), merged after Gardyn's built-in ones. */
+export interface CustomPlant {
+  /** Slug of the name at creation; stable across renames. */
+  id: string
+  name: string
+  category: Category
+  zone: Zone
+  /** First harvest window in months after starting the yCube. */
+  harvestMonths: [number, number]
+  careLevel: 'beginner' | 'intermediate' | 'expert' | null
+  /** 'large' plants shade neighbours; the planner spaces them apart. */
+  size: 'large' | 'normal'
+  succession: Succession
+  source: 'user' | 'agent'
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Capture { id: string, camera: 'upper' | 'lower', ts: string, path: string, bytes: number }
 
 /** A saved pod plan: what was asked for, where it goes, and when each wave is sown. */
@@ -209,6 +228,13 @@ export interface Store {
     list(): PlantProfile[]
     upsert(p: Omit<PlantProfile, 'key' | 'updatedAt'>, ts: string): PlantProfile
     remove(name: string): boolean
+  }
+  customPlants: {
+    /** Oldest first. */
+    list(): CustomPlant[]
+    get(id: string): CustomPlant | null
+    upsert(p: Omit<CustomPlant, 'createdAt' | 'updatedAt'>, ts: string): CustomPlant
+    remove(id: string): boolean
   }
   captures: {
     add(c: Capture): void

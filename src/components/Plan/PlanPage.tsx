@@ -1,4 +1,4 @@
-import { LayoutGrid, Minus, Plus, Sprout, Trash2 } from 'lucide-react'
+import { LayoutGrid, Minus, Pencil, Plus, Sprout, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
@@ -7,6 +7,7 @@ import { Modal } from '@/src/components/ds/feedback'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
 import { trpc } from '@/src/utils/trpc'
+import { CustomPlantDialog, type EditablePlant } from '@/src/components/Plan/CustomPlantDialog'
 import { Unplaced } from '@/src/components/Plan/Unplaced'
 
 type Model = 'home' | 'studio'
@@ -30,6 +31,7 @@ export function PlanPage() {
   const [name, setName] = useState('My plan')
   const [mode, setMode] = useState<'staggered' | 'batch'>('staggered')
   const [confirm, setConfirm] = useState<string | null>(null)
+  const [editing, setEditing] = useState<EditablePlant | 'new' | null>(null)
 
   const zones = trpc.planner.zones.useQuery({ model })
   const catalog = trpc.planner.catalog.useQuery({ q: q || undefined, category: cat === 'all' ? undefined : cat })
@@ -98,7 +100,7 @@ export function PlanPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Plants" subtitle="Gardyn catalog · zone, first harvest" icon={Sprout} />
+          <CardHeader title="Plants" subtitle="Gardyn catalog and yours · zone, first harvest" icon={Sprout} right={<Button size="sm" icon={Plus} onClick={() => setEditing('new')}>Add plant</Button>} />
           <TextField className="mt-3" mono={false} value={q} onChange={setQ} placeholder="Search basil, kale, pepper…" aria-label="Search plants" />
           <div className="mt-2 flex flex-wrap gap-1">
             {CATS.map(c => <button key={c.value} type="button" onClick={() => setCat(c.value)} className={cn('rounded-full border px-2 py-0.5 text-[11px]', cat === c.value ? 'border-fg-2 text-fg' : 'border-line text-fg-3')}>{c.label}</button>)}
@@ -110,10 +112,11 @@ export function PlanPage() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px]">
                     {p.name}
-                    {!p.inStore && <span className="ml-1 text-[10px] text-fg-3">(guide only)</span>}
+                    {p.custom ? <span className="ml-1 text-[10px] text-fg-3">(yours)</span> : !p.inStore && <span className="ml-1 text-[10px] text-fg-3">(guide only)</span>}
                   </div>
                   <div className="text-[11px] text-fg-3">{`${p.harvestMonths[0]}–${p.harvestMonths[1]} mo${p.harvestEstimated ? '*' : ''} · ${p.careLevel ?? '—'}`}</div>
                 </div>
+                {p.custom && <GhostIcon icon={Pencil} label={`Edit ${p.name}`} onClick={() => setEditing(p)} />}
                 <GhostIcon icon={Minus} label={`Remove ${p.name}`} onClick={() => bump(p.id, -1)} disabled={!picks[p.id]} />
                 <span className="w-4 text-center font-mono text-[12px]">{picks[p.id] ?? 0}</span>
                 <GhostIcon icon={Plus} label={`Add ${p.name}`} onClick={() => bump(p.id, 1)} />
@@ -199,6 +202,7 @@ export function PlanPage() {
       >
         <p className="text-[13px] text-fg-2">This overwrites the planned pods. First-wave pods are marked seeded today; later waves are noted with their sow date and you’ll get a reminder when it arrives.</p>
       </Modal>
+      <CustomPlantDialog open={editing !== null} plant={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
       {apply.data && (
         <p className="text-[12px] text-fg-2">{`Applied: ${apply.data.seeded.length} pods seeded${apply.data.scheduled.length ? `, ${apply.data.scheduled.length} scheduled` : ''}.`}</p>
       )}

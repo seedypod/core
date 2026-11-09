@@ -1,8 +1,10 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { Category, CATALOG_SOURCES, findPlant, getPlant, Plant, searchPlants, Zone } from '../../plants/catalog'
+import { BUILTIN, type Catalog, Category, CATALOG_SOURCES, Plant, Zone } from '../../plants/catalog'
+import { catalogFor, CustomPlantFields, CustomPlantPatch, customToPlant, plantSlug, SUCCESSION_BY_CATEGORY } from '../../plants/custom'
 import { bestSpots, planLayout, sowingPlan } from '../../plants/planner'
 import { MODELS, slots, zoneCounts } from '../../plants/zones'
+import type { Store } from '../../store/types'
 import { publicProcedure, router } from '../trpc'
 
 const Model = z.enum(['home', 'studio', 'nursery'])
@@ -31,11 +33,11 @@ const PlanOut = z.object({
 })
 
 /** Pods currently planted, as slot → catalog plant id (unknown names are kept as occupied). */
-function occupiedFromPods(pods: { slot: number, plant: string | null, status: string }[]): Record<number, string> {
+function occupiedFromPods(pods: { slot: number, plant: string | null, status: string }[], catalog: Catalog): Record<number, string> {
   const out: Record<number, string> = {}
   for (const p of pods) {
     if (p.status === 'empty' || !p.plant) continue
-    const id = findPlant(p.plant)?.id
+    const id = catalog.find(p.plant)?.id
     out[p.slot] = id ?? `unknown:${p.plant}`
   }
   return out
@@ -59,9 +61,9 @@ function podSchedule(layout: z.infer<typeof SavedLayout>, sowing: z.infer<typeof
 export const plannerRouter = router({
   catalog: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/planner/catalog', tags: ['planner'], summary: 'Plant catalog (Gardyn light zones, harvest windows, care levels)' } })
-    .input(z.object({ q: z.string().optional(), category: Category.optional(), zone: Zone.optional(), inStore: z.boolean().optional() }))
+    .input(z.object({ q: z.string().optional(), category: Category.optional(), zone: Zone.optional(), inStore: z.boolean().optional(), custom: z.boolean().optional() }))
     .output(z.object({ plants: z.array(Plant), sources: z.record(z.string(), z.string()) }))
-    .query(({ input }) => ({ plants: searchPlants(input), sources: CATALOG_SOURCES })),
+    .query(({ ctx, input }) => ({ plants: catalogFor(ctx.store).search(input), sources: CATALOG_SOURCES })),
 
   zones: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/planner/zones/{model}', tags: ['planner'], summary: 'Light-zone map for a Gardyn model' } })
@@ -76,19 +78,25 @@ export const plannerRouter = router({
     .meta({ openapi: { method: 'POST', path: '/planner/layout', tags: ['planner'], summary: 'Auto-place plants by light zone (Gardyn rules), with a zone summary, structured unplaced reasons and suggested moves' } })
     .input(z.object({ model: Model, plants: Request, respectExisting: z.boolean().default(true), overrides: Overrides.optional() }))
     .output(Layout)
-    .query(({ ctx, input }) => planLayout({ model: input.model, plants: input.plants, occupied: input.respectExisting ? occupiedFromPods(ctx.store.pods.list()) : {}, overrides: input.overrides })),
+    .query(({ ctx, input }) => {
+      const catalog = catalogFor(ctx.store)
+      return planLayout({ model: input.model, plants: input.plants, occupied: input.respectExisting ? occupiedFromPods(ctx.store.pods.list(), catalog) : {}, overrides: input.overrides }, catalog)
+    }),
 
   bestSpots: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/planner/best-spots', tags: ['planner'], summary: 'Best free slots for one more plant' } })
     .input(z.object({ model: Model, plantId: z.string(), limit: z.number().int().min(1).max(30).default(5) }))
     .output(z.array(z.object({ slot: z.number(), zone: Zone.nullable(), fallback: z.number(), reason: z.string() })))
-    .query(({ ctx, input }) => bestSpots(input.model, input.plantId, occupiedFromPods(ctx.store.pods.list()), input.limit)),
+    .query(({ ctx, input }) => {
+      const catalog = catalogFor(ctx.store)
+      return bestSpots(input.model, input.plantId, occupiedFromPods(ctx.store.pods.list(), catalog), input.limit, catalog)
+    }),
 
   sowing: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/planner/sowing', tags: ['planner'], summary: 'Staggered sowing dates from Gardyn succession guidance' } })
     .input(z.object({ plants: Request, start: z.string().optional(), mode: z.enum(['staggered', 'batch']).default('staggered') }))
     .output(z.array(Wave))
-    .query(({ ctx, input }) => sowingPlan(input.plants, input.start ? new Date(input.start) : (ctx.now ?? (() => new Date()))(), input.mode)),
+    .query(({ ctx, input }) => sowingPlan(input.plants, input.start ? new Date(input.start) : (ctx.now ?? (() => new Date()))(), input.mode, catalogFor(ctx.store))),
 
   plans: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/plans', tags: ['planner'] } })
@@ -100,8 +108,9 @@ export const plannerRouter = router({
     .input(z.object({ id: z.string().min(1), name: z.string().min(1).max(60), model: Model, mode: z.enum(['staggered', 'batch']).default('staggered'), plants: Request, start: z.string().optional(), overrides: Overrides.optional() }))
     .output(PlanOut)
     .mutation(({ ctx, input }) => {
-      const layout = planLayout({ model: input.model, plants: input.plants, occupied: occupiedFromPods(ctx.store.pods.list()), overrides: input.overrides })
-      const sowing = sowingPlan(input.plants, input.start ? new Date(input.start) : (ctx.now ?? (() => new Date()))(), input.mode)
+      const catalog = catalogFor(ctx.store)
+      const layout = planLayout({ model: input.model, plants: input.plants, occupied: occupiedFromPods(ctx.store.pods.list(), catalog), overrides: input.overrides }, catalog)
+      const sowing = sowingPlan(input.plants, input.start ? new Date(input.start) : (ctx.now ?? (() => new Date()))(), input.mode, catalog)
       const row = ctx.store.plans.save({ id: input.id, name: input.name, model: input.model, mode: input.mode, request: input.plants, layout, sowing })
       ctx.events.emit({ kind: 'mutation', path: 'plans' })
       return row
@@ -152,11 +161,70 @@ export const plannerRouter = router({
     .meta({ openapi: { method: 'GET', path: '/planner/catalog/{id}', tags: ['planner'] } })
     .input(z.object({ id: z.string() }))
     .output(Plant)
-    .query(({ input }) => {
-      const p = getPlant(input.id)
+    .query(({ ctx, input }) => {
+      const p = catalogFor(ctx.store).get(input.id)
       if (!p) throw new TRPCError({ code: 'NOT_FOUND', message: `no plant ${input.id}` })
       return p
     }),
+
+  addPlant: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/planner/catalog', tags: ['planner'], summary: 'Add a custom plant to the catalog (built-in Gardyn plants are read-only)' } })
+    .input(CustomPlantFields.extend({ source: z.enum(['user', 'agent']).default('user') }))
+    .output(Plant)
+    .mutation(({ ctx, input }) => {
+      const id = plantSlug(input.name)
+      if (!id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'a plant name needs a letter or digit' })
+      checkWindow(input.harvestMonths)
+      const catalog = catalogFor(ctx.store)
+      const clash = catalog.find(input.name) ?? catalog.get(id)
+      if (clash) throw new TRPCError({ code: 'CONFLICT', message: `${clash.name} is already in the catalog (${clash.id}${clash.custom ? ', custom: update it instead' : ', built-in'})` })
+      const row = ctx.store.customPlants.upsert({ ...input, id, succession: input.succession ?? SUCCESSION_BY_CATEGORY[input.category] }, now(ctx))
+      ctx.events.emit({ kind: 'mutation', path: 'catalog' })
+      return customToPlant(row)
+    }),
+
+  updatePlant: publicProcedure
+    .meta({ openapi: { method: 'PATCH', path: '/planner/catalog/{id}', tags: ['planner'], summary: 'Edit a custom plant; its id stays the same' } })
+    .input(CustomPlantPatch.extend({ id: z.string(), source: z.enum(['user', 'agent']).optional() }))
+    .output(Plant)
+    .mutation(({ ctx, input }) => {
+      const cur = editable(ctx.store, input.id)
+      const next = { ...cur, ...Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) }
+      if (input.category && !input.succession) next.succession = SUCCESSION_BY_CATEGORY[input.category]
+      checkWindow(next.harvestMonths)
+      const clash = catalogFor(ctx.store).find(next.name)
+      if (clash && clash.id !== cur.id) throw new TRPCError({ code: 'CONFLICT', message: `${clash.name} is already in the catalog (${clash.id})` })
+      const row = ctx.store.customPlants.upsert(next, now(ctx))
+      ctx.events.emit({ kind: 'mutation', path: 'catalog' })
+      return customToPlant(row)
+    }),
+
+  removePlant: publicProcedure
+    .meta({ openapi: { method: 'DELETE', path: '/planner/catalog/{id}', tags: ['planner'], summary: 'Remove a custom plant (saved plans keep their layout)' } })
+    .input(z.object({ id: z.string() }))
+    .output(z.object({ removed: z.boolean() }))
+    .mutation(({ ctx, input }) => {
+      editable(ctx.store, input.id)
+      const removed = ctx.store.customPlants.remove(input.id)
+      ctx.events.emit({ kind: 'mutation', path: 'catalog' })
+      return { removed }
+    }),
 })
+
+function now(ctx: { now?: () => Date }): string {
+  return (ctx.now ?? (() => new Date()))().toISOString()
+}
+
+function checkWindow([from, to]: [number, number]) {
+  if (from > to) throw new TRPCError({ code: 'BAD_REQUEST', message: 'harvestMonths must be [from, to] with from ≤ to' })
+}
+
+/** A custom plant by id; built-in plants are read-only. */
+function editable(store: Store, id: string) {
+  if (BUILTIN.get(id)) throw new TRPCError({ code: 'FORBIDDEN', message: `${id} is a built-in Gardyn plant; built-in plants are read-only` })
+  const cur = store.customPlants.get(id)
+  if (!cur) throw new TRPCError({ code: 'NOT_FOUND', message: `no custom plant ${id}` })
+  return cur
+}
 
 export { podSchedule }

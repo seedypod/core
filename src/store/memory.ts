@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS, profileKey } from './types'
 
@@ -14,6 +14,7 @@ export class MemoryStore implements Store {
   private readonly cycles: GrowCycle[] = []
   private readonly podRows = new Map<number, Pod>()
   private readonly profileRows = new Map<string, PlantProfile>()
+  private readonly customPlantRows = new Map<string, CustomPlant>()
   private readonly captureRows: Capture[] = []
   private points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
@@ -148,6 +149,20 @@ export class MemoryStore implements Store {
       return row
     },
     remove: (name: string): boolean => this.profileRows.delete(profileKey(name)),
+  }
+
+  customPlants = {
+    list: (): CustomPlant[] => [...this.customPlantRows.values()].map(clone),
+    get: (id: string): CustomPlant | null => {
+      const r = this.customPlantRows.get(id)
+      return r ? clone(r) : null
+    },
+    upsert: (p: Omit<CustomPlant, 'createdAt' | 'updatedAt'>, ts: string): CustomPlant => {
+      const row: CustomPlant = { ...clone(p), createdAt: this.customPlantRows.get(p.id)?.createdAt ?? ts, updatedAt: ts }
+      this.customPlantRows.set(p.id, row)
+      return clone(row)
+    },
+    remove: (id: string): boolean => this.customPlantRows.delete(id),
   }
 
   captures = {
