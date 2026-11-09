@@ -2,6 +2,7 @@
 
 ## 2026-11-09
 
+- **Creation**: [Gardyn feeding guidance](nutrients/gardyn-feeding-guidance.md) from Gardyn's help centre and blog, and [community nutrients](nutrients/community-nutrients.md) from the r/Gardyn archive and product labels.
 - **Update**: The [Gardyn hardware map](hardware/gardyn-hardware-map.md) records what the 2026-11-06 bring-up measured on our unit.
 
 ## 2026-11-02
