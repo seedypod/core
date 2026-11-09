@@ -83,9 +83,41 @@ export function createMcpServer(ctx: Context): McpServer {
   })
 
   server.registerTool('plant_catalog', {
-    description: 'Search the plant catalog (Gardyn light zone high/medium/low, first-harvest window in months, care level, yield, succession group). Filter by q (name), category (fruiting, vegetable, legume, flower, herb, green, lettuce) or zone.',
-    inputSchema: { q: z.string().optional(), category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']).optional(), zone: z.enum(['high', 'medium', 'low']).optional() },
-  }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, harvestMonths: p.harvestMonths, careLevel: p.careLevel, inStore: p.inStore }))))
+    description: 'Search the plant catalog: Gardyn\'s built-in plants plus custom ones added on this unit (custom: true). Each has its light zone high/medium/low, first-harvest window in months, care level, size (large plants are spaced apart) and succession group. Filter by q (name), category (fruiting, vegetable, legume, flower, herb, green, lettuce), zone or custom. A crop missing from it can be added with add_plant.',
+    inputSchema: { q: z.string().optional(), category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']).optional(), zone: z.enum(['high', 'medium', 'low']).optional(), custom: z.boolean().optional() },
+  }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, harvestMonths: p.harvestMonths, careLevel: p.careLevel, size: p.size, succession: p.succession, inStore: p.inStore, custom: p.custom }))))
+
+  server.registerTool('add_plant', {
+    description: 'Add a plant that is not in the catalog (check plant_catalog first), so plan_layout, best_spot and save_plan can use it. Its id is the name as a slug ("Purple Shiso" → purple-shiso). zone: the light it needs (high for fruiting crops, medium for most greens and herbs, low for shade-tolerant herbs like mint). harvest_months: [from, to] months from starting the yCube to first harvest. size large for plants that shade their neighbours. succession defaults from category. Fails if the name or id is already in the catalog.',
+    inputSchema: {
+      name: z.string().min(1).max(60),
+      category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']),
+      zone: z.enum(['high', 'medium', 'low']),
+      harvest_months: z.tuple([z.number().int().min(0).max(24), z.number().int().min(0).max(24)]),
+      care_level: z.enum(['beginner', 'intermediate', 'expert']).nullable().optional(),
+      size: z.enum(['large', 'normal']).optional(),
+      succession: z.enum(['fast-greens', 'long-greens-herbs', 'fast-fruiting', 'long-fruiting', 'flowers']).optional(),
+    },
+  }, async i => text(await caller.planner.addPlant({ name: i.name, category: i.category, zone: i.zone, harvestMonths: i.harvest_months, careLevel: i.care_level ?? null, size: i.size ?? 'normal', succession: i.succession, source: 'agent' })))
+
+  server.registerTool('update_plant', {
+    description: 'Edit a custom plant by id (only the fields given change; the id stays). Built-in Gardyn plants are read-only.',
+    inputSchema: {
+      id: z.string(),
+      name: z.string().min(1).max(60).optional(),
+      category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']).optional(),
+      zone: z.enum(['high', 'medium', 'low']).optional(),
+      harvest_months: z.tuple([z.number().int().min(0).max(24), z.number().int().min(0).max(24)]).optional(),
+      care_level: z.enum(['beginner', 'intermediate', 'expert']).nullable().optional(),
+      size: z.enum(['large', 'normal']).optional(),
+      succession: z.enum(['fast-greens', 'long-greens-herbs', 'fast-fruiting', 'long-fruiting', 'flowers']).optional(),
+    },
+  }, async i => text(await caller.planner.updatePlant({ id: i.id, name: i.name, category: i.category, zone: i.zone, harvestMonths: i.harvest_months, careLevel: i.care_level, size: i.size, succession: i.succession, source: 'agent' })))
+
+  server.registerTool('remove_plant', {
+    description: 'Remove a custom plant by id. Built-in Gardyn plants are read-only. Saved plans keep their layout.',
+    inputSchema: { id: z.string() },
+  }, async i => text(await caller.planner.removePlant(i)))
 
   server.registerTool('planner_zones', {
     description: `Light-zone map of a Gardyn: every slot with its row, column and zone, and how many slots each zone has. ${ZONE_RULES}`,

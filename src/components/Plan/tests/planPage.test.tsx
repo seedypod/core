@@ -9,8 +9,9 @@ const { state, calls, invalidate } = vi.hoisted(() => ({
     pods: [] as { slot: number, plant: string | null, status: string }[],
     plans: [] as unknown[],
     applied: null as null | { seeded: number[], scheduled: { slot: number, plantName: string, sowOn: string }[] },
+    custom: [] as unknown[],
   },
-  calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn() },
+  calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn() },
   invalidate: vi.fn(),
 }))
 
@@ -36,7 +37,7 @@ vi.mock('@/src/utils/trpc', async () => {
         zones: { useQuery: ({ model }: { model: Model }) => ({ data: { ...MODELS[model], slots: slots(model), counts: zoneCounts(model) } }) },
         catalog: { useQuery: (i: { q?: string, category?: string }) => {
           calls.catalog(i)
-          return { data: { plants: searchPlants(i as Parameters<typeof searchPlants>[0]).slice(0, 12) } }
+          return { data: { plants: [...searchPlants(i as Parameters<typeof searchPlants>[0]).slice(0, 12), ...state.custom] } }
         } },
         layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[] }) => {
           calls.layout(i)
@@ -48,6 +49,9 @@ vi.mock('@/src/utils/trpc', async () => {
         savePlan: mutation(calls.save),
         applyPlan: mutation(calls.apply, () => state.applied),
         removePlan: mutation(calls.remove),
+        addPlant: mutation(calls.addPlant),
+        updatePlant: mutation(calls.updatePlant),
+        removePlant: mutation(calls.removePlant),
       },
       grow: { pods: { useQuery: () => ({ data: state.pods }) } },
     },
@@ -58,6 +62,7 @@ beforeEach(() => {
   state.pods = []
   state.plans = []
   state.applied = null
+  state.custom = []
   for (const f of [...Object.values(calls), invalidate]) f.mockReset()
 })
 afterEach(cleanup)
@@ -168,5 +173,27 @@ describe('PlanPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Delete plan' })[1] as HTMLElement)
     expect(calls.remove).toHaveBeenCalledWith({ id: 'p2' })
+  })
+
+  it('adds a plant of your own and edits or deletes one', () => {
+    state.custom = [{ id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [2, 3], harvestEstimated: false, careLevel: null, size: 'large', inStore: false, custom: true }]
+    render(<PlanPage />)
+    expect(screen.getByText('(yours)')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Edit Basil' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add plant' }))
+    const add = within(screen.getByRole('dialog'))
+    expect(add.getByText('Add a plant')).toBeTruthy()
+    fireEvent.change(add.getByLabelText('Name'), { target: { value: 'Lovage' } })
+    fireEvent.click(add.getByRole('tab', { name: 'Low' }))
+    fireEvent.click(add.getByRole('button', { name: 'Add' }))
+    expect(calls.addPlant).toHaveBeenCalledWith({ name: 'Lovage', category: 'herb', zone: 'low', harvestMonths: [2, 3], careLevel: null, size: 'normal' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Okra' }))
+    const edit = within(screen.getByRole('dialog'))
+    expect((edit.getByLabelText('Name') as HTMLInputElement).value).toBe('Okra')
+    fireEvent.click(edit.getByRole('button', { name: 'Delete' }))
+    expect(calls.removePlant).toHaveBeenCalledWith({ id: 'okra' })
   })
 })

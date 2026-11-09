@@ -214,6 +214,23 @@ export const automationRuns = sqliteTable('automation_runs', {
   detail: text().notNull().default('{}'),
 }, t => [index('automation_runs_rule_time').on(t.automationId, t.firedAt)])
 
+/** Plants added to the planner catalog on this unit (#130); Gardyn's built-in ones live in src/plants/catalog.json. */
+export const customPlants = sqliteTable('custom_plants', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  category: text({ enum: ['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce'] }).notNull(),
+  zone: text({ enum: ['high', 'medium', 'low'] }).notNull(),
+  /** First harvest window, months after starting the yCube. */
+  harvestMinMonths: integer().notNull(),
+  harvestMaxMonths: integer().notNull(),
+  careLevel: text({ enum: ['beginner', 'intermediate', 'expert'] }),
+  size: text({ enum: ['large', 'normal'] }).notNull().default('normal'),
+  succession: text({ enum: ['fast-greens', 'long-greens-herbs', 'fast-fruiting', 'long-fruiting', 'flowers'] }).notNull(),
+  source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+})
+
 /** Saved pod plans (src/plants/planner.ts): layout and sowing waves as JSON. */
 export const plans = sqliteTable('plans', {
   id: text().primaryKey(),

@@ -36,6 +36,8 @@ export const Plant = z.object({
   placement: z.enum(['bottomCenter']).nullable(),
   gardynHandle: z.string().nullable(),
   inStore: z.boolean(),
+  /** Added on this unit by a person or an agent (#130); built-in Gardyn plants are read-only. */
+  custom: z.boolean().default(false),
 })
 export type Plant = z.infer<typeof Plant>
 
@@ -49,17 +51,6 @@ const catalog = Catalog.parse(raw)
 
 export const PLANTS: readonly Plant[] = catalog.plants
 export const CATALOG_SOURCES = catalog.sources
-const byId = new Map(PLANTS.map(p => [p.id, p]))
-
-export function getPlant(id: string): Plant | undefined {
-  return byId.get(id)
-}
-
-/** Case/punctuation-insensitive lookup by id or name (for free-text pod names). */
-export function findPlant(query: string): Plant | undefined {
-  const q = query.toLowerCase().replace(/[^a-z0-9]+/g, '')
-  return byId.get(query) ?? PLANTS.find(p => p.name.toLowerCase().replace(/[^a-z0-9]+/g, '') === q)
-}
 
 export interface PlantFilter {
   q?: string
@@ -67,16 +58,54 @@ export interface PlantFilter {
   zone?: Zone
   inStore?: boolean
   careLevel?: 'beginner' | 'intermediate' | 'expert'
+  custom?: boolean
+}
+
+/** The catalog a request plans with: the built-in plants, then the unit's custom ones. */
+export interface Catalog {
+  plants: readonly Plant[]
+  get(id: string): Plant | undefined
+  /** Case/punctuation-insensitive lookup by id or name (for free-text pod names). */
+  find(query: string): Plant | undefined
+  search(f?: PlantFilter): Plant[]
+}
+
+const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+export function makeCatalog(custom: readonly Plant[] = []): Catalog {
+  const plants = [...PLANTS, ...custom]
+  const byId = new Map(plants.map(p => [p.id, p]))
+  return {
+    plants,
+    get: id => byId.get(id),
+    find: query => byId.get(query) ?? plants.find(p => squash(p.name) === squash(query)),
+    search: (f = {}) => {
+      const q = f.q?.toLowerCase().trim()
+      return plants.filter(p =>
+        (!q || p.name.toLowerCase().includes(q) || p.id.includes(q))
+        && (!f.category || p.category === f.category)
+        && (!f.zone || p.zone === f.zone)
+        && (f.inStore === undefined || p.inStore === f.inStore)
+        && (!f.careLevel || p.careLevel === f.careLevel)
+        && (f.custom === undefined || p.custom === f.custom))
+    },
+  }
+}
+
+/** Gardyn's plants only. */
+export const BUILTIN = makeCatalog()
+
+export function getPlant(id: string): Plant | undefined {
+  return BUILTIN.get(id)
+}
+
+/** Case/punctuation-insensitive lookup by id or name (for free-text pod names). */
+export function findPlant(query: string): Plant | undefined {
+  return BUILTIN.find(query)
 }
 
 export function searchPlants(f: PlantFilter = {}): Plant[] {
-  const q = f.q?.toLowerCase().trim()
-  return PLANTS.filter(p =>
-    (!q || p.name.toLowerCase().includes(q) || p.id.includes(q))
-    && (!f.category || p.category === f.category)
-    && (!f.zone || p.zone === f.zone)
-    && (f.inStore === undefined || p.inStore === f.inStore)
-    && (!f.careLevel || p.careLevel === f.careLevel))
+  return BUILTIN.search(f)
 }
 
 /**

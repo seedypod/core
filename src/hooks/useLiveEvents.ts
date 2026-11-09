@@ -27,6 +27,7 @@ const TOUCHES = new Map<string, readonly Area[]>([
   ['automations', ['automations', 'light']],
   ['backup', ['backup', 'system']],
   ['captures', ['camera', 'vision', 'alerts', 'datasets']],
+  ['catalog', ['planner']],
   ['devices', ['devices', 'sensors', 'system']],
   ['grow', ['grow', 'planner', 'vision', 'alerts']],
   ['homekit', ['homekit', 'system']],
