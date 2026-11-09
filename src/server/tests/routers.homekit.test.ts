@@ -22,6 +22,7 @@ function fake(o: Partial<HomeKitControl> = {}): HomeKitControl {
     setEnabled: async enabled => ({ ...ON, enabled, running: enabled }),
     resetPairing: async () => ({ ...ON, setupCode: '111-22-333' }),
     seedProbe: () => ({ resolved: 'hal-unit-id', sources: [{ source: 'hal-unit-id', present: true, usable: true }], identity: { derivedFrom: 'hal-unit-id', rotation: 0, derivedAt: 1 } }),
+    debug: minutes => ({ until: minutes ? '2026-11-09T12:00:00.000Z' : null }),
     ...o,
   }
 }
@@ -33,6 +34,17 @@ describe('homekit router', () => {
     await expect(c.homekit.setEnabled({ enabled: true })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
     await expect(c.homekit.resetPairing()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
     await expect(c.homekit.seedProbe()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+    await expect(c.homekit.debug({ minutes: 5 })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
+  })
+
+  it('opens and shuts the HAP debug window, at most an hour', async () => {
+    const hk = fake()
+    const debug = vi.spyOn(hk, 'debug')
+    const c = caller(hk)
+    expect(await c.homekit.debug({ minutes: 10 })).toEqual({ until: '2026-11-09T12:00:00.000Z' })
+    expect(await c.homekit.debug({ minutes: 0 })).toEqual({ until: null })
+    expect(debug.mock.calls).toEqual([[10], [0]])
+    await expect(c.homekit.debug({ minutes: 61 })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 
   it('passes status, toggles, resets and the seed probe through', async () => {
@@ -53,7 +65,7 @@ describe('homekit router', () => {
 
   it('is on the REST facade', () => {
     const paths = Object.keys(openApiDocument('http://localhost:3000/api').paths ?? {})
-    expect(paths).toEqual(expect.arrayContaining(['/homekit', '/homekit/enabled', '/homekit/reset', '/homekit/seed-probe']))
+    expect(paths).toEqual(expect.arrayContaining(['/homekit', '/homekit/enabled', '/homekit/reset', '/homekit/seed-probe', '/homekit/debug']))
   })
 
   it('the generic settings update can\'t flip the HomeKit switch behind the bridge\'s back', async () => {

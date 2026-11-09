@@ -33,4 +33,6 @@ export interface HomeKitControl {
   /** Removes every pairing and rotates the identity (new code and QR); restarts if enabled. */
   resetPairing(): Promise<HomeKitStatus>
   seedProbe(): HomeKitSeedProbe
+  /** Logs hap-nodejs's own debug output for `minutes` (1–60), or stops with 0. */
+  debug(minutes: number): { until: string | null }
 }
