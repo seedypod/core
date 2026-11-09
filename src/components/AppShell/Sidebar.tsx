@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { SidebarSearch } from '@/src/components/Search/CommandPalette'
 import { DOCS_BASE } from '@/src/components/Search/docsIndex'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
-import { ReadingAge } from '@/src/components/Sensors/ReadingAge'
+import { ReadingFlag, ReadingsUpdated } from '@/src/components/Sensors/ReadingAge'
 import { ageDays, podShown } from '@/src/components/Grow/towerLayout'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
@@ -43,7 +43,7 @@ function Meter({ to, icon: Icon, label, value, pct, readings }: { to: string, ic
           <span className="block h-full rounded-full bg-meter" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
         </span>
       )}
-      {readings && <ReadingAge readings={readings} className="text-right" />}
+      {readings && <ReadingFlag readings={readings} className="text-right" />}
     </Link>
   )
 }
@@ -146,6 +146,7 @@ export function Sidebar({ status }: { status: { name: string, line: string, onli
   const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
   const autopilot = trpc.automations.status.useQuery(undefined, { refetchInterval: 60_000 })
   const checks = trpc.system.checks.useQuery(undefined, { refetchInterval: 60_000 })
+  const sensors = trpc.sensors.latest.useQuery()
   const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname.startsWith(to))
   const cycle = grow.data?.cycle
   const stage = cycle ? STAGES.indexOf(cycle.stage as typeof STAGES[number]) : -1
@@ -228,6 +229,8 @@ export function Sidebar({ status }: { status: { name: string, line: string, onli
           <span className="flex min-w-0 flex-1 flex-col gap-px">
             <span className="truncate text-[13px]">{status.name}</span>
             <span className="font-mono text-[10px] text-fg-3">{status.line}</span>
+            {/* The readings above share one age; a row says so itself only once it goes stale. */}
+            <ReadingsUpdated readings={Object.values(sensors.data ?? {})} />
           </span>
           <ChevronRight size={14} aria-hidden className="shrink-0 text-fg-3" />
         </Link>

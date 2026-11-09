@@ -47,22 +47,49 @@ describe('Sidebar', () => {
     expect(screen.getByText('25.5°C · 55%').closest('a')?.getAttribute('href')).toBe('/sensors')
   })
 
-  it('says how old the tank and air are, and leaves the light alone', () => {
+  it('says how old the readings are once, at the bottom, and nothing on fresh rows', () => {
     const ts = new Date(Date.now() - 8_000).toISOString()
     data.set('light.get', { on: true, level: 49 })
     data.set('sensors.latest', { water_level_pct: { ts, value: 71, unit: '%', quality: 'good' }, air_temp: { ts, value: 25.5, unit: '°C', quality: 'good' } })
     render(<Sidebar status={online} />)
-    expect(within(screen.getByText('71%').closest('a') as HTMLElement).getByTestId('reading-age').textContent).toMatch(/^updated \ds ago$/)
-    expect(within(screen.getByText('25.5°C').closest('a') as HTMLElement).getByTestId('reading-age').textContent).toMatch(/^updated \ds ago$/)
-    expect(within(screen.getByText('49%').closest('a') as HTMLElement).queryByTestId('reading-age')).toBeNull()
+    const updated = screen.getAllByTestId('readings-updated')
+    expect(updated).toHaveLength(1)
+    expect(updated[0]?.textContent).toMatch(/^updated \ds ago$/)
+    expect(updated[0]?.className).toContain('text-fg-3')
+    expect(screen.getByText('Kitchen Gardyn').closest('a')?.contains(updated[0] ?? null)).toBe(true)
+    expect(screen.queryByTestId('reading-age')).toBeNull()
+    expect(screen.queryByTestId('reading-flag')).toBeNull()
   })
 
-  it('turns a row amber when its sensor stops reporting', () => {
-    data.set('sensors.latest', { water_level_pct: { ts: new Date(Date.now() - 5 * 60_000).toISOString(), value: 71, unit: '%', quality: 'good' } })
+  it('marks only the row whose sensor stopped reporting, and dates the bottom line by the newest', () => {
+    data.set('sensors.latest', {
+      water_level_pct: { ts: new Date(Date.now() - 5 * 60_000).toISOString(), value: 71, unit: '%', quality: 'good' },
+      air_temp: { ts: new Date(Date.now() - 4_000).toISOString(), value: 25.5, unit: '°C', quality: 'good' },
+    })
     render(<Sidebar status={online} />)
-    const age = within(screen.getByText('71%').closest('a') as HTMLElement).getByTestId('reading-age')
-    expect(age.textContent).toBe('stale · updated 5m ago')
-    expect(age.className).toContain('text-warn')
+    const flag = within(screen.getByText('71%').closest('a') as HTMLElement).getByTestId('reading-flag')
+    expect(flag.textContent).toBe('stale')
+    expect(flag.className).toContain('text-warn')
+    expect(within(screen.getByText('25.5°C').closest('a') as HTMLElement).queryByTestId('reading-flag')).toBeNull()
+    expect(screen.getAllByTestId('reading-flag')).toHaveLength(1)
+    expect(screen.getByTestId('readings-updated').textContent).toMatch(/^updated \ds ago$/)
+  })
+
+  it('turns the bottom line amber once every reading has gone quiet, and drops it with none', () => {
+    data.set('sensors.latest', { water_level_pct: { ts: new Date(Date.now() - 5 * 60_000).toISOString(), value: 71, unit: '%', quality: 'suspect' } })
+    const { rerender } = render(<Sidebar status={online} />)
+    const updated = screen.getByTestId('readings-updated')
+    expect(updated.textContent).toBe('updated 5m ago')
+    expect(updated.className).toContain('text-warn')
+    data.delete('sensors.latest')
+    rerender(<Sidebar status={online} />)
+    expect(screen.queryByTestId('readings-updated')).toBeNull()
+  })
+
+  it('flags a suspect reading on its row', () => {
+    data.set('sensors.latest', { humidity: { ts: new Date().toISOString(), value: 55, unit: '%', quality: 'suspect' } })
+    render(<Sidebar status={online} />)
+    expect(within(screen.getByText('55%').closest('a') as HTMLElement).getByTestId('reading-flag').textContent).toBe('suspect')
   })
 
   it('reads the light as off, and dashes for missing readings', () => {
