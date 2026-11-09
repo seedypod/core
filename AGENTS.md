@@ -29,7 +29,8 @@ Two tiers, one contract (ADR-0004, ADR-0007):
 - **A fault latches.** Faults clear only via `acknowledge`; no auto-recovery
   without an explicit, default-off setting and an ADR.
 - LAN-only trust model: no auth on tRPC/MCP; never add a route that reaches
-  the internet from the unit.
+  the internet from the unit. The one exception is the root update helper
+  (ADR-0026): GitHub releases only, and only when someone asks for an update.
 - Vitest tests are colocated in `src/<area>/tests/`; Rust tests in-module.
   Add a behavioral regression test with every fix; Stryker tracks survivors.
 - Conventional commits. Keep PRs small (single concern) so review tooling

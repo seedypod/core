@@ -224,7 +224,21 @@ to one interval.
 
 ## Updates
 
-Rerun the installers. They keep your config and data:
+The update helper installs the newest release of your channel (stable, or dev
+for `dev-latest`) without building anything on the unit. It checks each
+download's sha256, keeps the previous version, and puts it back by itself if
+core isn't healthy afterwards ([ADR 0026](adr/0026-web-update.md)). Over SSH:
+
+```sh
+sudo seedypod-update --check            # what's installed and what the channel has
+sudo seedypod-update --channel stable   # or dev; remembered
+sudo seedypod-update --now              # update, with its log on the terminal
+sudo seedypod-update --rollback         # put the previous version back
+```
+
+It replaces core and `hald`, not the rest of what the installers set up
+(systemd units, Node, the port 80 forward). When a release needs those, or
+the helper refuses one, rerun the installers. They keep your config and data:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | sudo bash

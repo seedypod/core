@@ -34,6 +34,12 @@ The unit runs two systemd services: `hald` (Rust, owns hardware) and
 `seedypod-core` (Node, `:3000`). Both restart on failure. Core is LAN-only;
 no outbound connections are made by either service.
 
+- **On the unit** → `seedypod-update` (root, [ADR 0026](adr/0026-web-update.md))
+  installs the newest `vX.Y.Z` (stable) or `dev-latest` (dev) release when
+  someone asks it to. It's the one thing on the unit that goes online, and only
+  to GitHub's releases. Every asset it downloads needs a checksum: a
+  `<asset>.sha256` the release workflows attach, or GitHub's digest.
+
 ## Repository secrets and variables
 
 | Name | Kind | Used by | How to get it |

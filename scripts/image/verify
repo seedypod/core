@@ -37,6 +37,8 @@ check "seedypod-core owns /opt/seedypod" test "$(stat -c %U /opt/seedypod/packag
 check "seedypod-core can read hald's files" bash -c 'id -nG seedypod-core | grep -qw seedypod-hal'
 check "seedypod-core may manage Wi-Fi" grep -q 'subject.user === "seedypod-core"' /etc/polkit-1/rules.d/50-seedypod-network.rules
 check "seedypod-core may run the restore helper" grep -q '^seedypod-core ALL=(root) NOPASSWD: /usr/local/sbin/seedypod-restore$' /etc/sudoers.d/seedypod-restore
+check "seedypod-core may start an update" grep -q '^seedypod-core ALL=(root) NOPASSWD: /usr/local/sbin/seedypod-update --start$' /etc/sudoers.d/seedypod-update
+check "root owns the update helper" test "$(stat -c %U /usr/local/sbin/seedypod-update)" = root
 
 check "I²C is on" grep -q '^dtparam=i2c_arm=on' /boot/firmware/config.txt
 check "hardware PWM is on" grep -q '^dtoverlay=pwm,pin=18,func=2' /boot/firmware/config.txt

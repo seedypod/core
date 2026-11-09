@@ -7,7 +7,8 @@
 # Installs Node (via the pinned .node-version), unpacks the release tarball,
 # installs production deps, and enables seedypod-core.service on :3000. It also
 # installs the restore helper (/usr/local/sbin/seedypod-restore, ADR-0021) and
-# lets this user run it with sudo, for that one path.
+# lets this user run it with sudo, for that one path, and the update helper
+# (/usr/local/sbin/seedypod-update, ADR-0026) with its fixed arguments only.
 #   --restore <file|url>  then restore that backup bundle (seedypod-backup-….tar.gz)
 #                         instead of choosing on the Welcome screen
 #   --check               only say whether this machine can run core, and why not
@@ -337,6 +338,35 @@ own_prefix() {
   sudo chown "$1" "$PREFIX"
   sudo find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name data -exec chown -R "$1" {} +
 }
+# ---- update helper -------------------------------------------------------------
+# Settings → Update runs it (ADR-0026). Root-owned with this prefix written in, like
+# the restore helper, and the sudoers rule lists each command core may run, so sudo
+# itself refuses any other argument; the helper checks them again.
+# tests/scripts/install.update.test.ts sources this file with SEEDYPOD_LIB_ONLY=1.
+UPDATE_HELPER=/usr/local/sbin/seedypod-update
+update_sudoers() {
+  local args
+  for args in --status --check --start '--channel stable' '--channel dev'; do
+    echo "$1 ALL=(root) NOPASSWD: $UPDATE_HELPER $args"
+  done
+}
+install_update_helper() {
+  local helper="$ROOT$UPDATE_HELPER" rules="$ROOT/etc/sudoers.d/seedypod-update" tmp
+  sudo mkdir -p "$(dirname "$helper")" "$(dirname "$rules")" || return 1
+  { sed "s#__PREFIX__#$PREFIX#" "$PREFIX/scripts/seedypod-update.cjs" | sudo tee "$helper" >/dev/null; } \
+    && sudo chown root:root "$helper" && sudo chmod 0755 "$helper" || return 1
+  tmp="$(mktemp)"
+  update_sudoers "$CORE_USER" > "$tmp"
+  if ! sudo visudo -cf "$tmp" >/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+  sudo install -m 0440 -o root -g root "$tmp" "$rules"
+  local ok=$?
+  rm -f "$tmp"
+  return $ok
+}
+
 # An update that dies halfway must not leave core stopped, or unable to write its database.
 abandon_update() {
   finish_prefix || true
@@ -453,6 +483,7 @@ else
   echo "   couldn't validate the sudoers rule for $HELPER; restore from the web UI is off" >&2
 fi
 rm -f "$SUDOERS_TMP"
+install_update_helper || echo "   couldn't install the update helper; update from the web UI is off" >&2
 
 # Backups read hal.toml, hald's state and the broker password through the seedypod
 # group that install-hal creates (ADR-0021); install-hal adds us too if it runs later.

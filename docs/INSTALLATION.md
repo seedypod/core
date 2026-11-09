@@ -43,7 +43,8 @@ build, not a Node.js release. The image doesn't change that clock:
 
 - A card flashed today stops getting Node security fixes in April 2027, and core
   has no auth on your LAN, so after that date the unit relies on your network.
-- Nothing on the unit updates itself. Node and core move when you reflash or
+- Nothing on the unit updates itself. Core and `hald` move when you update them
+  ([Maintenance → Updates](MAINTENANCE.md#updates)), Node when you reflash or
   rerun the installers, and Raspberry Pi OS packages when you run `apt`.
 - The Zero W has no way onto Node 24. The Zero 2 W does: flash 64-bit Raspberry Pi
   OS Lite and use the scripts below.
@@ -290,7 +291,10 @@ curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install 
 
 The installer also puts the restore helper at `/usr/local/sbin/seedypod-restore`
 (root-owned) and lets the core user run it with `sudo`
-(`/etc/sudoers.d/seedypod-restore`), for that one path. Once the unit is
+(`/etc/sudoers.d/seedypod-restore`), for that one path. The update helper,
+`/usr/local/sbin/seedypod-update`, goes in the same way, with
+`/etc/sudoers.d/seedypod-update` listing the five commands core may run with
+it ([ADR 0026](adr/0026-web-update.md)). Once the unit is
 running, **Settings → Backup** downloads a backup. Set up the off-device
 mirror ([Capture analysis](ANALYSIS.md#mirror-photos-off-the-unit-opt-in))
 and a backup goes to your bucket every night.
@@ -385,6 +389,7 @@ sudo systemctl disable --now seedypod-port80 || true
 sudo rm -rf /opt/seedypod /etc/systemd/system/seedypod-core.service /etc/systemd/system/hald.service \
   /etc/systemd/system/seedypod-port80.service \
   /usr/local/sbin/seedypod-restore /etc/sudoers.d/seedypod-restore /var/lib/seedypod-restore \
+  /usr/local/sbin/seedypod-update /etc/sudoers.d/seedypod-update /var/lib/seedypod-update /opt/seedypod.previous \
   /usr/local/share/seedypod /etc/profile.d/seedypod-logo.sh
 ```
 Or reflash the stock image from step 0.
