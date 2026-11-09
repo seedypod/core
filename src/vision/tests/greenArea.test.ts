@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coverByPod, defaultPodRects, growthTrend, isGreen, isLeafColour } from '../greenArea'
+import { coverByPod, growthTrend, isGreen, isLeafColour } from '../greenArea'
 
 describe('green area', () => {
   it('classifies leafy greens vs dark background and white LED glare', () => {
@@ -41,14 +41,6 @@ describe('green area', () => {
     expect(cover[3]).toBe(0)
     // A blob centred between regions goes to the nearest pod; a region off the frame reads 0.
     expect(coverByPod(mask, w, h, { 2: { x: 10, y: 0, w: 10, h: 10 }, 9: { x: 100, y: 100, w: 5, h: 5 } })).toEqual({ 2: 0.3, 9: 0 })
-  })
-
-  it('lays out 15 pods per camera', () => {
-    const upper = defaultPodRects('upper', 1280, 720)
-    const lower = defaultPodRects('lower', 1280, 720)
-    expect(Object.keys(upper).map(Number)).toEqual(Array.from({ length: 15 }, (_, i) => i + 1))
-    expect(Object.keys(lower).map(Number)[0]).toBe(16)
-    expect(upper[1]?.w).toBeGreaterThan(0)
   })
 
   it('reports growth trend over windows', () => {

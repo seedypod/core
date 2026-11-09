@@ -5,7 +5,8 @@
  * can post results under its own id into the same table.
  */
 import type { Rect, Rgba } from './greenArea'
-import { coverByPod, defaultPodRects, isGreen, isLeafColour } from './greenArea'
+import { coverByPod, isGreen, isLeafColour } from './greenArea'
+import { podRegions, toPixels, type Camera, type PodRegions } from './regions'
 
 export interface MetricInfo {
   /** Stable key, e.g. `green_fraction`. */
@@ -127,9 +128,9 @@ export function findAnalyzer(id: string): CaptureAnalyzer | undefined {
   return DEVICE_ANALYZERS.find(a => a.id === id)
 }
 
-/** Run every given analyser over one decoded still. */
-export function runAnalyzers(img: Rgba, camera: 'upper' | 'lower', analyzers: CaptureAnalyzer[], opts: AnalyzerOptions): Array<AnalyzerOutput & { analyzer: string, version: number }> {
-  const pods = defaultPodRects(camera, img.width, img.height)
+/** Run every given analyser over one decoded still, on the camera's pod boxes (fractions of the frame). */
+export function runAnalyzers(img: Rgba, camera: Camera, analyzers: CaptureAnalyzer[], opts: AnalyzerOptions, regions: PodRegions = podRegions(camera)): Array<AnalyzerOutput & { analyzer: string, version: number }> {
+  const pods = toPixels(regions, img.width, img.height)
   return analyzers.map(a => ({ analyzer: a.id, version: a.version, ...a.run(img, pods, opts) }))
 }
 

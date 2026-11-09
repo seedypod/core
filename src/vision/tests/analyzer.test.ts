@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeJpeg } from '../analyze'
 import { DEVICE_ANALYZERS, excessGreen, exgOtsu, findAnalyzer, greenThreshold, info, maskPbm, otsu, runAnalyzers } from '../analyzer'
 import { execute } from '../execute'
-import { jpeg, tower } from './fixtures'
+import { grid, jpeg, tower } from './fixtures'
 
 const img = (bytes: Uint8Array) => {
   const d = decodeJpeg(bytes)
@@ -41,7 +41,7 @@ describe('analysers', () => {
   })
 
   it('read an empty tower under a tinted light as empty (#132)', () => {
-    for (const o of runAnalyzers(img(tower(640, 480, [])), 'upper', DEVICE_ANALYZERS, { artifacts: false })) {
+    for (const o of runAnalyzers(img(tower(640, 480, [])), 'upper', DEVICE_ANALYZERS, { artifacts: false }, grid('upper'))) {
       expect(Math.max(...o.results.map(r => r.value))).toBeLessThanOrEqual(0.01)
     }
   })
@@ -52,7 +52,7 @@ describe('analysers', () => {
     // Pod 7 has a seedling of its own, off the middle of its region.
     const plant = { x: 320, y: 144, r: 180, ry: 75 }
     const still = img(tower(640, 480, [plant, { x: 50, y: 215, r: 8, colour: [120, 200, 80] }]))
-    for (const o of runAnalyzers(still, 'upper', DEVICE_ANALYZERS, { artifacts: false })) {
+    for (const o of runAnalyzers(still, 'upper', DEVICE_ANALYZERS, { artifacts: false }, grid('upper'))) {
       const bySlot = new Map(o.results.map(r => [r.slot, r.value]))
       expect(bySlot.get(5), o.analyzer).toBeGreaterThan(0.9)
       for (const empty of [1, 2, 3, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15]) expect(bySlot.get(empty), `${o.analyzer} pod ${empty}`).toBeLessThanOrEqual(0.01)
@@ -63,7 +63,7 @@ describe('analysers', () => {
   it('still count every pod of a tower whose leaves have grown together', () => {
     // Pod 4's own plant touches pod 5's, so they are one blob centred in pod 5.
     const still = img(tower(640, 480, [{ x: 320, y: 144, r: 180, ry: 75 }, { x: 106, y: 144, r: 60 }]))
-    for (const o of runAnalyzers(still, 'upper', DEVICE_ANALYZERS, { artifacts: false })) {
+    for (const o of runAnalyzers(still, 'upper', DEVICE_ANALYZERS, { artifacts: false }, grid('upper'))) {
       const bySlot = new Map(o.results.map(r => [r.slot, r.value]))
       expect(bySlot.get(4), o.analyzer).toBeGreaterThan(0.4)
       expect(bySlot.get(6), o.analyzer).toBeLessThanOrEqual(0.01)

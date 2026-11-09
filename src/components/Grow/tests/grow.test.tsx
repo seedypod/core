@@ -23,7 +23,7 @@ vi.mock('@/src/utils/trpc', () => {
       grow: { current: query('grow'), pods: query('pods'), harvest: query('harvest'), start: mutation('start'), end: mutation('end'), setStage: mutation('setStage'), updatePod: mutation('updatePod'), markHarvested: mutation('markHarvested') },
       settings: { get: query('settings') },
       camera: { list: query('captures') },
-      vision: { podTrends: query('trends') },
+      vision: { podTrends: query('trends'), regions: query('regions') },
       sensors: { latest: query('sensors') },
       light: { get: query('light') },
     },
@@ -121,7 +121,8 @@ describe('Grow', () => {
     expect(panel.textContent).toContain('5 d until its 24–39 d window.')
     const img = screen.getByRole('img', { name: 'Pod 1 on the upper camera' }) as HTMLImageElement
     expect(img.getAttribute('src')).toBe('/api/captures/u1.jpg')
-    expect(img.style.transform).toMatch(/^translate\(-3\.33\d*%, -2\.\d+%\)$/)
+    // Pod 1's measured box on the upper camera.
+    expect(img.style.transform).toBe('translate(-6.84%, -13.81%)')
     expect(screen.getByText('upper camera · 6 h ago')).toBeTruthy()
     expect(panel.querySelector('svg path')).not.toBeNull()
     expect(screen.getByText('Growing, +1.2% a day.')).toBeTruthy()
@@ -185,8 +186,17 @@ describe('Grow', () => {
     Object.defineProperty(img, 'offsetWidth', { value: 1200 })
     Object.defineProperty(img, 'offsetHeight', { value: 900 })
     fireEvent.load(img)
-    // A 4:3 still: a third of its width by a fifth of its height, less the margins.
-    expect(Number(img.parentElement?.dataset.aspect)).toBeCloseTo((0.8 / 3 * 1200) / (0.8 / 5 * 900))
+    // A 4:3 still: the measured boxes are square on it.
+    expect(Number(img.parentElement?.dataset.aspect)).toBeCloseTo(1)
+  })
+
+  it('crops to the box the owner calibrated for the pod', () => {
+    data.set('regions', [{ camera: 'upper', calibrated: true, regions: [{ slot: 1, x: 0.5, y: 0.25, w: 0.2, h: 0.1, moved: true }] }])
+    render(<GrowPage />)
+    fireEvent.click(screen.getByRole('button', { name: '1 Basil' }))
+    const img = screen.getByRole('img', { name: 'Pod 1 on the upper camera' }) as HTMLImageElement
+    expect(img.style.transform).toBe('translate(-50%, -25%)')
+    expect(img.style.width).toBe('500%')
   })
 
   it('feeds the tower the pods, their green area and outlook, the tank and the light', () => {

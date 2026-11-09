@@ -9,6 +9,7 @@ import type { EventBus } from '../lib/eventBus'
 import type { AnalysisRow, Capture, Store } from '../store/types'
 import { DEVICE_ANALYZERS, info, type AnalyzerInfo } from './analyzer'
 import { DAMAGED, inlineExecutor, type Executor, type JobOutput } from './execute'
+import { podRegions } from './regions'
 
 export interface AnalysisServiceOptions {
   store: Store
@@ -136,8 +137,10 @@ export class AnalysisService {
   private async analyse(capture: Capture, bytes: Uint8Array, analyzers: string[]): Promise<void> {
     this.running = capture
     try {
-      const opts = { artifacts: this.o.store.settings.get().analysisArtifacts }
-      const out = await this.executor({ bytes, camera: capture.camera, analyzers, opts })
+      const settings = this.o.store.settings.get()
+      const opts = { artifacts: settings.analysisArtifacts }
+      const regions = podRegions(capture.camera, settings.podRegions)
+      const out = await this.executor({ bytes, camera: capture.camera, regions, analyzers, opts })
       if (out === DAMAGED) {
         await this.forget(capture)
       }

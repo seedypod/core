@@ -6,7 +6,7 @@ import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { cn } from '@/lib/utils'
 import { apiBase, trpc } from '@/src/utils/trpc'
 import { LineChart } from '@/src/components/ds/charts'
-import { defaultPodRects } from '@/src/vision/greenArea'
+import { cameraOf, podRegions, type RegionCalibration } from '@/src/vision/regions'
 import { CATALOG } from './plants/catalog'
 import { PlantModel } from './PlantModel'
 import { PlantThumb, podForm } from './PlantThumb'
@@ -52,13 +52,11 @@ function towersOf<T extends { slot: number }>(pods: T[]): T[][] {
   return Array.from({ length: n }, (_, i) => pods.slice(i * per, (i + 1) * per)).filter(t => t.length > 0)
 }
 
-/** Which camera sees a pod, and where in its frame: the crop the analyser scores. */
-function podCrop(slot: number) {
-  for (const camera of ['upper', 'lower'] as const) {
-    const rect = defaultPodRects(camera, 1, 1)[slot]
-    if (rect) return { camera, rect }
-  }
-  return null
+/** Which camera sees a pod, and where in its frame: the box the analysers score, calibrated or the default. */
+function podCrop(slot: number, calibration?: RegionCalibration | null) {
+  const camera = cameraOf(slot)
+  const rect = camera ? podRegions(camera, calibration)[slot] : undefined
+  return camera && rect ? { camera, rect } : null
 }
 
 const ROW_CLASS: Record<PodShown, string> = {
@@ -300,7 +298,10 @@ function StageBar({ stage, onChange }: { stage: string, onChange: (stage: Stage)
 
 /** The latest still from the camera that sees `slot`, cut to that pod's crop. */
 function PodCrop({ slot }: { slot: number }) {
-  const crop = podCrop(slot)
+  const regions = trpc.vision.regions.useQuery()
+  const camera = cameraOf(slot)
+  const own = regions.data?.find(r => r.camera === camera)
+  const crop = podCrop(slot, camera && own ? { [camera]: Object.fromEntries(own.regions.map(({ slot: s, x, y, w, h }) => [s, { x, y, w, h }])) } : null)
   const list = trpc.camera.list.useQuery({ camera: crop?.camera ?? 'upper', limit: 1 }, { enabled: crop !== null })
   const [aspect, setAspect] = useState<number | null>(null)
   if (!crop) return null

@@ -35,6 +35,8 @@ const TOUCHES = new Map<string, readonly Area[]>([
   ['plans', ['planner']],
   ['plants', ['plants', 'grow']],
   ['pods', ['grow', 'planner', 'vision']],
+  // Pod boxes on the stills: the Analysis overlay and the Grow crops.
+  ['regions', ['vision']],
   ['sensors', ['sensors', 'devices']],
   ['update', ['update']],
 ])
