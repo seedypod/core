@@ -331,6 +331,16 @@ describe('HomeKitService', () => {
     await expect(svc.setEnabled(true)).rejects.toThrow('not attached')
   })
 
+  it('opens the HAP debug window on request and shuts it when core stops', async () => {
+    const { svc } = setup()
+    const hapDebug = { set: vi.fn(() => ({ until: '2026-11-09T10:05:00.000Z' })), off: vi.fn() }
+    Object.assign(svc, { hapDebug })
+    expect(svc.debug(5)).toEqual({ until: '2026-11-09T10:05:00.000Z' })
+    expect(hapDebug.set).toHaveBeenCalledWith(5)
+    await svc.shutdown()
+    expect(hapDebug.off).toHaveBeenCalledWith('core stopping')
+  })
+
   it('reports which seed the unit resolves to, without values', async () => {
     const { svc } = setup()
     expect(svc.seedProbe()).toMatchObject({ resolved: 'hal-unit-id', identity: null })

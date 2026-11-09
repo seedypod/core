@@ -16,6 +16,7 @@ import { createCallerFactory } from '../server/trpc'
 import type { Store } from '../store/types'
 import type { HomeKitApi } from './accessories/common'
 import type { Advertiser, BridgeOptions, PublishedBridge } from './bridge'
+import { HapDebug } from './debug'
 import { type Identity, IdentityStore, probeSeeds, type SeedInputs } from './identity'
 import type { HomeKitControl, HomeKitSeedProbe, HomeKitStatus } from './types'
 
@@ -94,6 +95,7 @@ export class HomeKitService implements HomeKitControl {
   private readonly log: (msg: string) => void
   private readonly seed: SeedInputs
   private rotateTimer: ReturnType<typeof setTimeout> | null = null
+  private readonly hapDebug: HapDebug
 
   constructor(private readonly o: HomeKitServiceOptions) {
     this.env = o.env ?? process.env
@@ -103,6 +105,7 @@ export class HomeKitService implements HomeKitControl {
     this.dir = resolve(o.dir)
     this.legacyDir = o.legacyDir === undefined ? legacyStorageDir(o.dir) : o.legacyDir
     this.ids = new IdentityStore(this.dir, this.seed, this.log)
+    this.hapDebug = new HapDebug({ log: this.log })
   }
 
   /** Called by createCore once the context exists; the accessories write through its caller. */
@@ -143,6 +146,10 @@ export class HomeKitService implements HomeKitControl {
     return { resolved, sources, identity: id ? { derivedFrom: id.derivedFrom, rotation: id.rotation, derivedAt: id.derivedAt } : null }
   }
 
+  debug(minutes: number): { until: string | null } {
+    return this.hapDebug.set(minutes)
+  }
+
   /** Boot: start the bridge if the owner left HomeKit on. A failure is logged and shown in Settings. */
   startIfEnabled(): Promise<void> {
     if (!this.o.store.settings.get().homekitEnabled) return Promise.resolve()
@@ -152,6 +159,7 @@ export class HomeKitService implements HomeKitControl {
   /** Process shutdown: unpublish, keeping pairings and the saved switch. */
   shutdown(): Promise<void> {
     if (this.rotateTimer) clearTimeout(this.rotateTimer)
+    this.hapDebug.off('core stopping')
     return this.serialize(() => this.stopBridge())
   }
 

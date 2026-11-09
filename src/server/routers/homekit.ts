@@ -64,4 +64,9 @@ export const homekitRouter = router({
       identity: z.object({ derivedFrom: SeedSource, rotation: z.number().int(), derivedAt: z.number().int() }).nullable(),
     }))
     .query(({ ctx }) => need(ctx).seedProbe()),
+  debug: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/homekit/debug', tags: ['homekit'], summary: 'Log hap-nodejs\'s HAP traffic to core\'s journal for up to 60 minutes; 0 stops it. It turns itself off' } })
+    .input(z.object({ minutes: z.number().int().min(0).max(60) }))
+    .output(z.object({ until: z.string().nullable() }))
+    .mutation(({ ctx, input }) => need(ctx).debug(input.minutes)),
 })
