@@ -211,10 +211,31 @@ made them), and on held-out synthetic plants it got 89 % right, where leaf
 cover alone gets 49 %. Neither number says how it does on real seedlings.
 Stills taken with the grow light off are skipped, since it never saw one.
 
-It runs in plain TypeScript, not ONNX: the Pi Zero W has no ONNX runtime that
-fits ([ADR 0019](adr/0019-pluggable-capture-analysis.md), 2026-11-09
-amendment). On the unit that costs about 0.75 s per pod, about 23 s for a
-capture of 30 pods, on the vision worker.
+It runs without ONNX: the Pi Zero W has no ONNX runtime that fits
+([ADR 0019](adr/0019-pluggable-capture-analysis.md), 2026-11-09 amendments).
+Releases carry `podvision`, a small Rust binary (`hal/crates/podvision`,
+separate from `hald`), in `bin/`. Core runs it once per capture at nice 19,
+with the still on stdin, the pod boxes and every enabled revision's weights
+file; it decodes, crops and runs the network, and core stores the result as
+the same rows the TypeScript runner would. On the unit that takes about 2 s
+per capture (0.36 s to decode the 1280×960 still, about 0.1 s per pod) and
+8 MB of memory, where the TypeScript runner took about 33 s. When the binary
+is missing, fails or takes longer than 60 s, core logs it and scores in
+TypeScript on the vision worker instead. Core's log says at startup which
+way pod-state runs. `PODVISION_BIN` points at another build; set it empty to
+always use TypeScript.
+
+The two runners agree on the crop and forward pass to 1e-4 (the parity
+fixture, checked in `cargo test` and by core's tests against the built
+binary). They decode JPEGs differently: core's `jpeg-js` repeats each chroma
+sample, `podvision`'s decoder interpolates chroma the way libjpeg does. On
+real captures that moves probabilities by up to 0.07 and has not changed a
+class (60 of 60 pods). The training repo decodes with Pillow, which is
+libjpeg: against it `podvision` differs by under 0.002, so the native runner
+sees what the model was trained on more closely than the TypeScript one. A
+smaller decode is used only when every pod's crop is still at least the
+model's input size; the default boxes (the smallest is about 65 px across at
+1280×960) keep it at full size.
 
 ### Weights file
 

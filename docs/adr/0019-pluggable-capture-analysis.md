@@ -9,7 +9,7 @@ sources: [{"resource": "/adr/0004-two-tier-hal-core.md", "title": "ADR 0004: Two
 
 # ADR 0019: Pluggable capture analysis
 
-**Status:** Accepted, amended 2026-11-09 (learned models run in plain TypeScript, not ONNX)
+**Status:** Accepted, amended 2026-11-09 (learned models run in plain TypeScript, not ONNX), and again 2026-11-09 (the pod-state forward pass runs natively, TypeScript as the fallback)
 **Date:** 2026-10-31
 
 > **Amendment, 2026-11-09 ([#185](https://github.com/seedypod/core/issues/185)).** Decision 1
@@ -33,6 +33,21 @@ sources: [{"resource": "/adr/0004-two-tier-hal-core.md", "title": "ADR 0004: Two
 > outgrow JavaScript without touching the analyser. Like the rest of analysis it stays in core,
 > never in `hald`. The first is `pod-state`; [Capture analysis](../ANALYSIS.md#the-learned-pod-state-analyser)
 > says how it is trained and shipped.
+>
+> **Amendment, 2026-11-09 ([#191](https://github.com/seedypod/core/issues/191)).** In TypeScript,
+> `pod-state` took about 33 s per capture on the unit and slowed core's API to about 1 s, because
+> the worker thread shares the single core with the event loop. The native backend this
+> amendment's predecessor left room for now exists: `podvision` (`hal/crates/podvision`), a small
+> Rust binary that core starts for each capture as a child process at nice 19, under a 60 s
+> timeout. It decodes the JPEG (at 1/2, 1/4 or 1/8 scale when every pod's crop still covers the
+> model's input), crops the pods exactly as `cropInput` does, and runs the `seedypod-cnn` v1
+> forward pass for every enabled revision; core stores its probabilities as the same rows under
+> the same analyser ids and versions. It is its own process, never linked into `hald`, so a
+> malformed still can only kill the child. If it is missing, fails or times out, core logs it and
+> runs the TypeScript path, which stays the reference. It ships in the release tarball
+> (`bin/podvision-<target>`), so the installer and the web updater (ADR 0026) checksum, swap and
+> roll it back with core. Measured on the unit: about 0.36 s decode, 1.2–1.9 s forward pass for 15
+> pods, 1.6–2.4 s per capture, 8.3 MB peak RSS.
 
 ## Context
 
