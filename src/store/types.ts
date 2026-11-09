@@ -185,6 +185,27 @@ export interface BackupRecord {
   ok: boolean
   detail: string
 }
+/** What can be done to the tank (ADR-0029); chores count from the last one of their kind. */
+export const TANK_ACTION_KINDS = ['feed', 'top_off', 'refresh', 'ph_down', 'ph_up', 'clean', 'trim_roots', 'thin', 'other'] as const
+export type TankActionKind = typeof TANK_ACTION_KINDS[number]
+export const TANK_UNITS = ['tsp', 'tbsp', 'mL', 'L', 'gal', 'g'] as const
+export type TankUnit = typeof TANK_UNITS[number]
+
+/** One thing done to the tank, so readings can be attributed to it: "fed 1 tsp MaxiGro". */
+export interface TankAction {
+  id: number
+  /** When it was done. */
+  ts: string
+  kind: TankActionKind
+  amount: number | null
+  unit: TankUnit | null
+  product: string | null
+  note: string
+  source: 'user' | 'agent'
+  /** When it was logged. */
+  createdAt: string
+}
+
 /** One sample of the SD card's sectors-written counter; `bytes` were written since the previous sample. */
 export interface FlashSample { ts: string, sectors: number, bytes: number }
 
@@ -296,6 +317,12 @@ export interface Store {
     runs(q?: { automationId?: number, limit?: number }): AutomationRun[]
     /** Drop runs older than `beforeTs`; returns how many went. */
     pruneRuns(beforeTs: string): number
+  }
+  tankActions: {
+    add(a: Omit<TankAction, 'id' | 'createdAt'>, createdAt: string): TankAction
+    /** Newest first by when it was done. */
+    list(q?: { kind?: TankActionKind, limit?: number }): TankAction[]
+    remove(id: number): boolean
   }
   plans: {
     list(): PlanRow[]

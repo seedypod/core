@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS, profileKey } from './types'
 
@@ -26,6 +26,8 @@ export class MemoryStore implements Store {
   private runRows: AutomationRun[] = []
   private nextAutomationId = 1
   private nextRunId = 1
+  private readonly tankRows: TankAction[] = []
+  private nextTankId = 1
 
   constructor(podCount = 30) {
     const ts = new Date(0).toISOString()
@@ -316,6 +318,22 @@ export class MemoryStore implements Store {
       const before = this.runRows.length
       this.runRows = this.runRows.filter(r => r.firedAt >= beforeTs)
       return before - this.runRows.length
+    },
+  }
+
+  tankActions = {
+    add: (a: Omit<TankAction, 'id' | 'createdAt'>, createdAt: string): TankAction => {
+      const row = { ...a, id: this.nextTankId++, createdAt }
+      this.tankRows.push(row)
+      return row
+    },
+    list: (q?: { kind?: TankActionKind, limit?: number }): TankAction[] =>
+      this.tankRows.filter(r => !q?.kind || r.kind === q.kind).sort((a, b) => b.ts.localeCompare(a.ts) || b.id - a.id).slice(0, q?.limit ?? 100),
+    remove: (id: number): boolean => {
+      const i = this.tankRows.findIndex(r => r.id === id)
+      if (i < 0) return false
+      this.tankRows.splice(i, 1)
+      return true
     },
   }
 

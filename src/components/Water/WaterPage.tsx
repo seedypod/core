@@ -12,6 +12,7 @@ import type { Reading, SensorId } from '@/src/hardware/contract'
 import { daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle, cutoffPct, cycleWhen, fmtMinutes, fmtWhen, nextRun, tankTrend, type PumpCycle } from './pumpCycles'
+import { TankLog } from './TankLog'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
 const CYCLE_DURATIONS = ['60', '180', '300', '600', '900'] as const
@@ -122,6 +123,8 @@ export function WaterPage() {
           )}
 
       <TankHistory cutoff={cutoff} />
+
+      <TankLog />
 
       <div className="flex flex-col gap-2.5">
         <h2 className={EYEBROW}>Recent runs</h2>

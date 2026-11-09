@@ -13,6 +13,7 @@ import { SensorId } from '../hardware/contract'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
 import { Overrides } from '../server/routers/planner'
+import { TankActionKind, TankUnit } from '../server/routers/tank'
 import { createCallerFactory } from '../server/trpc'
 
 const createCaller = createCallerFactory(appRouter)
@@ -58,6 +59,11 @@ export function createMcpServer(ctx: Context): McpServer {
     description: 'What a planted unit is missing (ADR-0029): pods planted with no light schedule or no pump schedule on, and a tank level sensor that is absent or reading suspect (a suspect level is never used to advise a top-off). Returns planted (pods not empty), issues (id, the alert kind it raises, title, detail, where it is fixed) and a one-line summary. Each issue is also an active alert in status until it is fixed.',
     inputSchema: {},
   }, async () => text(await caller.care.setup()))
+
+  server.registerTool('list_tank_actions', {
+    description: 'The tank action log, newest first: what was done to the tank and when (kind feed | top_off | refresh | ph_down | ph_up | clean | trim_roots | thin | other, amount and unit, product, note, and whether a person or an agent logged it). Read it beside history to attribute a change in ec, ph or water_level_pct to an action. kind filters; limit defaults to 20.',
+    inputSchema: { kind: TankActionKind.optional(), limit: z.number().int().min(1).max(500).optional() },
+  }, async i => text(await caller.tank.actions({ kind: i.kind, limit: i.limit ?? 20 })))
 
   server.registerTool('captures', {
     description: 'Recent camera stills (newest first) with URLs relative to the core host. camera: upper or lower.',
@@ -229,6 +235,18 @@ export function createMcpServer(ctx: Context): McpServer {
     description: 'Update a plant pod: what is planted, when, its status and notes.',
     inputSchema: { slot: z.number().int().min(1).max(60), plant: z.string().nullable().optional(), planted_at: z.string().nullable().optional(), status: z.enum(['empty', 'seeded', 'growing', 'harvest', 'attention']).optional(), notes: z.string().optional() },
   }, async i => text(await caller.grow.updatePod({ slot: i.slot, plant: i.plant, plantedAt: i.planted_at, status: i.status, notes: i.notes })))
+
+  server.registerTool('log_tank_action', {
+    description: 'Record something a person did to the tank, as they report it: "fed 1 tsp MaxiGro" is kind feed, amount 1, unit tsp, product MaxiGro; also top_off, refresh, ph_down, ph_up, clean, trim_roots, thin, other. Touches no hardware and is marked source agent. at is when it was done (ISO time, defaults to now; not in the future). Give an amount only with its unit (tsp, tbsp, mL, L, gal, g), and only the amount the person said: never fill in a dose yourself.',
+    inputSchema: {
+      kind: TankActionKind,
+      amount: z.number().positive().max(100_000).optional(),
+      unit: TankUnit.optional(),
+      product: z.string().max(80).optional(),
+      note: z.string().max(500).optional(),
+      at: z.string().optional().describe('When it was done, ISO 8601 with an offset; defaults to now.'),
+    },
+  }, async i => text(await caller.tank.logAction({ kind: i.kind, amount: i.amount ?? null, unit: i.unit ?? null, product: i.product ?? null, note: i.note ?? '', ts: i.at, source: 'agent' })))
 
   server.registerTool('set_plant_profiles', {
     description: 'Create or replace plant profiles by name, to sharpen harvest_outlook. A good workflow: read `pods`, then for each distinct plant give its typical days from planting (seeding the pod) to first harvest in an indoor hydroponic tower under grow lights as harvest_min_days–harvest_max_days, and the leaf cover (0–1; the share of the pod\'s camera crop that is plant, ~0.3 for a compact herb, ~0.4–0.5 for a full lettuce) at which it is worth cutting. Use the plant names as the pods spell them, or a shorter common name ("Kale"). Leave a field null when unsure; say what you assumed in notes.',
