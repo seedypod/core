@@ -4,6 +4,7 @@
 
 - **Update**: User-facing addresses drop `:3000` now that a Pi install forwards port 80 to core: [Installation](INSTALLATION.md) (and when `:3000` is still the address), [Maintenance](MAINTENANCE.md) and [Capture analysis](ANALYSIS.md).
 - **Update**: Replaced "hasn't run on a real Gardyn" warnings with what the bring-up verified and what it didn't (pump, water level against water, button, the USB hub) in the README, [handoff](HANDOFF.md), [hald reference](hardware/hal.md#verification-status), [hardware map](hardware/pin-map.md), [Maintenance](MAINTENANCE.md), [Debugging](DEBUGGING.md) and [Installation](INSTALLATION.md#how-long-it-takes); added a status update to [ADR 0023](adr/0023-homekit.md). The README shows the web UI.
+- **Creation**: [Feeding and water quality](FEEDING.md): Gardyn's feeding routine, other nutrients (MaxiGro, MaxiBloom, Veg+Bloom), pH and EC targets, and feeding to a probe reading. Evidence is in `knowledge/nutrients/`.
 
 ## 2026-11-08
 
