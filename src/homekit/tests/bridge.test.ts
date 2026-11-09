@@ -35,7 +35,7 @@ describe('accessory tree', () => {
     const services = (i: number) => (accs[i] as hap.Accessory).services.map(s => s.UUID).filter(u => u !== hap.Service.AccessoryInformation.UUID)
     expect(services(0)).toEqual([hap.Service.Lightbulb.UUID])
     expect(services(1)).toEqual([hap.Service.Switch.UUID])
-    expect(services(2)).toEqual([hap.Service.TemperatureSensor.UUID, hap.Service.HumiditySensor.UUID, hap.Service.Battery.UUID])
+    expect(services(2)).toEqual([hap.Service.TemperatureSensor.UUID, hap.Service.HumiditySensor.UUID, hap.Service.Battery.UUID, hap.Service.OccupancySensor.UUID])
     const info = a.bridge.getService(hap.Service.AccessoryInformation) as hap.Service
     expect(info.getCharacteristic(hap.Characteristic.SerialNumber).value).toBe(identity.username)
     for (const s of [...a.stops, ...b.stops, ...other.stops]) s()
