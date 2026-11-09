@@ -342,7 +342,7 @@ try {
       return r.length > 0 ? r : null
     })
     const analyzers = [...new Set(rows.map(r => r.analyzer))].sort()
-    assert(analyzers.join() === 'exg-otsu,green-threshold', `analysers ${analyzers}`)
+    assert(analyzers.join() === 'exg-otsu,green-threshold,pod-state', `analysers ${analyzers}`)
     const status = await get('/vision/status')
     assert(status.failed === 0, `failed ${status.failed}`)
     return `${rows.length} rows from ${analyzers.join(' + ')}`
