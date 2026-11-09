@@ -24,8 +24,32 @@ responsive while a Pi decodes the photo:
 
 | Analyser | What it does |
 |---|---|
-| `green-threshold@1` | Excess-green index (2G − R − B) above a fixed cut-off. The original baseline; drifts with grow-light colour and exposure. |
-| `exg-otsu@1` | The same index with the cut-off chosen per photo by Otsu's method (the PlantCV approach), so a lighting change moves the threshold rather than the result. |
+| `green-threshold@2` | Excess-green index (2G − R − B) above a fixed cut-off. The original baseline; drifts with grow-light colour and exposure. |
+| `exg-otsu@2` | The same index with the cut-off chosen per photo by Otsu's method (the PlantCV approach), so a lighting change moves the threshold rather than the result. |
+
+Both count only what can be a plant, in two steps (version 2, from
+[#132](https://github.com/seedypod/core/issues/132)):
+
+- **Leaf colour.** Excess green alone also fires on the white tower under a warm
+  or green-tinted light, a grey-green wall and dark olive shadow; version 1 read
+  30–65 % cover on a tower with every pod empty. A pixel counts only when green is
+  its strongest channel, its hue lies between yellow-green and blue-green, and it
+  is saturated and bright enough to tell. On the reference stills from an empty
+  tower, every pod now reads 2 % or less.
+- **Whose plant it is.** Each connected blob of plant pixels counts for a pod
+  only when it grows from that pod: its centre lies in the pod's box, or it
+  reaches the middle third of the box, where the cup is. The leaves of a large
+  plant that spill over the edge of an empty neighbour's box don't count there,
+  and plants that have grown into each other still count for each pod they grow
+  from. Specks too small to be a seedling count for no one.
+
+The boxes are a fixed 3 × 5 grid per camera. **Pod bounds** on the latest photo
+draws them, with the dashed middle third, over the still, so you can see what
+each pod is scored on. On a Gardyn the grid does not yet line up with the cups;
+calibrating it per unit is [#143](https://github.com/seedypod/core/issues/143).
+
+A pod marked **empty** in the app reads "no cover" on the Analysis screen,
+whatever the camera sees there; hover it for the analysers' numbers.
 
 A damaged frame gets no score. `hald` refuses torn frames before core sees them
 ([Stills](hardware/hal.md#stills)), and core stores nothing that isn't a whole

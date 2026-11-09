@@ -7,6 +7,7 @@
 import type { HalClient } from '../hardware/types'
 import { planLayout, sowingPlan } from '../plants/planner'
 import type { AnalysisRow, Store, TelemetryPoint } from '../store/types'
+import { exgOtsu, greenThreshold } from '../vision/analyzer'
 
 const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian Kale', 'Cherry Tomato', 'Thai Basil', 'Mint', 'Swiss Chard', 'Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
 
@@ -120,10 +121,10 @@ function demoAnalyses(captureId: string, camera: 'upper' | 'lower', ts: string, 
   return Array.from({ length: 15 }, (_, k) => first + k).flatMap((slot) => {
     const vigour = 0.55 + ((slot * 37) % 10) / 20
     const base = Math.min(0.95, g * vigour * 0.9)
-    const row = { captureId, ts, camera, version: 1, source: 'device' as const, slot, metric: 'green_fraction', artifact: null }
+    const row = { captureId, ts, camera, source: 'device' as const, slot, metric: 'green_fraction', artifact: null }
     return [
-      { ...row, analyzer: 'green-threshold', value: Math.round(base * 1000) / 1000, detail: null },
-      { ...row, analyzer: 'exg-otsu', value: Math.round(Math.min(0.97, base * 1.08 + 0.01) * 1000) / 1000, detail: { threshold: 141 } },
+      { ...row, analyzer: greenThreshold.id, version: greenThreshold.version, value: Math.round(base * 1000) / 1000, detail: null },
+      { ...row, analyzer: exgOtsu.id, version: exgOtsu.version, value: Math.round(Math.min(0.97, base * 1.08 + 0.01) * 1000) / 1000, detail: { threshold: 141 } },
     ]
   })
 }
