@@ -49,8 +49,16 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   seeded, notes later waves on their pods, starts a grow cycle if none is
   open, and the grow engine raises `reminder_sow` when each later wave is due.
 - Exposed on the API (`/api/planner/*`, `/api/plans`), as MCP tools
-  (`plant_catalog`, `plan_layout`, `best_spot`, `save_plan`, `apply_plan`), on
-  the Plan screen, and as a Home Assistant reminder.
+  (`plant_catalog`, `planner_zones`, `plan_layout`, `best_spot`, `save_plan`,
+  `apply_plan`), on the Plan screen, and as a Home Assistant reminder.
+- **Explaining what did not fit** (#127): every plant gets its ideal zone
+  before any plant falls back, and a fallback is exactly one zone lower. A
+  layout carries a per-zone summary (rows, slots, planted, planned, free); each
+  unplaced plant carries a code, the zones it could use and the pods in them;
+  and suggestions name a pod to relocate to a slot its plant tolerates, or
+  offer to allow one zone further down. Callers can pin pods to slots or set a
+  plant's allowed zones; each suggestion carries the overrides that carry it
+  out, and a saved plan keeps the overrides it was computed with.
 
 ## Consequences
 

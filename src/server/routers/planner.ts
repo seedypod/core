@@ -8,10 +8,25 @@ import { publicProcedure, router } from '../trpc'
 const Model = z.enum(['home', 'studio', 'nursery'])
 const Request = z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })).max(60)
 const Assignment = z.object({ slot: z.number(), row: z.number(), col: z.number(), slotZone: Zone.nullable(), plantId: z.string(), plantName: z.string(), wantZone: Zone, fallback: z.number(), reason: z.string() })
-const Layout = z.object({ model: Model, assignments: z.array(Assignment), unplaced: z.array(z.object({ plantId: z.string(), plantName: z.string(), reason: z.string() })), free: z.array(z.number()) })
+/** Caller overrides: pin pods to slots, or let a plant use other zones than its ideal-or-one-lower. */
+export const Overrides = z.object({
+  pins: z.array(z.object({ slot: z.number().int().min(1).max(60), plantId: z.string() })).max(60).optional(),
+  allowedZones: z.record(z.string(), z.array(Zone).min(1).max(3)).optional(),
+})
+const ZoneSummary = z.object({ zone: Zone, rows: z.array(z.number()), slots: z.array(z.number()), total: z.number(), existing: z.number(), planned: z.number(), free: z.number() })
+const Blocker = z.object({ slot: z.number(), zone: Zone, plantId: z.string(), plantName: z.string(), existing: z.boolean() })
+const Unplaced = z.object({ plantId: z.string(), plantName: z.string(), reason: z.string(), code: z.enum(['not_in_catalog', 'no_space', 'bad_pin']), wantZone: Zone.nullable(), zones: z.array(Zone), blocking: z.array(Blocker) })
+const Suggestion = z.object({
+  plantId: z.string(), plantName: z.string(), kind: z.enum(['relocate', 'allow_lower']), slot: z.number(), zone: Zone,
+  move: z.object({ plantId: z.string(), plantName: z.string(), from: z.number(), to: z.number(), toZone: Zone, existing: z.boolean() }).nullable(),
+  text: z.string(), overrides: Overrides.nullable(),
+})
+const Layout = z.object({ model: Model, assignments: z.array(Assignment), unplaced: z.array(Unplaced), free: z.array(z.number()), zones: z.array(ZoneSummary), suggestions: z.array(Suggestion), overrides: Overrides.optional() })
+/** Plans saved before the zone summary and structured reasons existed lack them. */
+const SavedLayout = Layout.extend({ unplaced: z.array(Unplaced.partial({ code: true, wantZone: true, zones: true, blocking: true })), zones: z.array(ZoneSummary).optional(), suggestions: z.array(Suggestion).optional() })
 const Wave = z.object({ plantId: z.string(), plantName: z.string(), wave: z.number(), sowOn: z.string(), firstHarvestFrom: z.string(), firstHarvestTo: z.string(), harvestEstimated: z.boolean() })
 const PlanOut = z.object({
-  id: z.string(), name: z.string(), model: Model, mode: z.enum(['staggered', 'batch']), request: Request, layout: Layout, sowing: z.array(Wave),
+  id: z.string(), name: z.string(), model: Model, mode: z.enum(['staggered', 'batch']), request: Request, layout: SavedLayout, sowing: z.array(Wave),
   createdAt: z.string(), updatedAt: z.string(), appliedAt: z.string().nullable(), issued: z.array(z.string()),
 })
 
@@ -30,7 +45,7 @@ function occupiedFromPods(pods: { slot: number, plant: string | null, status: st
  * For each plant, its pods (by slot order) take its sowing waves in order:
  * the first pod is wave 1 and is sown now, later pods wait for their date.
  */
-function podSchedule(layout: z.infer<typeof Layout>, sowing: z.infer<typeof Wave>[]) {
+function podSchedule(layout: z.infer<typeof SavedLayout>, sowing: z.infer<typeof Wave>[]) {
   const waves = new Map<string, z.infer<typeof Wave>[]>()
   for (const w of sowing) waves.set(w.plantId, [...(waves.get(w.plantId) ?? []), w])
   const used = new Map<string, number>()
@@ -58,10 +73,10 @@ export const plannerRouter = router({
     }),
 
   layout: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/planner/layout', tags: ['planner'], summary: 'Auto-place plants by light zone (Gardyn rules)' } })
-    .input(z.object({ model: Model, plants: Request, respectExisting: z.boolean().default(true) }))
+    .meta({ openapi: { method: 'POST', path: '/planner/layout', tags: ['planner'], summary: 'Auto-place plants by light zone (Gardyn rules), with a zone summary, structured unplaced reasons and suggested moves' } })
+    .input(z.object({ model: Model, plants: Request, respectExisting: z.boolean().default(true), overrides: Overrides.optional() }))
     .output(Layout)
-    .query(({ ctx, input }) => planLayout({ model: input.model, plants: input.plants, occupied: input.respectExisting ? occupiedFromPods(ctx.store.pods.list()) : {} })),
+    .query(({ ctx, input }) => planLayout({ model: input.model, plants: input.plants, occupied: input.respectExisting ? occupiedFromPods(ctx.store.pods.list()) : {}, overrides: input.overrides })),
 
   bestSpots: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/planner/best-spots', tags: ['planner'], summary: 'Best free slots for one more plant' } })
@@ -82,10 +97,10 @@ export const plannerRouter = router({
 
   savePlan: publicProcedure
     .meta({ openapi: { method: 'PUT', path: '/plans/{id}', tags: ['planner'], summary: 'Compute and save a layout + sowing plan' } })
-    .input(z.object({ id: z.string().min(1), name: z.string().min(1).max(60), model: Model, mode: z.enum(['staggered', 'batch']).default('staggered'), plants: Request, start: z.string().optional() }))
+    .input(z.object({ id: z.string().min(1), name: z.string().min(1).max(60), model: Model, mode: z.enum(['staggered', 'batch']).default('staggered'), plants: Request, start: z.string().optional(), overrides: Overrides.optional() }))
     .output(PlanOut)
     .mutation(({ ctx, input }) => {
-      const layout = planLayout({ model: input.model, plants: input.plants, occupied: occupiedFromPods(ctx.store.pods.list()) })
+      const layout = planLayout({ model: input.model, plants: input.plants, occupied: occupiedFromPods(ctx.store.pods.list()), overrides: input.overrides })
       const sowing = sowingPlan(input.plants, input.start ? new Date(input.start) : (ctx.now ?? (() => new Date()))(), input.mode)
       const row = ctx.store.plans.save({ id: input.id, name: input.name, model: input.model, mode: input.mode, request: input.plants, layout, sowing })
       ctx.events.emit({ kind: 'mutation', path: 'plans' })

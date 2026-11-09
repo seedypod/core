@@ -2,11 +2,12 @@ import { LayoutGrid, Minus, Plus, Sprout, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
-import { Badge, Button, Card, CardHeader, GhostIcon, InlineError, SectionLabel } from '@/src/components/ds/core'
+import { Badge, Button, Card, CardHeader, GhostIcon, SectionLabel } from '@/src/components/ds/core'
 import { Modal } from '@/src/components/ds/feedback'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
 import { trpc } from '@/src/utils/trpc'
+import { Unplaced } from '@/src/components/Plan/Unplaced'
 
 type Model = 'home' | 'studio'
 type Zone = 'high' | 'medium' | 'low'
@@ -92,9 +93,7 @@ export function PlanPage() {
               })}
             </div>
           )}
-          {(layout.data?.unplaced ?? []).length > 0 && (
-            <InlineError className="mt-3">{`Didn’t fit: ${layout.data?.unplaced.map(u => `${u.plantName} (${u.reason})`).join(' · ')}`}</InlineError>
-          )}
+          <Unplaced unplaced={layout.data?.unplaced ?? []} suggestions={layout.data?.suggestions ?? []} />
           <p className="mt-2 text-[12px] text-fg-3">{`Italic = already planted.${(layout.data?.assignments ?? []).some(a => a.fallback) ? ' Outlined pods sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`}</p>
         </Card>
 

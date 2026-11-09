@@ -247,7 +247,7 @@ for (const [name, make] of impls) {
 
     it('plans save, update, apply, issue and remove', () => {
       store = make()
-      const layout = { model: 'home' as const, assignments: [], unplaced: [], free: [1] }
+      const layout = { model: 'home' as const, assignments: [], unplaced: [], free: [1], zones: [], suggestions: [] }
       const p = store.plans.save({ id: 'p1', name: 'Autumn', model: 'home', mode: 'staggered', request: [{ plantId: 'basil', count: 2 }], layout, sowing: [] })
       expect(p.appliedAt).toBeNull()
       store.plans.save({ ...p, name: 'Autumn greens' })
