@@ -29,12 +29,13 @@ Measured on 2026-11-08 on a Gardyn 3.0 running seedypod OS (Pi Zero W, kernel
 `armv6l`). Busy share comes from `/proc/stat` deltas over each step, so USB,
 IRQ and kernel work count too. Camera steps ran under
 `flock /tmp/seedypod-camera.lock`. Core, hald and avahi were running, so the
-idle unit was already 28 % busy.
+idle unit was already 28 % busy. The CPU column is the whole core over the
+step, baseline included; the cost of the step is what lies above 28 %.
 
 | Step | Wall | Busy (of the one core) | CPU time |
 |---|---|---|---|
 | Idle baseline, 20 s | 20.1 s | 28 % | 5.5 s |
-| One still the way hald takes it (1280×960, skip 15, re-encode q85) | 4.0 s | 79 % | 3.1 s |
+| One still the way hald takes it (1280×960, skip 15, re-encode q85) | 4.0 s | 79 % | 3.1 s (≈ 2 s above baseline) |
 | Pull MJPEG 640×480 at 30 fps for 10 s, no decode | 10.6 s | 37 % | 3.9 s |
 | Pull MJPEG 1280×960 at 30 fps for 10 s, no decode | 10.6 s | 39 % | 4.0 s |
 | Software MJPEG decode, 640×480 (`fswebcam -F 31` minus `-F 1`) | — | — | **≈ 144 ms per frame** |
@@ -69,7 +70,7 @@ encryption, not the camera). With both cameras on screen that is ≈ 3 % of the
 core while the Home app is open, and nothing otherwise. The image is as old
 as the last capture.
 
-**HomeKit snapshots that trigger a capture.** That would be 3.1 s of CPU
+**HomeKit snapshots that trigger a capture.** That would be ≈ 2 s of CPU
 and 4 s of camera time per snapshot. At Home's 10 s cadence it would keep
 the Pi near full and the cameras busy. Rejected.
 
@@ -116,7 +117,7 @@ contention reasons.
 
 - Both apps show what the web UI shows, at no camera cost. The image is up to
   one capture interval old. Owners who want fresher images shorten
-  `captureIntervalMin` and pay hald's 3.1 s per still.
+  `captureIntervalMin` and pay hald's ≈ 2 s of CPU per still.
 - Tapping a camera in the Home app shows the snapshot. Starting live view
   fails with "No Response". That is the intended outcome of refusing the
   stream, not a fault.
