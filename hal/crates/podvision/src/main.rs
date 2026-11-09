@@ -5,7 +5,7 @@
 //! 3 a bad weights file, 4 a bad still. Core runs it at nice 19 under a timeout
 //! and falls back to its TypeScript runner on any failure (#191).
 
-use podvision::{model::Model, parse_regions, run, Failure, Job};
+use podvision::{flush_subnormals, model::Model, parse_regions, run, Failure, Job};
 use std::io::{Read, Write};
 
 /// A still larger than this is not one of ours.
@@ -85,6 +85,7 @@ fn main_inner() -> Result<Option<serde_json::Value>, Failure> {
         return Ok(None);
     };
     prefer_oom_kill();
+    flush_subnormals();
     let regions = parse_regions(&args.regions)?;
     let models = args
         .models

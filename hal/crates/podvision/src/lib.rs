@@ -16,6 +16,23 @@ use model::Model;
 use serde_json::{json, Map, Value};
 use std::time::Instant;
 
+/// Flush subnormal floats to zero on 32-bit ARM. The Pi Zero W's VFP11 hands every
+/// subnormal operand or result to the kernel's support code, thousands of cycles
+/// each, and trained weights hold hundreds of them (405 in the shipped model's
+/// last conv, more products that underflow): measured on the unit, the forward
+/// pass ran about 10× slower than its instruction count. Values that small change
+/// no logit by more than 1e-30, so results stay those of core's runner.
+pub fn flush_subnormals() {
+    #[cfg(target_arch = "arm")]
+    // SAFETY: only sets FPSCR's flush-to-zero (bit 24) and default-NaN (bit 25) mode bits for this thread.
+    unsafe {
+        let mut fpscr: u32;
+        std::arch::asm!("vmrs {0}, fpscr", out(reg) fpscr);
+        fpscr |= (1 << 24) | (1 << 25);
+        std::arch::asm!("vmsr fpscr, {0}", in(reg) fpscr);
+    }
+}
+
 /// Why a run failed; each maps to an exit code.
 #[derive(Debug, PartialEq)]
 pub enum Failure {
