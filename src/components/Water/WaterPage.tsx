@@ -12,6 +12,7 @@ import type { Reading, SensorId } from '@/src/hardware/contract'
 import { daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle, cutoffPct, cycleWhen, fmtMinutes, fmtWhen, nextRun, tankTrend, type PumpCycle } from './pumpCycles'
+import { Chores } from './Chores'
 import { TankLog } from './TankLog'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
@@ -98,6 +99,8 @@ export function WaterPage() {
           {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${limits.pumpMaxRunS} s per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm ?? '—'} cm of water.`}</p>}
         </div>
       </Card>
+
+      <Chores />
 
       <div className="flex items-center gap-3">
         <h2 className={`${EYEBROW} flex-1`}>Pump cycles</h2>

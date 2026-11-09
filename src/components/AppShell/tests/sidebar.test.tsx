@@ -137,6 +137,24 @@ describe('Sidebar', () => {
     expect(screen.queryByText('Needs you')).toBeNull()
   })
 
+  it('lists chores that are due, from a reading or marked as a calendar guess (ADR-0029)', () => {
+    data.set('care.chores', [
+      { id: 'top_off', title: 'Top off the tank', state: 'due', basis: 'reading', reason: 'Tank at 40%, falling 8% a day: below half, so top it off.' },
+      { id: 'thin', title: 'Thin seedlings', state: 'due', basis: 'timeline', reason: 'Calendar guess, no recent photos of the young pods: 15 d since the oldest young pod was planted.' },
+      { id: 'feed', title: 'Feed', state: 'soon', basis: 'reading', reason: 'EC 1.25' },
+    ])
+    render(<Sidebar status={online} />)
+    expect(screen.getByText('Needs you')).toBeTruthy()
+    const top = screen.getByText('Top off the tank').closest('a') as HTMLElement
+    expect(top.getAttribute('href')).toBe('/water')
+    expect(within(top).getByText(/Tank at 40%, falling 8% a day/)).toBeTruthy()
+    expect(within(top).queryByText('calendar')).toBeNull()
+    const thin = screen.getByText('Thin seedlings').closest('a') as HTMLElement
+    expect(thin.getAttribute('href')).toBe('/grow')
+    expect(within(thin).getByText('calendar')).toBeTruthy()
+    expect(screen.queryByText('Feed')).toBeNull()
+  })
+
   it('groups the pages, marks the current one, and carries the cycle, Autopilot and alert count', () => {
     path.current = '/grow'
     data.set('grow.current', { cycle: { stage: 'vegetative' }, day: 19 })
