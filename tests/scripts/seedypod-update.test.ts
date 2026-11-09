@@ -157,6 +157,7 @@ writeFileSync('node_modules/fresh', '')
     SEEDYPOD_UPDATE_SBIN: join(dir, 'sbin'),
     SEEDYPOD_UPDATE_COMPILE_CACHE: join(dir, 'cache/compile-cache'),
     SEEDYPOD_UPDATE_BUSY: join(dir, 'run/seedypod-busy'),
+    SEEDYPOD_UPDATE_SHARE: join(dir, 'share'),
     SEEDYPOD_UPDATE_PNPM: JSON.stringify([process.execPath, pnpm]),
     SEEDYPOD_UPDATE_DETACH: 'fork',
     SEEDYPOD_SYSTEMCTL: JSON.stringify([process.execPath, systemctl]),
@@ -361,6 +362,28 @@ describe('updating', () => {
     expect(status()).toMatchObject({ state: 'done' })
     expect(read('server/dist/index.js')).toBe(`core ${NEW}`)
     expect(await run('--start')).toMatchObject({ code: 4, out: { code: 'current' } })
+  })
+
+  it('keeps the login screen\'s version file on what the prefix holds, through an update and a rollback', async () => {
+    const version = () => readFileSync(join(dir, 'share/version'), 'utf8')
+    put(join(dir, 'share'), { version: `dev@${OLD}\n` })
+    release(tree(NEW))
+    expect((await run('--now')).out).toMatchObject({ ok: true })
+    expect(version()).toBe(`dev@${NEW}\n`)
+    chmodSync(prefix, 0o755)
+    expect((await run('--rollback')).code).toBe(0)
+    expect(version()).toBe(`dev@${OLD}\n`)
+    release(tree(NEW, { 'server/dist/index.js': 'core broken' }))
+    envs.SEEDYPOD_UPDATE_HEALTH_TIMEOUT = '1'
+    expect((await run('--now')).out).toMatchObject({ code: 'rolled-back' })
+    expect(version()).toBe(`dev@${OLD}\n`)
+    expect(existsSync(join(dir, 'share/version.new'))).toBe(false)
+  })
+
+  it('leaves the version file alone where scripts/install never wrote one', async () => {
+    release(tree(NEW))
+    expect((await run('--now')).out).toMatchObject({ ok: true })
+    expect(existsSync(join(dir, 'share'))).toBe(false)
   })
 
   it('puts the previous version back by hand with --rollback', async () => {

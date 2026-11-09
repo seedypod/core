@@ -21,6 +21,7 @@ const source = join(repo, 'scripts/login-logo')
 const ESC = /\x1b/
 
 const SUMMARY = {
+  coreVersion: 'dev@081abf0',
   unitId: 'gardyn-db753a85', model: 'gardyn 3.0', halOnline: true,
   lightOn: true, lightLevel: 80, lightFault: false,
   pumpOn: false, pumpRemainingS: null, pumpFault: false,
@@ -102,6 +103,7 @@ describe('login-stats', () => {
     expect(core.requests).toEqual(['GET /api/system/login-summary'])
     expect(r.err).toBe('')
     expect(r.facts).toEqual([
+      ['version', '-:dev@081abf0'],
       ['unit', '-:gardyn-db753a85', 'dim:gardyn 3.0'],
       ['web', '-:http://192.168.2.177:3000'],
       ['status', 'ok:core up', 'ok:hald up'],
@@ -187,7 +189,7 @@ describe('login-stats', () => {
     rmSync(join(bin, 'vcgencmd'))
     core.body = { ...SUMMARY, unitId: null, tankPct: null, captureAgeS: null, airC: null, humidityPct: null }
     const { facts } = await stats({ SSH_CONNECTION: undefined })
-    expect(facts.map(f => f[0])).toEqual(['status', 'outputs', 'board', 'sensors', 'alerts', 'free'])
+    expect(facts.map(f => f[0])).toEqual(['version', 'status', 'outputs', 'board', 'sensors', 'alerts', 'free'])
     expect(facts).toContainEqual(['status', 'ok:core up', 'ok:hald up'])
     expect(facts).toContainEqual(['board', '-:36°C'])
   })
@@ -211,6 +213,12 @@ describe('login-logo with login-stats', () => {
     expect(after.endsWith('power   \x1b[0m\x1b[38;5;114mok\x1b[0m\r\n\r\r\n\x1b[0m\x1b[?25h')).toBe(true)
   })
 
+  it('prints the version core runs, not the file a web update left behind', async () => {
+    const r = await pty()
+    expect(r.out).toContain('\x1b[46C\x1b[38;5;245mdev@081abf0')
+    expect(r.out).not.toContain('dev@abc1234')
+  })
+
   it('goes back to the logo\'s corner when the facts fit beside it', async () => {
     rmSync(root, { recursive: true })
     core.body = { halOnline: true }
@@ -230,7 +238,7 @@ describe('login-logo with login-stats', () => {
     const r = await pty({ env: { NO_COLOR: '1' } })
     expect(r.out).not.toMatch(ESC)
     expect(r.out.split('\r\n')).toEqual([
-      'seedypod dev@abc1234  http://seedypod.local:3000',
+      'seedypod dev@081abf0  http://seedypod.local:3000',
       'unit    gardyn-db753a85 · gardyn 3.0',
       'web     http://192.168.2.177:3000',
       'status  core up · hald up',
@@ -252,6 +260,7 @@ describe('login-logo with login-stats', () => {
     server.closeAllConnections()
     await new Promise(ok => server.close(ok))
     const r = await pty({ env: { NO_COLOR: '1' } })
+    // The version file stands in for core's answer.
     expect(r.out).toMatch(/^seedypod dev@abc1234 {2}http:\/\/seedypod\.local:3000\r\nweb {5}http/)
     expect(r.out).not.toContain('tank')
     expect(r.ms).toBeLessThan(4000)

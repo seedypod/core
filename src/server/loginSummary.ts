@@ -9,6 +9,8 @@ import type { Context } from './context'
 import { SENSOR_STALE_MS } from './checks'
 
 export const LoginSummary = z.object({
+  /** What core runs, which a web update changes without touching the version file scripts/install wrote. */
+  coreVersion: z.string(),
   unitId: z.string().nullable(),
   model: z.string().nullable(),
   halOnline: z.boolean(),
@@ -47,6 +49,7 @@ export function loginSummary(ctx: Context): LoginSummary {
     return !r || r.quality !== 'good' || now - Date.parse(r.ts) > SENSOR_STALE_MS
   })
   return {
+    coreVersion: ctx.version,
     unitId: snap.system?.unitId ?? null,
     model: snap.system?.model ?? null,
     halOnline: snap.online,
