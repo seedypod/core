@@ -155,7 +155,8 @@ describe('PlanPage', () => {
     search('mint')
     for (let i = 0; i < 6; i++) add('Mint')
     expect(screen.getByText('Didn’t fit: Mint — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
-    expect(screen.queryByRole('list', { name: 'Suggested moves' })).toBeNull()
+    // Medium still has room, and a herb takes the extra light.
+    expect(screen.getByRole('list', { name: 'Suggested moves' }).textContent).toBe('Allow Mint in the medium zone too (10 free) — more light than its ideal low zone, which herbs tolerate.')
     add('Mint')
     expect(screen.getByText('Didn’t fit: Mint ×2 — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
   })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getPlant } from '../catalog'
 import { planLayout, toleratedZones } from '../planner'
-import { MODELS, slotAt } from '../zones'
+import { MODELS, slotAt, slots } from '../zones'
 
 const plant = (id: string) => {
   const p = getPlant(id)
@@ -85,7 +85,7 @@ describe('suggestions', () => {
     // A basil already sits in low slot 1, so the sixth mint has nowhere to go.
     const r = planLayout({ model: 'home', plants: [{ plantId: 'mint', count: 6 }], occupied: { 1: 'basil' } })
     expect(r.unplaced[0]?.blocking).toContainEqual({ slot: 1, zone: 'low', plantId: 'basil', plantName: 'Basil', existing: true })
-    expect(r.suggestions).toHaveLength(1)
+    expect(r.suggestions.map(s => s.kind)).toEqual(['relocate', 'allow_higher'])
     const s = r.suggestions[0]
     expect(s).toMatchObject({ kind: 'relocate', slot: 1, zone: 'low', overrides: null, move: { plantId: 'basil', from: 1, toZone: 'medium', existing: true } })
     expect(s?.text).toMatch(/^Move the Basil already in pod 1 to pod \d+ \(its ideal medium zone\), then Mint fits in pod 1 \(low\)\.$/)
@@ -96,7 +96,36 @@ describe('suggestions', () => {
     expect(low).toHaveLength(6)
     const r = planLayout({ model: 'home', plants: [{ plantId: 'mint', count: 1 }, { plantId: 'basil', count: 1 }], occupied: Object.fromEntries(low.slice(1).map(n => [n, 'unknown:Weed'])), overrides: { pins: [{ slot: low[0] as number, plantId: 'basil' }] } })
     expect(r.unplaced).toMatchObject([{ plantId: 'mint', blocking: expect.arrayContaining([{ slot: low[1], zone: 'low', plantId: 'unknown:Weed', plantName: 'Weed', existing: true }]) }])
-    expect(r.suggestions).toEqual([])
+    expect(r.suggestions.filter(s => s.kind === 'relocate')).toEqual([])
+  })
+
+  it('offers a herb a brighter zone with free pods when its own is full, and the overrides carry it out', () => {
+    // Six low pods; oregano wants seven of them, while medium and high stand empty.
+    const plants = [{ plantId: 'oregano', count: 7 }]
+    const r = planLayout({ model: 'home', plants })
+    expect(r.unplaced).toMatchObject([{ plantId: 'oregano', code: 'no_space', zones: ['low'] }])
+    expect(r.suggestions).toHaveLength(1)
+    const s = r.suggestions[0]
+    expect(s).toMatchObject({ kind: 'allow_higher', plantId: 'oregano', zone: 'medium', move: null, overrides: { allowedZones: { oregano: ['low', 'medium'] } } })
+    expect(slotAt('home', s?.slot ?? 0)?.zone).toBe('medium')
+    expect(s?.text).toBe('Allow Oregano in the medium zone too (12 free) — more light than its ideal low zone, which herbs tolerate.')
+    const again = planLayout({ model: 'home', plants, overrides: s?.overrides ?? undefined })
+    expect(again.unplaced).toEqual([])
+    expect(again.assignments.filter(a => a.slotZone === 'medium')).toMatchObject([{ plantId: 'oregano', fallback: 1, reason: 'medium zone, allowed by the caller (ideal low)' }])
+  })
+
+  it('skips to the high zone when medium is full too', () => {
+    const occupied = Object.fromEntries(slots('home').filter(x => x.zone === 'medium').map(x => [x.slot, 'kale']))
+    const r = planLayout({ model: 'home', plants: [{ plantId: 'oregano', count: 7 }], occupied })
+    expect(r.suggestions.find(s => s.kind === 'allow_higher')).toMatchObject({ zone: 'high', text: expect.stringMatching(/^Allow Oregano in the high zone too \(12 free\)/), overrides: { allowedZones: { oregano: ['low', 'high'] } } })
+  })
+
+  it('never offers lettuces, leafy greens or vegetables more light: it makes them bolt', () => {
+    for (const plantId of ['butterhead', 'kale', 'celery']) {
+      const r = planLayout({ model: 'home', plants: [{ plantId, count: 13 }], overrides: { allowedZones: { [plantId]: ['medium'] } } })
+      expect(r.unplaced, plantId).toHaveLength(1)
+      expect(r.suggestions.map(s => s.kind), plantId).toEqual(['allow_lower'])
+    }
   })
 })
 
@@ -132,7 +161,10 @@ describe('caller overrides', () => {
     const one = planLayout({ model: 'home', plants: [{ plantId: 'basil', count: 13 }], overrides: { allowedZones: { basil: ['medium'] } } })
     expect(one.assignments.every(a => a.slotZone === 'medium' && a.reason === 'medium light zone')).toBe(true)
     expect(one.unplaced).toMatchObject([{ zones: ['medium'], reason: 'no free slot in the medium zone (medium 12/12 taken)' }])
-    expect(one.suggestions).toMatchObject([{ kind: 'allow_lower', zone: 'low', overrides: { allowedZones: { basil: ['medium', 'low'] } } }])
+    expect(one.suggestions).toMatchObject([
+      { kind: 'allow_lower', zone: 'low', overrides: { allowedZones: { basil: ['medium', 'low'] } } },
+      { kind: 'allow_higher', zone: 'high', overrides: { allowedZones: { basil: ['medium', 'high'] } } },
+    ])
   })
 
   it('drops the cucumber’s bottom-centre start when the caller sets its zones', () => {
