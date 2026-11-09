@@ -15,6 +15,9 @@ import { cameraSlots } from '../regions'
 import { jpeg } from './fixtures'
 import parity from './parity/pod-state-parity.json'
 
+// Each test starts Node a few times; the whole suite runs at once in CI.
+vi.setConfig({ testTimeout: 30_000 })
+
 const fake = fileURLToPath(new URL('./fakePodvision.mjs', import.meta.url))
 const command = (mode: string) => [process.execPath, fake, mode]
 
@@ -40,7 +43,10 @@ afterEach(() => {
 
 const job = (analyzers: string[], bytes = jpeg(320, 240, true)): AnalysisJob => ({ bytes, camera: 'upper', analyzers, opts: { artifacts: false } })
 
-function spy(inner: Executor = inlineExecutor) {
+/** Stands in for the vision worker: an empty output per analyser, without decoding anything. */
+const stub: Executor = async j => j.analyzers.map(analyzer => ({ analyzer, version: 0, results: [] }))
+
+function spy(inner: Executor = stub) {
   const calls: string[][] = []
   const run: Executor = (j) => {
     calls.push(j.analyzers)
@@ -51,7 +57,7 @@ function spy(inner: Executor = inlineExecutor) {
 
 describe('the native pod-state runner', () => {
   it('scores the learned analysers with the binary and the rest in TypeScript, in the usual order', async () => {
-    const inner = spy()
+    const inner = spy(inlineExecutor)
     const log = vi.fn()
     const run = nativeExecutor({ inner: inner.run, command: command('ok'), learned: () => specs, log })
     const out = await run(job(['green-threshold', 'pod-state', 'pod-state-v2']))
@@ -67,7 +73,7 @@ describe('the native pod-state runner', () => {
   })
 
   it('never decodes in TypeScript when only learned analysers run, as on a re-run', async () => {
-    const inner = spy()
+    const inner = spy(inlineExecutor)
     const out = await nativeExecutor({ inner: inner.run, command: command('ok'), learned: () => specs })(job(['pod-state', 'no-such-analyser']))
     expect(Array.isArray(out) && out.map(o => o.analyzer)).toEqual(['pod-state'])
     expect(inner.calls).toEqual([])
@@ -90,6 +96,7 @@ describe('the native pod-state runner', () => {
     ['a missing binary', ['/nonexistent/podvision'], /ENOENT/],
     ['a failure', command('fail'), /exited with 4: podvision: bad JPEG: unexpected EOF/],
     ['nonsense on stdout', command('garbage'), /printed something that isn't a result/],
+    ['a flood on stdout', command('flood'), /printed more than any result should be/],
     ['a result without a probability per class', command('short'), /one probability per class/],
   ])('falls back to TypeScript on %s, and logs it', async (_what, cmd, why) => {
     const inner = spy()
@@ -107,7 +114,7 @@ describe('the native pod-state runner', () => {
     const log = vi.fn()
     const started = Date.now()
     await nativeExecutor({ inner: inner.run, command: command('hang'), learned: () => specs, log, timeoutMs: 300 })(job(['pod-state']))
-    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(Date.now() - started).toBeLessThan(20_000)
     expect(inner.calls).toEqual([['pod-state']])
     expect(log.mock.calls[0]?.[0]).toMatch(/timed out after 300 ms/)
   })

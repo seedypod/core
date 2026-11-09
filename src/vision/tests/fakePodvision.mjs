@@ -1,5 +1,5 @@
 // A stand-in for the podvision binary in core's tests (#191): `node fakePodvision.mjs <mode> <podvision args>`.
-// ok: every pod "sprouted" at 0.6 for every model, with the model file's version; damaged, fail, hang, garbage, short: what they say.
+// ok: every pod "sprouted" at 0.6 for every model, with the model file's version; damaged, fail, hang, garbage, flood, short: what they say.
 import { readFileSync } from 'node:fs'
 import { getPriority } from 'node:os'
 
@@ -16,6 +16,7 @@ else if (mode === 'fail') {
   process.exit(4)
 }
 else if (mode === 'garbage') process.stdout.write('not json\n')
+else if (mode === 'flood') process.stdout.write('x'.repeat(5 << 20))
 else {
   const regions = JSON.parse(arg('--regions')[0])
   const models = arg('--model').map(p => JSON.parse(readFileSync(p, 'utf8')))
