@@ -302,7 +302,11 @@ mirror ([Capture analysis](ANALYSIS.md#mirror-photos-off-the-unit-opt-in))
 and a backup goes to your bucket every night.
 
 An SSH login then opens with an animated logo, the version and the unit's
-address. It runs from `/etc/profile.d/seedypod-logo.sh`, only for an interactive
+address, and beside it the unit's live facts: core and hald, uptime, light and
+pump, tank, air, temperatures, the last photo, how fresh the readings are,
+alerts, free memory and disk, and power. They come from
+`/api/system/login-summary` and the Pi itself; any that don't answer within a
+second are left out. It runs from `/etc/profile.d/seedypod-logo.sh`, only for an interactive
 login on a terminal, so `ssh host cmd`, `scp`, `sftp` and `rsync` never see it.
 Any key skips it. Terminals that don't do truecolor get a still 256-colour logo
 or one line of text; over SSH, truecolor is detected from `TERM`, by asking the

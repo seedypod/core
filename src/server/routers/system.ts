@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { SystemInfo } from '../../hardware/contract'
 import { bridgeStatus } from '../../mqtt/bridge'
 import { Check, systemChecks } from '../checks'
+import { LoginSummary, loginSummary } from '../loginSummary'
 import { publicProcedure, router } from '../trpc'
 import { summariseBootLog } from '../bootLog'
 
@@ -56,4 +57,8 @@ export const systemRouter = router({
     .meta({ openapi: { method: 'GET', path: '/healthcheck', tags: ['system'] } })
     .output(z.object({ ok: z.literal(true), ts: z.string() }))
     .query(() => ({ ok: true as const, ts: new Date().toISOString() })),
+  loginSummary: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/system/login-summary', tags: ['system'], summary: 'What the SSH login screen shows beside the logo, flat, with ages in seconds' } })
+    .output(LoginSummary)
+    .query(({ ctx }) => loginSummary(ctx)),
 })
