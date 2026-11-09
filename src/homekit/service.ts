@@ -201,7 +201,7 @@ export class HomeKitService implements HomeKitControl {
       this.published = await bridge.publishBridge({
         identity,
         dir: this.dir,
-        deps: { api: createCallerFactory(appRouter)(ctx) satisfies HomeKitApi, hal: this.o.hal, events: this.o.events, log: this.log },
+        deps: { api: createCallerFactory(appRouter)(ctx) satisfies HomeKitApi, hal: this.o.hal, events: this.o.events, stills: ctx.captures, log: this.log },
         name: bridge.hapName(this.o.store.settings.get().unitName),
         port,
         advertiser,

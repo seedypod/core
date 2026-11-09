@@ -18,7 +18,6 @@ export const cameraRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const c = await ctx.captures.capture(input.camera)
-        ctx.events.emit({ kind: 'mutation', path: 'captures' })
         return { ...c, url: `/api/captures/${c.id}.jpg` }
       }
       catch (e) {

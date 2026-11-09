@@ -75,6 +75,17 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     return c.body(body, 200, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' })
   })
 
+  // The newest stored still, for Home Assistant's generic camera (ADR 0027). Never takes a new one.
+  app.get('/api/camera/:camera/latest.jpg', async (c) => {
+    const camera = c.req.param('camera')
+    if (camera !== 'upper' && camera !== 'lower') return c.text('not found', 404)
+    const got = await ctx.captures.latest(camera)
+    if (!got) return c.text('no still yet', 404)
+    if (got.capture.path.startsWith('data:')) return c.redirect(got.capture.path)
+    const body = new Uint8Array(got.bytes).buffer as ArrayBuffer
+    return c.body(body, 200, { 'content-type': 'image/jpeg', 'cache-control': 'no-cache', 'last-modified': new Date(got.capture.ts).toUTCString() })
+  })
+
   // Dataset export (ADR-0019): a tar streamed entry by entry, so a month of stills never sits in memory.
   app.get('/api/datasets/export', (c) => {
     let w

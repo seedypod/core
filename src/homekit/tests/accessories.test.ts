@@ -35,7 +35,7 @@ function setup(simOpts: ConstructorParameters<typeof SimHal>[0] = {}) {
     return set(id, cmd)
   }
   const log: string[] = []
-  const deps: AccessoryDeps = { hap, api: caller, hal, events, log: m => log.push(m) }
+  const deps: AccessoryDeps = { hap, api: caller, hal, events, stills: core.ctx.captures, log: m => log.push(m) }
   stops.push(() => void core.stop())
   return { hal, events, caller, deps, writes, log, light: core.ctx.light }
 }

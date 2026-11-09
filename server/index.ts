@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { arch, hostname } from 'node:os'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { latestStill } from '../src/camera/captures'
 import { FsSink } from '../src/camera/fsSink'
 import { RestoreClient, restoreCommand } from '../src/backup/restore'
 import { BackupService } from '../src/backup/service'
@@ -70,7 +71,7 @@ const update = new UpdateClient({ command: updateCommand(), workDir: process.env
 const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA_DIR, 'homekit') })
 // Core-level Home Assistant bridge (ADR-0013): dormant until settings.mqttUrl is set; reconnects on settings change.
 // System › Status reads its state, and the last connect error, through the context.
-const haBridge = superviseBridge(() => connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim' }), events)
+const haBridge = superviseBridge(() => connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim', stills: camera => latestStill(store, mirror, camera) }), events)
 const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, update, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
 
 const { app, injectWebSocket } = createApp({ ctx: core.ctx, staticRoot: './web/dist' })

@@ -5,7 +5,8 @@
  */
 import type { Bridge } from 'hap-nodejs'
 import type { Identity } from './identity'
-import type { AccessoryDeps, BuiltAccessory, Hap } from './accessories/common'
+import { buildCamera } from './accessories/camera'
+import type { AccessoryDeps, BuiltAccessory, Camera, Hap } from './accessories/common'
 import { buildLight } from './accessories/light'
 import { buildPump } from './accessories/pump'
 import { buildSensors } from './accessories/sensors'
@@ -59,6 +60,14 @@ const ACCESSORIES: ReadonlyArray<{ id: string, name: string, build: (d: Accessor
   { id: 'sensors', name: 'Sensors', build: buildSensors },
 ]
 
+const CAMERA_NAMES: Record<Camera, string> = { upper: 'Upper camera', lower: 'Lower camera' }
+
+/** The fixed accessories, then one per camera hald reports (both until it has reported). */
+function accessoriesFor(d: AccessoryDeps): ReadonlyArray<{ id: string, name: string, build: (d: AccessoryDeps) => BuiltAccessory }> {
+  const cameras = d.hal.snapshot().system?.caps.cameras ?? ['upper', 'lower']
+  return [...ACCESSORIES, ...cameras.map(cam => ({ id: `camera_${cam}`, name: CAMERA_NAMES[cam], build: (dd: AccessoryDeps) => buildCamera(cam, dd) }))]
+}
+
 /** The accessory tree. UUIDs come from the username, so they stay put across restarts. */
 export function buildBridge(o: Pick<BridgeOptions, 'identity' | 'name' | 'version'> & { deps: AccessoryDeps }): { bridge: Bridge, stops: Array<() => void> } {
   const { Accessory, Bridge, Characteristic, Service, uuid } = o.deps.hap
@@ -71,7 +80,7 @@ export function buildBridge(o: Pick<BridgeOptions, 'identity' | 'name' | 'versio
     .setCharacteristic(Characteristic.FirmwareRevision, firmware(o.version))
   const stops: Array<() => void> = []
   try {
-    for (const a of ACCESSORIES) {
+    for (const a of accessoriesFor(o.deps)) {
       const built = a.build(o.deps)
       stops.push(built.stop)
       const acc = new Accessory(a.name, uuid.generate(`seedypod:${username}:${a.id}`))
@@ -80,6 +89,7 @@ export function buildBridge(o: Pick<BridgeOptions, 'identity' | 'name' | 'versio
         .setCharacteristic(Characteristic.Model, a.name)
         .setCharacteristic(Characteristic.SerialNumber, `${username}-${a.id}`)
       for (const s of built.services) acc.addService(s)
+      for (const c of built.controllers ?? []) acc.configureController(c)
       bridge.addBridgedAccessory(acc)
     }
   }

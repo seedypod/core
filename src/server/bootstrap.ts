@@ -89,7 +89,8 @@ export function createCore(o: CoreOptions): Core {
   })
   const sink = o.sink ?? new MemorySink()
   const analysis = new AnalysisService({ store: o.store, sink, events, executor: o.analysisExecutor })
-  const captures = new CaptureService({ hal: o.hal, store: o.store, sink, now: o.now, minBytes: o.captureMinBytes, analysis })
+  // Scheduled stills too, so the UI and Home Assistant's camera pick them up.
+  const captures = new CaptureService({ hal: o.hal, store: o.store, sink, now: o.now, minBytes: o.captureMinBytes, analysis, onStored: () => events.emit({ kind: 'mutation', path: 'captures' }) })
   // The light's single owner: manual > Autopilot > schedule (ADR-0020).
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })

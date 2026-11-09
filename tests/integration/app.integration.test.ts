@@ -14,7 +14,7 @@ let hal: SimHal
 beforeAll(async () => {
   hal = new SimHal({ tickMs: 0 })
   const events = createEventBus()
-  const core = createCore({ hal, store: new MemoryStore(), events, version: 'test' })
+  const core = createCore({ hal, store: new MemoryStore(), events, version: 'test', captureMinBytes: 1 })
   const { app, injectWebSocket } = createApp({ ctx: core.ctx })
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' })
   injectWebSocket(server)
@@ -36,6 +36,19 @@ describe('core HTTP surface', () => {
     const s = await r.json() as { level: number, remainingS: number }
     expect(s.level).toBe(30)
     expect(s.remainingS).toBe(30)
+  })
+
+  it('serves each camera\'s newest stored still at a fixed URL, and nothing before the first', async () => {
+    expect((await fetch(`${base}/api/camera/lower/latest.jpg`)).status).toBe(404)
+    expect((await fetch(`${base}/api/camera/side/latest.jpg`)).status).toBe(404)
+    const taken = await fetch(`${base}/api/camera/lower/capture`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(r => r.json()) as { url: string, ts: string }
+    const r = await fetch(`${base}/api/camera/lower/latest.jpg`)
+    expect(r.status).toBe(200)
+    expect(r.headers.get('content-type')).toBe('image/jpeg')
+    expect(r.headers.get('cache-control')).toBe('no-cache')
+    expect(r.headers.get('last-modified')).toBe(new Date(taken.ts).toUTCString())
+    const byId = await fetch(`${base}${taken.url}`).then(x => x.arrayBuffer())
+    expect(Buffer.compare(Buffer.from(await r.arrayBuffer()), Buffer.from(byId))).toBe(0)
   })
 
   it('serves the OpenAPI document', async () => {

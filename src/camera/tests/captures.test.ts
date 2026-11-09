@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { MemoryStore } from '../../store/memory'
-import { CaptureService, isWholeJpeg, MemorySink } from '../captures'
+import { CaptureService, isWholeJpeg, latestStill, MemorySink } from '../captures'
 
 /** A frame with both markers, as hald sends. */
 function frame(len = 2048) {
@@ -44,6 +44,31 @@ describe('CaptureService', () => {
     const svc = new CaptureService({ hal, store, sink: new MemorySink(), minBytes: 1024 })
     await expect(svc.capture('upper')).rejects.toThrow(/no usable image/)
     expect(store.alerts.list({ activeOnly: true })[0]?.kind).toBe('camera_missing')
+  })
+
+  it('latest is the newest stored still per camera, without capturing, and every stored still is announced', async () => {
+    const store = new MemoryStore()
+    const hal = new SimHal({ tickMs: 0 })
+    const take = vi.fn(async () => frame())
+    hal.captureStill = take
+    let t = 0
+    const stored: string[] = []
+    const sink = new MemorySink()
+    const svc = new CaptureService({ hal, store, sink, minBytes: 1024, now: () => new Date(t), onStored: c => void stored.push(c.id) })
+    expect(await svc.latest('upper')).toBeNull()
+    await svc.capture('upper')
+    t = 1000
+    const newest = await svc.capture('upper')
+    await svc.capture('lower')
+    take.mockClear()
+    const got = await svc.latest('upper')
+    expect(got?.capture.id).toBe(newest.id)
+    expect(got?.bytes.byteLength).toBe(2048)
+    expect(take).not.toHaveBeenCalled()
+    expect(stored).toHaveLength(3)
+    expect(stored[1]).toBe(newest.id)
+    await sink.remove(newest.path)
+    expect(await latestStill(store, sink, 'upper')).toBeNull()
   })
 
   it('stores, serves and prunes captures', async () => {
