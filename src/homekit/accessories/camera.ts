@@ -49,16 +49,22 @@ export function snapshotDelegate(camera: Camera, d: Pick<AccessoryDeps, 'api' | 
     return fresh
   }
 
-  let served = false
+  // The first request, and every change of outcome, so the journal shows what Home is getting.
+  let logged: string | null = null
+  const note = (outcome: string, line: string) => {
+    if (outcome !== logged) d.log(`homekit: ${camera} camera: ${line}`)
+    logged = outcome
+  }
   return {
-    handleSnapshotRequest(_request, callback) {
+    handleSnapshotRequest(request, callback) {
+      const started = now()
+      const size = `${request.width}x${request.height}`
       snapshot().then((b) => {
-        // Once per run: shows in the journal that Home has found this camera.
-        if (!served) d.log(`homekit: ${camera} camera: first snapshot served`)
-        served = true
+        note('served', `snapshot ${size} served ${b.byteLength} bytes in ${now() - started} ms`)
         callback(undefined, b)
       }, (e: unknown) => {
-        if (e !== RESOURCE_DOES_NOT_EXIST) d.log(`homekit: ${camera} snapshot failed: ${(e as Error).message}`)
+        if (e === RESOURCE_DOES_NOT_EXIST) note('none', `snapshot ${size} found no stored still (${now() - started} ms)`)
+        else note(`failed: ${(e as Error).message}`, `snapshot ${size} failed: ${(e as Error).message} (${now() - started} ms)`)
         callback(RESOURCE_DOES_NOT_EXIST)
       })
     },

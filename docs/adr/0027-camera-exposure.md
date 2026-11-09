@@ -126,10 +126,19 @@ contention reasons.
   pairing in the **bridge's own room**, which is often "Default Room" even when
   every earlier accessory was moved. Owners move the cameras, or set the
   bridge's room first (Home → Settings → Hubs & Bridges → the bridge →
-  Room). HAP has no way to set a room. At publish, core logs the bridged
-  accessories (`homekit: bridged …`) and, once per run, each camera's first
-  snapshot (`homekit: <camera> camera: first snapshot served`). A camera that
-  never logs one hasn't been shown in Home.
+  Room). HAP has no way to set a room.
+- What Home asks for shows in the journal. Each line is logged the first time
+  and again whenever the outcome changes:
+  - At publish: `homekit: bridged …`.
+  - Every `POST /resource`, with the accessory, size, reason and HTTP status
+    or byte count: `homekit: image request for Upper camera, 640x360, reason 0: 201813 bytes in 160 ms`.
+    It includes refusals hap-nodejs makes before core sees the request: 404
+    for no camera, 207/-70412 while Home has the camera's streaming off.
+  - The camera's own answer: `homekit: upper camera: snapshot 640x360 served …`,
+    `… found no stored still`, or `… failed: …`.
+  - Home switching a camera's streaming: `homekit: Upper camera: Home turned streaming off, so its snapshots are refused`.
+
+  No `image request` line at all means Home never asked.
 - The cameras stay bridged. Bridged cameras work in Home: Homebridge bridges
   them by default, and its "unbridge" option exists only so a slow snapshot
   can't stall the other accessories. Here a snapshot is a file read and never
