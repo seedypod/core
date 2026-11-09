@@ -20,6 +20,7 @@ vi.mock('@/src/utils/trpc', async () => {
   const { planLayout, sowingPlan } = await import('@/src/plants/planner')
   const { MODELS, slots, zoneCounts } = await import('@/src/plants/zones')
   type Model = 'home' | 'studio'
+  type PlanOverrides = Parameters<typeof planLayout>[0]['overrides']
   const mutation = (fn: (i: unknown) => void, data?: () => unknown) => ({
     useMutation: (o?: { onSuccess?: () => void }) => ({
       isPending: false,
@@ -39,12 +40,12 @@ vi.mock('@/src/utils/trpc', async () => {
           calls.catalog(i)
           return { data: { plants: [...searchPlants(i as Parameters<typeof searchPlants>[0]).slice(0, 12), ...state.custom] } }
         } },
-        layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[] }) => {
+        layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[], overrides?: PlanOverrides }) => {
           calls.layout(i)
           const occupied = Object.fromEntries(state.pods.filter(p => p.status !== 'empty').map(p => [p.slot, 'planted']))
-          return { data: planLayout({ model: i.model, plants: i.plants, occupied }) }
+          return { data: planLayout({ model: i.model, plants: i.plants, occupied, overrides: i.overrides }) }
         } },
-        sowing: { useQuery: (i: { plants: { plantId: string, count: number }[], mode: 'staggered' | 'batch' }) => ({ data: sowingPlan(i.plants, new Date('2026-11-02T00:00:00Z'), i.mode) }) },
+        sowing: { useQuery: (i: { plants: { plantId: string, count: number }[], mode: 'staggered' | 'batch', start?: string }) => ({ data: sowingPlan(i.plants, new Date(i.start ?? '2026-11-02T00:00:00Z'), i.mode) }) },
         plans: { useQuery: () => ({ data: state.plans }) },
         savePlan: mutation(calls.save),
         applyPlan: mutation(calls.apply, () => state.applied),
@@ -195,5 +196,24 @@ describe('PlanPage', () => {
     expect((edit.getByLabelText('Name') as HTMLInputElement).value).toBe('Okra')
     fireEvent.click(edit.getByRole('button', { name: 'Delete' }))
     expect(calls.removePlant).toHaveBeenCalledWith({ id: 'okra' })
+  })
+
+  it('opens a saved plan (e.g. one an agent saved) with its layout, overrides and schedule, and updates it in place', () => {
+    const overrides = { pins: [{ slot: 4, plantId: 'basil' }] }
+    state.plans = [{ id: 'mcp-1', name: 'Gardyn order', model: 'studio', mode: 'staggered', appliedAt: null, start: '2026-10-01', layout: { model: 'studio', assignments: [{ slot: 4 }, { slot: 7 }], unplaced: [], free: [], overrides }, request: [{ plantId: 'basil', count: 2 }] }]
+    render(<PlanPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+    expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 2 }], respectExisting: true, overrides })
+    expect(screen.getByText('High 5')).toBeTruthy()
+    expect((screen.getByLabelText('Plan name') as HTMLInputElement).value).toBe('Gardyn order')
+    expect(screen.getAllByText(/sow 2026-10-01 → harvest/)).toHaveLength(1)
+    expect(screen.getByTitle(/^pinned to pod 4 by the caller/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Update plan' }))
+    expect(calls.save).toHaveBeenCalledWith({ id: 'mcp-1', name: 'Gardyn order', model: 'studio', mode: 'staggered', plants: [{ plantId: 'basil', count: 2 }], start: '2026-10-01', overrides })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    add('Basil')
+    expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 1 }], respectExisting: true })
+    expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy()
   })
 })

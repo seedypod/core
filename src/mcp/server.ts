@@ -135,9 +135,39 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.planner.bestSpots({ model: i.model, plantId: i.plantId, limit: 5 })))
 
   server.registerTool('save_plan', {
-    description: 'Compute and save a layout plus a staggered sowing schedule (Gardyn succession guidance), with the same zone summary, unplaced reasons and suggestions as plan_layout. Pass the overrides you settled on with plan_layout. Does not touch the pods until apply_plan.',
-    inputSchema: { id: z.string(), name: z.string(), model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), mode: z.enum(['staggered', 'batch']).optional(), overrides: Overrides.optional().describe(OVERRIDES_HELP) },
-  }, async i => text(await caller.planner.savePlan({ id: i.id, name: i.name, model: i.model, plants: i.plants, mode: i.mode ?? 'staggered', overrides: i.overrides })))
+    description: 'Compute and save a layout plus a staggered sowing schedule (Gardyn succession guidance), with the same zone summary, unplaced reasons and suggestions as plan_layout. Pass the overrides you settled on with plan_layout. Saving to an existing id replaces that plan (update_plan changes only some fields). It opens in the web planner\'s saved plans. Does not touch the pods until apply_plan.',
+    inputSchema: { id: z.string(), name: z.string(), model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), mode: z.enum(['staggered', 'batch']).optional(), start: z.string().optional().describe('First sow date, YYYY-MM-DD; defaults to today.'), overrides: Overrides.optional().describe(OVERRIDES_HELP) },
+  }, async i => text(await caller.planner.savePlan({ id: i.id, name: i.name, model: i.model, plants: i.plants, mode: i.mode ?? 'staggered', start: i.start, overrides: i.overrides })))
+
+  server.registerTool('match_order', {
+    description: 'Match a pasted order to the plant catalog in one call. Give the order lines as they read ("Genovese Basil x2", "3 × Butterhead Lettuce yCube", "Mint (2)"); a single pasted block is split on new lines, commas and semicolons. Returns matched lines (plantId, count, confidence 0–1 and close alternatives — check any under ~0.8 with the user), unmatched lines with suggestions (pick one, or add the plant with add_plant), skipped lines (no name), and plants: the matched counts summed per plantId, ready to pass to plan_layout or save_plan.',
+    inputSchema: { lines: z.array(z.string().max(500)).min(1).max(200) },
+  }, async i => text(await caller.planner.matchOrder(i)))
+
+  server.registerTool('list_plans', {
+    description: 'Saved plans, newest first: id, name, model, mode, the plants requested, pods placed, how many did not fit, the first sow date, and when it was applied (null if never).',
+    inputSchema: {},
+  }, async () => text((await caller.planner.plans()).map(p => ({ id: p.id, name: p.name, model: p.model, mode: p.mode, plants: p.request, placed: p.layout.assignments.length, unplaced: p.layout.unplaced.length, start: p.start, appliedAt: p.appliedAt, updatedAt: p.updatedAt }))))
+
+  server.registerTool('get_plan', {
+    description: 'One saved plan in full: request, layout (assignments, zone summary, unplaced reasons, suggestions, overrides), sowing schedule and start date — what the web planner shows when the plan is opened.',
+    inputSchema: { id: z.string() },
+  }, async i => text(await caller.planner.plan(i)))
+
+  server.registerTool('update_plan', {
+    description: 'Change a saved plan and recompute its layout and sowing around the pods planted now. Only the fields given change; its start date and overrides stay as saved unless given (overrides: null clears them). plants replaces the whole list. Does not touch the pods until apply_plan.',
+    inputSchema: {
+      id: z.string(),
+      name: z.string().min(1).max(60).optional(),
+      model: z.enum(['home', 'studio']).optional(),
+      plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })).optional(),
+      mode: z.enum(['staggered', 'batch']).optional(),
+      start: z.string().optional().describe('First sow date, YYYY-MM-DD.'),
+      overrides: Overrides.nullable().optional().describe(OVERRIDES_HELP),
+    },
+  }, async i => text(await caller.planner.updatePlan(i)))
+
+  server.registerTool('remove_plan', { description: 'Delete a saved plan by id. Pods it was applied to keep what was written on them.', inputSchema: { id: z.string() } }, async i => text(await caller.planner.removePlan(i)))
 
   server.registerTool('apply_plan', {
     description: 'Write a saved plan onto the pods: first-wave pods are marked seeded today, later waves get their sow date and a reminder fires when it arrives. Overwrites the listed pods — confirm with the user first.',
