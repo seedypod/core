@@ -263,8 +263,10 @@ and points core at it; elsewhere, core starts on the simulator until you set
 `HAL_MQTT_URL`, `HAL_UNIT_ID` and `HAL_HTTP_URL` in
 `/etc/systemd/system/seedypod-core.service` ([Which Pi](#which-pi)). Core
 listens on `:3000`, and on a Raspberry Pi the installer forwards port 80 to it.
-Open `http://seedypod.local/`. `:3000` keeps working, and it's still what the
-iOS app uses.
+Open `http://seedypod.local/`. `http://seedypod.local:3000/` keeps working, and
+it's still what the iOS app uses. It's also the address wherever the forward is
+off: another machine, `--no-port80`, or port 80 already taken. The installer
+ends by printing the address it set up.
 
 The forward is one nftables rule loaded by `seedypod-port80.service`, so it
 comes back after a reboot, and core still sees each client's own address, which
@@ -318,7 +320,7 @@ acknowledges any latched fault; keep holding). Core opens an open hotspot named
 2. Open `http://10.42.0.1:3000/wifi`, pick your network, enter its password,
    **Join**.
 3. The unit leaves the hotspot and joins your network. Rejoin your network
-   on the phone and open `http://seedypod.local:3000/`.
+   on the phone and open `http://seedypod.local/`.
 
 If the password was wrong, the hotspot comes back and the Wi-Fi screen says
 why. On your LAN, **Settings → Wi-Fi** does the same without the button.

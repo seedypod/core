@@ -170,7 +170,7 @@ analysers, and can be made primary.
 2. Run a worker. `scripts/analysis-worker.mjs` is a reference you can copy:
 
    ```sh
-   SEEDYPOD_URL=http://seedypod.local:3000 \
+   SEEDYPOD_URL=http://seedypod.local \
    SEEDYPOD_INGEST_TOKEN=<token> \
    node scripts/analysis-worker.mjs --id my-model --version 1 --limit 48
    ```

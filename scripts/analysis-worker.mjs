@@ -6,7 +6,7 @@
 // Swap `score` for anything: a PlantCV pipeline, an ONNX model, a GPU job.
 //
 // Usage:
-//   SEEDYPOD_URL=http://seedypod.local:3000 SEEDYPOD_INGEST_TOKEN=… \
+//   SEEDYPOD_URL=http://seedypod.local SEEDYPOD_INGEST_TOKEN=… \
 //   [SEEDYPOD_API_KEY=…] node scripts/analysis-worker.mjs [--limit 48] [--id exg-strict] [--version 1]
 import { decode } from 'jpeg-js'
 
