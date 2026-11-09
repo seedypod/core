@@ -233,8 +233,8 @@ or re-run.
 ### Train a better one
 
 Training lives in [seedypod/training](https://github.com/seedypod/training):
-export a dataset with photos after labelling pods ([Label pods](#label-pods)),
-lands, then
+label pods on the Analysis screen ([Label pods](#label-pods)), export a
+dataset with photos, then
 
 ```sh
 uv run --locked python scripts/train.py --pod seedypod.local --version 2 --revision my-model-2026-12
