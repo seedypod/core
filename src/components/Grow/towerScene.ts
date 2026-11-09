@@ -8,7 +8,7 @@ import type * as T from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { podZones, ZONE_COLOR } from './lightZones'
 import { buildPlant, createKit } from './plants'
-import { plantForm, plantScale, podPlaces, towerShape, type PlantForm, type PodStatus } from './towerLayout'
+import { PLANNED_FORM, plantForm, plantScale, podPlaces, towerShape, type PlantForm, type PodStatus } from './towerLayout'
 
 export type Three = typeof T
 
@@ -73,6 +73,8 @@ export interface PodState {
   statusSince?: string | null
   /** Harvest outlook (ADR-0022). */
   harvest?: PodHarvest | null
+  /** A pod a plan puts a plant in, not yet sown: drawn as the grown plant, so the tower previews the plan. */
+  planned?: boolean
 }
 
 /** What the core's harvest outlook says about a pod, as the views use it. */
@@ -303,8 +305,9 @@ export function createTower(THREE: Three, podCount: number, palette: TowerPalett
     for (const [slot, pod] of pods) {
       const s = bySlot.get(slot)
       const status = s?.status ?? 'empty'
-      const scale = plantScale(status, s?.green, s?.ageDays)
-      const form = plantForm(status, scale)
+      // A planned pod shows its plant grown, at the stage's own size.
+      const scale = s?.planned ? STAGE_SCALE[PLANNED_FORM] : plantScale(status, s?.green, s?.ageDays)
+      const form = s?.planned ? PLANNED_FORM : plantForm(status, scale)
       grow(slot, pod, s?.plant ?? null, form, status === 'attention')
       pod.plant.userData.form = form
       pod.plant.visible = form !== 'none'

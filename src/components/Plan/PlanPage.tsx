@@ -2,7 +2,8 @@ import { Box, LayoutGrid, Minus, Pencil, Plus, Sprout, Trash2 } from 'lucide-rea
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
-import type { PodStatus } from '@/src/components/Grow/towerLayout'
+import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
+import { PLANNED_FORM, type PodStatus } from '@/src/components/Grow/towerLayout'
 import type { PodState } from '@/src/components/Grow/towerScene'
 import { TowerView } from '@/src/components/Grow/TowerView'
 import { Badge, Button, Card, CardHeader, GhostIcon, SectionLabel } from '@/src/components/ds/core'
@@ -47,21 +48,27 @@ interface Slot { slot: number, zone: string | null }
 interface Assignment { slot: number, plantName: string, reason: string, fallback: number }
 interface Planted { slot: number, status: PodStatus, plant: string | null }
 
-/** The flat grid of slots, tinted by zone: planned plants upright, planted ones italic, fallbacks outlined. */
-function PlanGrid({ cols, slots, bySlot, existing }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, existing: Map<number, string> }) {
+/** The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), fallbacks outlined. */
+function PlanGrid({ cols, slots, bySlot, planted }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted> }) {
   return (
     <div data-testid="plan-grid" className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
       {slots.map((s) => {
         const a = bySlot.get(s.slot)
-        const ex = existing.get(s.slot)
+        const ex = planted.get(s.slot)
         const z = (s.zone ?? 'medium') as Zone
+        const plant = a?.plantName ?? ex?.plant ?? null
         return (
-          <div key={s.slot} className={cn('flex min-h-[46px] flex-col justify-center rounded-[var(--radius-ctl)] border px-2 py-1', a?.fallback ? 'outline outline-1 outline-[var(--status-warn)]' : '')} style={zoneStyle(z)} title={a?.reason ?? ex ?? `${ZONE_LABEL[z]} light`}>
+          <div key={s.slot} data-slot={s.slot} className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', a?.fallback ? 'outline outline-1 outline-[var(--status-warn)]' : '')} style={zoneStyle(z)} title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}>
             <div className="flex items-center justify-between font-mono text-[10px] text-fg-3">
               <span>{s.slot}</span>
               <span>{z === 'medium' ? 'med' : z}</span>
             </div>
-            <div className={cn('truncate text-[12px] leading-tight', a ? 'text-fg' : ex ? 'text-fg-2 italic' : 'text-fg-3')}>{a?.plantName ?? ex ?? ''}</div>
+            {plant && (
+              <div className="flex min-w-0 items-center gap-1.5">
+                <PlantThumb plant={plant} stage={a ? PLANNED_FORM : podForm(ex ?? { status: 'empty' })} size={24} />
+                <span className={cn('min-w-0 truncate text-[12px] leading-tight', a ? 'text-fg' : 'text-fg-2 italic')}>{plant}</span>
+              </div>
+            )}
           </div>
         )
       })}
@@ -71,13 +78,13 @@ function PlanGrid({ cols, slots, bySlot, existing }: { cols: number, slots: Slot
 
 /**
  * The same slots on the 3D tower, collars coloured by zone. A planned pod shows
- * its plant as a seedling, with why it sits there in its callout; a planted one
- * keeps its own state.
+ * its plant grown, with why it sits there in its callout; a planted one keeps
+ * its own state.
  */
 export function planPods(slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>): PodState[] {
   return slots.map((s): PodState => {
     const a = bySlot.get(s.slot)
-    if (a) return { slot: s.slot, status: 'seeded', plant: a.plantName, harvest: { state: 'unknown', window: null, cover: null, targetCover: 0, daysToReady: null, daysLeft: null, reason: `Planned: ${a.reason}.` } }
+    if (a) return { slot: s.slot, status: 'seeded', plant: a.plantName, planned: true, harvest: { state: 'unknown', window: null, cover: null, targetCover: 0, daysToReady: null, daysLeft: null, reason: `Planned: ${a.reason}.` } }
     return planted.get(s.slot) ?? { slot: s.slot, status: 'empty', plant: null }
   })
 }
@@ -129,7 +136,6 @@ export function PlanPage() {
   const free = zones.data ? zones.data.slots.length - (pods.data ?? []).filter(p => p.status !== 'empty' && p.slot <= zones.data.slots.length).length : 0
   const bySlot = new Map((layout.data?.assignments ?? []).map(a => [a.slot, a]))
   const planted = new Map((pods.data ?? []).filter(p => p.status !== 'empty').map(p => [p.slot, { slot: p.slot, status: p.status, plant: p.plant }]))
-  const existing = new Map([...planted].map(([slot, p]) => [slot, p.plant ?? '']))
   const bump = (id: string, d: number) => setPicks(p => ({ ...p, [id]: Math.max(0, (p[id] ?? 0) + d) }))
   const shown: View = noWebGL ? '2d' : view
   const fallbacks = (layout.data?.assignments ?? []).some(a => a.fallback)
@@ -172,7 +178,7 @@ export function PlanPage() {
               </div>
             )}
           />
-          {zones.data && shown === '2d' && <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} existing={existing} />}
+          {zones.data && shown === '2d' && <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} />}
           {zones.data && shown === '3d' && (
             <div className="mt-3">
               <TowerView
@@ -193,7 +199,7 @@ export function PlanPage() {
           <p className="mt-2 text-[12px] text-fg-3">
             {shown === '2d'
               ? `Italic = already planted.${fallbacks ? ' Outlined pods sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`
-              : `Planned pods show as seedlings; click one for why it sits there.${fallbacks ? ' Some sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`}
+              : `Planned pods show their plant grown, ringed by light zone; click one for why it sits there.${fallbacks ? ' Some sit one zone lower than ideal — Gardyn’s rule when the ideal zone is full.' : ''}`}
           </p>
         </Card>
 

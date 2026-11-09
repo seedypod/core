@@ -97,6 +97,10 @@ describe('tower scene', () => {
     tower.update({ ...state, pods: [{ slot: 3, status: 'seeded', plant: 'Dill' }] })
     expect(podGroup(tower, 3).children[2]?.userData.form).toBe('sprout')
     expect(podGroup(tower, 3).children[2]?.visible).toBe(true)
+    // A planned pod previews its plant grown, at the stage's own size.
+    tower.update({ ...state, pods: [{ slot: 3, status: 'seeded', plant: 'Dill', planned: true }] })
+    expect(podGroup(tower, 3).children[2]?.userData.form).toBe('full')
+    expect(podGroup(tower, 3).children[2]?.scale.x).toBeCloseTo(1)
     tower.update(state)
     tower.update({ ...state, selected: 12 })
     expect(collarColor(tower, 12)).toBe(DARK_PALETTE.highlight)

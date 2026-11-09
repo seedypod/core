@@ -125,6 +125,9 @@ export function plantForm(status: PodStatus, scale: number): PlantForm {
   return scale < 0.6 ? 'young' : 'bush'
 }
 
+/** The stage a planned pod's plant is drawn at: full grown, so a plan shows what will stand in each pod. */
+export const PLANNED_FORM: Exclude<PlantForm, 'none'> = 'full'
+
 export function ageDays(plantedAt: string | null | undefined, now: Date = new Date()): number | null {
   if (!plantedAt) return null
   const t = Date.parse(plantedAt)

@@ -267,7 +267,7 @@ describe('PlanPage', () => {
     expect(planned.filter(p => p.plant === 'Mint').length).toBeGreaterThan(0)
     expect(planned.length).toBeLessThan(20)
     expect(pods.filter(p => p.status === 'empty')).toHaveLength(30 - 1 - planned.length)
-    expect(planned.every(p => p.harvest?.state === 'unknown' && /^Planned: .+\.$/.test(p.harvest.reason))).toBe(true)
+    expect(planned.every(p => p.planned && p.harvest?.state === 'unknown' && /^Planned: .+\.$/.test(p.harvest.reason))).toBe(true)
     expect(planned.some(p => p.harvest?.reason.includes('one zone lower'))).toBe(true)
     expect(screen.getByText(/^Didn’t fit: Mint/)).toBeTruthy()
     expect(screen.getByText(/click one for why it sits there\. Some sit one zone lower than ideal/)).toBeTruthy()
@@ -276,10 +276,36 @@ describe('PlanPage', () => {
     expect(screen.getByText(/Outlined pods sit one zone lower than ideal/)).toBeTruthy()
   })
 
+  it('hands the tower each planned plant by name, to draw grown in its slot, beside the planted ones', () => {
+    state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
+    render(<PlanPage />)
+    search('basil')
+    add('Basil')
+    search('kale')
+    add('Kale')
+    const planned = towerPods().filter(p => p.planned)
+    expect(planned.map(p => p.plant).sort()).toEqual(['Basil', 'Kale'])
+    expect(towerPods().find(p => p.slot === 1)).toEqual({ slot: 1, status: 'growing', plant: 'Mint' })
+  })
+
+  it('pictures and names each plant in its slot on the 2D grid', () => {
+    state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
+    render(<PlanPage />)
+    flat()
+    search('basil')
+    add('Basil')
+    const grid = screen.getByTestId('plan-grid')
+    const filled = [...grid.children].filter(c => c.querySelector('[data-testid="plant-thumb"]'))
+    expect(filled.map(c => c.textContent?.replace(/^\d+(high|med|low)/, '')).sort()).toEqual(['Basil', 'Mint'])
+    const mint = grid.querySelector('[data-slot="1"]') as HTMLElement
+    expect(within(mint).getByText('Mint').className).toContain('italic')
+    expect([...grid.children].filter(c => !c.querySelector('[data-testid="plant-thumb"]'))).toHaveLength(28)
+  })
+
   it('leaves unplanned pods empty on the tower', () => {
     render(<PlanPage />)
     expect(towerPods().every(p => p.status === 'empty' && p.plant === null)).toBe(true)
-    expect(screen.getByText('Planned pods show as seedlings; click one for why it sits there.')).toBeTruthy()
+    expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there.')).toBeTruthy()
   })
 
   it('pins a pod’s callout and unpins it, and forgets it on another model', () => {
