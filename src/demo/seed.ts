@@ -9,7 +9,8 @@ import { planLayout, sowingPlan } from '../plants/planner'
 import type { AnalysisRow, Store, TelemetryPoint } from '../store/types'
 import { exgOtsu, greenThreshold } from '../vision/analyzer'
 
-const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian Kale', 'Cherry Tomato', 'Thai Basil', 'Mint', 'Swiss Chard', 'Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
+/** Catalog names, so the planner and the plant pages know every seeded pod. */
+const PLANTS = ['Butterhead', 'Basil', 'Arugula', 'Kale', 'Red Cherry Tomato', 'Sweet Thai Basil', 'Mint', 'Red Swiss Chard', 'Green Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
 
 export function seedDemo(store: Store, hal: HalClient, now = new Date()): void {
   const day = 86_400_000
