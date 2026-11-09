@@ -57,6 +57,8 @@ const DL = path.join(P.work, 'downloads')
 const META = path.join(P.previous, 'meta.json')
 // Never part of a release: core's data, the installed dependencies, pnpm's store and local env files.
 const KEEP = name => name === 'data' || name === 'node_modules' || name === '.pnpm-store' || name.startsWith('.env')
+// The SSH login screen's files under P.share (scripts/install's install_login_logo).
+const LOGIN_FILES = ['login-logo', 'login-stats', 'logo.frames']
 const REQUIRED = ['server/dist/index.js', 'web/dist/index.html', 'package.json', 'pnpm-lock.yaml', '.git-info', 'scripts/seedypod-update.cjs', 'scripts/seedypod-restore.cjs']
 // A Pi Zero W can take minutes to start core, more with migrations to run.
 const HEALTH_TIMEOUT_S = Number(env('SEEDYPOD_UPDATE_HEALTH_TIMEOUT') ?? 600)
@@ -430,6 +432,29 @@ function pinVersion() {
   }
 }
 
+/**
+ * Refreshes the SSH login screen's scripts from the checked release, as scripts/install
+ * placed them, so a web update brings login changes too. Only where install put them
+ * there; a rollback keeps the newer ones, which fall back quietly when core lacks a route.
+ */
+function refreshLogin(from) {
+  if (!fs.existsSync(path.join(P.share, 'login-logo'))) return
+  for (const n of LOGIN_FILES) {
+    const src = path.join(from, n)
+    const dest = path.join(P.share, n)
+    try {
+      if (!fs.existsSync(src)) continue
+      fs.copyFileSync(src, `${dest}.new`)
+      fs.chmodSync(`${dest}.new`, n === 'logo.frames' ? 0o644 : 0o755)
+      if (isRoot) fs.chownSync(`${dest}.new`, 0, 0)
+      fs.renameSync(`${dest}.new`, dest)
+    }
+    catch (e) {
+      log(`couldn't update ${dest}: ${e.message}`)
+    }
+  }
+}
+
 // ---- locking -------------------------------------------------------------------------------
 
 function alive(pid) {
@@ -666,6 +691,10 @@ async function apply() {
   const helpers = path.join(DL, 'helpers')
   fs.mkdirSync(helpers, { recursive: true, mode: 0o700 })
   for (const n of ['seedypod-update.cjs', 'seedypod-restore.cjs']) fs.copyFileSync(path.join(P.next, 'scripts', n), path.join(helpers, n))
+  for (const n of LOGIN_FILES) {
+    const from = path.join(P.next, 'scripts/login-logo', n)
+    if (fs.existsSync(from)) fs.copyFileSync(from, path.join(helpers, n))
+  }
   const halOnline = !!(await coreAnswer())?.halOnline
 
   // 2. Swap, keeping what it replaces in <prefix>.previous.
@@ -740,6 +769,7 @@ async function apply() {
       log(`couldn't refresh ${n}: ${e.message}`)
     }
   }
+  refreshLogin(helpers)
   pinVersion()
   fs.rmSync(path.join(P.previous, 'db'), { recursive: true, force: true })
   meta.db = false

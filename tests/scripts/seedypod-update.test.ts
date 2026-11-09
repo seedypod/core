@@ -5,7 +5,7 @@
  */
 import { execFile, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -378,6 +378,34 @@ describe('updating', () => {
     expect((await run('--now')).out).toMatchObject({ code: 'rolled-back' })
     expect(version()).toBe(`dev@${OLD}\n`)
     expect(existsSync(join(dir, 'share/version.new'))).toBe(false)
+  })
+
+  it('brings the login screen\'s scripts along where scripts/install set them up', async () => {
+    const share = (n: string) => join(dir, 'share', n)
+    put(join(dir, 'share'), { 'login-logo': 'old logo', 'logo.frames': 'old frames', 'version': `dev@${OLD}\n` })
+    release(tree(NEW, { 'scripts/login-logo/login-logo': `logo ${NEW}`, 'scripts/login-logo/login-stats': `stats ${NEW}`, 'scripts/login-logo/logo.frames': `frames ${NEW}` }))
+    expect((await run('--now')).out).toMatchObject({ ok: true })
+    expect(readFileSync(share('login-logo'), 'utf8')).toBe(`logo ${NEW}`)
+    expect(readFileSync(share('login-stats'), 'utf8')).toBe(`stats ${NEW}`)
+    expect(readFileSync(share('logo.frames'), 'utf8')).toBe(`frames ${NEW}`)
+    expect(statSync(share('login-stats')).mode & 0o777).toBe(0o755)
+    expect(statSync(share('logo.frames')).mode & 0o777).toBe(0o644)
+    expect(existsSync(share('login-stats.new'))).toBe(false)
+  })
+
+  it('keeps the old login scripts when the update rolls back', async () => {
+    put(join(dir, 'share'), { 'login-logo': 'old logo' })
+    release(tree(NEW, { 'server/dist/index.js': 'core broken', 'scripts/login-logo/login-logo': `logo ${NEW}` }))
+    envs.SEEDYPOD_UPDATE_HEALTH_TIMEOUT = '1'
+    expect((await run('--now')).out).toMatchObject({ code: 'rolled-back' })
+    expect(readFileSync(join(dir, 'share/login-logo'), 'utf8')).toBe('old logo')
+  })
+
+  it('adds no login screen where scripts/install never set one up', async () => {
+    put(join(dir, 'share'), { version: `dev@${OLD}\n` })
+    release(tree(NEW, { 'scripts/login-logo/login-logo': `logo ${NEW}` }))
+    expect((await run('--now')).out).toMatchObject({ ok: true })
+    expect(existsSync(join(dir, 'share/login-logo'))).toBe(false)
   })
 
   it('leaves the version file alone where scripts/install never wrote one', async () => {
