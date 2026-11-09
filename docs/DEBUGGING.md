@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 
 # Debugging
 
-- `ssh pi@seedypod.local`
+- `ssh <your-login>@seedypod.local`, with the username you gave Raspberry Pi Imager: there's no default `pi` ([Installation → The login](INSTALLATION.md#the-login)).
 - `hald --check` validates `hal.toml`; `journalctl -u hald -f` streams the daemon.
 - `journalctl -u seedypod-core -f` for core; `curl localhost:3000/api/system`.
 - **Logs only last until reboot.** `install-hal` keeps the journal in RAM to spare the SD card (ADR-0021). Alerts and faults are still in the database (**Alerts**, `GET /api/alerts`). To chase a crash that needs logs from before a reboot, keep the journal on the card for a while, then turn it back off:

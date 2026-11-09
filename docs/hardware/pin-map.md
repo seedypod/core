@@ -9,7 +9,10 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 
 # Gardyn hardware map
 
-**Status: checked against the stock firmware, not yet probed on the board.**
+**Status: checked against the stock firmware; partly probed on a Gardyn 3.0
+(2026-11-06).** On that unit the grow light, the I²C sensors, the over-temp
+line and both cameras work. The pump, the water-level sensor against water and
+the button haven't been exercised yet: the tank is empty.
 Rows marked "upstream" come from
 [iot-root/garden-of-eden](https://github.com/iot-root/garden-of-eden)
 (`config.py`, `app/lib/hardware.py`, README). Rows marked "stock fw" match the
@@ -21,7 +24,7 @@ BCM numbering (not header pin numbers).
 
 | Function | Interface | Pin / address | Notes | Source |
 |---|---|---|---|---|
-| Grow light | PWM out | GPIO18 | 20 kHz hardware PWM (stock); upstream used 8 kHz | stock fw |
+| Grow light | PWM out | GPIO18 | 20 kHz hardware PWM (stock); upstream used 8 kHz. Verified 2026-11-06, Gardyn 3.0: duty matches at 100 % and 30 % | stock fw + unit |
 | Pump | GPIO out | GPIO24 | Stock drives it plain on/off (100 %), 5 min runs, ~10.6 W; upstream used 50 Hz software PWM capped at 30 % for brown-outs. See below | stock fw |
 | Water level | DYP-A01 ultrasonic | trigger GPIO26, echo GPIO19 | Stock: 30 µs trigger, 1 s timeout, keeps readings in 3–25 cm and takes the median of the last 6 | stock fw |
 | Button | GPIO in | GPIO13 | pull-up, active low, falling edge, 80 ms debounce (stock) | stock fw |
@@ -46,13 +49,13 @@ The data is in `tests/fixtures/gardyn-gh30-stock-2024/`.
 
 ## Controller board, from a photo
 
-On our Home 3.0 the top board is silkscreened **Rev1.5 PCB 11/2019**. It carries the SoC, the micro-SD slot, a mini-HDMI port, two micro-USB ports labelled `PWR IN` and `USB`, and connectors labelled `H2O IN` (2-pin) and `TEMP IN` (4-pin). It is stacked on a second board through the 40-pin GPIO header. The micro-USB port labelled `USB` carries the cameras: a USB-A plug feeds a small loose daughterboard beside it, which is probably the `1a40:0801` hub, and thin wires from its two white connectors run to the cameras. The two cameras are `c499:0ac8` ("View Camera"). The hub doesn't enumerate on every boot, on stock or on seedypod: on stock it appeared on 3 of 5 logged boots. Those thin wires are the first thing to check for USB errors (`-71`) or torn frames.
+On our Home 3.0 the top board is silkscreened **Rev1.5 PCB 11/2019**. It carries the SoC, the micro-SD slot, a mini-HDMI port, two micro-USB ports labelled `PWR IN` and `USB`, and connectors labelled `H2O IN` (2-pin) and `TEMP IN` (4-pin). It is stacked on a second board through the 40-pin GPIO header. The micro-USB port labelled `USB` carries the cameras: a USB-A plug feeds a small loose daughterboard beside it, silkscreened `HUB_V1.1`, which carries the `1a40:0801` hub, and thin wires from its two white connectors run to the cameras. The two cameras are `c499:0ac8` ("View Camera"). The hub doesn't enumerate on every boot, on stock or on seedypod: on stock it appeared on 3 of 5 logged boots. Those thin wires are the first thing to check for USB errors (`-71`) or torn frames: reseating them cured both on our unit. Why the hub misses some boots is still open ([handoff](../HANDOFF.md#the-usb-hub-the-one-open-fault)).
 
-## Known issue: torn camera frames
+## Torn camera frames: a loose connector
 
 On our 3.0 the upper camera (hub port `1-1.3`) gave torn frames: horizontal bands, split images and a solid green or grey block. It gave 0 good frames in 7 at 1280x960 and 2592x1944, and also failed at 320x240, 640x480 and 1920x1080. The lower camera passed 7 of 7 with the same settings on the same hub. The kernel logged `Failed to set UVC probe control : -71` for that port only, and basic control transfers failed too.
 
-This looks like hardware: the cable, connector or camera. It isn't settled. Lower resolutions didn't help in these tests, and neither did `uvcvideo quirks=128` or removing `snd_usb_audio`, but stock falls back through lower resolutions and retries 5 times, so it may have been working around the same fault. Reseating the connectors on the daughterboard is the next test. A torn frame is still a normal-looking JPEG on disk, and the `green-threshold` analyzer scored 7-13% green on empty pods from one. `fswebcam` re-encodes every frame, so the file can't show the damage; `hald` now checks the raw frame and refuses it ([Stills](hal.md#stills)).
+Lower resolutions didn't help, and neither did `uvcvideo quirks=128` or removing `snd_usb_audio`; stock falls back through lower resolutions and retries 5 times, so it may have been working around the same fault. It was a loose connection: after the connectors on the daughterboard were reseated on 2026-11-06, both cameras gave 7 of 7 clean frames with no `-71` errors, and later 10 of 10 on boots with the hub up. A torn frame is still a normal-looking JPEG on disk, and the `green-threshold` analyzer scored 7-13% green on empty pods from one. `fswebcam` re-encodes every frame, so the file can't show the damage; `hald` now checks the raw frame and refuses it ([Stills](hal.md#stills)).
 
 ## Model detection
 

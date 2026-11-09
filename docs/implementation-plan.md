@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 
 # Gardyn Liberation — Implementation Plan (Phase 0 → Done)
 
-**Status:** v3 — Phases 0, 3, 4, 5 and the software half of 7/8 built (2026-10-31); Phase 1 (hardware recon) and the Rust driver validation in Phase 2 need a real unit · **Date:** 2026-10-29 · **Author:** @ng (drafted with Claude)
+**Status:** v3 — Phases 0, 3, 4, 5 and the software half of 7/8 built (2026-10-31); Phase 1 (hardware recon) and the Rust driver validation in Phase 2 need a real unit (status update 2026-11-09: bring-up on a Gardyn 3.0 began 2026-11-06, see [Handoff §7–8](HANDOFF.md#7-real-unit-bring-up-2026-11-06); pump and water-level validation remain) · **Date:** 2026-10-29 · **Author:** @ng (drafted with Claude)
 **Name:** seedypod (ADR-0001; drafted as leafypod). Repo: `seedypod/core`.
 
 Sibling project to [sleepypod](https://sleepypod.github.io/): a sealed consumer appliance (Gardyn hydroponic tower) whose embedded Linux controller (a Raspberry Pi) is re-flashed to run a local, cloud-free control stack. This plan mirrors sleepypod's conventions exactly (branching, CI, Codecov, Stryker, semantic-release, Renovate, Vercel demo, Nextra docs on Pages, ADRs, OKF knowledge bundle) so tooling and muscle memory carry over.
