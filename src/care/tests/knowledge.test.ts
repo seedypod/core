@@ -39,6 +39,8 @@ describe('knowledge citations (ADR-0029)', () => {
     expect(gardyn).toContain(`${EC_TARGETS['fruiting crops'].min.toFixed(1)}–${EC_TARGETS['fruiting crops'].max.toFixed(1)} (tomatoes)`)
     // The doses the feed chore quotes for Gardyn Plant Food.
     for (const dose of ['1/4 tsp per gallon', '1/2 tsp per gallon', '1 tsp per gallon']) expect(gardyn).toContain(dose)
+    // The pH starter rule's adjustment advice.
+    expect(gardyn).toContain('starting at 1 mL per gallon and retesting after 15–30 minutes')
     // Cleaning has no published interval, which the clean chore says.
     expect(gardyn).toContain('| Light and deep cleaning | no fixed interval published |')
     expect(note(CITE.dosesByProduct.note)).toContain('Teaspoon doses are not interchangeable between products')

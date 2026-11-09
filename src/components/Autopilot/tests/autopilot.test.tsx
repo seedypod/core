@@ -24,6 +24,7 @@ vi.mock('@/src/utils/trpc', () => {
   return {
     trpc: {
       useUtils: () => ({ automations: { invalidate: vi.fn() } }),
+      care: { starterRules: query('starters') },
       automations: {
         list: query('list'), status: query('status'), runs: query('runs'), catalog: query('catalog'), backtests: query('backtests'),
         update: mutation('update'), remove: mutation('remove'), setGlobal: mutation('setGlobal'), create: mutation('create'), backtest: mutation('backtest'),
@@ -187,6 +188,17 @@ describe('AutopilotPage', () => {
     expect(items()).toHaveLength(50)
     fireEvent.click(screen.getByText('Show more (10)'))
     expect(items()).toHaveLength(60)
+  })
+
+  it('offers the knowledge bundle\'s starter rules, each opening in the builder', () => {
+    data.set('starters', [{ id: 'tank_half', title: 'Tank below half', description: 'Tell me when the tank has been under 50 % for half an hour.', sensors: ['water_level_pct'], unavailable: null, added: false, citations: [], rule: { name: 'Tank below half', priority: 50, cooldownMin: 240, trigger: { kind: 'tick', everyMin: 15 }, conditions: { kind: 'sustained', forMin: 30, condition: { kind: 'and', conditions: [{ kind: 'compare', op: '<', left: { kind: 'signal', signal: 'sensor.water_level_pct' }, right: lit(50) }] } }, actions: [{ kind: 'notify', message: 'Tank below half: top it off' }] } }])
+    render(<AutopilotPage />)
+    fireEvent.click(within(screen.getByTestId('starter-tank_half')).getByRole('button'))
+    const dlg = within(screen.getByRole('dialog', { name: 'New rule' }))
+    expect((dlg.getByPlaceholderText('Dim when hot') as HTMLInputElement).value).toBe('Tank below half')
+    fireEvent.click(dlg.getByText('Save'))
+    expect(calls.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Tank below half', actions: [{ kind: 'notify', message: 'Tank below half: top it off' }] }))
+    expect(calls.create.mock.calls[0]?.[0]).not.toHaveProperty('dryRun')
   })
 
   it('offers templates when there are no rules, and says when Autopilot is off', () => {

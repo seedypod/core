@@ -44,8 +44,9 @@ same sentence for each rule.
 | Pods | Each pod's green area and its growth trend, from the primary analyser on the **Analysis** screen |
 | Grow cycle | Days since the cycle started |
 
-If a reading has no value (a sensor isn't fitted, or its reading is stale), the
-rule **skips**. It never acts on missing data.
+If a reading has no value (a sensor isn't fitted, or hald marks its reading
+stale or suspect), the rule **skips**. It never acts on missing or untrusted
+data.
 
 ## Dry run, then arm
 
@@ -55,9 +56,25 @@ check the activity log, then switch it to **Active**.
 
 Each rule has an **Off / Dry-run / Active** control on its row, so going back
 is always one click. The header shows the count (`3 rules · 2 active ·
-1 dry-run`) next to the kill switch. With no rules yet, the screen offers three
-starters (a low-tank notice, dimming when hot, a pH dose) that open in the
-builder.
+1 dry-run`) next to the kill switch. With no rules yet, the screen offers two
+examples (dimming when hot, a pH dose) that open in the builder.
+
+### Starter rules
+
+**Starter rules**, below the rules, come from the knowledge bundle
+([ADR 0029](adr/0029-care-engine-and-agent-boundary.md)):
+
+| Starter | Fires when | Note |
+|---|---|---|
+| pH outside 5.5–6.5 | The hour's average pH leaves 5.5–6.5 | [pH and EC](https://github.com/seedypod/core/blob/dev/knowledge/nutrients/gardyn-feeding-guidance.md#ph-and-ec) |
+| EC below the crop target | The hour's average EC drops below the low end for what you grow: 0.8 seedlings, 1.0 herbs, 1.2 leafy greens, 2.0 fruiting (mS/cm) | [pH and EC](https://github.com/seedypod/core/blob/dev/knowledge/nutrients/gardyn-feeding-guidance.md#ph-and-ec) |
+| Tank below half | The tank has been under 50 % for 30 minutes | [Gardyn feeding guidance](https://github.com/seedypod/core/blob/dev/knowledge/nutrients/gardyn-feeding-guidance.md#gardyn-feeding-guidance) |
+
+Each one only notifies you. Click one to open it in the builder, where you can
+change it before saving. It saves in dry run like any new rule, so check its
+backtest and run log, then arm it. A starter is greyed out when the unit lacks
+its sensor ("no pH probe") or a rule of that name exists. The section goes away
+once you've added every one the unit can run.
 
 ## Backtest before you arm
 
@@ -149,6 +166,8 @@ light at the moment.
   [ADR 0020](adr/0020-autopilot-reactive-automations.md). The API accepts
   shapes the builder can't show, such as nested AND/OR, arithmetic in values,
   and per-action light limits. The app shows those rules read-only.
-- **MCP:** `list_automations` and `backtest_automation` are read-only, so an
-  agent can explain rules and test drafts. Creating, arming or disabling rules
-  stays with a person in the app.
+- **MCP:** `list_automations`, `backtest_automation` and `starter_rules` are
+  read-only, so an agent can explain rules, offer a starter and test drafts.
+  Creating, arming or disabling rules stays with a person in the app
+  ([ADR 0029](adr/0029-care-engine-and-agent-boundary.md)).
+- **REST:** `GET /care/starter-rules` lists the starters with their citations.
