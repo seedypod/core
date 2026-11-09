@@ -60,6 +60,13 @@ fn prefer_oom_kill() {
     let _ = std::fs::write("/proc/self/oom_score_adj", "1000");
 }
 
+/// The most memory this process held, for measuring it on the unit (Linux's VmHWM).
+fn peak_rss_kb() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|l| l.starts_with("VmHWM:"))?;
+    line.split_whitespace().nth(1)?.parse().ok()
+}
+
 fn read_capped(r: impl Read, what: &str) -> Result<Vec<u8>, Failure> {
     let mut buf = Vec::new();
     r.take(MAX_JPEG_BYTES + 1)
@@ -106,7 +113,10 @@ fn main_inner() -> Result<Option<serde_json::Value>, Failure> {
 fn main() {
     match main_inner() {
         Ok(None) => println!("podvision {}", env!("CARGO_PKG_VERSION")),
-        Ok(Some(out)) => {
+        Ok(Some(mut out)) => {
+            if let (Some(kb), Some(o)) = (peak_rss_kb(), out.as_object_mut()) {
+                o.insert("peakRssKb".into(), kb.into());
+            }
             let mut stdout = std::io::stdout().lock();
             if writeln!(stdout, "{out}").is_err() {
                 std::process::exit(1);
