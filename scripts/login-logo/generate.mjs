@@ -290,6 +290,59 @@ function encode(next, prev, colour) {
   return col ? `${out}\r` : out
 }
 
+/**
+ * One row of cells as text for bash's printf %b, from the left edge, with the
+ * blanks at its end left off and the colour reset where it stops.
+ */
+function encodeRow(cells, colour) {
+  const last = cells.findLastIndex(cell => cell.ch !== ' ' || cell.bg)
+  let out = ''
+  let pen = { fg: null, bg: null, bold: false }
+  for (const cell of cells.slice(0, last + 1)) {
+    const fg = cell.ch === ' ' ? pen.fg : cell.fg && colour(cell.fg)
+    const bg = cell.bg && colour(cell.bg)
+    const sgr = []
+    if (cell.bold !== pen.bold) sgr.push(cell.bold ? 1 : 22)
+    if (fg !== pen.fg) sgr.push(fg ? `38;${fg}` : 39)
+    if (bg !== pen.bg) sgr.push(bg ? `48;${bg}` : 49)
+    if (sgr.length) out += `\\e[${sgr.join(';')}m`
+    pen = { fg, bg, bold: cell.bold }
+    out += cell.ch
+  }
+  return pen.fg || pen.bg || pen.bold ? `${out}\\e[0m` : out
+}
+
+export const BANNER_START = '# >>> logo: scripts/login-logo/generate.mjs writes this block (pnpm logo:generate)'
+export const BANNER_END = '# <<< logo'
+export const INSTALLERS = ['../install', '../install-hal'].map(f => fileURLToPath(new URL(f, import.meta.url)))
+
+/**
+ * The final frame for the installers, which run before anything is unpacked, so
+ * it's written into each. 256 colours: an installer can't ask the terminal what
+ * it does, and every terminal that takes truecolor takes these.
+ */
+export function banner(icon = ICON) {
+  const grid = toCells(sample(decodePng(icon)), wordColours(FRAMES + 8))
+  return [
+    BANNER_START,
+    `UI_LOGO_COLS=${COLS}`,
+    `UI_LOGO_COL=${TEXT_COL}`,
+    `UI_LOGO_ROW=${TEXT_ROW}`,
+    'UI_LOGO=(',
+    ...grid.map(row => `'${encodeRow(row, palette256)}'`),
+    ')',
+    BANNER_END,
+  ].join('\n')
+}
+
+/** `script` with its logo block replaced by `block`. */
+export function withBanner(script, block) {
+  const start = script.indexOf(BANNER_START)
+  const end = script.indexOf(BANNER_END, start)
+  if (start < 0 || end < 0) throw new Error('no logo block to replace')
+  return script.slice(0, start) + block + script.slice(end + BANNER_END.length)
+}
+
 export function generate(icon = ICON) {
   const pixels = sample(decodePng(icon))
   const squares = particles(pixels)
@@ -313,4 +366,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const data = generate(process.argv[2])
   writeFileSync(OUT, data)
   console.log(`logo.frames: ${FRAMES} frames, ${data.length} characters`)
+  const block = banner(process.argv[2])
+  for (const script of INSTALLERS) writeFileSync(script, withBanner(readFileSync(script, 'utf8'), block))
+  console.log(`installer logo: ${block.length} characters in each of ${INSTALLERS.length} scripts`)
 }

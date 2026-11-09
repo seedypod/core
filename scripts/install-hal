@@ -21,7 +21,81 @@
 #                such as Home Assistant's Mosquitto add-on
 #   --no-wear    leave journald, swap and the root mount options as they are
 #   --no-boot    leave cloud-init, rpi-swap's swap file and Mosquitto's start order as they are
+# Output is in colour on a terminal only; SEEDYPOD_COLOR=always or never overrides that.
 set -euo pipefail
+
+# ---- output --------------------------------------------------------------------
+# Colour only on a terminal, which curl | bash still writes to. A log, tee or the OS
+# image bake gets plain text, as do NO_COLOR and TERM=dumb. SEEDYPOD_COLOR=always or
+# never overrides all of that, for tests. Each stream is decided on its own.
+ui_colour() {
+  case "${SEEDYPOD_COLOR:-}" in always) return 0 ;; never) return 1 ;; esac
+  [ -t "$1" ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]
+}
+UI_OK="" UI_STEP="" UI_DIM="" UI_BOLD="" UI_OFF="" UI_WARN="" UI_ERR="" UI_EOFF=""
+if ui_colour 1; then UI_OK=$'\e[32m' UI_STEP=$'\e[36m' UI_DIM=$'\e[2m' UI_BOLD=$'\e[1m' UI_OFF=$'\e[0m'; fi
+if ui_colour 2; then UI_WARN=$'\e[33m' UI_ERR=$'\e[31m' UI_EOFF=$'\e[0m'; fi
+step() { printf '%s→%s %s\n' "$UI_STEP" "$UI_OFF" "$*"; }
+ok() { printf '%s✓%s %s\n' "$UI_OK" "$UI_OFF" "$*"; }
+# The line a run ends on.
+success() { printf '%s✓%s %s%s%s\n' "$UI_OK" "$UI_OFF" "$UI_BOLD" "$*" "$UI_OFF"; }
+note() { printf '%s%s%s\n' "$UI_DIM" "$*" "$UI_OFF"; }
+warn() { printf '%s%s%s\n' "$UI_WARN" "$*" "$UI_EOFF" >&2; }
+error() { printf '%s%s%s\n' "$UI_ERR" "$*" "$UI_EOFF" >&2; }
+fail() { printf '%s✗ %s%s\n' "$UI_ERR" "$*" "$UI_EOFF" >&2; }
+
+# The SSH login screen's logo, with $1 beside it, or under it in a narrower window.
+# Nothing at all off a terminal. One line where the blocks can't show: no colour, no
+# UTF-8, or a window narrower than the logo.
+banner() {
+  [ -t 1 ] || [ "${SEEDYPOD_COLOR:-}" = always ] || return 0
+  local cols i beside=1
+  # Asked of the terminal itself: inside $( ) stdout is a pipe, and under curl | bash so is stdin.
+  cols="$(stty size 2>/dev/null </dev/tty || true)"
+  cols="${cols#* }"
+  cols="${cols:-80}"
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;; *) cols=0 ;; esac
+  if [ -z "$UI_OFF" ] || [ "$cols" -lt "$UI_LOGO_COLS" ]; then
+    printf '%sseedypod %s%s\n\n' "$UI_BOLD" "$1" "$UI_OFF"
+    return 0
+  fi
+  [ "$cols" -gt $((UI_LOGO_COL + ${#1})) ] || beside=0
+  printf '\n'
+  for i in "${!UI_LOGO[@]}"; do
+    printf '%b' "${UI_LOGO[i]}"
+    if [ "$beside" = 1 ] && [ "$i" -eq $((UI_LOGO_ROW + 1)) ]; then printf '\r\e[%dC%s%s%s' "$UI_LOGO_COL" "$UI_DIM" "$1" "$UI_OFF"; fi
+    printf '\n'
+  done
+  [ "$beside" = 1 ] || printf '  %s%s%s\n' "$UI_DIM" "$1" "$UI_OFF"
+  printf '\n'
+}
+# >>> logo: scripts/login-logo/generate.mjs writes this block (pnpm logo:generate)
+UI_LOGO_COLS=54
+UI_LOGO_COL=46
+UI_LOGO_ROW=8
+UI_LOGO=(
+'                                      \e[38;5;193m▄▄▄\e[0m'
+'       \e[38;5;120;48;5;120m▀▀▀\e[48;5;84m▀\e[49m                     ▄▄▄\e[38;5;156;48;5;120m▀▀▀\e[48;5;156m▀▀\e[38;5;192m▀\e[0m'
+'  \e[38;5;84;48;5;42m▀\e[48;5;41m▀\e[49m   \e[48;5;84m▀▀▀▀\e[49m▄▄▄▄              ▄\e[48;5;84m▀▀▀\e[48;5;83m▀▀\e[38;5;120m▀▀\e[48;5;119m▀\e[48;5;120m▀\e[38;5;156m▀\e[48;5;156m▀\e[0m'
+'         \e[38;5;84m▀\e[48;5;84m▀▀▀\e[48;5;42m▀▀\e[38;5;42;49m▄▄\e[38;5;41m▄        \e[38;5;42m▄\e[38;5;84;48;5;42m▀\e[38;5;42m▀\e[48;5;41m▀\e[38;5;78m▀\e[38;5;77m▀\e[48;5;77m▀▀▀▀\e[38;5;83m▀\e[48;5;83m▀\e[38;5;119;48;5;119m▀▀\e[38;5;156;48;5;156m▀\e[0m'
+'     \e[38;5;84;48;5;42m▀▀▀\e[49m   \e[48;5;42m▀\e[38;5;42m▀▀▀▀▀\e[38;5;35;48;5;35m▀\e[38;5;29;48;5;29m▀\e[38;5;23;49m▄     \e[38;5;42;48;5;42m▀\e[48;5;36m▀\e[48;5;35m▀\e[38;5;41;48;5;41m▀▀▀▀\e[48;5;35m▀\e[48;5;41m▀\e[38;5;77;48;5;77m▀▀▀▀\e[38;5;83;48;5;83m▀\e[38;5;119;48;5;119m▀\e[38;5;156;48;5;156m▀\e[0m'
+'     \e[38;5;42m▄▄▄▄▄ ▀▀\e[48;5;42m▀▀\e[38;5;35;48;5;35m▀▀▀▀\e[48;5;29m▀\e[38;5;23;48;5;23m▀\e[49m▄  \e[38;5;36;48;5;35m▀▀\e[38;5;35m▀▀▀▀\e[48;5;23m▀\e[38;5;29;48;5;35m▀\e[38;5;35;48;5;41m▀\e[38;5;41m▀▀\e[38;5;77m▀▀\e[48;5;77m▀▀\e[38;5;119;48;5;119m▀\e[0m'
+'     \e[38;5;42;48;5;42m▀\e[48;5;36m▀▀\e[38;5;36;48;5;35m▀\e[38;5;35m▀\e[49m   \e[38;5;42;48;5;35m▀▀\e[38;5;35m▀▀\e[48;5;29m▀\e[38;5;29;48;5;23m▀\e[38;5;23m▀▀\e[38;5;235;48;5;235m▀\e[38;5;23;49m▄\e[38;5;29;48;5;29m▀▀▀▀▀\e[48;5;23m▀\e[38;5;23;48;5;29m▀\e[38;5;35;48;5;41m▀\e[38;5;41;48;5;35m▀▀▀▀▀\e[48;5;41m▀\e[38;5;77m▀\e[48;5;77m▀\e[38;5;84;49m▀\e[0m'
+'     \e[38;5;36;48;5;36m▀▀\e[38;5;35;48;5;35m▀▀▀\e[49m  \e[38;5;29;48;5;29m▀▀▀\e[38;5;36;48;5;36m▀▀\e[38;5;35;48;5;35m▀\e[38;5;23;48;5;23m▀▀▀\e[38;5;235;48;5;235m▀▀\e[38;5;23;48;5;23m▀▀▀\e[38;5;29m▀\e[38;5;23;48;5;235m▀\e[48;5;35m▀\e[38;5;35m▀▀▀▀▀▀▀▀\e[38;5;41;48;5;41m▀\e[38;5;77;49m▀\e[0m'
+'               \e[38;5;29;48;5;29m▀\e[48;5;23m▀▀\e[38;5;23m▀▀▀\e[38;5;235;48;5;235m▀\e[49m█\e[38;5;23;48;5;235m▀\e[48;5;23m▀\e[48;5;235m▀\e[38;5;235;48;5;23m▀\e[38;5;29;48;5;35m▀\e[38;5;35;48;5;29m▀▀\e[38;5;29m▀▀▀▀\e[38;5;35m▀\e[48;5;35m▀\e[49m▀         \e[1;38;5;78mse\e[38;5;84me\e[38;5;120mdyp\e[38;5;156mod\e[0m'
+'          \e[38;5;29;48;5;23m▀▀\e[38;5;23m▀\e[49m  ▀▀▀\e[48;5;23m▀▀▀\e[38;5;235;48;5;236m▀\e[48;5;235m▀▀\e[38;5;23;48;5;236m▀\e[38;5;235;48;5;235m▀\e[38;5;29;48;5;29m▀▀▀▀▀▀▀\e[49m▀\e[38;5;35m▀\e[0m'
+'          \e[38;5;23m▀▀▀     \e[48;5;23m▀▀▀▀\e[38;5;235;48;5;235m▀▀▀\e[38;5;23;48;5;29m▀\e[38;5;29m▀▀\e[49m▀▀▀\e[0m'
+'               \e[38;5;195m▄\e[38;5;152m▄\e[38;5;109m▄\e[38;5;66m▄\e[38;5;65m▄\e[38;5;23m▄\e[38;5;188;48;5;23m▀\e[38;5;239m▀\e[38;5;235;48;5;235m▀\e[38;5;236;48;5;23m▀\e[38;5;35;48;5;35m▀\e[38;5;115;48;5;29m▀\e[38;5;194m▀\e[38;5;71;49m▄\e[38;5;78m▄\e[38;5;114m▄\e[38;5;157m▄\e[38;5;194m▄\e[38;5;255m▄\e[0m'
+'            \e[38;5;195m▄\e[48;5;189m▀\e[38;5;152;48;5;146m▀\e[38;5;66;48;5;236m▀\e[38;5;23;48;5;235m▀\e[38;5;236m▀\e[38;5;235m▀▀▀▀▀\e[38;5;23;48;5;23m▀▀\e[38;5;29;48;5;29m▀\e[38;5;236;48;5;23m▀\e[38;5;23m▀▀▀\e[38;5;29m▀\e[38;5;35;48;5;29m▀\e[38;5;41m▀\e[38;5;121;48;5;78m▀\e[38;5;255;48;5;255m▀▀\e[0m'
+'           \e[38;5;189m▄\e[48;5;189m▀\e[48;5;153m▀▀\e[38;5;152m▀\e[38;5;109m▀\e[38;5;66m▀\e[38;5;239m▀\e[38;5;23m▀\e[38;5;236;48;5;152m▀▀\e[38;5;23m▀▀\e[48;5;151m▀▀\e[48;5;152m▀▀\e[48;5;194m▀\e[38;5;29m▀\e[38;5;71m▀\e[38;5;114m▀\e[38;5;152;48;5;254m▀\e[38;5;255m▀▀\e[48;5;255m▀\e[38;5;231m▀\e[0m'
+'           \e[38;5;189;48;5;153m▀\e[38;5;153m▀\e[48;5;147m▀▀▀▀▀▀▀\e[38;5;152;48;5;146m▀▀▀▀▀▀▀▀\e[48;5;250m▀\e[38;5;251m▀\e[48;5;251m▀▀\e[38;5;252;48;5;252m▀\e[38;5;253;48;5;188m▀\e[38;5;254;48;5;253m▀\e[38;5;255;48;5;254m▀\e[48;5;255m▀\e[38;5;231m▀\e[0m'
+'          \e[38;5;153;48;5;153m▀▀\e[38;5;111;48;5;111m▀▀▀▀▀\e[38;5;147m▀▀\e[38;5;146;48;5;110m▀▀▀▀▀▀▀▀▀\e[48;5;109m▀\e[38;5;250;48;5;249m▀▀\e[48;5;250m▀\e[38;5;251;48;5;251m▀\e[38;5;252m▀\e[38;5;188;48;5;252m▀\e[38;5;254;48;5;253m▀\e[38;5;255;48;5;254m▀\e[48;5;255m▀\e[0m'
+'           \e[38;5;117;48;5;111m▀\e[38;5;111;48;5;75m▀\e[48;5;69m▀▀▀▀▀\e[48;5;104m▀\e[38;5;110m▀▀▀▀▀▀\e[48;5;103m▀\e[48;5;109m▀\e[38;5;109m▀▀▀▀\e[38;5;249m▀\e[38;5;250;48;5;250m▀\e[38;5;152;48;5;152m▀\e[38;5;252m▀\e[38;5;253;48;5;188m▀\e[38;5;254;48;5;254m▀\e[38;5;255;48;5;255m▀\e[0m'
+'           \e[38;5;111m▀\e[38;5;75;48;5;75m▀\e[38;5;69;48;5;69m▀▀▀▀▀\e[38;5;68;48;5;68m▀▀▀▀▀\e[48;5;67m▀\e[38;5;67m▀▀▀▀\e[38;5;109m▀\e[48;5;73m▀\e[48;5;109m▀▀▀\e[38;5;152;48;5;152m▀▀\e[38;5;188;48;5;188m▀\e[38;5;194;48;5;194m▀\e[0m'
+'             \e[38;5;69m▀\e[48;5;69m▀\e[38;5;63;48;5;27m▀▀\e[48;5;63m▀\e[38;5;62;48;5;62m▀▀▀▀▀\e[38;5;67;48;5;61m▀▀\e[48;5;67m▀▀▀▀\e[38;5;73;48;5;73m▀▀\e[38;5;109;48;5;109m▀\e[38;5;110;48;5;116m▀\e[38;5;116m▀\e[38;5;152;48;5;152m▀\e[38;5;158;49m▀\e[0m'
+'                \e[38;5;27m▀▀▀\e[38;5;26m▀\e[48;5;27m▀\e[48;5;26m▀▀\e[38;5;61m▀\e[48;5;32m▀\e[38;5;67;48;5;67m▀▀▀\e[49m▀\e[38;5;73m▀▀\e[38;5;80m▀\e[38;5;116m▀\e[0m'
+)
+# <<< logo
 
 # ---- SD card wear (ADR-0021) ---------------------------------------------------
 # Each change is checked once applied and rolled back if the check fails, so a
@@ -37,17 +111,17 @@ ZRAM_GENERATOR="$ROOT/usr/lib/systemd/system-generators/zram-generator"
 wear_journald() {
   local want=$'[Journal]\nStorage=volatile\nRuntimeMaxUse=32M'
   if [ -f "$JOURNALD_CONF" ] && grep -v '^#' "$JOURNALD_CONF" | cmp -s - <(printf '%s\n' "$want"); then
-    echo "→ journal already kept in RAM"; return 0
+    step "journal already kept in RAM"; return 0
   fi
   $SUDO mkdir -p "$(dirname "$JOURNALD_CONF")"
   printf '%s\n' "# Written by seedypod scripts/install-hal (ADR-0021): logs in RAM, lost on reboot." "$want" | $SUDO tee "$JOURNALD_CONF" >/dev/null
   if $SUDO systemctl restart systemd-journald && systemctl is-active --quiet systemd-journald; then
-    echo "→ journal kept in RAM (32 MB, cleared on reboot; docs/DEBUGGING.md shows how to keep it for a session)"
+    step "journal kept in RAM (32 MB, cleared on reboot; docs/DEBUGGING.md shows how to keep it for a session)"
     return 0
   fi
   $SUDO rm -f "$JOURNALD_CONF"
   $SUDO systemctl restart systemd-journald || true
-  echo "   journal-in-RAM didn't take; left journald as it was" >&2
+  warn "   journal-in-RAM didn't take; left journald as it was"
   return 1
 }
 
@@ -57,13 +131,13 @@ zram_active() { grep '^/dev/zram' "$ROOT/proc/swaps" >/dev/null 2>&1; }
 # dphys-swapfile pages to the card; zram compresses in RAM, which suits a 512 MB board.
 wear_swap() {
   if zram_active; then
-    echo "→ swap already on zram"
+    step "swap already on zram"
   else
     if [ ! -x "$ZRAM_GENERATOR" ] && command -v apt-get >/dev/null 2>&1; then
       $SUDO apt-get install -y -q systemd-zram-generator >/dev/null || true
     fi
     if [ ! -x "$ZRAM_GENERATOR" ]; then
-      echo "   zram isn't available (no systemd-zram-generator); swap left as it was" >&2
+      warn "   zram isn't available (no systemd-zram-generator); swap left as it was"
       return 1
     fi
     local backup="$ZRAM_CONF.seedypod-bak"
@@ -81,18 +155,18 @@ CONF
       $SUDO systemctl stop dev-zram0.swap >/dev/null 2>&1 || true
       if [ -f "$backup" ]; then $SUDO mv -f "$backup" "$ZRAM_CONF"; else $SUDO rm -f "$ZRAM_CONF"; fi
       $SUDO systemctl daemon-reload
-      echo "   zram swap didn't start; swap left as it was" >&2
+      warn "   zram swap didn't start; swap left as it was"
       return 1
     fi
     $SUDO rm -f "$backup"
-    echo "→ swap on zram (compressed RAM)"
+    step "swap on zram (compressed RAM)"
   fi
   # Only once zram is up, so the board is never left without swap.
   if command -v dphys-swapfile >/dev/null 2>&1; then
     $SUDO dphys-swapfile swapoff >/dev/null 2>&1 || true
     $SUDO dphys-swapfile uninstall >/dev/null 2>&1 || true
     $SUDO systemctl disable --now dphys-swapfile >/dev/null 2>&1 || true
-    echo "→ SD card swapfile (dphys-swapfile) off"
+    step "SD card swapfile (dphys-swapfile) off"
   fi
 }
 
@@ -102,11 +176,11 @@ root_opts() { awk '$1 !~ /^#/ && $2 == "/" { print $4 }' "$1"; }
 wear_noatime() {
   local fstab="$ROOT/etc/fstab"
   if [ ! -f "$fstab" ] || [ -z "$(root_opts "$fstab")" ]; then
-    echo "   no / entry in fstab; root mount options left as they are" >&2
+    warn "   no / entry in fstab; root mount options left as they are"
     return 1
   fi
   if root_opts "$fstab" | tr ',' '\n' | grep -x noatime >/dev/null; then
-    echo "→ / already mounted noatime"; return 0
+    step "/ already mounted noatime"; return 0
   fi
   local backup="$fstab.seedypod-bak"
   $SUDO cp -p "$fstab" "$backup"
@@ -114,13 +188,13 @@ wear_noatime() {
   if findmnt --verify --tab-file "$fstab" >/dev/null 2>&1 \
     && $SUDO mount -o remount,noatime / && findmnt -n -o OPTIONS / | tr ',' '\n' | grep -x noatime >/dev/null; then
     $SUDO rm -f "$backup"
-    echo "→ / mounted noatime"
+    step "/ mounted noatime"
     return 0
   fi
   $SUDO cp -p "$backup" "$fstab"
   $SUDO rm -f "$backup"
   $SUDO mount -o remount / >/dev/null 2>&1 || true
-  echo "   noatime didn't take; fstab restored" >&2
+  warn "   noatime didn't take; fstab restored"
   return 1
 }
 
@@ -129,7 +203,7 @@ apply_wear_settings() {
   wear_journald || failed=1
   wear_swap || failed=1
   wear_noatime || failed=1
-  if [ "$failed" -ne 0 ]; then echo "   some SD card settings were skipped (above); the rest are in place" >&2; fi
+  if [ "$failed" -ne 0 ]; then warn "   some SD card settings were skipped (above); the rest are in place"; fi
   return 0
 }
 
@@ -146,7 +220,7 @@ install_camera_rules() {
   # Earlier installs could name the Pi's on-chip video nodes as cameras.
   if [ -f "$CAMERA_RULES" ] && grep -q 'KERNELS=="bcm2835' "$CAMERA_RULES"; then
     $SUDO rm -f "$CAMERA_RULES" "$ROOT"/dev/seedypod/camera-*
-    echo "→ removed camera rules that matched the Pi's on-chip video nodes"
+    step "removed camera rules that matched the Pi's on-chip video nodes"
   fi
   $SUDO mkdir -p "$(dirname "$CAMERA_SYNC_RULE")" "$(dirname "$CAMERA_SYNC_UNIT")"
   # USB parents only, so the Pi's on-chip video nodes never start it. The wait lets
@@ -169,14 +243,14 @@ RULE
   $SUDO udevadm control --reload || true
   local said
   if said="$($SUDO "$hald" --sync-camera-rules 2>&1)"; then
-    echo "→ $said"
+    step "$said"
   else
-    echo "   camera rules not written: $said" >&2
+    warn "   camera rules not written: $said"
   fi
   # Rules from an earlier install may never have made their links.
   $SUDO udevadm trigger --action=add --subsystem-match=video4linux || true
   if [ -f "$CAMERA_RULES" ]; then
-    echo "   If upper and lower are swapped: sudo $hald --camera-rules upper=<port> lower=<port> | sudo tee ${CAMERA_RULES#"$ROOT"} && sudo udevadm trigger --action=add --subsystem-match=video4linux"
+    note "   If upper and lower are swapped: sudo $hald --camera-rules upper=<port> lower=<port> | sudo tee ${CAMERA_RULES#"$ROOT"} && sudo udevadm trigger --action=add --subsystem-match=video4linux"
   fi
 }
 
@@ -216,24 +290,24 @@ network_survives_cloud_init() {
 boot_cloud_init() {
   [ -d "$ROOT/etc/cloud" ] || return 0
   if [ -e "$CLOUD_DISABLED" ]; then
-    echo "→ cloud-init already off"; return 0
+    step "cloud-init already off"; return 0
   fi
   if [ ! -e "$ROOT/var/lib/cloud/instance/boot-finished" ]; then
-    echo "   cloud-init hasn't finished first boot, so it's left on; rerun install-hal to turn it off" >&2
+    warn "   cloud-init hasn't finished first boot, so it's left on; rerun install-hal to turn it off"
     return 1
   fi
   if ! network_survives_cloud_init; then
-    echo "   can't show this network comes back without cloud-init, so it's left on" >&2
+    warn "   can't show this network comes back without cloud-init, so it's left on"
     return 1
   fi
   $SUDO touch "$CLOUD_DISABLED"
   if $SUDO systemctl daemon-reload && network_survives_cloud_init; then
-    echo "→ cloud-init off now first boot is done (to undo: sudo rm $CLOUD_DISABLED)"
+    step "cloud-init off now first boot is done (to undo: sudo rm $CLOUD_DISABLED)"
     return 0
   fi
   $SUDO rm -f "$CLOUD_DISABLED"
   $SUDO systemctl daemon-reload || true
-  echo "   turning cloud-init off didn't take; left it on" >&2
+  warn "   turning cloud-init off didn't take; left it on"
   return 1
 }
 
@@ -244,21 +318,21 @@ boot_swap() {
   [ -e "$RPI_SWAP_GENERATOR" ] || return 0
   local want=$'[Main]\nMechanism=zram'
   if [ -f "$RPI_SWAP_CONF" ] && grep -v '^#' "$RPI_SWAP_CONF" | cmp -s - <(printf '%s\n' "$want"); then
-    echo "→ swap already zram alone"; return 0
+    step "swap already zram alone"; return 0
   fi
   if grep -rqs '^Mechanism=' "$ROOT/etc/rpi/swap.conf" "$(dirname "$RPI_SWAP_CONF")"; then
-    echo "→ rpi-swap has its own Mechanism set, so it's left alone"; return 0
+    step "rpi-swap has its own Mechanism set, so it's left alone"; return 0
   fi
   $SUDO mkdir -p "$(dirname "$RPI_SWAP_CONF")"
   printf '%s\n' "# Written by seedypod scripts/install-hal: no swap file on the SD card." "$want" | $SUDO tee "$RPI_SWAP_CONF" >/dev/null
   if $SUDO systemctl daemon-reload && systemctl cat dev-zram0.swap >/dev/null 2>&1 \
     && ! systemctl show -p Requires --value systemd-zram-setup@zram0.service | grep rpi-setup-loop >/dev/null; then
-    echo "→ swap is zram alone from the next boot (no swap file on the card)"
+    step "swap is zram alone from the next boot (no swap file on the card)"
     return 0
   fi
   $SUDO rm -f "$RPI_SWAP_CONF"
   $SUDO systemctl daemon-reload || true
-  echo "   zram alone didn't take; swap left as it was" >&2
+  warn "   zram alone didn't take; swap left as it was"
   return 1
 }
 
@@ -270,16 +344,16 @@ boot_broker() {
   local want
   want="$(printf '%s\n' "# Written by seedypod scripts/install-hal: the vendor unit, not waiting for the network."; grep -v 'network-online.target' "$MOSQ_VENDOR_UNIT")"
   if [ -f "$MOSQ_UNIT" ] && cmp -s "$MOSQ_UNIT" <(printf '%s\n' "$want"); then
-    echo "→ Mosquitto already starts without waiting for the network"; return 0
+    step "Mosquitto already starts without waiting for the network"; return 0
   fi
   printf '%s\n' "$want" | $SUDO tee "$MOSQ_UNIT" >/dev/null
   if $SUDO systemctl daemon-reload && ! systemctl show -p After --value mosquitto.service | grep network-online >/dev/null; then
-    echo "→ Mosquitto starts without waiting for the network"
+    step "Mosquitto starts without waiting for the network"
     return 0
   fi
   $SUDO rm -f "$MOSQ_UNIT"
   $SUDO systemctl daemon-reload || true
-  echo "   Mosquitto's start order didn't take; left it as it was" >&2
+  warn "   Mosquitto's start order didn't take; left it as it was"
   return 1
 }
 
@@ -289,7 +363,7 @@ apply_boot_settings() {
   # Swap is --no-wear's to leave alone too.
   if [ "${WEAR:-1}" -eq 1 ]; then boot_swap || failed=1; fi
   boot_broker || failed=1
-  if [ "$failed" -ne 0 ]; then echo "   some boot settings were skipped (above); the rest are in place" >&2; fi
+  if [ "$failed" -ne 0 ]; then warn "   some boot settings were skipped (above); the rest are in place"; fi
   return 0
 }
 
@@ -299,8 +373,8 @@ warn_shared_login() {
   case "$(getent passwd "$1" | cut -d: -f7)" in
     ""|*/nologin|*/false) return 0 ;;
   esac
-  echo "⚠ The login $1 is also hald's service user, so hald runs as this login, with its groups and shell, not as a locked account." >&2
-  echo "  hald still works. To keep them apart, reflash with another username (docs/INSTALLATION.md#2-enable-ic-and-install-the-hal)." >&2
+  warn "⚠ The login $1 is also hald's service user, so hald runs as this login, with its groups and shell, not as a locked account."
+  warn "  hald still works. To keep them apart, reflash with another username (docs/INSTALLATION.md#2-enable-ic-and-install-the-hal)."
 }
 
 # ---- USB hub recovery -----------------------------------------------------------
@@ -328,7 +402,7 @@ UNIT
   if [ "$UNIT_CHANGED" -eq 1 ]; then $SUDO systemctl daemon-reload || true; fi
   if [ "$enable" -eq 1 ]; then
     $SUDO systemctl enable seedypod-usb-recover.service >/dev/null 2>&1 || true
-    echo "→ USB hub recovery runs at each boot, and does nothing if the hub came up"
+    step "USB hub recovery runs at each boot, and does nothing if the hub came up"
   fi
 }
 
@@ -351,7 +425,7 @@ put_unit() {
   local text
   text="$(cat)"
   if [ -f "$1" ] && [ "$(cat "$1")" = "$text" ]; then return 0; fi
-  printf '%s\n' "$text" | $SUDO tee "$1" >/dev/null || { echo "couldn't write $1" >&2; exit 1; }
+  printf '%s\n' "$text" | $SUDO tee "$1" >/dev/null || { error "couldn't write $1"; exit 1; }
   UNIT_CHANGED=1
 }
 
@@ -407,9 +481,13 @@ while [ $# -gt 0 ]; do
     --no-wear) WEAR=0; shift ;;
     --no-boot) BOOT=0; shift ;;
     -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
+    *) error "unknown arg: $1"; exit 2 ;;
   esac
 done
+
+if [ -n "$BINARY" ]; then banner "hald installer · $BINARY"
+elif [ "$VERSION" = latest ]; then banner "hald installer · latest release"
+else banner "hald installer · $VERSION"; fi
 
 if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; else SUDO=; fi
 
@@ -418,7 +496,7 @@ arch="$(uname -m)"
 case "$arch" in
   aarch64|arm64) TARGET=aarch64-unknown-linux-gnu ;;
   armv6l|armv7l|armhf) TARGET=arm-unknown-linux-gnueabihf ;;
-  *) echo "unsupported architecture: $arch (hald ships for aarch64 and armv6/7)" >&2; exit 1 ;;
+  *) error "unsupported architecture: $arch (hald ships for aarch64 and armv6/7)"; exit 1 ;;
 esac
 if [ "$arch" = "aarch64" ] && [ "$(getconf LONG_BIT 2>/dev/null || echo 64)" = "32" ]; then
   TARGET=arm-unknown-linux-gnueabihf  # 64-bit CPU on a 32-bit OS
@@ -435,19 +513,19 @@ else
   else
     URL="https://github.com/$REPO/releases/download/$VERSION/hald-$TARGET"
   fi
-  echo "→ downloading $URL"
+  step "downloading $URL"
   curl -fsSL --retry 3 -o "$TMP/hald" "$URL"
 fi
 chmod 0755 "$TMP/hald"
 if ! "$TMP/hald" --version >/dev/null 2>&1; then
-  echo "downloaded binary does not run on this system" >&2; exit 1
+  error "downloaded binary does not run on this system"; exit 1
 fi
-echo "→ $("$TMP/hald" --version) for $TARGET"
+step "$("$TMP/hald" --version) for $TARGET"
 
 # ---- user, groups, directories ---------------------------------------------
 warn_shared_login "$SERVICE_USER"
 if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
-  echo "→ creating user $SERVICE_USER"
+  step "creating user $SERVICE_USER"
   $SUDO useradd --system --home-dir "$STATE_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
 $SUDO mkdir -p "$CONF_DIR" "$STATE_DIR"
@@ -469,7 +547,7 @@ if [ -n "$CORE_USER" ] && [ "$CORE_USER" != root ] && id -u "$CORE_USER" >/dev/n
     owe_restart "$CORE_RESTART_OWED"
     $SUDO usermod -aG "$SERVICE_USER" "$CORE_USER"
   fi
-  echo "→ $CORE_USER can read $CONF_DIR and $STATE_DIR (group $SERVICE_USER) for backups"
+  step "$CORE_USER can read $CONF_DIR and $STATE_DIR (group $SERVICE_USER) for backups"
 fi
 $SUDO chgrp "$SERVICE_USER" "$CONF_DIR"
 $SUDO chmod 0755 "$CONF_DIR"
@@ -480,7 +558,7 @@ if ! cmp -s "$TMP/hald" "$PREFIX/hald"; then
   $SUDO install -m 0755 "$TMP/hald" "$PREFIX/hald"
 fi
 if [ ! -f "$CONF_DIR/hal.toml" ]; then
-  echo "→ writing $CONF_DIR/hal.toml (commented defaults)"
+  step "writing $CONF_DIR/hal.toml (commented defaults)"
   "$PREFIX/hald" --print-default-config | $SUDO tee "$CONF_DIR/hal.toml" >/dev/null
   $SUDO chmod 0644 "$CONF_DIR/hal.toml"
 fi
@@ -488,7 +566,7 @@ fi
 
 # ---- interfaces: I²C and the hardware PWM overlay ----------------------------
 if command -v raspi-config >/dev/null 2>&1 && [ ! -e "$ROOT/dev/i2c-1" ]; then
-  echo "→ enabling I²C"
+  step "enabling I²C"
   $SUDO raspi-config nonint do_i2c 0 || true
 fi
 BOOT_CONF=""
@@ -496,12 +574,12 @@ for c in /boot/firmware/config.txt /boot/config.txt; do
   if [ -f "$c" ]; then BOOT_CONF="$c"; break; fi
 done
 if [ -n "$BOOT_CONF" ] && ! grep -q '^dtoverlay=pwm' "$BOOT_CONF"; then
-  echo "→ enabling hardware PWM on GPIO18 in $BOOT_CONF (reboot required)"
+  step "enabling hardware PWM on GPIO18 in $BOOT_CONF (reboot required)"
   echo "dtoverlay=pwm,pin=18,func=2" | $SUDO tee -a "$BOOT_CONF" >/dev/null
 fi
 if ! command -v fswebcam >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-  echo "→ installing fswebcam (camera stills)"
-  $SUDO apt-get install -y -q fswebcam >/dev/null || echo "   (fswebcam install failed; cameras will report missing)"
+  step "installing fswebcam (camera stills)"
+  $SUDO apt-get install -y -q fswebcam >/dev/null || note "   (fswebcam install failed; cameras will report missing)"
 fi
 
 # ---- cameras -----------------------------------------------------------------
@@ -520,14 +598,14 @@ if [ "$BROKER" != none ]; then
   MOSQ_CHANGED=0
   if ! have_broker; then
     if command -v apt-get >/dev/null 2>&1; then
-      echo "→ installing Mosquitto (MQTT broker)"
+      step "installing Mosquitto (MQTT broker)"
       $SUDO apt-get install -y -q mosquitto mosquitto-clients >/dev/null
     else
-      echo "   no apt-get: install an MQTT broker yourself, or rerun with --no-broker" >&2
+      warn "   no apt-get: install an MQTT broker yourself, or rerun with --no-broker"
     fi
   fi
   if [ -d /etc/mosquitto/conf.d ] && [ ! -f "$MOSQ_CONF" ]; then
-    echo "→ writing $MOSQ_CONF (127.0.0.1:1883, no password: only processes on this Pi can reach it)"
+    step "writing $MOSQ_CONF (127.0.0.1:1883, no password: only processes on this Pi can reach it)"
     MOSQ_CHANGED=1
     $SUDO tee "$MOSQ_CONF" >/dev/null <<'CONF'
 # Written by seedypod scripts/install-hal. Each listener has its own auth.
@@ -553,8 +631,8 @@ listener 1884
 allow_anonymous false
 password_file $MOSQ_PASSWD
 CONF
-    echo "→ MQTT for Home Assistant: $(hostname).local port 1884, user homeassistant, password $HA_PASS"
-    echo "   (shown once; change it with: sudo mosquitto_passwd $MOSQ_PASSWD homeassistant)"
+    step "MQTT for Home Assistant: $(hostname).local port 1884, user homeassistant, password $HA_PASS"
+    note "   (shown once; change it with: sudo mosquitto_passwd $MOSQ_PASSWD homeassistant)"
   fi
   if [ -f "$MOSQ_PASSWD" ]; then
     $SUDO chown "mosquitto:$SERVICE_USER" "$MOSQ_PASSWD" 2>/dev/null || true
@@ -621,4 +699,4 @@ if [ "$ENABLE" -eq 1 ]; then
   $SUDO systemctl --no-pager --lines=5 status hald.service || true
 fi
 
-echo "✓ hald installed. Config: $CONF_DIR/hal.toml · logs: journalctl -u hald -f · check: hald --config $CONF_DIR/hal.toml --check"
+success "hald installed. Config: $CONF_DIR/hal.toml · logs: journalctl -u hald -f · check: hald --config $CONF_DIR/hal.toml --check"

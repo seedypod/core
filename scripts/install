@@ -20,10 +20,84 @@
 # scripts/image/bake runs this while building the OS image, with no network for
 # what the build already made: SEEDYPOD_TARBALL_URL and SEEDYPOD_RELEASE_URL point
 # at them, and SEEDYPOD_CORE_USER is the account core runs as.
+# Output is in colour on a terminal only; SEEDYPOD_COLOR=always or never overrides that.
 set -euo pipefail
 # The release can pin a pnpm newer than the one Corepack has, and Corepack would then
 # stop to ask before fetching it, which hangs the image bake and the update helper.
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
+# ---- output --------------------------------------------------------------------
+# Colour only on a terminal, which curl | bash still writes to. A log, tee or the OS
+# image bake gets plain text, as do NO_COLOR and TERM=dumb. SEEDYPOD_COLOR=always or
+# never overrides all of that, for tests. Each stream is decided on its own.
+ui_colour() {
+  case "${SEEDYPOD_COLOR:-}" in always) return 0 ;; never) return 1 ;; esac
+  [ -t "$1" ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]
+}
+UI_OK="" UI_STEP="" UI_DIM="" UI_BOLD="" UI_OFF="" UI_WARN="" UI_ERR="" UI_EOFF=""
+if ui_colour 1; then UI_OK=$'\e[32m' UI_STEP=$'\e[36m' UI_DIM=$'\e[2m' UI_BOLD=$'\e[1m' UI_OFF=$'\e[0m'; fi
+if ui_colour 2; then UI_WARN=$'\e[33m' UI_ERR=$'\e[31m' UI_EOFF=$'\e[0m'; fi
+step() { printf '%s→%s %s\n' "$UI_STEP" "$UI_OFF" "$*"; }
+ok() { printf '%s✓%s %s\n' "$UI_OK" "$UI_OFF" "$*"; }
+# The line a run ends on.
+success() { printf '%s✓%s %s%s%s\n' "$UI_OK" "$UI_OFF" "$UI_BOLD" "$*" "$UI_OFF"; }
+note() { printf '%s%s%s\n' "$UI_DIM" "$*" "$UI_OFF"; }
+warn() { printf '%s%s%s\n' "$UI_WARN" "$*" "$UI_EOFF" >&2; }
+error() { printf '%s%s%s\n' "$UI_ERR" "$*" "$UI_EOFF" >&2; }
+fail() { printf '%s✗ %s%s\n' "$UI_ERR" "$*" "$UI_EOFF" >&2; }
+
+# The SSH login screen's logo, with $1 beside it, or under it in a narrower window.
+# Nothing at all off a terminal. One line where the blocks can't show: no colour, no
+# UTF-8, or a window narrower than the logo.
+banner() {
+  [ -t 1 ] || [ "${SEEDYPOD_COLOR:-}" = always ] || return 0
+  local cols i beside=1
+  # Asked of the terminal itself: inside $( ) stdout is a pipe, and under curl | bash so is stdin.
+  cols="$(stty size 2>/dev/null </dev/tty || true)"
+  cols="${cols#* }"
+  cols="${cols:-80}"
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;; *) cols=0 ;; esac
+  if [ -z "$UI_OFF" ] || [ "$cols" -lt "$UI_LOGO_COLS" ]; then
+    printf '%sseedypod %s%s\n\n' "$UI_BOLD" "$1" "$UI_OFF"
+    return 0
+  fi
+  [ "$cols" -gt $((UI_LOGO_COL + ${#1})) ] || beside=0
+  printf '\n'
+  for i in "${!UI_LOGO[@]}"; do
+    printf '%b' "${UI_LOGO[i]}"
+    if [ "$beside" = 1 ] && [ "$i" -eq $((UI_LOGO_ROW + 1)) ]; then printf '\r\e[%dC%s%s%s' "$UI_LOGO_COL" "$UI_DIM" "$1" "$UI_OFF"; fi
+    printf '\n'
+  done
+  [ "$beside" = 1 ] || printf '  %s%s%s\n' "$UI_DIM" "$1" "$UI_OFF"
+  printf '\n'
+}
+# >>> logo: scripts/login-logo/generate.mjs writes this block (pnpm logo:generate)
+UI_LOGO_COLS=54
+UI_LOGO_COL=46
+UI_LOGO_ROW=8
+UI_LOGO=(
+'                                      \e[38;5;193m▄▄▄\e[0m'
+'       \e[38;5;120;48;5;120m▀▀▀\e[48;5;84m▀\e[49m                     ▄▄▄\e[38;5;156;48;5;120m▀▀▀\e[48;5;156m▀▀\e[38;5;192m▀\e[0m'
+'  \e[38;5;84;48;5;42m▀\e[48;5;41m▀\e[49m   \e[48;5;84m▀▀▀▀\e[49m▄▄▄▄              ▄\e[48;5;84m▀▀▀\e[48;5;83m▀▀\e[38;5;120m▀▀\e[48;5;119m▀\e[48;5;120m▀\e[38;5;156m▀\e[48;5;156m▀\e[0m'
+'         \e[38;5;84m▀\e[48;5;84m▀▀▀\e[48;5;42m▀▀\e[38;5;42;49m▄▄\e[38;5;41m▄        \e[38;5;42m▄\e[38;5;84;48;5;42m▀\e[38;5;42m▀\e[48;5;41m▀\e[38;5;78m▀\e[38;5;77m▀\e[48;5;77m▀▀▀▀\e[38;5;83m▀\e[48;5;83m▀\e[38;5;119;48;5;119m▀▀\e[38;5;156;48;5;156m▀\e[0m'
+'     \e[38;5;84;48;5;42m▀▀▀\e[49m   \e[48;5;42m▀\e[38;5;42m▀▀▀▀▀\e[38;5;35;48;5;35m▀\e[38;5;29;48;5;29m▀\e[38;5;23;49m▄     \e[38;5;42;48;5;42m▀\e[48;5;36m▀\e[48;5;35m▀\e[38;5;41;48;5;41m▀▀▀▀\e[48;5;35m▀\e[48;5;41m▀\e[38;5;77;48;5;77m▀▀▀▀\e[38;5;83;48;5;83m▀\e[38;5;119;48;5;119m▀\e[38;5;156;48;5;156m▀\e[0m'
+'     \e[38;5;42m▄▄▄▄▄ ▀▀\e[48;5;42m▀▀\e[38;5;35;48;5;35m▀▀▀▀\e[48;5;29m▀\e[38;5;23;48;5;23m▀\e[49m▄  \e[38;5;36;48;5;35m▀▀\e[38;5;35m▀▀▀▀\e[48;5;23m▀\e[38;5;29;48;5;35m▀\e[38;5;35;48;5;41m▀\e[38;5;41m▀▀\e[38;5;77m▀▀\e[48;5;77m▀▀\e[38;5;119;48;5;119m▀\e[0m'
+'     \e[38;5;42;48;5;42m▀\e[48;5;36m▀▀\e[38;5;36;48;5;35m▀\e[38;5;35m▀\e[49m   \e[38;5;42;48;5;35m▀▀\e[38;5;35m▀▀\e[48;5;29m▀\e[38;5;29;48;5;23m▀\e[38;5;23m▀▀\e[38;5;235;48;5;235m▀\e[38;5;23;49m▄\e[38;5;29;48;5;29m▀▀▀▀▀\e[48;5;23m▀\e[38;5;23;48;5;29m▀\e[38;5;35;48;5;41m▀\e[38;5;41;48;5;35m▀▀▀▀▀\e[48;5;41m▀\e[38;5;77m▀\e[48;5;77m▀\e[38;5;84;49m▀\e[0m'
+'     \e[38;5;36;48;5;36m▀▀\e[38;5;35;48;5;35m▀▀▀\e[49m  \e[38;5;29;48;5;29m▀▀▀\e[38;5;36;48;5;36m▀▀\e[38;5;35;48;5;35m▀\e[38;5;23;48;5;23m▀▀▀\e[38;5;235;48;5;235m▀▀\e[38;5;23;48;5;23m▀▀▀\e[38;5;29m▀\e[38;5;23;48;5;235m▀\e[48;5;35m▀\e[38;5;35m▀▀▀▀▀▀▀▀\e[38;5;41;48;5;41m▀\e[38;5;77;49m▀\e[0m'
+'               \e[38;5;29;48;5;29m▀\e[48;5;23m▀▀\e[38;5;23m▀▀▀\e[38;5;235;48;5;235m▀\e[49m█\e[38;5;23;48;5;235m▀\e[48;5;23m▀\e[48;5;235m▀\e[38;5;235;48;5;23m▀\e[38;5;29;48;5;35m▀\e[38;5;35;48;5;29m▀▀\e[38;5;29m▀▀▀▀\e[38;5;35m▀\e[48;5;35m▀\e[49m▀         \e[1;38;5;78mse\e[38;5;84me\e[38;5;120mdyp\e[38;5;156mod\e[0m'
+'          \e[38;5;29;48;5;23m▀▀\e[38;5;23m▀\e[49m  ▀▀▀\e[48;5;23m▀▀▀\e[38;5;235;48;5;236m▀\e[48;5;235m▀▀\e[38;5;23;48;5;236m▀\e[38;5;235;48;5;235m▀\e[38;5;29;48;5;29m▀▀▀▀▀▀▀\e[49m▀\e[38;5;35m▀\e[0m'
+'          \e[38;5;23m▀▀▀     \e[48;5;23m▀▀▀▀\e[38;5;235;48;5;235m▀▀▀\e[38;5;23;48;5;29m▀\e[38;5;29m▀▀\e[49m▀▀▀\e[0m'
+'               \e[38;5;195m▄\e[38;5;152m▄\e[38;5;109m▄\e[38;5;66m▄\e[38;5;65m▄\e[38;5;23m▄\e[38;5;188;48;5;23m▀\e[38;5;239m▀\e[38;5;235;48;5;235m▀\e[38;5;236;48;5;23m▀\e[38;5;35;48;5;35m▀\e[38;5;115;48;5;29m▀\e[38;5;194m▀\e[38;5;71;49m▄\e[38;5;78m▄\e[38;5;114m▄\e[38;5;157m▄\e[38;5;194m▄\e[38;5;255m▄\e[0m'
+'            \e[38;5;195m▄\e[48;5;189m▀\e[38;5;152;48;5;146m▀\e[38;5;66;48;5;236m▀\e[38;5;23;48;5;235m▀\e[38;5;236m▀\e[38;5;235m▀▀▀▀▀\e[38;5;23;48;5;23m▀▀\e[38;5;29;48;5;29m▀\e[38;5;236;48;5;23m▀\e[38;5;23m▀▀▀\e[38;5;29m▀\e[38;5;35;48;5;29m▀\e[38;5;41m▀\e[38;5;121;48;5;78m▀\e[38;5;255;48;5;255m▀▀\e[0m'
+'           \e[38;5;189m▄\e[48;5;189m▀\e[48;5;153m▀▀\e[38;5;152m▀\e[38;5;109m▀\e[38;5;66m▀\e[38;5;239m▀\e[38;5;23m▀\e[38;5;236;48;5;152m▀▀\e[38;5;23m▀▀\e[48;5;151m▀▀\e[48;5;152m▀▀\e[48;5;194m▀\e[38;5;29m▀\e[38;5;71m▀\e[38;5;114m▀\e[38;5;152;48;5;254m▀\e[38;5;255m▀▀\e[48;5;255m▀\e[38;5;231m▀\e[0m'
+'           \e[38;5;189;48;5;153m▀\e[38;5;153m▀\e[48;5;147m▀▀▀▀▀▀▀\e[38;5;152;48;5;146m▀▀▀▀▀▀▀▀\e[48;5;250m▀\e[38;5;251m▀\e[48;5;251m▀▀\e[38;5;252;48;5;252m▀\e[38;5;253;48;5;188m▀\e[38;5;254;48;5;253m▀\e[38;5;255;48;5;254m▀\e[48;5;255m▀\e[38;5;231m▀\e[0m'
+'          \e[38;5;153;48;5;153m▀▀\e[38;5;111;48;5;111m▀▀▀▀▀\e[38;5;147m▀▀\e[38;5;146;48;5;110m▀▀▀▀▀▀▀▀▀\e[48;5;109m▀\e[38;5;250;48;5;249m▀▀\e[48;5;250m▀\e[38;5;251;48;5;251m▀\e[38;5;252m▀\e[38;5;188;48;5;252m▀\e[38;5;254;48;5;253m▀\e[38;5;255;48;5;254m▀\e[48;5;255m▀\e[0m'
+'           \e[38;5;117;48;5;111m▀\e[38;5;111;48;5;75m▀\e[48;5;69m▀▀▀▀▀\e[48;5;104m▀\e[38;5;110m▀▀▀▀▀▀\e[48;5;103m▀\e[48;5;109m▀\e[38;5;109m▀▀▀▀\e[38;5;249m▀\e[38;5;250;48;5;250m▀\e[38;5;152;48;5;152m▀\e[38;5;252m▀\e[38;5;253;48;5;188m▀\e[38;5;254;48;5;254m▀\e[38;5;255;48;5;255m▀\e[0m'
+'           \e[38;5;111m▀\e[38;5;75;48;5;75m▀\e[38;5;69;48;5;69m▀▀▀▀▀\e[38;5;68;48;5;68m▀▀▀▀▀\e[48;5;67m▀\e[38;5;67m▀▀▀▀\e[38;5;109m▀\e[48;5;73m▀\e[48;5;109m▀▀▀\e[38;5;152;48;5;152m▀▀\e[38;5;188;48;5;188m▀\e[38;5;194;48;5;194m▀\e[0m'
+'             \e[38;5;69m▀\e[48;5;69m▀\e[38;5;63;48;5;27m▀▀\e[48;5;63m▀\e[38;5;62;48;5;62m▀▀▀▀▀\e[38;5;67;48;5;61m▀▀\e[48;5;67m▀▀▀▀\e[38;5;73;48;5;73m▀▀\e[38;5;109;48;5;109m▀\e[38;5;110;48;5;116m▀\e[38;5;116m▀\e[38;5;152;48;5;152m▀\e[38;5;158;49m▀\e[0m'
+'                \e[38;5;27m▀▀▀\e[38;5;26m▀\e[48;5;27m▀\e[48;5;26m▀▀\e[38;5;61m▀\e[48;5;32m▀\e[38;5;67;48;5;67m▀▀▀\e[49m▀\e[38;5;73m▀▀\e[38;5;80m▀\e[38;5;116m▀\e[0m'
+)
+# <<< logo
 
 BRANCH="${SEEDYPOD_BRANCH:-__BRANCH__}"
 PREFIX="${SEEDYPOD_PREFIX:-/opt/seedypod}"
@@ -46,7 +120,7 @@ while [ $# -gt 0 ]; do
     --login-logo) LOGIN_LOGO=1; shift ;;
     --port80) PORT80=on; shift ;;
     --no-port80) PORT80=off; shift ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
+    *) error "unknown arg: $1"; exit 2 ;;
   esac
 done
 
@@ -73,13 +147,13 @@ fetch_sqlite_prebuilt() {
   base="${SEEDYPOD_RELEASE_URL:-$base}"
   mkdir -p "$dir/prebuilds"
   if ! curl -fsSL --retry 3 "$base/$asset" -o "$dir/$asset" || ! curl -fsSL --retry 3 "$base/$asset.sha256" -o "$dir/$asset.sha256"; then
-    echo "   no prebuilt $asset in this release" >&2; return 1
+    warn "   no prebuilt $asset in this release"; return 1
   fi
   if ! (cd "$dir" && sha256sum -c --quiet "$asset.sha256") >/dev/null 2>&1; then
-    echo "   the prebuilt $asset fails its sha256" >&2; return 1
+    warn "   the prebuilt $asset fails its sha256"; return 1
   fi
   if ! tar xzf "$dir/$asset" -C "$dir" build/Release/better_sqlite3.node || ! node -e 'require(process.argv[1])' "$dir/build/Release/better_sqlite3.node" >/dev/null 2>&1; then
-    echo "   the prebuilt $asset doesn't load under Node $(node -v)" >&2; return 1
+    warn "   the prebuilt $asset doesn't load under Node $(node -v)"; return 1
   fi
   # prebuild-install looks it up by process.arch, which doesn't say ARMv6.
   mv -f "$dir/$asset" "$dir/prebuilds/better-sqlite3-v$version-node-v$abi-linux-arm.tar.gz"
@@ -91,10 +165,10 @@ prepare_sqlite() {
   # A rerun keeps what it built: pnpm leaves it, so don't fetch or compile anything.
   if [ ! -f "$(sqlite_binary)" ]; then
     if fetch_sqlite_prebuilt; then
-      echo "→ using the prebuilt ARMv6 better-sqlite3"
+      step "using the prebuilt ARMv6 better-sqlite3"
       return 0
     fi
-    echo "→ compiling better-sqlite3 here: allow about an hour"
+    step "compiling better-sqlite3 here: allow about an hour"
     sqlite_compiler
   fi
   export npm_config_build_from_source=true
@@ -104,10 +178,10 @@ prepare_sqlite() {
 # can load and crash later, so a prebuilt must also be the file that landed.
 check_sqlite() {
   if sqlite_works && { [ -z "$SQLITE_PREBUILT" ] || cmp -s "$SQLITE_PREBUILT" "$(sqlite_binary)"; }; then return 0; fi
-  echo "→ better-sqlite3 didn't come out usable; compiling it here: allow about an hour"
+  step "better-sqlite3 didn't come out usable; compiling it here: allow about an hour"
   sqlite_compiler
   npm_config_build_from_source=true pnpm rebuild better-sqlite3
-  sqlite_works || { echo "✗ better-sqlite3 still doesn't load on this machine" >&2; return 1; }
+  sqlite_works || { fail "better-sqlite3 still doesn't load on this machine"; return 1; }
 }
 
 # A rerun with the same lockfile and Node has nothing to install, and pnpm takes 40 s
@@ -127,7 +201,7 @@ prune_dist() {
 
 install_deps() {
   if cmp -s pnpm-lock.yaml "$(deps_stamp)" && { [ "$NODE_FROM_SOURCE" != 1 ] || sqlite_works; }; then
-    echo "→ dependencies unchanged"
+    step "dependencies unchanged"
     return 0
   fi
   rm -f node_modules/.seedypod-lock-*
@@ -157,16 +231,16 @@ node_plan() {
     armv7l:*|aarch64:32|armv8l:*) NODE_ARCH=armv7l; NODE_VERSION=$NODE_22 ;;
     armv6l:*) NODE_ARCH=armv6l; NODE_VERSION=$NODE_22; NODE_FROM_SOURCE=1 ;;
     *)
-      echo "✗ This ${model:-$arch machine} can't run core: Node has no build for it." >&2
+      fail "This ${model:-$arch machine} can't run core: Node has no build for it."
       return 3 ;;
   esac
   if [ "$NODE_VERSION" = current ]; then
-    echo "✓ ${model:-$arch} runs core on Node from .node-version"
+    ok "${model:-$arch} runs core on Node from .node-version"
   else
-    echo "✓ ${model:-$arch} runs core on Node $NODE_VERSION ($NODE_ARCH): Node 24 has no 32-bit ARM build."
-    echo "  Node 22 gets security fixes until April 2027.${model:+ }$(case "$model" in *"Zero 2"*|*"Pi 3"*|*"Pi 4"*|*"Pi 5"*) echo "Reflash with 64-bit Raspberry Pi OS Lite to move to Node 24." ;; *) echo "A Pi Zero 2 W on 64-bit Raspberry Pi OS moves to Node 24." ;; esac)"
+    ok "${model:-$arch} runs core on Node $NODE_VERSION ($NODE_ARCH): Node 24 has no 32-bit ARM build."
+    note "  Node 22 gets security fixes until April 2027.${model:+ }$(case "$model" in *"Zero 2"*|*"Pi 3"*|*"Pi 4"*|*"Pi 5"*) echo "Reflash with 64-bit Raspberry Pi OS Lite to move to Node 24." ;; *) echo "A Pi Zero 2 W on 64-bit Raspberry Pi OS moves to Node 24." ;; esac)"
   fi
-  [ "$NODE_FROM_SOURCE" = 1 ] && echo "  better-sqlite3 comes prebuilt for ARMv6 from the release; without one it compiles here, which takes about an hour."
+  [ "$NODE_FROM_SOURCE" = 1 ] && note "  better-sqlite3 comes prebuilt for ARMv6 from the release; without one it compiles here, which takes about an hour."
   return 0
 }
 
@@ -191,7 +265,7 @@ put_file() {
   local text
   text="$(cat)"
   if [ -f "$1" ] && [ "$(cat "$1")" = "$text" ]; then return 0; fi
-  printf '%s\n' "$text" | sudo tee "$1" >/dev/null || { echo "couldn't write $1" >&2; return 1; }
+  printf '%s\n' "$text" | sudo tee "$1" >/dev/null || { error "couldn't write $1"; return 1; }
   FILE_CHANGED=1
 }
 
@@ -209,27 +283,27 @@ install_port80() {
     off)
       port80_remove
       sudo mkdir -p "$(dirname "$PORT80_OFF")" && sudo touch "$PORT80_OFF"
-      echo "→ port 80 left alone; core is on :3000"
+      step "port 80 left alone; core is on :3000"
       return 0 ;;
     on) sudo rm -f "$PORT80_OFF" ;;
     auto)
       [ ! -e "$PORT80_OFF" ] || return 0
       # A LAN box may well have plans for port 80. --port80 is how it says otherwise.
       if [ ! -e "$PORT80_RULES" ] && ! grep -aqs 'Raspberry Pi' "$ROOT/proc/device-tree/model"; then
-        echo "→ not a Raspberry Pi, so port 80 is left alone; scripts/install --port80 forwards it to core"
+        step "not a Raspberry Pi, so port 80 is left alone; scripts/install --port80 forwards it to core"
         return 0
       fi ;;
   esac
   if port80_taken; then
     port80_remove
-    echo "   something else listens on port 80, so it's left alone; core is on :3000" >&2
+    warn "   something else listens on port 80, so it's left alone; core is on :3000"
     return 0
   fi
   if [ ! -x "$ROOT/usr/sbin/nft" ] && command -v apt-get >/dev/null 2>&1; then
     sudo apt-get install -y -q nftables >/dev/null || true
   fi
   if [ ! -x "$ROOT/usr/sbin/nft" ]; then
-    echo "   no nftables on this machine" >&2
+    warn "   no nftables on this machine"
     return 1
   fi
   FILE_CHANGED=0
@@ -261,12 +335,12 @@ WantedBy=multi-user.target
 UNIT
   # Asks nft, not systemd: a oneshot stays active after nftables.service flushes the ruleset.
   if [ "$FILE_CHANGED" -eq 0 ] && sudo "$ROOT/usr/sbin/nft" list table ip seedypod >/dev/null 2>&1; then
-    echo "→ port 80 already forwards to core"
+    step "port 80 already forwards to core"
     return 0
   fi
   if sudo systemctl daemon-reload && sudo systemctl enable seedypod-port80.service >/dev/null 2>&1 \
     && sudo systemctl restart seedypod-port80.service; then
-    echo "→ port 80 forwards to core"
+    step "port 80 forwards to core"
     return 0
   fi
   port80_remove
@@ -379,13 +453,14 @@ if [ "${SEEDYPOD_LIB_ONLY:-}" = 1 ]; then return 0; fi
 if [ "$LOGIN_LOGO" = 1 ]; then install_login_logo; exit $?; fi
 if [ "$PORT80" != auto ]; then install_port80; exit $?; fi
 if [ "$CHECK" = 1 ]; then node_plan; exit $?; fi
-node_plan || exit 3
 [ "$BRANCH" = "__BRANCH__" ] && BRANCH=main
+banner "core installer · branch $BRANCH"
+node_plan || exit 3
 # The installer cd's into $PREFIX, so a local bundle needs its full path.
 case "$RESTORE" in
   ""|http://*|https://*) ;;
   *)
-    [ -f "$RESTORE" ] || { echo "no such backup: $RESTORE" >&2; exit 2; }
+    [ -f "$RESTORE" ] || { error "no such backup: $RESTORE"; exit 2; }
     RESTORE="$(cd "$(dirname "$RESTORE")" && pwd)/$(basename "$RESTORE")" ;;
 esac
 
@@ -399,7 +474,7 @@ else
   TARBALL_URL="https://nightly.link/$REPO/workflows/build/$BRANCH/seedypod-core.zip"
 fi
 
-echo "→ seedypod core: branch=$BRANCH prefix=$PREFIX"
+step "seedypod core: branch=$BRANCH prefix=$PREFIX"
 CORE_USER="$(core_user)"
 TMP=$(mktemp -d)
 curl -fsSL "$TARBALL_URL" -o "$TMP/pkg"
@@ -416,7 +491,7 @@ NODE_WANT=$NODE_VERSION
 NODE_DIST=https://nodejs.org/dist
 [ "$NODE_ARCH" = armv6l ] && NODE_DIST=https://unofficial-builds.nodejs.org/download/release
 if ! command -v node >/dev/null || [ "$(node -v)" != "v$NODE_WANT" ]; then
-  echo "→ installing Node $NODE_WANT ($NODE_ARCH)"
+  step "installing Node $NODE_WANT ($NODE_ARCH)"
   curl -fsSL "$NODE_DIST/v$NODE_WANT/node-v$NODE_WANT-linux-$NODE_ARCH.tar.xz" | sudo tar -xJ -C /usr/local --strip-components=1
 fi
 corepack enable >/dev/null 2>&1 || true
@@ -445,11 +520,11 @@ if [ -z "$HAL_UNIT_ID" ] && command -v hald >/dev/null 2>&1; then
 fi
 if [ -n "$HAL_UNIT_ID" ]; then
   HAL_ENV="Environment=HAL_MQTT_URL=mqtt://127.0.0.1:1883 HAL_UNIT_ID=$HAL_UNIT_ID"
-  echo "→ talking to hald $HAL_UNIT_ID on this machine"
+  step "talking to hald $HAL_UNIT_ID on this machine"
 else
   HAL_ENV="# Environment=HAL_MQTT_URL=mqtt://<unit>:1883 HAL_UNIT_ID=<from hald --check> HAL_HTTP_URL=http://<unit>:3001"
-  echo "   no hald on this machine: core starts on the simulator. To drive a unit, set HAL_MQTT_URL and HAL_UNIT_ID" >&2
-  echo "   in /etc/systemd/system/seedypod-core.service (see docs/INSTALLATION.md#which-pi)." >&2
+  warn "   no hald on this machine: core starts on the simulator. To drive a unit, set HAL_MQTT_URL and HAL_UNIT_ID"
+  warn "   in /etc/systemd/system/seedypod-core.service (see docs/INSTALLATION.md#which-pi)."
 fi
 
 FILE_CHANGED=0
@@ -483,17 +558,17 @@ echo "$CORE_USER ALL=(root) NOPASSWD: $HELPER" > "$SUDOERS_TMP"
 if sudo visudo -cf "$SUDOERS_TMP" >/dev/null; then
   sudo install -m 0440 -o root -g root "$SUDOERS_TMP" /etc/sudoers.d/seedypod-restore
 else
-  echo "   couldn't validate the sudoers rule for $HELPER; restore from the web UI is off" >&2
+  warn "   couldn't validate the sudoers rule for $HELPER; restore from the web UI is off"
 fi
 rm -f "$SUDOERS_TMP"
-install_update_helper || echo "   couldn't install the update helper; update from the web UI is off" >&2
+install_update_helper || warn "   couldn't install the update helper; update from the web UI is off"
 
 # Backups read hal.toml, hald's state and the broker password through the seedypod
 # group that install-hal creates (ADR-0021); install-hal adds us too if it runs later.
 HAL_GROUP="$(hal_group)"
 if getent group "$HAL_GROUP" >/dev/null 2>&1; then sudo usermod -aG "$HAL_GROUP" "$CORE_USER"; fi
 
-install_login_logo || echo "   couldn't install the login logo; logins work as before" >&2
+install_login_logo || warn "   couldn't install the login logo; logins work as before"
 
 # NeedDaemonReload catches a unit an interrupted run wrote and never loaded.
 if [ "$FILE_CHANGED" = 1 ] || [ "$(systemctl show -p NeedDaemonReload --value seedypod-core.service 2>/dev/null)" = yes ]; then
@@ -502,19 +577,19 @@ fi
 systemctl is-enabled --quiet seedypod-core.service || sudo systemctl enable seedypod-core.service >/dev/null
 sudo systemctl restart seedypod-core.service
 trap - EXIT
-prune_dist "$TARBALL" || echo "   couldn't clear old chunks" >&2
-install_port80 || echo "   couldn't forward port 80; core is on :3000" >&2
+prune_dist "$TARBALL" || warn "   couldn't clear old chunks"
+install_port80 || warn "   couldn't forward port 80; core is on :3000"
 if [ -n "$RESTORE" ]; then
   BUNDLE="$RESTORE"
   case "$RESTORE" in
     http://*|https://*)
       BUNDLE="$TMP/restore.tar.gz"
-      echo "→ downloading $RESTORE"
+      step "downloading $RESTORE"
       curl -fsSL "$RESTORE" -o "$BUNDLE" ;;
   esac
-  echo "→ restoring $RESTORE"
+  step "restoring $RESTORE"
   sudo "$HELPER" "$BUNDLE" >/dev/null
 fi
 ADDRESS="http://$(hostname -I | awk '{print $1}')"
 [ -e "$PORT80_RULES" ] || ADDRESS="$ADDRESS:3000"
-echo "✓ seedypod core running on $ADDRESS"
+success "seedypod core running on $ADDRESS"

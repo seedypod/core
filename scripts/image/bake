@@ -15,6 +15,8 @@ assets=/tmp/seedypod/assets
 share=/usr/local/share/seedypod
 lib=/usr/local/lib/seedypod
 export DEBIAN_FRONTEND=noninteractive USER=root HOME=/root
+# The build log stays plain text, even when the build runs from a terminal.
+export SEEDYPOD_COLOR=never
 
 # Neither account is a login, and neither name is one a person would pick, so Imager
 # can create any login at all, seedypod included.
