@@ -42,6 +42,7 @@ describe('system.loginSummary', () => {
     store.alerts.raise('water_low', 'water level sensor unavailable', iso(60))
     store.alerts.raise('backup_stale', 'No off-card backup yet', iso(30))
     expect(await c.system.loginSummary()).toEqual({
+      coreVersion: 'test',
       unitId: 'gardyn-db753a85',
       model: 'gardyn 3.0',
       halOnline: true,
@@ -75,6 +76,7 @@ describe('system.loginSummary', () => {
   it('leaves out what hald hasn\'t told core yet, without failing', async () => {
     const { c } = rig(s => ({ ...s, online: false, system: null, sensors: {}, actuators: {} }))
     expect(await c.system.loginSummary()).toEqual({
+      coreVersion: 'test',
       unitId: null,
       model: null,
       halOnline: false,

@@ -2,7 +2,8 @@
 # seedypod login stats: the live facts login-logo writes beside the logo. One
 # line per fact, in display order: the label, then tab-separated segments, each
 # "state:text" with state ok, warn, bad, dim or - for none. A fact with no source
-# is left out. Read-only: it reads /proc and /sys, runs df and vcgencmd, and GETs
+# is left out. First, when core answers, comes "version", the build core runs:
+# login-logo prints it in place of the version file, which a web update doesn't touch. Read-only: it reads /proc and /sys, runs df and vcgencmd, and GETs
 # core's /api/system/login-summary.
 #
 # On a Pi Zero W a fork costs ~50 ms and curl ~330 ms before it sends a byte, so
@@ -80,6 +81,7 @@ running() {
 }
 
 fetch
+pick coreVersion && emit version "-:$v"
 
 # ---- the unit ----------------------------------------------------------------
 # The hostname is in the address beside the logo already.

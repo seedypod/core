@@ -45,7 +45,8 @@ gather() {
   while now; left=$((stats_by - now)); [ "$left" -gt 1000 ] || left=1000; [ "${#stats[@]}" -lt 30 ]; do
     printf -v t '%d.%06d' $((left / 1000000)) $((left % 1000000))
     IFS= read -r -t "$t" -u 4 line || break
-    stats+=("$line")
+    # What core runs beats the version file, which only scripts/install writes.
+    case "$line" in version$'\t'*) version=${line#*:} ;; *) stats+=("$line") ;; esac
   done
   kill "$stats_pid"
   stats_pid=""
@@ -92,8 +93,8 @@ fact_lines() {
 }
 
 plain() {
-  printf 'seedypod%s  %s\n' "${version:+ $version}" "$url"
   gather
+  printf 'seedypod%s  %s\n' "${version:+ $version}" "$url"
   [ "${term_cols:-0}" -gt 0 ] || term_cols=80
   fact_lines "$term_cols" 0
   [ "${#facts[@]}" -eq 0 ] || printf '%s\n' "${facts[@]}"
@@ -168,13 +169,13 @@ else
   printf '%s' "${lines[2]}"
 fi
 
+gather
 printf '\e[%dB' $((text_row + 1))
 [ -n "$version" ] && printf '\r\e[%dC\e[38;5;245m%s' "$text_col" "$version"
 printf '\n\r\e[%dC\e[38;5;72m%s\e[0m' "$text_col" "$url"
 
 # The facts go under the address, a blank line down, and carry on past the
 # bottom of the logo if there are more of them than rows beside it.
-gather
 fact_lines $((term_cols - text_col - 1)) 1
 row=$((text_row + 2))
 if [ "${#facts[@]}" -gt 0 ]; then

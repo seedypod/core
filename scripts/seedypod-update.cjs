@@ -45,6 +45,7 @@ const P = {
   sbin: env('SEEDYPOD_UPDATE_SBIN') ?? '/usr/local/sbin',
   compileCache: env('SEEDYPOD_UPDATE_COMPILE_CACHE') ?? '/var/cache/seedypod/compile-cache',
   busy: env('SEEDYPOD_UPDATE_BUSY') ?? '/run/seedypod-busy',
+  share: env('SEEDYPOD_UPDATE_SHARE') ?? '/usr/local/share/seedypod',
 }
 const STATUS = path.join(P.work, 'status.json')
 const LOG = path.join(P.work, 'update.log')
@@ -411,6 +412,24 @@ function installHelper(from, name) {
   fs.renameSync(tmp, dest)
 }
 
+/**
+ * Rewrites the version the SSH login screen falls back to when core doesn't answer,
+ * as scripts/install wrote it, so that it follows what's in the prefix now.
+ */
+function pinVersion() {
+  const file = path.join(P.share, 'version')
+  try {
+    if (!fs.existsSync(file)) return
+    const { branch, commit } = gitInfo(P.prefix)
+    fs.writeFileSync(`${file}.new`, `${branch ?? 'dev'}${commit ? `@${commit}` : ''}\n`, { mode: 0o644 })
+    if (isRoot) fs.chownSync(`${file}.new`, 0, 0)
+    fs.renameSync(`${file}.new`, file)
+  }
+  catch (e) {
+    log(`couldn't update ${file}: ${e.message}`)
+  }
+}
+
 // ---- locking -------------------------------------------------------------------------------
 
 function alive(pid) {
@@ -588,6 +607,7 @@ async function putBack(meta) {
     fs.chmodSync(`${P.hald}.new`, 0o755)
     fs.renameSync(`${P.hald}.new`, P.hald)
   }
+  pinVersion()
   return startAndCheck(meta, meta.fromVersion)
 }
 
@@ -720,6 +740,7 @@ async function apply() {
       log(`couldn't refresh ${n}: ${e.message}`)
     }
   }
+  pinVersion()
   fs.rmSync(path.join(P.previous, 'db'), { recursive: true, force: true })
   meta.db = false
   writeJson(META, meta)
