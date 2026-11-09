@@ -21,7 +21,7 @@
 //! not affected.
 
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -361,12 +361,19 @@ fn actuators_running(state: &str) -> Result<bool, String> {
     }))
 }
 
+/// Where to reach hald from here: its own address, or loopback when it binds every
+/// interface. Loopback alone would miss a hald bound to one LAN address.
+fn hald_addr(http_bind: &str) -> Result<SocketAddr, String> {
+    let mut addr: SocketAddr = http_bind.parse().map_err(|e| format!("{http_bind}: {e}"))?;
+    if addr.ip().is_unspecified() {
+        addr.set_ip(Ipv4Addr::LOCALHOST.into());
+    }
+    Ok(addr)
+}
+
 /// Ask this unit's hald. Its HTTP is all this process can see of the engine.
 pub fn pump_or_dose_running(http_bind: &str) -> Result<bool, String> {
-    let port = http_bind.rsplit(':').next().unwrap_or_default();
-    let addr: SocketAddr = format!("127.0.0.1:{port}")
-        .parse()
-        .map_err(|e| format!("{http_bind}: {e}"))?;
+    let addr = hald_addr(http_bind)?;
     let timeout = Duration::from_secs(5);
     let mut stream = TcpStream::connect_timeout(&addr, timeout).map_err(|e| format!("hald: {e}"))?;
     stream
@@ -990,6 +997,16 @@ mod tests {
         let got = recover(&what, &reboot_cfg(), &mut sleep, &mut || Ok(false));
         assert_eq!(got, Recovery::Reboot { attempt: 1, limit: 4 });
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn hald_is_asked_on_the_address_it_binds() {
+        let at = |bind: &str| hald_addr(bind).map(|a| a.to_string());
+        assert_eq!(at("0.0.0.0:3001").as_deref(), Ok("127.0.0.1:3001"));
+        assert_eq!(at("[::]:3001").as_deref(), Ok("127.0.0.1:3001"));
+        assert_eq!(at("192.168.2.177:3001").as_deref(), Ok("192.168.2.177:3001"));
+        assert_eq!(at("127.0.0.1:3001").as_deref(), Ok("127.0.0.1:3001"));
+        assert!(at("no-port").is_err());
     }
 
     #[test]
