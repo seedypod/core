@@ -100,5 +100,6 @@ describe('plan mode over MCP', () => {
     expect((await c.planner.savePlan({ id: 'e', name: 'Empty', model: 'home', mode: 'staggered', plants: [] })).start).toBeNull()
     expect((await c.planner.updatePlan({ id: 'e', name: 'Still empty' })).sowing).toEqual([])
     expect(await c.planner.matchOrder({ lines: ['Mint x2'] })).toMatchObject({ plants: [{ plantId: 'mint', count: 2 }] })
+    expect((await c.planner.matchOrder({ lines: ['Pink Swiss Chard'] })).unmatched[0]?.suggestions[0]).toMatchObject({ plantId: 'red-swiss-chard', reason: 'colour differs (pink; catalog has red)' })
   })
 })

@@ -77,6 +77,78 @@ describe('matchOrder', () => {
     expect(r.unmatched[0]?.suggestions.every(s => s.plantName.startsWith('Purple'))).toBe(true)
   })
 
+  it('places every line of a real Gardyn order, and leaves a variant the catalog lacks unmatched', () => {
+    const order = ['Basil', 'Italian Parsley', 'Chives', 'Catnip', 'Cilantro', 'Green Bok Choy', 'Kale', 'Kale Lacinato', '2 Perpetual Spinach', 'Red Swiss Chard', 'Rosemary', 'Sweet Thai Basil', 'Thyme', 'Red Salad Bowl', 'Mint', 'Bunching Onions', 'Oregano', 'Pink Swiss Chard', 'Buttercrunch Lettuce']
+      .map(l => (/^\d/.test(l) ? l.replace(/^(\d+) /, '$1 x ') : `1 x ${l}`))
+      .join('\n\n')
+    const r = matchOrder([order])
+    expect(r.matched.map(m => [m.name, m.plantId, m.count, m.confidence])).toEqual([
+      ['Basil', 'basil', 1, 1],
+      ['Italian Parsley', 'italian-parsley', 1, 1],
+      ['Chives', 'chives', 1, 1],
+      ['Catnip', 'catnip', 1, 1],
+      ['Cilantro', 'cilantro', 1, 1],
+      ['Green Bok Choy', 'green-bok-choy', 1, 1],
+      ['Kale', 'kale', 1, 1],
+      ['Kale Lacinato', 'kale-lacinato', 1, 1],
+      ['Perpetual Spinach', 'perpetual-spinach', 2, 1],
+      ['Red Swiss Chard', 'red-swiss-chard', 1, 1],
+      ['Rosemary', 'rosemary', 1, 1],
+      ['Sweet Thai Basil', 'sweet-thai-basil', 1, 1],
+      ['Thyme', 'thyme', 1, 1],
+      ['Red Salad Bowl', 'red-salad-bowl', 1, 1],
+      ['Mint', 'mint', 1, 1],
+      ['Bunching Onions', 'bunching-onions', 1, 1],
+      ['Oregano', 'oregano', 1, 1],
+      ['Buttercrunch Lettuce', 'buttercrunch', 1, 0.76],
+    ])
+    expect(r.matched.every(m => m.alternatives.length === 0)).toBe(true)
+    // Gardyn sells Red and Yellow Swiss Chard only: Pink is a variant to ask about or add, not a second Red.
+    expect(r.unmatched).toHaveLength(1)
+    expect(r.unmatched[0]).toMatchObject({ line: '1 x Pink Swiss Chard', name: 'Pink Swiss Chard', count: 1 })
+    expect(r.unmatched[0]?.suggestions.slice(0, 2)).toEqual([
+      { plantId: 'red-swiss-chard', plantName: 'Red Swiss Chard', confidence: 0.36, reason: 'colour differs (pink; catalog has red)' },
+      { plantId: 'yellow-swiss-chard', plantName: 'Yellow Swiss Chard', confidence: 0.35, reason: 'colour differs (pink; catalog has yellow)' },
+    ])
+    expect(r.plants.find(p => p.plantId === 'red-swiss-chard')).toEqual({ plantId: 'red-swiss-chard', count: 1 })
+    expect(r.plants.reduce((n, p) => n + p.count, 0)).toBe(19)
+    expect(r.skipped).toEqual([])
+  })
+
+  it.each([
+    ['Red Russian Kale', 'kale', 'colour differs (red); variety differs (russian)'],
+    ['Purple Kale', 'kale', 'colour differs (purple)'],
+    ['Green Swiss Chard', 'red-swiss-chard', 'colour differs (green; catalog has red)'],
+    ['Green Salad Bowl', 'red-salad-bowl', 'colour differs (green; catalog has red)'],
+    ['Red Butterhead', 'butterhead', 'colour differs (red)'],
+    ['Purple Thai Basil', 'purple-basil', 'variety differs (thai)'],
+    ['Rainbow Chard', 'red-swiss-chard', 'colour differs (rainbow; catalog has red)'],
+  ])('never maps %s to a different variant', (line, plantId, reason) => {
+    const r = matchOrder([line])
+    expect(r.matched).toEqual([])
+    expect(r.unmatched[0]?.suggestions[0]).toMatchObject({ plantId, reason })
+    expect(r.unmatched[0]?.suggestions.every(s => s.confidence < MATCH_THRESHOLD)).toBe(true)
+  })
+
+  it.each([
+    ['Kale', 'kale', 1],
+    ['Kale Lacinato', 'kale-lacinato', 1],
+    ['Lacinato Kale', 'kale-lacinato', 0.95],
+    ['Basil', 'basil', 1],
+    ['Genovese Basil', 'basil', 0.95],
+    ['Thai Basil', 'sweet-thai-basil', 0.95],
+    ['Sweet Thai Basil', 'sweet-thai-basil', 1],
+    ['Buttercrunch', 'buttercrunch', 1],
+    ['Buttercrunch Lettuce', 'buttercrunch', 0.76],
+    ['Red Salad Bowl', 'red-salad-bowl', 1],
+    ['Jalapeño Peppers', 'jalapeno', 0.79],
+  ])('matches %s to its own variant only', (line, plantId, confidence) => {
+    const [m] = matchOrder([line]).matched
+    expect(m).toMatchObject({ plantId, confidence })
+    expect(m?.reason).toBeUndefined()
+    expect(m?.alternatives).toEqual([])
+  })
+
   it('matches custom plants in the catalog it is given', () => {
     const lovage = customToPlant({ id: 'lovage', name: 'Lovage', category: 'herb', zone: 'medium', harvestMonths: [2, 3], careLevel: null, size: 'normal', succession: 'long-greens-herbs', source: 'user', createdAt: 't', updatedAt: 't' })
     expect(matchOrder(['Lovage x2']).unmatched).toHaveLength(1)

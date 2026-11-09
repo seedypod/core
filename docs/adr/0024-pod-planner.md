@@ -72,7 +72,9 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   sets (distinctive words count more than shared ones like "pepper"), accepts
   near-miss spellings and a few common synonyms, and returns a confidence per
   line, close alternatives, and the lines it could not match with
-  suggestions. `list_plans`, `get_plan`, `update_plan` and `remove_plan`
+  suggestions. A line naming a colour or variety a plant lacks ("Pink Swiss
+  Chard" against Red Swiss Chard) never matches that plant: it comes back
+  unmatched with the plant as a suggestion and a `reason`. `list_plans`, `get_plan`, `update_plan` and `remove_plan`
   manage saved plans. A plan serves its first sow date, and the Plan screen's
   "Open" reloads a plan's plants, overrides and start date. Because the planner
   is deterministic, the screen then shows the layout and schedule that were

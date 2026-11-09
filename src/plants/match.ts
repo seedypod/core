@@ -7,7 +7,11 @@
  * Names are compared as weighted word sets: words that many catalog names
  * share ("pepper", "red", "lettuce") count for less than distinctive ones
  * ("butterhead"), near-miss spellings count for most of a word, and a few
- * common synonyms map straight to their catalog plant. Pure; no I/O.
+ * common synonyms map straight to their catalog plant. A line that names a
+ * colour or variety the plant's name lacks ("Pink Swiss Chard" against Red
+ * Swiss Chard, "Red Russian Kale" against Kale) is a different variant, not a
+ * near match: that plant scores at most half and says why, so the line comes
+ * back unmatched with it as a suggestion. Pure; no I/O.
  */
 import { BUILTIN, type Catalog, type Plant } from './catalog'
 
@@ -16,7 +20,13 @@ export const MATCH_THRESHOLD = 0.5
 /** A plan request entry holds at most this many pods (the router's limit). */
 const MAX_COUNT = 30
 
-export interface Candidate { plantId: string, plantName: string, confidence: number }
+export interface Candidate {
+  plantId: string
+  plantName: string
+  confidence: number
+  /** Set when the line names a colour or variety this plant lacks: it is a different variant, a suggestion only. */
+  reason?: string
+}
 
 export interface OrderMatch extends Candidate {
   line: string
@@ -63,6 +73,12 @@ const ALIASES: Record<string, string> = {
   'spinach': 'perpetual-spinach',
   'strawberry': 'red-mini-strawberries',
 }
+
+/** Colours tell variants apart; they never match a different word by spelling. */
+const COLOURS = new Set(['red', 'pink', 'green', 'purple', 'rainbow', 'yellow', 'white', 'black', 'blue', 'orange', 'gold', 'golden', 'violet', 'bronze', 'scarlet', 'fuchsia', 'crimson', 'rouge'])
+
+/** Words for the kind of plant ("Buttercrunch Lettuce", "Jalapeño Peppers"): a line may add them without naming a variant. */
+const KINDS = new Set(['lettuce', 'pepper', 'tomato', 'strawberry', 'bean', 'pea', 'eggplant', 'herb', 'flower'])
 
 const NOISE = new Set(['ycube', 'pod', 'seed', 'pack', 'kit', 'organic', 'plant', 'refill', 'gardyn', 'the', 'of', 'and', 'qty', 'quantity', 'x', 'pc', 'pcs'])
 
@@ -118,6 +134,7 @@ function editDistance(a: string, b: string): number {
 /** 1 for the same word, 0.8 for a near-miss spelling of a long word, else 0. */
 function wordMatch(a: string, b: string): number {
   if (a === b) return 1
+  if (COLOURS.has(a) || COLOURS.has(b)) return 0
   const n = Math.min(a.length, b.length)
   if (n < 5) return 0
   return editDistance(a, b) <= (n >= 8 ? 2 : 1) ? 0.8 : 0
@@ -154,6 +171,19 @@ function similarity(a: string[], b: string[], weight: (w: string) => number): nu
 
 const round = (n: number) => Math.round(n * 100) / 100
 
+/** Why a plant is a different variant from the queried name, or undefined when it is not: the query's colour or variety words it lacks. */
+function variantConflict(q: string[], variant: string[]): string | undefined {
+  const extra = q.filter(w => !KINDS.has(w) && !variant.some(v => wordMatch(w, v) > 0))
+  if (extra.length === 0) return undefined
+  const colours = extra.filter(w => COLOURS.has(w))
+  const others = extra.filter(w => !COLOURS.has(w))
+  const theirs = variant.filter(w => COLOURS.has(w) && !q.includes(w))
+  return [
+    colours.length ? `colour differs (${colours.join(', ')}${theirs.length ? `; catalog has ${theirs.join(', ')}` : ''})` : '',
+    others.length ? `variety differs (${others.join(', ')})` : '',
+  ].filter(Boolean).join('; ')
+}
+
 /** Catalog plants for one name, best first. */
 export function rankNames(name: string, catalog: Catalog = BUILTIN): Candidate[] {
   const q = words(name)
@@ -161,9 +191,16 @@ export function rankNames(name: string, catalog: Catalog = BUILTIN): Candidate[]
   const { plants, weight } = index(catalog)
   const alias = ALIASES[q.join(' ')]
   return plants
-    .map(({ plant, variants }) => {
-      const score = Math.max(plant.id === alias ? 0.95 : 0, ...variants.map(v => (v.join(' ') === q.join(' ') ? 1 : similarity(q, v, weight))))
-      return { plantId: plant.id, plantName: plant.name, confidence: round(score) }
+    .map(({ plant, variants }): Candidate => {
+      if (plant.id === alias) return { plantId: plant.id, plantName: plant.name, confidence: 0.95 }
+      let best: { score: number, reason?: string } = { score: 0 }
+      for (const v of variants) {
+        if (v.join(' ') === q.join(' ')) return { plantId: plant.id, plantName: plant.name, confidence: 1 }
+        const reason = variantConflict(q, v)
+        const score = similarity(q, v, weight) * (reason ? 0.5 : 1)
+        if (score > best.score) best = { score, reason }
+      }
+      return { plantId: plant.id, plantName: plant.name, confidence: round(best.score), ...(best.reason ? { reason: best.reason } : {}) }
     })
     .filter(c => c.confidence > 0)
     .sort((a, b) => b.confidence - a.confidence || a.plantName.length - b.plantName.length)
