@@ -193,6 +193,26 @@ export const analysisResults = sqliteTable('analysis_results', {
   index('analysis_results_series').on(t.analyzer, t.metric, t.slot, t.ts),
 ])
 
+/**
+ * What the grower says each pod shows in a capture (#184): the ground truth a
+ * trained pod classifier learns from (ADR-0019). One label per capture and pod;
+ * relabelling replaces it. Rows outlive the capture's pruning, so a season of
+ * labels survives on a mirrored unit.
+ */
+export const podLabels = sqliteTable('pod_labels', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  captureId: text().notNull(),
+  /** Capture timestamp and camera, denormalised so the export's window never joins. */
+  ts: text().notNull(),
+  camera: text({ enum: ['upper', 'lower'] }).notNull(),
+  slot: integer().notNull(),
+  label: text({ enum: ['empty', 'sprouted', 'growing', 'ready', 'unhealthy'] }).notNull(),
+  labelledAt: text().notNull(),
+}, t => [
+  uniqueIndex('pod_labels_key').on(t.captureId, t.slot),
+  index('pod_labels_ts').on(t.ts),
+])
+
 /** Autopilot rules (ADR-0020); the AST lives in JSON columns validated by zod at the API. */
 export const automations = sqliteTable('automations', {
   id: integer().primaryKey({ autoIncrement: true }),

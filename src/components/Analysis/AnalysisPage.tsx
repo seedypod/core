@@ -14,6 +14,7 @@ import { apiBase, trpc } from '@/src/utils/trpc'
 import type { Rect } from '@/src/vision/greenArea'
 import { POD_STATES } from '@/src/vision/podState'
 import { podRegions, type PodRegions } from '@/src/vision/regions'
+import { LabelPods } from './LabelPods'
 import { PodBounds } from './PodBounds'
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
@@ -126,6 +127,7 @@ export function AnalysisPage() {
         {selected && <AnalyzerDetail a={selected} color={colorOf(listingKey(selected))} busy={!!st?.backfill} />}
       </Panel>
 
+      <LabelPods boxes={calibration.boxes} />
       <PerPod analyzers={list} latest={cameras} colorOf={colorOf} plant={slot => pod(slot)?.plant ?? '—'} empty={slot => pod(slot)?.status === 'empty'} />
       <ComparePod colorOf={colorOf} />
 
@@ -463,10 +465,10 @@ function DatasetExport() {
   const href = `${apiBase()}/api/datasets/export?${new URLSearchParams({ from, to: to.toISOString(), images: images ? '1' : '0' }).toString()}`
   return (
     <div className="flex flex-col">
-      <p className="text-[13px] text-fg-2">Photos, every analyser&apos;s results, pods and sensor history as a tar.</p>
+      <p className="text-[13px] text-fg-2">Photos, every analyser&apos;s results, your pod labels, pods and sensor history as a tar.</p>
       <SettingRow label="Window"><SegmentedControl ariaLabel="Window" size="sm" options={WINDOWS} value={days} onChange={setDays} /></SettingRow>
       <SettingRow label="Include photos" sub="The bulk of the size" divider={false}><Toggle label="Include photos" on={images} onChange={setImages} /></SettingRow>
-      {s && <p className="mt-2 font-mono text-[12px] text-fg-3">{`${s.captures} photos · ${s.analyses} results · ${s.telemetry} readings${images ? ` · about ${mb(s.imageBytes)}` : ''}`}</p>}
+      {s && <p className="mt-2 font-mono text-[12px] text-fg-3">{`${s.captures} photos · ${s.analyses} results · ${s.labels} labels · ${s.telemetry} readings${images ? ` · about ${mb(s.imageBytes)}` : ''}`}</p>}
       <div className="mt-3">
         {isDemo()
           ? <p className="text-[13px] text-fg-2">Downloads need a real unit; the demo has no server.</p>

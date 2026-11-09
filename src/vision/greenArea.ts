@@ -31,8 +31,8 @@ export function isLeafColour(r: number, g: number, b: number): boolean {
   return h >= -0.75 && h <= 5 / 6
 }
 
-/** Pixel bounds of `rect`, clamped to the image. */
-function bounds(rect: Rect, width: number, height: number) {
+/** Pixel bounds of `rect`, clamped to the image: the pixels a pod's crop is read from. */
+export function bounds(rect: Rect, width: number, height: number) {
   return {
     x0: Math.max(0, Math.floor(rect.x)),
     y0: Math.max(0, Math.floor(rect.y)),

@@ -329,6 +329,30 @@ for (const [name, make] of impls) {
       expect(store.tankActions.remove(fed.id)).toBe(false)
       expect(store.tankActions.list()).toHaveLength(2)
     })
+
+    it('pod labels upsert per capture and pod, clear, range by capture time and count', () => {
+      store = make()
+      const at = (captureId: string, ts: string, slot: number, label: 'empty' | 'sprouted' | 'growing' | 'ready' | 'unhealthy') =>
+        store.podLabels.set({ captureId, ts, camera: slot > 15 ? 'lower' : 'upper', slot, label, labelledAt: '2026-11-09T00:00:00.000Z' })
+      expect(store.podLabels.counts()).toEqual({ empty: 0, sprouted: 0, growing: 0, ready: 0, unhealthy: 0 })
+      expect(store.podLabels.captures()).toEqual([])
+      at('upper-b', '2026-11-02T00:00:00.000Z', 4, 'sprouted')
+      at('upper-b', '2026-11-02T00:00:00.000Z', 2, 'empty')
+      at('lower-a', '2026-11-01T00:00:00.000Z', 16, 'ready')
+      expect(at('upper-b', '2026-11-02T00:00:00.000Z', 4, 'unhealthy').label).toBe('unhealthy')
+      expect(store.podLabels.forCapture('upper-b').map(l => [l.slot, l.label])).toEqual([[2, 'empty'], [4, 'unhealthy']])
+      expect(store.podLabels.range('2026-11-01T00:00:00.000Z', '2026-11-03T00:00:00.000Z').map(l => `${l.captureId}:${l.slot}`)).toEqual(['lower-a:16', 'upper-b:2', 'upper-b:4'])
+      expect(store.podLabels.range('2026-11-02T00:00:00.000Z', '2026-11-03T00:00:00.000Z')).toHaveLength(2)
+      expect(store.podLabels.counts()).toEqual({ empty: 1, sprouted: 0, growing: 0, ready: 1, unhealthy: 1 })
+      expect(store.podLabels.captures()).toEqual([
+        { captureId: 'upper-b', ts: '2026-11-02T00:00:00.000Z', camera: 'upper', pods: 2 },
+        { captureId: 'lower-a', ts: '2026-11-01T00:00:00.000Z', camera: 'lower', pods: 1 },
+      ])
+      expect(store.podLabels.captures(1)).toHaveLength(1)
+      expect(store.podLabels.remove('upper-b', 2)).toBe(true)
+      expect(store.podLabels.remove('upper-b', 2)).toBe(false)
+      expect(store.podLabels.forCapture('upper-b')).toEqual([{ captureId: 'upper-b', ts: '2026-11-02T00:00:00.000Z', camera: 'upper', slot: 4, label: 'unhealthy', labelledAt: '2026-11-09T00:00:00.000Z' }])
+    })
   })
 }
 

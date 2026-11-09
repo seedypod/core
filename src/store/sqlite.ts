@@ -9,8 +9,8 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
-import { DEFAULT_SETTINGS, profileKey } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PodLabel, PodLabelValue, PumpSpec, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
+import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
   /** File path or ':memory:'. */
@@ -344,6 +344,31 @@ export class SqliteStore implements Store {
         FROM analysis_results GROUP BY analyzer, version, source ORDER BY analyzer, version`),
   }
 
+  podLabels = {
+    set: (l: PodLabel): PodLabel => {
+      this.db.insert(t.podLabels).values(l).onConflictDoUpdate({
+        target: [t.podLabels.captureId, t.podLabels.slot],
+        set: { label: l.label, labelledAt: l.labelledAt, ts: l.ts, camera: l.camera },
+      }).run()
+      return { ...l }
+    },
+    remove: (captureId: string, slot: number): boolean =>
+      this.db.delete(t.podLabels).where(and(eq(t.podLabels.captureId, captureId), eq(t.podLabels.slot, slot))).run().changes > 0,
+    forCapture: (captureId: string): PodLabel[] =>
+      this.db.select().from(t.podLabels).where(eq(t.podLabels.captureId, captureId)).orderBy(asc(t.podLabels.slot)).all().map(rowToLabel),
+    range: (fromTs: string, toTs: string): PodLabel[] =>
+      this.db.select().from(t.podLabels).where(and(gte(t.podLabels.ts, fromTs), lte(t.podLabels.ts, toTs)))
+        .orderBy(asc(t.podLabels.ts), asc(t.podLabels.captureId), asc(t.podLabels.slot)).all().map(rowToLabel),
+    counts: (): Record<PodLabelValue, number> => {
+      const out = Object.fromEntries(POD_LABELS.map(l => [l, 0])) as Record<PodLabelValue, number>
+      for (const r of this.db.select({ label: t.podLabels.label, n: sql<number>`count(*)` }).from(t.podLabels).groupBy(t.podLabels.label).all()) out[r.label] = r.n
+      return out
+    },
+    captures: (limit = 50): Array<{ captureId: string, ts: string, camera: 'upper' | 'lower', pods: number }> =>
+      this.db.select({ captureId: t.podLabels.captureId, ts: t.podLabels.ts, camera: t.podLabels.camera, pods: sql<number>`count(*)` }).from(t.podLabels)
+        .groupBy(t.podLabels.captureId).orderBy(desc(t.podLabels.ts), asc(t.podLabels.captureId)).limit(limit).all(),
+  }
+
   automations = {
     list: (): Automation[] => this.db.select().from(t.automations).orderBy(asc(t.automations.id)).all().map(rowToAutomation),
     get: (id: number): Automation | null => {
@@ -438,6 +463,10 @@ function rowToCycle(r: typeof t.growCycles.$inferSelect): GrowCycle {
 
 function rowToAnalysis(r: typeof t.analysisResults.$inferSelect): AnalysisRow {
   return { captureId: r.captureId, ts: r.ts, camera: r.camera, analyzer: r.analyzer, version: r.version, source: r.source, slot: r.slot, metric: r.metric, value: r.value, detail: r.detail ? JSON.parse(r.detail) as Record<string, unknown> : null, artifact: r.artifact }
+}
+
+function rowToLabel(r: typeof t.podLabels.$inferSelect): PodLabel {
+  return { captureId: r.captureId, ts: r.ts, camera: r.camera, slot: r.slot, label: r.label, labelledAt: r.labelledAt }
 }
 
 function automationColumns(r: Partial<Omit<AutomationRule, 'id'>>) {

@@ -105,20 +105,82 @@ one table, with every analyser's number from its camera's newest still, and
 plant/not-plant mask for each photo as a 1-bit PBM image, about 115 kB each.
 It is off by default to spare the SD card.
 
+## Label pods
+
+A trained pod model needs examples: photos where someone has said what each
+pod shows. **Analysis → Label pods** is where you give them.
+
+1. Pick the camera, and step to an older photo with the arrows if you like (the
+   last 48 per camera).
+2. Pick a label: **Empty**, **Sprouted**, **Growing**, **Ready** or
+   **Unhealthy**.
+3. Tap each pod that shows it. A tap sets the label. Tapping a pod that already
+   has that label clears it. To change a label, pick the other one and tap the
+   pod again.
+
+The counts above the photo show how many pods carry each label, across every
+photo. Labels are kept per photo and pod, and they stay after the unit prunes
+the photo. Scripts use `PUT /api/vision/captures/{captureId}/labels/{slot}`
+with `{"label": "ready"}` (or `null` to clear it),
+`GET /api/vision/captures/{captureId}/labels`, and `GET /api/vision/labels`
+for the counts and the labelled photos. The `list_analyses` MCP tool returns
+the same summary under `labels`.
+
 ## Export a dataset
 
 **Analysis → Export a dataset** downloads a tar for the last 7, 30 or 90 days,
 with or without the photos. Scripts can use
-`GET /api/datasets/export?from=…&to=…&images=0|1` directly. The archive holds:
+`GET /api/datasets/export?from=…&to=…&images=0|1` directly. Everything sits
+under one folder, `seedypod-<unit>-<yyyymmdd from>-<yyyymmdd to>/`:
 
-- `manifest.json`: window, unit, core version, analysers, and row counts.
+- `manifest.json`: window, unit, core version, analysers, and row counts
+  (`counts.labels` among them).
 - `captures.jsonl`, `analyses.jsonl` and `telemetry.jsonl`: one record per line.
+- `labels.jsonl`: one labelled pod per line (see below).
+- `regions.json`: every pod's box per camera, as fractions of the frame.
 - `pods.json` and `grow_cycles.json`: what was planted where, and when.
 - `images/<capture id>.jpg`: the photos.
 - `README.md`: the layout above, in the archive itself.
 
 This is what you pull to a laptop to check an analyser against what you see,
 recalibrate a threshold, or train a model.
+
+### Labels and pod crops
+
+`labels.jsonl` has one row for each labelled pod whose photo was taken inside
+the window. Rows are ordered by photo time, then photo, then pod:
+
+```json
+{"captureId":"upper-2026-10-20T00-00-00-000Z","ts":"2026-10-20T00:00:00.000Z","camera":"upper","slot":1,"label":"growing","labelledAt":"2026-10-31T09:00:00.000Z","image":"images/upper-2026-10-20T00-00-00-000Z.jpg","width":1280,"height":960,"region":{"x":128,"y":192,"w":640,"h":480},"box":{"x":0.1,"y":0.2,"w":0.5,"h":0.5}}
+```
+
+| Field | Meaning |
+|---|---|
+| `captureId`, `ts`, `camera` | The photo, when it was taken, and which camera (`upper`: pods 1–15, `lower`: 16–30) |
+| `slot` | The pod, 1–30 |
+| `label` | `empty`, `sprouted`, `growing`, `ready` or `unhealthy` |
+| `labelledAt` | When it was labelled |
+| `image` | The photo's path in the archive, or `null` when it isn't there (exported without photos, pruned, or a demo still) |
+| `width`, `height` | The photo's size in pixels, read from its JPEG header; `null` when the photo can't be read |
+| `region` | The pod's crop in the photo's pixels, `x`, `y`, `w`, `h` with the origin top left; `null` when the photo can't be read |
+| `box` | The same box as fractions of the frame (0–1); always present |
+
+`region` is exactly the window the analysers score: `x = floor(box.x × width)`,
+`y = floor(box.y × height)`, the right and bottom edges are
+`ceil((box.x + box.w) × width)` and `ceil((box.y + box.h) × height)`, and all
+four are clamped to the photo. A trainer crops
+`image[region.y : region.y + region.h, region.x : region.x + region.w]`. When
+`region` is null, for example for a photo read from the mirror instead, it
+scales `box` by that photo's size in the same way.
+
+`regions.json` holds every pod's box, labelled or not, in the shape
+`{"upper": {"1": {"x", "y", "w", "h"}, …, "15": …}, "lower": {"16": …, "30": …}}`.
+These are the boxes in use when the dataset is exported: the
+[calibrated ones](#pod-boxes) where you moved a box, the measured defaults
+elsewhere (`podRegions()` in `src/vision/regions.ts`, the same as
+`GET /api/vision/regions`). An on-device classifier crops with the same boxes,
+so training sees what the model will see. Moving a box later moves the crop
+of photos labelled before, which is right as long as the camera hasn't moved.
 
 ## The learned pod-state analyser
 
@@ -171,7 +233,7 @@ or re-run.
 ### Train a better one
 
 Training lives in [seedypod/training](https://github.com/seedypod/training):
-export a dataset with photos, label pods on the Analysis screen when that
+export a dataset with photos after labelling pods ([Label pods](#label-pods)),
 lands, then
 
 ```sh

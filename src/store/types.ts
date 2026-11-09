@@ -206,6 +206,21 @@ export interface TankAction {
   createdAt: string
 }
 
+/** What a pod shows in a capture (#184), the classes a pod classifier is trained on. */
+export const POD_LABELS = ['empty', 'sprouted', 'growing', 'ready', 'unhealthy'] as const
+export type PodLabelValue = typeof POD_LABELS[number]
+
+/** The grower's label for one pod in one capture. */
+export interface PodLabel {
+  captureId: string
+  /** The capture's time and camera. */
+  ts: string
+  camera: 'upper' | 'lower'
+  slot: number
+  label: PodLabelValue
+  labelledAt: string
+}
+
 /** One sample of the SD card's sectors-written counter; `bytes` were written since the previous sample. */
 export interface FlashSample { ts: string, sectors: number, bytes: number }
 
@@ -305,6 +320,19 @@ export interface Store {
     /** Rows whose capture time falls in [fromTs, toTs], oldest first. */
     range(fromTs: string, toTs: string): AnalysisRow[]
     stats(): AnalyzerStats[]
+  }
+  podLabels: {
+    /** Upsert on (capture, slot): relabelling a pod replaces its label. */
+    set(l: PodLabel): PodLabel
+    remove(captureId: string, slot: number): boolean
+    /** By slot. */
+    forCapture(captureId: string): PodLabel[]
+    /** Labels whose capture time falls in [fromTs, toTs], oldest first, then by slot. */
+    range(fromTs: string, toTs: string): PodLabel[]
+    /** How many pods carry each label. */
+    counts(): Record<PodLabelValue, number>
+    /** Labelled captures, newest first, with how many of their pods are labelled. */
+    captures(limit?: number): Array<{ captureId: string, ts: string, camera: 'upper' | 'lower', pods: number }>
   }
   automations: {
     list(): Automation[]

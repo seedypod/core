@@ -1,7 +1,7 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, PodLabel, PodLabelValue, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
-import { DEFAULT_SETTINGS, profileKey } from './types'
+import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
 /** In-memory Store for tests and the browser demo. Same semantics as SqliteStore. */
 export class MemoryStore implements Store {
@@ -26,6 +26,7 @@ export class MemoryStore implements Store {
   private runRows: AutomationRun[] = []
   private nextAutomationId = 1
   private nextRunId = 1
+  private readonly labelRows = new Map<string, PodLabel>()
   private readonly tankRows: TankAction[] = []
   private nextTankId = 1
 
@@ -280,6 +281,33 @@ export class MemoryStore implements Store {
         m.set(k, s)
       }
       return [...m.values()].map(({ ids, ...s }) => ({ ...s, captures: ids.size })).sort((a, b) => a.analyzer.localeCompare(b.analyzer) || a.version - b.version)
+    },
+  }
+
+  podLabels = {
+    set: (l: PodLabel): PodLabel => {
+      this.labelRows.set(`${l.captureId}#${l.slot}`, { ...l })
+      return { ...l }
+    },
+    remove: (captureId: string, slot: number): boolean => this.labelRows.delete(`${captureId}#${slot}`),
+    forCapture: (captureId: string): PodLabel[] =>
+      [...this.labelRows.values()].filter(l => l.captureId === captureId).sort((a, b) => a.slot - b.slot).map(l => ({ ...l })),
+    range: (fromTs: string, toTs: string): PodLabel[] =>
+      [...this.labelRows.values()].filter(l => l.ts >= fromTs && l.ts <= toTs)
+        .sort((a, b) => a.ts.localeCompare(b.ts) || a.captureId.localeCompare(b.captureId) || a.slot - b.slot).map(l => ({ ...l })),
+    counts: (): Record<PodLabelValue, number> => {
+      const out = Object.fromEntries(POD_LABELS.map(l => [l, 0])) as Record<PodLabelValue, number>
+      for (const l of this.labelRows.values()) out[l.label]++
+      return out
+    },
+    captures: (limit = 50): Array<{ captureId: string, ts: string, camera: 'upper' | 'lower', pods: number }> => {
+      const m = new Map<string, { captureId: string, ts: string, camera: 'upper' | 'lower', pods: number }>()
+      for (const l of this.labelRows.values()) {
+        const c = m.get(l.captureId) ?? { captureId: l.captureId, ts: l.ts, camera: l.camera, pods: 0 }
+        c.pods++
+        m.set(l.captureId, c)
+      }
+      return [...m.values()].sort((a, b) => b.ts.localeCompare(a.ts) || a.captureId.localeCompare(b.captureId)).slice(0, limit)
     },
   }
 
