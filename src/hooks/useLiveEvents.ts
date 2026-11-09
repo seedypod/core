@@ -31,6 +31,8 @@ const TOUCHES = new Map<string, readonly Area[]>([
   ['devices', ['devices', 'sensors', 'system']],
   ['grow', ['grow', 'planner', 'vision', 'alerts']],
   ['homekit', ['homekit', 'system']],
+  // Pod labels for training: the Analysis tagger and the export's counts.
+  ['labels', ['vision', 'datasets']],
   ['network', ['network', 'system']],
   ['plans', ['planner']],
   ['plants', ['plants', 'grow']],

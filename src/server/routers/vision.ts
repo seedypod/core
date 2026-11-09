@@ -1,7 +1,8 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { POD_LABELS } from '../../store/types'
 import { podTrends } from '../../vision/analyze'
-import { CAMERAS, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
+import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
 import { publicProcedure, router } from '../trpc'
 
 const Trend = z.object({ slot: z.number(), green: z.number().nullable(), verdict: z.enum(['growing', 'stalled', 'declining', 'unknown']), slope: z.number(), samples: z.number(), recent: z.array(z.number()) })
@@ -52,6 +53,10 @@ function regionRows(camera: Camera, own: PodRegions | undefined) {
   const boxes = podRegions(camera, { [camera]: own })
   return { camera, calibrated: !!own && Object.keys(own).length > 0, regions: cameraSlots(camera).map(slot => ({ slot, ...(boxes[slot] as PodRegions[number]), moved: !!own?.[slot] })) }
 }
+
+const LabelValue = z.enum(POD_LABELS)
+const Label = z.object({ captureId: z.string(), ts: z.string(), camera: CameraName, slot: z.number(), label: LabelValue, labelledAt: z.string() })
+const LabelCounts = z.object(Object.fromEntries(POD_LABELS.map(l => [l, z.number()])) as Record<typeof POD_LABELS[number], z.ZodNumber>)
 
 const Point = z.object({ ts: z.string(), value: z.number(), captureId: z.string() })
 
@@ -110,6 +115,32 @@ export const visionRouter = router({
       catch (e) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: (e as Error).message })
       }
+    }),
+  labels: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/captures/{captureId}/labels', tags: ['vision'], summary: 'The grower\'s label for each pod in one capture (empty, sprouted, growing, ready or unhealthy)' } })
+    .input(z.object({ captureId: z.string() }))
+    .output(z.array(Label))
+    .query(({ ctx, input }) => ctx.store.podLabels.forCapture(input.captureId)),
+  labelStats: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/labels', tags: ['vision'], summary: 'How many pods carry each label, and the labelled captures, newest first' } })
+    .input(z.object({ limit: z.number().int().min(1).max(500).default(50) }).optional())
+    .output(z.object({ counts: LabelCounts, pods: z.number(), captures: z.array(z.object({ captureId: z.string(), ts: z.string(), camera: CameraName, pods: z.number() })) }))
+    .query(({ ctx, input }) => {
+      const counts = ctx.store.podLabels.counts()
+      return { counts, pods: Object.values(counts).reduce((n, c) => n + c, 0), captures: ctx.store.podLabels.captures(input?.limit ?? 50) }
+    }),
+  setLabel: publicProcedure
+    .meta({ openapi: { method: 'PUT', path: '/vision/captures/{captureId}/labels/{slot}', tags: ['vision'], summary: 'Label one pod in a capture for training (ADR-0019); null clears the label' } })
+    .input(z.object({ captureId: z.string(), slot: z.number().int().min(1).max(30), label: LabelValue.nullable() }))
+    .output(z.object({ captureId: z.string(), slot: z.number(), label: LabelValue.nullable() }))
+    .mutation(({ ctx, input }) => {
+      const capture = ctx.store.captures.get(input.captureId)
+      if (!capture) throw new TRPCError({ code: 'NOT_FOUND', message: `no capture ${input.captureId}` })
+      if (cameraOf(input.slot) !== capture.camera) throw new TRPCError({ code: 'BAD_REQUEST', message: `pod ${input.slot} is not on the ${capture.camera} camera` })
+      if (input.label === null) ctx.store.podLabels.remove(input.captureId, input.slot)
+      else ctx.store.podLabels.set({ captureId: capture.id, ts: capture.ts, camera: capture.camera, slot: input.slot, label: input.label, labelledAt: (ctx.now?.() ?? new Date()).toISOString() })
+      ctx.events.emit({ kind: 'mutation', path: 'labels' })
+      return { captureId: input.captureId, slot: input.slot, label: input.label }
     }),
   regions: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/vision/regions', tags: ['vision'], summary: 'Each pod\'s box on each camera\'s stills, as fractions of the frame: the measured defaults or the owner\'s calibration' } })

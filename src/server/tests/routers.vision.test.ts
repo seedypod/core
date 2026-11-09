@@ -87,6 +87,12 @@ describe('vision router (ADR-0019)', () => {
     const cmp = JSON.parse((withSlot.content as Array<{ text: string }>)[0]?.text ?? '{}') as { compare: Array<{ points: unknown[] }> }
     expect(cmp.compare).toHaveLength(2)
     expect(cmp.compare[0]?.points).toHaveLength(2)
+    expect(body).toMatchObject({ labels: { pods: 0, captures: [] } })
+    ctx.store.podLabels.set({ captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', camera: 'upper', slot: 2, label: 'sprouted', labelledAt: '2026-01-03T00:00:00Z' })
+    const labelled = await client.callTool({ name: 'list_analyses', arguments: {} })
+    const after = JSON.parse((labelled.content as Array<{ text: string }>)[0]?.text ?? '{}') as { labels: { counts: Record<string, number>, captures: unknown[] } }
+    expect(after.labels.counts.sprouted).toBe(1)
+    expect(after.labels.captures).toEqual([{ captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', camera: 'upper', pods: 1 }])
     await client.close()
   })
 
@@ -119,5 +125,36 @@ describe('vision router (ADR-0019)', () => {
     await c.vision.setRegions({ camera: 'upper', regions: [] })
     expect(ctx.store.settings.get().podRegions).toBeNull()
     expect((await c.vision.regions()).every(r => !r.calibrated)).toBe(true)
+  })
+
+  it('labels pods in a capture for training, relabels, clears and counts them', async () => {
+    const now = new Date('2026-03-01T00:00:00Z')
+    const { c, ctx } = await scored(2)
+    ctx.now = () => now
+    const seen: string[] = []
+    ctx.events.subscribe(e => e.kind === 'mutation' && seen.push(e.path))
+    expect(await c.vision.labels({ captureId: 'upper-0' })).toEqual([])
+
+    expect(await c.vision.setLabel({ captureId: 'upper-0', slot: 3, label: 'sprouted' })).toEqual({ captureId: 'upper-0', slot: 3, label: 'sprouted' })
+    await c.vision.setLabel({ captureId: 'upper-0', slot: 1, label: 'empty' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 1, label: 'empty' })
+    // Changing a label later replaces it.
+    await c.vision.setLabel({ captureId: 'upper-0', slot: 3, label: 'growing' })
+    expect(seen.filter(p => p === 'labels')).toHaveLength(4)
+    expect(await c.vision.labels({ captureId: 'upper-0' })).toEqual([
+      { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', camera: 'upper', slot: 1, label: 'empty', labelledAt: now.toISOString() },
+      { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', camera: 'upper', slot: 3, label: 'growing', labelledAt: now.toISOString() },
+    ])
+    expect(await c.vision.labelStats()).toEqual({
+      counts: { empty: 2, sprouted: 0, growing: 1, ready: 0, unhealthy: 0 },
+      pods: 3,
+      captures: [{ captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', camera: 'upper', pods: 1 }, { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', camera: 'upper', pods: 2 }],
+    })
+    expect((await c.vision.labelStats({ limit: 1 })).captures).toHaveLength(1)
+
+    await c.vision.setLabel({ captureId: 'upper-0', slot: 1, label: null })
+    expect((await c.vision.labels({ captureId: 'upper-0' })).map(l => l.slot)).toEqual([3])
+    await expect(c.vision.setLabel({ captureId: 'nope', slot: 1, label: 'ready' })).rejects.toThrow(/no capture nope/)
+    await expect(c.vision.setLabel({ captureId: 'upper-0', slot: 16, label: 'ready' })).rejects.toThrow(/pod 16 is not on the upper camera/)
   })
 })

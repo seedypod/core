@@ -76,13 +76,14 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.camera.list({ camera: i.camera, limit: i.limit ?? 10 })))
 
   server.registerTool('list_analyses', {
-    description: 'Camera analysers and what they have produced: every on-device analyser (id, version, metrics it emits, which one is primary for pod_health) plus any off-device worker that posted results, with row and capture counts and time span, and the analysis queue status. Pass slot to also get that pod\'s series from every analyser@version side by side, to see which ones agree. Read-only: choosing the primary analyser and re-running analysers are done in the app.',
+    description: 'Camera analysers and what they have produced: every on-device analyser (id, version, metrics it emits, which one is primary for pod_health) plus any off-device worker that posted results, with row and capture counts and time span, and the analysis queue status. labels: the grower\'s pod labels for training (empty, sprouted, growing, ready, unhealthy): how many pods carry each, and the labelled captures newest first with how many pods each has labelled. Pass slot to also get that pod\'s series from every analyser@version side by side, to see which ones agree. Read-only: choosing the primary analyser, re-running analysers and labelling pods are done in the app.',
     inputSchema: { slot: z.number().int().min(1).max(30).optional(), metric: z.string().optional() },
   }, async (i) => {
     const analyzers = await caller.vision.analyzers()
     const status = await caller.vision.status()
+    const labels = await caller.vision.labelStats({ limit: 20 })
     const compare = i.slot ? await caller.vision.compare({ slot: i.slot, metric: i.metric ?? 'green_fraction', limit: 48 }) : undefined
-    return text({ analyzers, status, compare })
+    return text({ analyzers, status, labels, compare })
   })
 
   server.registerTool('list_automations', {

@@ -11,6 +11,8 @@ const { data, calls, invalidate, demo } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/src/demo/mode', () => ({ isDemo: () => demo.on }))
+// The tagger has its own tests (labelPods.test.tsx); here it only has to be on the page with the pod boxes.
+vi.mock('../LabelPods', () => ({ LabelPods: ({ boxes }: { boxes: (c: 'upper' | 'lower') => Record<number, unknown> }) => <div data-testid="label-pods-stub">{Object.keys(boxes('lower')).join(',')}</div> }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: (input?: unknown, opts?: { enabled?: boolean }) => {
@@ -297,11 +299,12 @@ describe('AnalysisPage', () => {
   })
 
   it('offers a dataset download for the chosen window, with or without photos', () => {
-    data.set('summary', { from: '', to: '', images: true, captures: 12, analyses: 360, telemetry: 900, imageBytes: 2_400_000 })
+    data.set('summary', { from: '', to: '', images: true, captures: 12, analyses: 360, telemetry: 900, labels: 45, imageBytes: 2_400_000 })
     render(<AnalysisPage />)
     expect(screen.queryByText('Download')).toBeNull()
     openExport()
-    expect(screen.getByText('12 photos · 360 results · 900 readings · about 2.4 MB')).toBeTruthy()
+    expect(screen.getByText('12 photos · 360 results · 45 labels · 900 readings · about 2.4 MB')).toBeTruthy()
+    expect(screen.getByTestId('label-pods-stub').textContent).toBe(Array.from({ length: 15 }, (_, i) => i + 16).join(','))
     const link = screen.getByText('Download').closest('a') as HTMLAnchorElement
     const q = new URL(link.href, 'http://unit').searchParams
     expect(q.get('images')).toBe('1')

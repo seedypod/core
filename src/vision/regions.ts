@@ -14,7 +14,7 @@
  * (slots 16–30). Gardyn's own numbering is unverified until Phase 1
  * (docs/hardware/pin-map.md); if it differs, only this table's order changes.
  */
-import type { Rect } from './greenArea'
+import { bounds, type Rect } from './greenArea'
 
 export type Camera = 'upper' | 'lower'
 /** Each pod's box as fractions of the frame, by slot. */
@@ -109,4 +109,13 @@ export function toPixels(regions: PodRegions, width: number, height: number): Re
   const out: Record<number, Rect> = {}
   for (const [slot, r] of Object.entries(regions)) out[Number(slot)] = { x: r.x * width, y: r.y * height, w: r.w * width, h: r.h * height }
   return out
+}
+
+/**
+ * A box as the whole-pixel crop the analysers read on a frame of this size
+ * (#184): what a pod classifier should be trained on.
+ */
+export function cropPixels(r: Rect, width: number, height: number): Rect {
+  const b = bounds({ x: r.x * width, y: r.y * height, w: r.w * width, h: r.h * height }, width, height)
+  return { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }
 }
