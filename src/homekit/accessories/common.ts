@@ -1,6 +1,7 @@
 import type * as HapNodeJs from 'hap-nodejs'
-import type { Characteristic, HAPStatus, Service, WithUUID } from 'hap-nodejs'
+import type { Characteristic, Controller, HAPStatus, Service, WithUUID } from 'hap-nodejs'
 import type { ActuatorState } from '../../hardware/contract'
+import type { Capture } from '../../store/types'
 import type { HalClient, HalSnapshot } from '../../hardware/types'
 import type { EventBus } from '../../lib/eventBus'
 
@@ -18,7 +19,10 @@ export interface HomeKitApi {
     runOnce(input: { durationS: number }): Promise<ActuatorState>
     stop(): Promise<ActuatorState>
   }
+  camera: { capture(input: { camera: Camera }): Promise<unknown> }
 }
+
+export type Camera = 'upper' | 'lower'
 
 /**
  * hap-nodejs, handed in rather than imported: the server bundle hoists static
@@ -31,11 +35,15 @@ export interface AccessoryDeps {
   api: HomeKitApi
   hal: Pick<HalClient, 'snapshot'>
   events: EventBus
+  /** The newest stored still per camera (`CaptureService.latest`). */
+  stills: { latest(camera: Camera): Promise<{ capture: Capture, bytes: Uint8Array } | null> }
   log: (msg: string) => void
 }
 
 export interface BuiltAccessory {
   services: Service[]
+  /** Controllers the accessory is configured with, e.g. a camera's. */
+  controllers?: Controller[]
   stop(): void
 }
 

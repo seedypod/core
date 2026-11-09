@@ -12,7 +12,7 @@ const noop = () => Promise.reject(new Error('not in this test'))
 function deps(): { deps: Omit<AccessoryDeps, 'hap'>, events: ReturnType<typeof createEventBus>, log: string[] } {
   const events = createEventBus()
   const log: string[] = []
-  return { events, log, deps: { api: { light: { set: noop }, pump: { runOnce: noop, stop: noop } }, hal: new SimHal({ tickMs: 0 }), events, log: m => log.push(m) } }
+  return { events, log, deps: { api: { light: { set: noop }, pump: { runOnce: noop, stop: noop }, camera: { capture: noop } }, hal: new SimHal({ tickMs: 0 }), events, stills: { latest: async () => null }, log: m => log.push(m) } }
 }
 
 function options(d: Omit<AccessoryDeps, 'hap'>, o: Partial<BridgeOptions> = {}): BridgeOptions {
@@ -22,12 +22,12 @@ function options(d: Omit<AccessoryDeps, 'hap'>, o: Partial<BridgeOptions> = {}):
 afterEach(() => vi.restoreAllMocks())
 
 describe('accessory tree', () => {
-  it('one bridge with the light, pump and sensors, ids stable for the identity', () => {
+  it('one bridge with the light, pump, sensors and cameras, ids stable for the identity', () => {
     const { deps: d } = deps()
     const a = buildBridge({ identity, name: 'Kitchen', version: 'dev', deps: { ...d, hap } })
     const b = buildBridge({ identity, name: 'Kitchen', version: 'dev', deps: { ...d, hap } })
     const accs = a.bridge.bridgedAccessories
-    expect(accs.map(x => x.displayName)).toEqual(['Grow light', 'Pump', 'Sensors'])
+    expect(accs.map(x => x.displayName)).toEqual(['Grow light', 'Pump', 'Sensors', 'Upper camera', 'Lower camera'])
     expect(accs.map(x => x.UUID)).toEqual(b.bridge.bridgedAccessories.map(x => x.UUID))
     expect(a.bridge.UUID).toBe(b.bridge.UUID)
     const other = buildBridge({ identity: deriveIdentity({ resolved: 'hal-unit-id', value: 'gardyn-2' }, 0), name: 'Kitchen', version: 'dev', deps: { ...d, hap } })
@@ -36,9 +36,22 @@ describe('accessory tree', () => {
     expect(services(0)).toEqual([hap.Service.Lightbulb.UUID])
     expect(services(1)).toEqual([hap.Service.Switch.UUID])
     expect(services(2)).toEqual([hap.Service.TemperatureSensor.UUID, hap.Service.HumiditySensor.UUID, hap.Service.Battery.UUID, hap.Service.OccupancySensor.UUID])
+    for (const cam of [3, 4]) expect(services(cam)).toContain(hap.Service.CameraRTPStreamManagement.UUID)
     const info = a.bridge.getService(hap.Service.AccessoryInformation) as hap.Service
     expect(info.getCharacteristic(hap.Characteristic.SerialNumber).value).toBe(identity.username)
     for (const s of [...a.stops, ...b.stops, ...other.stops]) s()
+  })
+
+  it('adds only the cameras hald reports', () => {
+    const { deps: d } = deps()
+    const snapshot = d.hal.snapshot.bind(d.hal)
+    const system = snapshot().system
+    if (!system) throw new Error('sim reports no system')
+    const one = buildBridge({ identity, name: 'Kitchen', version: 'dev', deps: { ...d, hap, hal: { snapshot: () => ({ ...snapshot(), system: { ...system, caps: { ...system.caps, cameras: ['lower'] } } }) } } })
+    expect(one.bridge.bridgedAccessories.map(x => x.displayName)).toEqual(['Grow light', 'Pump', 'Sensors', 'Lower camera'])
+    const unknown = buildBridge({ identity, name: 'Kitchen', version: 'dev', deps: { ...d, hap, hal: { snapshot: () => ({ ...snapshot(), system: null }) } } })
+    expect(unknown.bridge.bridgedAccessories).toHaveLength(5)
+    for (const s of [...one.stops, ...unknown.stops]) s()
   })
 
   it('stops what it built when a builder throws', () => {

@@ -43,6 +43,8 @@ export interface CaptureServiceOptions {
   minBytes?: number
   /** Scores each still after it is stored (ADR-0019); omitted = no analysis. */
   analysis?: { enqueue(c: Capture, bytes: Uint8Array): void, removeArtifacts(captureId: string): Promise<void> }
+  /** Every still once it is stored, scheduled or on demand. */
+  onStored?: (c: Capture) => void
 }
 
 /** SOI at the start and EOI at the end: the whole file arrived. */
@@ -51,6 +53,17 @@ export function isWholeJpeg(b: Uint8Array): boolean {
 }
 
 type Cam = 'upper' | 'lower'
+
+/**
+ * The newest stored still for `camera`, without taking one. HomeKit and Home
+ * Assistant show this rather than waking the camera (ADR 0027).
+ */
+export async function latestStill(store: Pick<Store, 'captures'>, sink: Pick<BlobSink, 'get'>, camera: Cam): Promise<{ capture: Capture, bytes: Uint8Array } | null> {
+  const [capture] = store.captures.list(camera, 1)
+  if (!capture) return null
+  const bytes = await sink.get(capture.path)
+  return bytes ? { capture, bytes } : null
+}
 
 export class CaptureService {
   private readonly now: () => Date
@@ -123,6 +136,7 @@ export class CaptureService {
     const row: Capture = { id, camera, ts, path, bytes: bytes.byteLength }
     this.o.store.captures.add(row)
     this.o.analysis?.enqueue(row, bytes)
+    this.o.onStored?.(row)
     for (const dropped of this.o.store.captures.prune(camera, this.keep)) {
       await this.o.sink.remove(dropped.path)
       await this.o.analysis?.removeArtifacts(dropped.id)
@@ -135,6 +149,10 @@ export class CaptureService {
     if (!capture) return null
     const bytes = await this.o.sink.get(capture.path)
     return bytes ? { capture, bytes } : null
+  }
+
+  latest(camera: Cam): Promise<{ capture: Capture, bytes: Uint8Array } | null> {
+    return latestStill(this.o.store, this.o.sink, camera)
   }
 
   /** Periodic captures of both cameras. */

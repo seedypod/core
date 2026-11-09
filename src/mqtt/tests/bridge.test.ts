@@ -4,13 +4,15 @@ import { createEventBus } from '../../lib/eventBus'
 import { MemoryStore } from '../../store/memory'
 import { bridgeStatus, HaBridge, keepConnecting, superviseBridge } from '../bridge'
 import type { MqttLike } from '../../hardware/mqttClient'
+import type { Capture } from '../../store/types'
 
 class FakeMqtt implements MqttLike {
-  published: { topic: string, payload: string, retain?: boolean }[] = []
+  published: { topic: string, payload: string, bytes?: Uint8Array, retain?: boolean }[] = []
   subscribed: string[] = []
   private h = new Map<string, ((...a: never[]) => void)[]>()
-  publish(topic: string, payload: string, opts?: { retain?: boolean }) {
-    this.published.push({ topic, payload, retain: opts?.retain })
+  publish(topic: string, payload: string | Uint8Array, opts?: { retain?: boolean }) {
+    if (typeof payload === 'string') this.published.push({ topic, payload, retain: opts?.retain })
+    else this.published.push({ topic, payload: '', bytes: payload, retain: opts?.retain })
   }
 
   subscribe(t: string | string[]) {
@@ -74,6 +76,52 @@ describe('HaBridge', () => {
     store.alerts.raise('backup_stale', 'No off-card backup yet', '2026-10-31T00:00:00Z')
     events.emit({ kind: 'mutation', path: 'alerts.backup_stale' })
     expect(JSON.parse(mqtt.published.at(-1)?.payload ?? '{}')).toMatchObject({ backupStale: true })
+  })
+
+  it('cameras: an MQTT camera per reported camera, carrying the newest stored still, retained and sent once', async () => {
+    const mqtt = new FakeMqtt()
+    const hal = new SimHal({ tickMs: 0 })
+    const events = createEventBus()
+    const snapshot = hal.snapshot.bind(hal)
+    const system = snapshot().system
+    if (!system) throw new Error('sim reports no system')
+    hal.snapshot = () => ({ ...snapshot(), system: { ...system, caps: { ...system.caps, cameras: ['upper'] } } })
+    let newest: { capture: Capture, bytes: Uint8Array } | null = null
+    const stills = vi.fn(async () => newest)
+    const bridge = new HaBridge({ mqtt, store: new MemoryStore(), hal, events, unitId: 'u1', stills })
+    bridge.start()
+    mqtt.fire('connect')
+    await vi.waitFor(() => expect(stills).toHaveBeenCalled())
+    const cfgs = mqtt.published.filter(p => p.topic.startsWith('homeassistant/camera/'))
+    expect(cfgs.map(c => c.topic)).toEqual(['homeassistant/camera/u1_core_camera_upper/config'])
+    expect(JSON.parse(cfgs[0]?.payload ?? '{}')).toMatchObject({ name: 'Upper camera', topic: 'seedypod/u1/core/camera/upper', unique_id: 'u1_core_camera_upper' })
+    const frames = () => mqtt.published.filter(p => p.topic === 'seedypod/u1/core/camera/upper')
+    expect(frames()).toEqual([])
+
+    const bytes = new Uint8Array([0xFF, 0xD8, 1, 2, 0xFF, 0xD9])
+    newest = { capture: { id: 'upper-1', camera: 'upper', ts: '2026-11-08T00:00:00.000Z', path: 'upper-1.jpg', bytes: 6 }, bytes }
+    events.emit({ kind: 'mutation', path: 'captures' })
+    await vi.waitFor(() => expect(frames()).toHaveLength(1))
+    expect(Buffer.isBuffer(frames()[0]?.bytes)).toBe(true)
+    expect([...(frames()[0]?.bytes ?? [])]).toEqual([...bytes])
+    expect(frames()[0]?.retain).toBe(true)
+    events.emit({ kind: 'mutation', path: 'captures' })
+    await bridge.publishStills()
+    expect(frames()).toHaveLength(1)
+    // A reconnect sends it again: the broker may have lost its retained copy.
+    mqtt.fire('connect')
+    await vi.waitFor(() => expect(frames()).toHaveLength(2))
+  })
+
+  it('without a still source there are no camera entities, and a failing one sends nothing', async () => {
+    const { mqtt, bridge } = setup()
+    mqtt.fire('connect')
+    await bridge.publishStills()
+    expect(mqtt.published.some(p => p.topic.includes('camera'))).toBe(false)
+    const broken = new FakeMqtt()
+    const failing = new HaBridge({ mqtt: broken, store: new MemoryStore(), hal: new SimHal({ tickMs: 0 }), events: createEventBus(), unitId: 'u1', stills: () => Promise.reject(new Error('EIO')) })
+    await failing.publishStills()
+    expect(broken.published).toEqual([])
   })
 
   it('water_now runs a bounded pump cycle through the HAL', async () => {

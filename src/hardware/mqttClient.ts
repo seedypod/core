@@ -16,7 +16,7 @@ import { HalRefused } from './sim'
 export interface MqttLike {
   /** True when the client is already connected (mqtt.js `connectAsync` resolves after `connect` fired). */
   readonly connected?: boolean
-  publish(topic: string, payload: string, opts?: { retain?: boolean, qos?: 0 | 1 | 2 }): void
+  publish(topic: string, payload: string | Uint8Array, opts?: { retain?: boolean, qos?: 0 | 1 | 2 }): void
   subscribe(topic: string | string[]): void
   on(event: 'message', cb: (topic: string, payload: Uint8Array) => void): void
   on(event: 'connect' | 'close' | 'offline', cb: () => void): void
