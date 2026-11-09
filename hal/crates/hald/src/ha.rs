@@ -387,6 +387,8 @@ mod tests {
         let lvl = find(&out, "homeassistant/sensor/u1_water_level_pct/config");
         assert!(lvl.get("device_class").is_none());
         assert_eq!(lvl["icon"], "mdi:water-percent");
+        assert_eq!(lvl["unit_of_measurement"], "%");
+        assert_eq!(lvl["state_topic"], "seedypod/u1/sensor/water_level_pct");
         // Every id has metadata.
         for id in [
             SensorId::Humidity,
@@ -428,6 +430,7 @@ mod tests {
         let w = find(&out, "homeassistant/binary_sensor/u1_water_low/config");
         assert_eq!(w["state_topic"], "seedypod/u1/alert/water_low");
         assert_eq!(w["device_class"], "problem");
+        assert_eq!(w["value_template"], "{{ 'ON' if value_json.active else 'OFF' }}");
         let pf = find(&out, "homeassistant/binary_sensor/u1_pump_fault/config");
         assert_eq!(pf["device_class"], "problem");
         let ot = find(&out, "homeassistant/binary_sensor/u1_over_temp/config");

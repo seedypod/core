@@ -75,6 +75,7 @@ procedures the app calls. They never touch the HAL client or MQTT directly.
 | **Sensors**: TemperatureSensor | CurrentTemperature, StatusFault | `air_temp` (°C). StatusFault is set when the reading isn't `good` quality. |
 | **Sensors**: HumiditySensor | CurrentRelativeHumidity, StatusFault | `humidity`. |
 | **Sensors**: Battery ("Water tank") | BatteryLevel, StatusLowBattery, ChargingState | BatteryLevel is `water_level_pct`. StatusLowBattery is hald's `water_low` alert. ChargingState is not chargeable. |
+| **Sensors**: OccupancySensor ("Tank low") | OccupancyDetected | hald's `water_low` alert (amendment 2026-11-08). |
 
 While hald is offline, reads answer "No Response" rather than a stale value.
 
@@ -203,3 +204,30 @@ identity.
   the simulator with a HAP controller: the wrong code is refused, the derived
   one pairs, writes reach the light and pump, pairings survive a restart, and
   a removal rotates the identity.
+
+## Amendment (2026-11-08): a "Tank low" sensor next to the battery
+
+Home shows a Battery service's level only in the accessory's details. A low
+battery appears in the status summary as "Low battery". Owners couldn't find
+the tank (#136). The Sensors accessory now also carries an **Occupancy
+sensor**, "Tank low": OccupancyDetected follows hald's `water_low` alert, the
+same flag as StatusLowBattery, and updates from the alert event. Home shows it
+as its own row that reads "Detected" or "Not Detected", and the owner can turn
+on its notifications. The Battery service stays, so the percent full is still
+in the details.
+
+Occupancy was chosen because it is the binary sensor whose words fit a yes/no
+and that raises no alarm:
+
+- A **Leak sensor** stays rejected for the reason above: a critical alert for
+  something that isn't a leak.
+- A **Contact sensor** would read "Open" for a low tank.
+- A **Humidity sensor** carrying the tank percent would show the level on a
+  tile. But Home averages every humidity sensor in a room into its climate
+  summary, so a full tank would read as 100 % humidity.
+
+Home Assistant already had both entities from hald's discovery (ADR 0007):
+`sensor.<unit>_water_level` (`%`, `state_class: measurement`) on
+`seedypod/<unit>/sensor/water_level_pct`, and `binary_sensor.<unit>_water_low`
+(`device_class: problem`) on the `water_low` alert topic. Core doesn't publish
+them again (ADR 0013).

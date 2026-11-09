@@ -5,6 +5,9 @@
  * StatusLowBattery is hald's `water_low` alert. It is the one HomeKit service
  * that carries a 0–100 level with a low flag, and Home shows a low one in its
  * status summary without the critical alarm a Leak sensor raises (ADR 0023).
+ * Home keeps a battery level in the accessory's details, so the same alert is
+ * also an Occupancy sensor, "Tank low", which gets its own row that reads
+ * Detected or Not Detected and can notify.
  */
 import type { Reading, SensorId } from '../../hardware/contract'
 import type { HalSnapshot } from '../../hardware/types'
@@ -16,11 +19,13 @@ const GENERAL_FAULT = 1
 const BATTERY_NORMAL = 0
 const BATTERY_LOW = 1
 const NOT_CHARGEABLE = 2
+const NOT_DETECTED = 0
+const DETECTED = 1
 
 const clampPct = (v: number) => Math.max(0, Math.min(100, Math.round(v)))
 
 const fault = (r: Reading | undefined) => (r && r.quality === 'good' ? NO_FAULT : GENERAL_FAULT)
-const low = (snap: HalSnapshot) => (snap.alerts.water_low?.active ? BATTERY_LOW : BATTERY_NORMAL)
+const isLow = (snap: HalSnapshot) => snap.alerts.water_low?.active === true
 
 export function buildSensors(d: AccessoryDeps): BuiltAccessory {
   const { Characteristic, HapStatusError, Service } = d.hap
@@ -41,8 +46,11 @@ export function buildSensors(d: AccessoryDeps): BuiltAccessory {
 
   const tank = new Service.Battery('Water tank', 'tank')
   tank.getCharacteristic(Characteristic.BatteryLevel).onGet(() => clampPct(reading(online(d), 'water_level_pct').value))
-  tank.getCharacteristic(Characteristic.StatusLowBattery).onGet(() => low(online(d)))
+  tank.getCharacteristic(Characteristic.StatusLowBattery).onGet(() => (isLow(online(d)) ? BATTERY_LOW : BATTERY_NORMAL))
   tank.getCharacteristic(Characteristic.ChargingState).onGet(() => NOT_CHARGEABLE)
+
+  const tankLow = new Service.OccupancySensor('Tank low', 'tank_low')
+  tankLow.getCharacteristic(Characteristic.OccupancyDetected).onGet(() => (isLow(online(d)) ? DETECTED : NOT_DETECTED))
 
   const unsubscribe = d.events.subscribe((e) => {
     if (e.kind !== 'hal') return
@@ -62,7 +70,8 @@ export function buildSensors(d: AccessoryDeps): BuiltAccessory {
     }
     else if (ev.type === 'alert' && ev.alert.kind === 'water_low') {
       update(tank, Characteristic.StatusLowBattery, ev.alert.active ? BATTERY_LOW : BATTERY_NORMAL)
+      update(tankLow, Characteristic.OccupancyDetected, ev.alert.active ? DETECTED : NOT_DETECTED)
     }
   })
-  return { services: [air, humidity, tank], stop: unsubscribe }
+  return { services: [air, humidity, tank, tankLow], stop: unsubscribe }
 }
