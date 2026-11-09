@@ -1,5 +1,9 @@
 # Docs update log
 
+## 2026-11-08
+
+- **Creation**: [ADR 0026](adr/0026-web-update.md), one-click update: a root helper core runs with fixed arguments, checked prebuilt releases, a swap that keeps the previous version, and rollback on a failed health check. The one exception to core's no-internet rule. [Maintenance](MAINTENANCE.md#updates), [Installation](INSTALLATION.md) and [Deployment](DEPLOYMENT.md) cover it.
+
 ## 2026-11-06
 
 - **Update**: Recorded the first bring-up on a real unit in the [handoff](HANDOFF.md), with the open USB hub fault and next steps.

@@ -37,10 +37,14 @@ jobs:
       - uses: taiki-e/install-action@cross
       - run: cross build --release --target ${{ matrix.target }} -p hald --features hardware
       - run: cp target/${{ matrix.target }}/release/hald hald-${{ matrix.target }}
+      # The update helper refuses an asset it can't check (ADR-0026).
+      - run: sha256sum hald-${{ matrix.target }} > hald-${{ matrix.target }}.sha256
       - uses: actions/upload-artifact@v6
         with:
           name: hald-${{ matrix.target }}
-          path: hal/hald-${{ matrix.target }}
+          path: |
+            hal/hald-${{ matrix.target }}
+            hal/hald-${{ matrix.target }}.sha256
 
   sqlite-armv6:
     uses: ./.github/workflows/sqlite-armv6.yml
@@ -100,6 +104,7 @@ jobs:
             --exclude='.claude' \
             .
           mv /tmp/seedypod-core.tar.gz .
+          sha256sum seedypod-core.tar.gz > seedypod-core.tar.gz.sha256
 
       - name: Check the tarball has no Git LFS pointers
         # Without lfs: true on checkout, the brand PNGs ship as pointer text and the logo breaks on the unit.
@@ -148,10 +153,10 @@ jobs:
             # it here would leave a gap on every push, and no image at all on a busy day.
             gh release view dev-latest --json assets --jq '.assets[].name' | grep -v '^seedypod-os' \
               | xargs -r -n1 gh release delete-asset dev-latest --yes
-            gh release upload dev-latest seedypod-core.tar.gz release-assets/* --clobber
+            gh release upload dev-latest seedypod-core.tar.gz seedypod-core.tar.gz.sha256 release-assets/* --clobber
             gh release edit dev-latest --target "${{ github.sha }}" --title "Dev (latest)" --prerelease --notes "$notes"
           else
-            gh release create dev-latest seedypod-core.tar.gz release-assets/* \
+            gh release create dev-latest seedypod-core.tar.gz seedypod-core.tar.gz.sha256 release-assets/* \
               --target "${{ github.sha }}" --title "Dev (latest)" --prerelease --notes "$notes"
           fi
 
