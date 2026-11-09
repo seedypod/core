@@ -9,7 +9,7 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PumpSpec, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
@@ -372,6 +372,15 @@ export class SqliteStore implements Store {
       return rows.map(r => ({ ...r, detail: JSON.parse(r.detail) as unknown }))
     },
     pruneRuns: (beforeTs: string): number => this.db.delete(t.automationRuns).where(lt(t.automationRuns.firedAt, beforeTs)).run().changes,
+  }
+
+  tankActions = {
+    add: (a: Omit<TankAction, 'id' | 'createdAt'>, createdAt: string): TankAction => this.db.insert(t.tankActions).values({ ...a, createdAt }).returning().get(),
+    list: (q?: { kind?: TankActionKind, limit?: number }): TankAction[] => {
+      const base = this.db.select().from(t.tankActions)
+      return (q?.kind ? base.where(eq(t.tankActions.kind, q.kind)) : base).orderBy(desc(t.tankActions.ts), desc(t.tankActions.id)).limit(q?.limit ?? 100).all()
+    },
+    remove: (id: number): boolean => this.db.delete(t.tankActions).where(eq(t.tankActions.id, id)).run().changes > 0,
   }
 
   plans = {

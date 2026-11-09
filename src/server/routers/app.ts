@@ -18,6 +18,7 @@ import { sensorsRouter } from './sensors'
 import { settingsRouter } from './settings'
 import { storageRouter } from './storage'
 import { systemRouter } from './system'
+import { tankRouter } from './tank'
 import { telemetryRouter } from './telemetry'
 import { updateRouter } from './update'
 import { visionRouter } from './vision'
@@ -35,6 +36,7 @@ export const appRouter = router({
   automations: automationsRouter,
   grow: growRouter,
   care: careRouter,
+  tank: tankRouter,
   plants: plantsRouter,
   planner: plannerRouter,
   camera: cameraRouter,

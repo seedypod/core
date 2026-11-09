@@ -67,3 +67,13 @@ minutes. Overshooting is the common mistake.
 
 The tank-level sensor shows real water use, so top off when the tank is low
 rather than on a weekly reminder.
+
+## Keep a tank log
+
+**Water → Tank log → Log action** records what you did and when: fed 1 tsp
+MaxiGro, topped off, refreshed, added 2 mL pH Down. Amount, product and note are
+optional. With a log, a jump in EC or a drop in pH can be traced to the feed or
+dose that caused it, and the unit can learn your tank's response
+([ADR 0029](adr/0029-care-engine-and-agent-boundary.md)). An agent can log what
+you tell it over MCP (`log_tank_action`) and read the log back
+(`list_tank_actions`). The log is in the database, so backups carry it.

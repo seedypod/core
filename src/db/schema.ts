@@ -234,6 +234,20 @@ export const customPlants = sqliteTable('custom_plants', {
   updatedAt: text().notNull(),
 })
 
+/** What was done to the tank (ADR-0029): fed, topped off, refreshed, pH adjusted. */
+export const tankActions = sqliteTable('tank_actions', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  /** When it was done, which may be before it was logged. */
+  ts: text().notNull(),
+  kind: text({ enum: ['feed', 'top_off', 'refresh', 'ph_down', 'ph_up', 'clean', 'trim_roots', 'thin', 'other'] }).notNull(),
+  amount: real(),
+  unit: text({ enum: ['tsp', 'tbsp', 'mL', 'L', 'gal', 'g'] }),
+  product: text(),
+  note: text().notNull().default(''),
+  source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
+  createdAt: text().notNull(),
+}, t => [index('tank_actions_ts').on(t.ts)])
+
 /** Saved pod plans (src/plants/planner.ts): layout and sowing waves as JSON. */
 export const plans = sqliteTable('plans', {
   id: text().primaryKey(),

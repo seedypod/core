@@ -314,6 +314,21 @@ for (const [name, make] of impls) {
       expect(store.flash.prune('2026-10-02T00:00:00Z')).toBe(1)
       expect(store.flash.since('2000-01-01T00:00:00Z')).toHaveLength(1)
     })
+
+    it('tank actions add, list newest first by when they were done, filter by kind, and remove (ADR-0029)', () => {
+      store = make()
+      const fed = store.tankActions.add({ ts: '2026-11-08T09:00:00.000Z', kind: 'feed', amount: 1, unit: 'tsp', product: 'MaxiGro', note: '', source: 'user' }, '2026-11-08T09:05:00.000Z')
+      expect(fed).toEqual({ id: fed.id, ts: '2026-11-08T09:00:00.000Z', kind: 'feed', amount: 1, unit: 'tsp', product: 'MaxiGro', note: '', source: 'user', createdAt: '2026-11-08T09:05:00.000Z' })
+      store.tankActions.add({ ts: '2026-11-09T08:00:00.000Z', kind: 'ph_down', amount: 2, unit: 'mL', product: null, note: 'after the feed', source: 'agent' }, '2026-11-09T08:00:00.000Z')
+      // Logged later, done earlier: it sorts by when it was done.
+      store.tankActions.add({ ts: '2026-11-07T18:00:00.000Z', kind: 'top_off', amount: null, unit: null, product: null, note: '', source: 'user' }, '2026-11-09T10:00:00.000Z')
+      expect(store.tankActions.list().map(a => a.kind)).toEqual(['ph_down', 'feed', 'top_off'])
+      expect(store.tankActions.list({ kind: 'feed' }).map(a => a.product)).toEqual(['MaxiGro'])
+      expect(store.tankActions.list({ limit: 1 }).map(a => a.source)).toEqual(['agent'])
+      expect(store.tankActions.remove(fed.id)).toBe(true)
+      expect(store.tankActions.remove(fed.id)).toBe(false)
+      expect(store.tankActions.list()).toHaveLength(2)
+    })
   })
 }
 
@@ -384,6 +399,22 @@ describe('SqliteStore on disk', () => {
       expect(existsSync(join(root, 'copy.db-wal'))).toBe(false)
       const copy = new SqliteStore({ url: join(root, 'copy.db') })
       expect(copy.settings.get()).toMatchObject({ unitName: 'Kitchen', setupComplete: true })
+      copy.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('carries the tank action log in a backup (ADR-0029)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    try {
+      const store = new SqliteStore({ url: join(root, 'live.db') })
+      store.tankActions.add({ ts: '2026-11-09T08:00:00.000Z', kind: 'refresh', amount: 19, unit: 'L', product: null, note: 'baking soda wipe', source: 'user' }, '2026-11-09T08:00:00.000Z')
+      await store.backupTo(join(root, 'copy.db'))
+      store.close()
+      const copy = new SqliteStore({ url: join(root, 'copy.db') })
+      expect(copy.tankActions.list()).toMatchObject([{ kind: 'refresh', amount: 19, unit: 'L', note: 'baking soda wipe' }])
       copy.close()
     }
     finally {
