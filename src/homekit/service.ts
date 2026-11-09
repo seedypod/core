@@ -6,6 +6,8 @@
  * Accessories write through core's tRPC caller, never the HAL directly, so
  * Home's commands take the same path as the app's.
  */
+import { createRequire } from 'node:module'
+import { dirname, isAbsolute, join, normalize, resolve } from 'node:path'
 import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
 import type { Context } from '../server/context'
@@ -23,8 +25,10 @@ export interface HomeKitServiceOptions {
   store: Store
   hal: HalClient
   events: EventBus
-  /** `$DATA_DIR/homekit`: identity.json and hap-nodejs's pairing files. */
+  /** `$DATA_DIR/homekit`: identity.json and hap-nodejs's pairing files. Resolved against the working directory. */
   dir: string
+  /** Where an older core left hap-nodejs's files for a relative `dir`; defaults to `legacyStorageDir(dir)`. */
+  legacyDir?: string | null
   version: string
   env?: NodeJS.ProcessEnv
   /** Seed-chain file reads; tests point these away from /proc. */
@@ -53,6 +57,23 @@ export function pickPort(env: NodeJS.ProcessEnv): number {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_PORT
 }
 
+/**
+ * hap-nodejs's node-persist resolves a relative storage path against its own
+ * package (`node-persist/src/storage/<dir>`), not the working directory, so a
+ * core started with a relative DATA_DIR kept its pairings inside node_modules.
+ * Null for an absolute `dir`, or when the package can't be found.
+ */
+export function legacyStorageDir(dir: string, resolveFrom: (spec: string, from: string) => string = (spec, from) => createRequire(from).resolve(spec)): string | null {
+  if (isAbsolute(dir)) return null
+  try {
+    const persist = resolveFrom('node-persist', resolveFrom('hap-nodejs', import.meta.url))
+    return join(dirname(persist), 'storage', normalize(dir))
+  }
+  catch {
+    return null
+  }
+}
+
 async function svgQr(uri: string): Promise<string> {
   const { default: QRCode } = await import('qrcode')
   return QRCode.toString(uri, { type: 'svg', errorCorrectionLevel: 'Q', margin: 1 })
@@ -60,6 +81,8 @@ async function svgQr(uri: string): Promise<string> {
 
 export class HomeKitService implements HomeKitControl {
   readonly ids: IdentityStore
+  private readonly dir: string
+  private readonly legacyDir: string | null
   private ctx: Context | null = null
   private published: PublishedBridge | null = null
   private identity: Identity | null = null
@@ -76,7 +99,10 @@ export class HomeKitService implements HomeKitControl {
     this.env = o.env ?? process.env
     this.log = o.log ?? (m => console.warn(m))
     this.seed = { system: () => o.hal.snapshot().system, readFile: o.readFile }
-    this.ids = new IdentityStore(o.dir, this.seed, this.log)
+    // Absolute, so core reads the pairings where hap-nodejs writes them.
+    this.dir = resolve(o.dir)
+    this.legacyDir = o.legacyDir === undefined ? legacyStorageDir(o.dir) : o.legacyDir
+    this.ids = new IdentityStore(this.dir, this.seed, this.log)
   }
 
   /** Called by createCore once the context exists; the accessories write through its caller. */
@@ -156,6 +182,9 @@ export class HomeKitService implements HomeKitControl {
     try {
       if (!this.ids.read()) await this.waitForSystem()
       let identity = this.ids.loadOrCreate()
+      if (this.legacyDir && this.ids.adoptPairings(this.legacyDir, identity.username)) {
+        this.log(`homekit: moved ${identity.username}'s pairings from ${this.legacyDir}`)
+      }
       if (this.ids.isStranded(identity)) {
         this.log(`homekit: ${identity.username} was removed from Home while core was down; rotating its identity`)
         this.ids.clearPairings(identity.username)
@@ -171,7 +200,7 @@ export class HomeKitService implements HomeKitControl {
       const advertiser = pickAdvertiser(this.env)
       this.published = await bridge.publishBridge({
         identity,
-        dir: this.o.dir,
+        dir: this.dir,
         deps: { api: createCallerFactory(appRouter)(ctx) satisfies HomeKitApi, hal: this.o.hal, events: this.o.events, log: this.log },
         name: bridge.hapName(this.o.store.settings.get().unitName),
         port,

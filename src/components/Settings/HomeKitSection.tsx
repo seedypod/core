@@ -12,8 +12,9 @@ import { trpc } from '@/src/utils/trpc'
 export function HomeKitSection() {
   const utils = trpc.useUtils()
   const q = trpc.homekit.status.useQuery(undefined, {
-    // Pairing happens in the Home app; check for it while a code is on screen.
-    refetchInterval: query => (query.state.data?.running && query.state.data.pairedControllers === 0 ? 5000 : false),
+    // Pairing happens in the Home app: check often while a code is on screen, and now
+    // and then after, since controllers Home adds or removes later send core no event.
+    refetchInterval: query => (!query.state.data?.running ? false : query.state.data.pairedControllers === 0 ? 5000 : 30_000),
   })
   const refresh = { onSuccess: () => void utils.homekit.invalidate() }
   const setEnabled = trpc.homekit.setEnabled.useMutation(refresh)
