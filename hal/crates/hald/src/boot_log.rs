@@ -172,9 +172,9 @@ pub fn gather(recovery: &Recovery, root: &Path, sysfs: &Path, ts: String, uptime
 /// tore, or a garbled block, can't stop the line being added or the file being cut back.
 pub fn append(state_dir: &Path, line: &str) -> std::io::Result<()> {
     let path = state_dir.join(FILE);
-    let old = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+    let (old, created) = match std::fs::read(&path) {
+        Ok(bytes) => (bytes, false),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Vec::new(), true),
         Err(e) => return Err(e),
     };
     let mut file = std::fs::OpenOptions::new()
@@ -188,6 +188,10 @@ pub fn append(state_dir: &Path, line: &str) -> std::io::Result<()> {
     writeln!(file, "{line}")?;
     file.sync_data()?;
     drop(file);
+    // A new file's name is in the directory, which needs its own sync to survive a power cut.
+    if created {
+        std::fs::File::open(state_dir)?.sync_all()?;
+    }
 
     let mut lines: Vec<&[u8]> = old.split(|&b| b == b'\n').filter(|l| !l.is_empty()).collect();
     lines.push(line.as_bytes());
@@ -317,6 +321,9 @@ mod tests {
     #[test]
     fn lines_are_appended_and_the_file_stays_small() {
         let dir = scratch("trim");
+        append(&dir, "first").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(FILE)).unwrap(), "first\n");
+        std::fs::remove_file(dir.join(FILE)).unwrap();
         for n in 0..TRIM_AT {
             append(&dir, &format!("boot {n}")).unwrap();
         }
