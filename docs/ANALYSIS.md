@@ -43,8 +43,8 @@ Both count only what can be a plant, in two steps (version 2, from
   and plants that have grown into each other still count for each pod they grow
   from. Specks too small to be a seedling count for no one.
 
-The boxes are a fixed 3 × 5 grid per camera. **Pod bounds** on the latest photo
-draws them, with the dashed middle third, over the still, so you can see what
+The boxes are a fixed 3 × 5 grid per camera. The **Pod bounds** view on the
+Analysis screen draws them, with the dashed middle third, over the still, so you can see what
 each pod is scored on. On a Gardyn the grid does not yet line up with the cups;
 calibrating it per unit is [#143](https://github.com/seedypod/core/issues/143).
 
@@ -66,16 +66,21 @@ the pod trends. Other stills are untouched, and so are results a remote worker
 posted. This only finds the green fill; a frame torn some other way, such as a grey
 block, is only caught by `hald` as it arrives.
 
-Open **Analysis** in the sidebar to:
+Open **Analysis** in the sidebar. The top card shows the newest still from
+both cameras side by side (stacked on a phone), with three pickers:
 
-- see every analyser, how many photos it has scored, and which one is
+- **Analyser**: every analyser, how many photos it has scored, and which one is
   **primary** (the one pod trends follow). **Make primary** switches it.
-- **Re-run on stored photos** to score the photos still on the unit (the last
-  30 days) with one analyser, for example after an update brings a new
-  version. New versions are stored next to old ones; nothing is overwritten.
-- **Compare on one pod**: one line per analyser over time.
-- **Latest photo, side by side**: the newest still with every analyser's
-  number for each pod.
+  **Re-run** scores the photos still on the unit (the last 30 days) with that
+  analyser, for example after an update brings a new version. New versions
+  are stored next to old ones; nothing is overwritten.
+- **Camera**: both, upper or lower, for the stills and the table below.
+- **View**: the photo, or **Pod bounds** drawn over it with the chosen
+  analyser's reading for each pod.
+
+Below it, **Per pod, latest frames** lists every pod on the cameras shown in
+one table, with every analyser's number from its camera's newest still, and
+**One pod over time** draws one line per analyser.
 
 **Keep analysis masks** (Settings → Cameras) also stores `exg-otsu`'s
 plant/not-plant mask for each photo as a 1-bit PBM image, about 115 kB each.

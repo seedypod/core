@@ -17,7 +17,10 @@ vi.mock('@/src/utils/trpc', () => {
     if (name === 'compare') calls.compare(input)
     if (name === 'capture') calls.capture(input, opts)
     if (name === 'summary') calls.summary(input)
-    return { data: opts?.enabled === false ? undefined : data.get(name) }
+    // Per camera or per capture when a test sets it so, else one answer for every input.
+    const by = name === 'frames' ? (input as { camera: string }).camera : name === 'capture' ? (input as { captureId: string }).captureId : null
+    const answer = by !== null && data.has(`${name}:${by}`) ? data.get(`${name}:${by}`) : data.get(name)
+    return { data: opts?.enabled === false ? undefined : answer }
   } })
   const mutation = (name: 'setPrimary' | 'rerun') => ({ useMutation: (o?: { onSuccess?: () => void }) => ({
     isPending: false,
@@ -41,7 +44,10 @@ vi.mock('@/src/utils/trpc', () => {
 
 const metric = { name: 'green_fraction', label: 'Green area', description: '' }
 const base = { metrics: [metric], runsOn: ['device'], source: 'device', rows: 30, captures: 2, firstTs: '2026-01-01T00:00:00Z', lastTs: '2026-01-02T00:00:00Z' }
-const row = (analyzer: string, slot: number, value: number) => ({ captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', camera: 'upper', analyzer, version: 1, source: 'device', slot, metric: 'green_fraction', value, detail: null, artifact: null })
+const row = (analyzer: string, slot: number, value: number) => ({ captureId: slot > 15 ? 'lower-1' : 'upper-1', ts: '2026-01-02T00:00:00Z', camera: slot > 15 ? 'lower' : 'upper', analyzer, version: 1, source: 'device', slot, metric: 'green_fraction', value, detail: null, artifact: null })
+const frame = (camera: string) => ({ id: `${camera}-1`, camera, ts: '2026-01-02T00:00:00Z', path: 'x.jpg', bytes: 1, url: `/api/captures/${camera}-1.jpg` })
+/** Pod rows of the table, without the per-camera headings. */
+const podRows = () => [...screen.getByRole('table').querySelectorAll('tbody tr')].filter(tr => tr.querySelector('td'))
 
 beforeEach(() => {
   data.clear()
@@ -57,8 +63,10 @@ beforeEach(() => {
     { analyzer: 'green-threshold', version: 1, source: 'device', points: [{ ts: '2026-01-01T00:00:00Z', value: 0.2, captureId: 'a' }, { ts: '2026-01-02T00:00:00Z', value: 0.4, captureId: 'b' }] },
     { analyzer: 'exg-otsu', version: 1, source: 'device', points: [{ ts: '2026-01-02T00:00:00Z', value: 0.52, captureId: 'b' }] },
   ])
-  data.set('frames', [{ id: 'upper-1', camera: 'upper', ts: '2026-01-02T00:00:00Z', path: 'x.jpg', bytes: 1, url: '/api/captures/upper-1.jpg' }])
-  data.set('capture', [row('exg-otsu', 1, 0.45), row('green-threshold', 1, 0.4), row('green-threshold', 2, 0.1), { ...row('exg-otsu', 2, 3), metric: 'leaf_count' }])
+  data.set('frames:upper', [frame('upper')])
+  data.set('frames:lower', [frame('lower')])
+  data.set('capture:upper-1', [row('exg-otsu', 1, 0.45), row('green-threshold', 1, 0.4), row('green-threshold', 2, 0.1), { ...row('exg-otsu', 2, 3), metric: 'leaf_count' }])
+  data.set('capture:lower-1', [row('green-threshold', 16, 0.2), row('exg-otsu', 16, 0.25)])
   data.set('pods', [{ slot: 1, plant: 'Swiss Chard' }])
 })
 
@@ -66,23 +74,31 @@ const openExport = () => fireEvent.click(screen.getByText('Export dataset'))
 afterEach(cleanup)
 
 describe('AnalysisPage', () => {
-  it('lists analysers with their source, primary flag and totals', () => {
+  it('shows the primary analyser in one card and the others on request', () => {
     render(<AnalysisPage />)
+    const picker = screen.getByLabelText('Analyser') as HTMLSelectElement
+    expect([...picker.options].map(o => o.value)).toEqual(['green-threshold@1', 'exg-otsu@1', 'leaf-unet@2'])
+    expect(picker.value).toBe('green-threshold@1')
     expect(screen.getByText('Fixed green threshold')).toBeTruthy()
     expect(screen.getAllByText('PRIMARY')).toHaveLength(1)
     expect(screen.getByText('green-threshold@1 · on device')).toBeTruthy()
+    expect(screen.getByText('2 captures · 30 results')).toBeTruthy()
+    expect(screen.queryByText('Make primary')).toBeNull()
+    expect(screen.getByText('Re-run')).toBeTruthy()
+    fireEvent.change(picker, { target: { value: 'leaf-unet@2' } })
     expect(screen.getByText('leaf-unet@2 · remote')).toBeTruthy()
-    expect(screen.getAllByText('2 captures · 30 results')).toHaveLength(2)
     expect(screen.getByText('No results yet')).toBeTruthy()
+    expect(screen.queryByText('PRIMARY')).toBeNull()
     // Re-run is offered only for analysers that run here.
-    expect(screen.getAllByText('Re-run')).toHaveLength(2)
+    expect(screen.queryByText('Re-run')).toBeNull()
   })
 
   it('makes an analyser primary and starts a re-run', () => {
     render(<AnalysisPage />)
-    fireEvent.click(screen.getAllByText('Make primary')[0] as HTMLElement)
+    fireEvent.change(screen.getByLabelText('Analyser'), { target: { value: 'exg-otsu@1' } })
+    fireEvent.click(screen.getByText('Make primary'))
     expect(calls.setPrimary).toHaveBeenCalledWith({ analyzer: 'exg-otsu' })
-    fireEvent.click(screen.getAllByText('Re-run')[1] as HTMLElement)
+    fireEvent.click(screen.getByText('Re-run'))
     expect(calls.rerun).toHaveBeenCalledWith({ analyzer: 'exg-otsu', limit: 2000 })
     expect(invalidate).toHaveBeenCalled()
   })
@@ -95,66 +111,88 @@ describe('AnalysisPage', () => {
     expect(calls.compare).toHaveBeenLastCalledWith({ slot: 7, metric: 'green_fraction', limit: 200 })
   })
 
-  it('shows every analyser\'s green fraction per pod on the latest photo, in listing order', () => {
+  it('shows both cameras\' stills and every analyser\'s green fraction per pod in one table, in listing order', () => {
     render(<AnalysisPage />)
+    expect(screen.getByAltText('upper camera at 2026-01-02T00:00:00Z')).toBeTruthy()
+    expect(screen.getByAltText('lower camera at 2026-01-02T00:00:00Z')).toBeTruthy()
     const table = screen.getByRole('table')
-    const heads = [...table.querySelectorAll('th')].map(th => th.textContent)
-    expect(heads).toEqual(['POD', 'PLANT', 'LEAF COVER', 'THRESHOLD', 'OTSU'])
-    expect(table.querySelectorAll('tbody tr')).toHaveLength(2)
+    expect([...table.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['POD', 'PLANT', 'LEAF COVER', 'THRESHOLD', 'OTSU'])
+    expect([...table.querySelectorAll('th[scope=rowgroup]')].map(th => th.textContent?.split(' · ')[0])).toEqual(['UPPER', 'LOWER'])
+    expect(podRows().map(tr => tr.querySelector('td')?.textContent)).toEqual(['1', '2', '16'])
     expect(table.textContent).toContain('Swiss Chard')
     expect(table.textContent).toContain('—')
     expect(table.textContent).not.toContain('300%')
+    expect(podRows()[2]?.textContent).toContain('25%')
     expect(screen.getByText('Excess green + Otsu reads 5 points higher than Fixed green threshold on every pod.')).toBeTruthy()
-    expect(screen.getByAltText('upper camera at 2026-01-02T00:00:00Z')).toBeTruthy()
+  })
+
+  it('narrows the stills and the table to one camera', () => {
+    data.set('capture:upper-1', Array.from({ length: 15 }, (_, i) => row('green-threshold', i + 1, 0.3)))
+    data.set('capture:lower-1', Array.from({ length: 15 }, (_, i) => row('green-threshold', i + 16, 0.3)))
+    render(<AnalysisPage />)
+    expect(podRows()).toHaveLength(30)
+    fireEvent.click(screen.getByRole('tab', { name: 'Lower' }))
+    expect(podRows()).toHaveLength(15)
+    expect(podRows()[0]?.querySelector('td')?.textContent).toBe('16')
+    expect(screen.queryByAltText('upper camera at 2026-01-02T00:00:00Z')).toBeNull()
+    expect(screen.getByAltText('lower camera at 2026-01-02T00:00:00Z')).toBeTruthy()
+  })
+
+  it('takes each still\'s own shape once it loads', () => {
+    render(<AnalysisPage />)
+    const img = screen.getByAltText('upper camera at 2026-01-02T00:00:00Z') as HTMLImageElement
+    const box = img.parentElement as HTMLElement
+    expect(box.style.aspectRatio).toBe(`${4 / 3} / 1`)
+    Object.defineProperty(img, 'naturalWidth', { value: 1280 })
+    Object.defineProperty(img, 'naturalHeight', { value: 720 })
+    fireEvent.load(img)
+    expect(box.style.aspectRatio).toBe(`${16 / 9} / 1`)
   })
 
   it('reports a pod marked empty as no cover rather than a number', () => {
     data.set('pods', [{ slot: 1, plant: null, status: 'empty' }, { slot: 2, plant: 'Basil', status: 'growing' }])
     render(<AnalysisPage />)
-    const rows = [...screen.getByRole('table').querySelectorAll('tbody tr')]
-    expect(rows[0]?.textContent).toContain('Empty · no cover')
-    expect(rows[0]?.textContent).not.toContain('%')
-    expect(rows[0]?.querySelector('[title]')?.getAttribute('title')).toBe('Marked empty; analysers read 40%, 45%')
-    expect(rows[1]?.textContent).toContain('10%')
+    const [first, second] = podRows()
+    expect(first?.textContent).toContain('Empty · no cover')
+    expect(first?.textContent).not.toContain('%')
+    expect(first?.getAttribute('title')).toBe('Marked empty; analysers read 40%, 45%')
+    expect(second?.textContent).toContain('10%')
   })
 
-  it('draws the bounds each pod is scored on over the photo, for the camera shown', () => {
+  it('draws the bounds each pod is scored on over both stills, with the chosen analyser\'s reading', () => {
+    data.set('pods', [{ slot: 2, plant: null, status: 'empty' }])
     render(<AnalysisPage />)
     expect(screen.queryByTestId('pod-bounds')).toBeNull()
-    expect(screen.getByText('Original')).toBeTruthy()
-    fireEvent.click(screen.getByLabelText('Pod bounds'))
-    const overlay = screen.getByTestId('pod-bounds')
-    expect(overlay.querySelectorAll('svg g')).toHaveLength(15)
-    expect([...overlay.querySelectorAll('span')].map(s => s.textContent)).toEqual(Array.from({ length: 15 }, (_, i) => `${i + 1}`))
+    fireEvent.click(screen.getByRole('tab', { name: 'Pod bounds' }))
+    const [upper, lower] = screen.getAllByTestId('pod-bounds')
+    expect(upper?.querySelectorAll('svg g')).toHaveLength(15)
+    const labels = [...(upper?.querySelectorAll('span') ?? [])].map(s => s.textContent)
+    expect(labels.slice(0, 3)).toEqual(['1 · 40%', '2', '3'])
+    expect(lower?.querySelector('span')?.textContent).toBe('16 · 20%')
     expect(screen.getByText(/dashed middle/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('tab', { name: 'Lower' }))
-    expect(screen.getByTestId('pod-bounds').querySelector('span')?.textContent).toBe('16')
-  })
-
-  it('lists ten pods until asked for all of them', () => {
-    data.set('capture', Array.from({ length: 15 }, (_, i) => row('green-threshold', i + 1, 0.3)))
-    render(<AnalysisPage />)
-    expect(screen.getByRole('table').querySelectorAll('tbody tr')).toHaveLength(10)
-    fireEvent.click(screen.getByText('Show all 15 pods'))
-    expect(screen.getByRole('table').querySelectorAll('tbody tr')).toHaveLength(15)
-    fireEvent.click(screen.getByText('Show fewer'))
-    expect(screen.getByRole('table').querySelectorAll('tbody tr')).toHaveLength(10)
+    fireEvent.change(screen.getByLabelText('Analyser'), { target: { value: 'exg-otsu@1' } })
+    expect(screen.getAllByTestId('pod-bounds')[0]?.querySelector('span')?.textContent).toBe('1 · 45%')
   })
 
   it('reports progress, failures and empty states', () => {
     data.set('status', { running: null, waiting: [], dropped: 0, failed: 2, backfill: { analyzer: 'exg-otsu', done: 3, total: 10 } })
-    data.set('capture', [])
+    data.set('capture:upper-1', [])
+    data.set('capture:lower-1', [])
     data.set('rerunError', new Error('already re-running exg-otsu'))
     render(<AnalysisPage />)
     expect(screen.getByText(/Re-running exg-otsu: 3 of 10 captures · 2 captures could not be scored/)).toBeTruthy()
-    expect(screen.getByText(/hasn't been scored yet/)).toBeTruthy()
-    expect(screen.getAllByText('already re-running exg-otsu').length).toBeGreaterThan(0)
+    expect(screen.getByText(/haven't been scored yet/)).toBeTruthy()
+    expect(screen.getByText('already re-running exg-otsu')).toBeTruthy()
     cleanup()
-    data.set('frames', [])
+    data.set('frames:upper', [])
+    data.set('frames:lower', [])
+    data.set('analyzers', [])
     data.set('status', { running: 'upper-9', waiting: [], dropped: 0, failed: 0, backfill: null })
     render(<AnalysisPage />)
     expect(screen.getByText('Scoring upper-9')).toBeTruthy()
-    expect(screen.getByText('No photos from this camera yet.')).toBeTruthy()
+    expect(screen.getByText('No photos yet.')).toBeTruthy()
+    expect(screen.getAllByText('No photos from this camera yet.')).toHaveLength(2)
+    expect(screen.queryByLabelText('Analyser')).toBeNull()
     expect(calls.capture).toHaveBeenLastCalledWith({ captureId: '' }, { enabled: false })
   })
 
