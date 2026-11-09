@@ -27,6 +27,12 @@ for (const [name, make] of impls) {
       const s = store.settings.update({ timezone: 'America/Los_Angeles', waterFullCm: 6 })
       expect(s.timezone).toBe('America/Los_Angeles')
       expect(store.settings.get().waterFullCm).toBe(6)
+      // Pod boxes are JSON: they come back as they went in, and null clears them.
+      expect(store.settings.get().podRegions).toBeNull()
+      const podRegions = { lower: { 16: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 } } }
+      expect(store.settings.update({ podRegions }).podRegions).toEqual(podRegions)
+      expect(store.settings.get().podRegions).toEqual(podRegions)
+      expect(store.settings.update({ podRegions: null }).podRegions).toBeNull()
     })
 
     it('schedules upsert, list, remove; runs are idempotent by key', () => {

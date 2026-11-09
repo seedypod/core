@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnalysisPage, gapSummary } from '../AnalysisPage'
 
 const { data, calls, invalidate, demo } = vi.hoisted(() => ({
   demo: { on: false },
   data: new Map<string, unknown>(),
-  calls: { setPrimary: vi.fn(), rerun: vi.fn(), compare: vi.fn(), capture: vi.fn(), summary: vi.fn() },
+  calls: { setPrimary: vi.fn(), rerun: vi.fn(), setRegions: vi.fn(), compare: vi.fn(), capture: vi.fn(), summary: vi.fn() },
   invalidate: vi.fn(),
 }))
 
@@ -22,11 +22,16 @@ vi.mock('@/src/utils/trpc', () => {
     const answer = by !== null && data.has(`${name}:${by}`) ? data.get(`${name}:${by}`) : data.get(name)
     return { data: opts?.enabled === false ? undefined : answer }
   } })
-  const mutation = (name: 'setPrimary' | 'rerun') => ({ useMutation: (o?: { onSuccess?: () => void }) => ({
+  const mutation = (name: 'setPrimary' | 'rerun' | 'setRegions') => ({ useMutation: (o?: { onSuccess?: () => void }) => ({
     isPending: false,
     error: data.get(`${name}Error`) ?? null,
     mutate: (input: unknown) => {
       calls[name](input)
+      o?.onSuccess?.()
+    },
+    mutateAsync: async (input: unknown) => {
+      calls[name](input)
+      if (data.has(`${name}Error`)) throw data.get(`${name}Error`)
       o?.onSuccess?.()
     },
   }) })
@@ -34,7 +39,7 @@ vi.mock('@/src/utils/trpc', () => {
     apiBase: () => '',
     trpc: {
       useUtils: () => ({ vision: { invalidate } }),
-      vision: { analyzers: query('analyzers'), status: query('status'), compare: query('compare'), capture: query('capture'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun') },
+      vision: { analyzers: query('analyzers'), status: query('status'), compare: query('compare'), capture: query('capture'), regions: query('regions'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
       camera: { list: query('frames') },
       grow: { pods: query('pods') },
       datasets: { summary: query('summary') },
@@ -165,13 +170,82 @@ describe('AnalysisPage', () => {
     expect(screen.queryByTestId('pod-bounds')).toBeNull()
     fireEvent.click(screen.getByRole('tab', { name: 'Pod bounds' }))
     const [upper, lower] = screen.getAllByTestId('pod-bounds')
-    expect(upper?.querySelectorAll('svg g')).toHaveLength(15)
-    const labels = [...(upper?.querySelectorAll('span') ?? [])].map(s => s.textContent)
+    expect(upper?.querySelectorAll('[data-slot]')).toHaveLength(15)
+    const labels = [...(upper?.querySelectorAll('[data-slot]') ?? [])].map(s => s.textContent)
     expect(labels.slice(0, 3)).toEqual(['1 · 40%', '2', '3'])
-    expect(lower?.querySelector('span')?.textContent).toBe('16 · 20%')
+    expect(lower?.querySelector('[data-slot]')?.textContent).toBe('16 · 20%')
     expect(screen.getByText(/dashed middle/)).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Analyser'), { target: { value: 'exg-otsu@1' } })
-    expect(screen.getAllByTestId('pod-bounds')[0]?.querySelector('span')?.textContent).toBe('1 · 45%')
+    expect(screen.getAllByTestId('pod-bounds')[0]?.querySelector('[data-slot]')?.textContent).toBe('1 · 45%')
+  })
+
+  it('draws the unit\'s calibrated boxes, and says which cameras have them', () => {
+    data.set('regions', [{ camera: 'upper', calibrated: true, regions: [{ slot: 1, x: 0.5, y: 0.25, w: 0.2, h: 0.1, moved: true }] }])
+    render(<AnalysisPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Pod bounds' }))
+    const box = screen.getAllByTestId('pod-bounds')[0]?.querySelector('[data-slot="1"]') as HTMLElement
+    expect([box.style.left, box.style.top, box.style.width, box.style.height]).toEqual(['50%', '25%', '20%', '10%'])
+    expect(screen.getByText('· calibrated boxes')).toBeTruthy()
+    expect(screen.getByText('· measured boxes')).toBeTruthy()
+  })
+
+  it('edits the boxes by keyboard and saves each camera\'s', async () => {
+    render(<AnalysisPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Pod bounds' }))
+    expect(screen.queryByRole('button', { name: 'Pod 1 box' })).toBeNull()
+    fireEvent.click(screen.getByText('Edit boxes'))
+    const box = screen.getByRole('button', { name: 'Pod 1 box' })
+    const before = parseFloat(box.style.left)
+    fireEvent.keyDown(box, { key: 'ArrowRight' })
+    expect(parseFloat(box.style.left)).toBeCloseTo(before + 0.5, 1)
+    fireEvent.keyDown(box, { key: 'ArrowDown', shiftKey: true })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await act(async () => fireEvent.click(screen.getByText('Save boxes')))
+    expect(calls.setRegions).toHaveBeenCalledTimes(2)
+    const [upper] = calls.setRegions.mock.calls[0] as [{ camera: string, regions: Array<{ slot: number, x: number }> }]
+    expect(upper.camera).toBe('upper')
+    expect(upper.regions).toHaveLength(15)
+    expect(upper.regions[0]?.x).toBeCloseTo(before / 100 + 0.005, 4)
+    expect(calls.setRegions.mock.calls[1]?.[0]).toMatchObject({ camera: 'lower' })
+    expect(screen.getByText(/Saved. New photos use these boxes/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Pod 1 box' })).toBeNull()
+  })
+
+  it('drags a box and its corner, and resets or drops a draft', () => {
+    render(<AnalysisPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Pod bounds' }))
+    fireEvent.click(screen.getByText('Edit boxes'))
+    const overlay = screen.getAllByTestId('pod-bounds')[0] as HTMLElement
+    overlay.getBoundingClientRect = () => ({ width: 400, height: 300, x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, toJSON: () => ({}) })
+    const box = screen.getByRole('button', { name: 'Pod 2 box' })
+    const left = parseFloat(box.style.left)
+    fireEvent.pointerDown(box, { clientX: 100, clientY: 100, pointerId: 1 })
+    fireEvent.pointerMove(overlay, { clientX: 140, clientY: 100, pointerId: 1 })
+    fireEvent.pointerUp(overlay, { pointerId: 1 })
+    expect(parseFloat(box.style.left)).toBeCloseTo(left + 10, 1)
+    // After the drag ends, moving the pointer changes nothing.
+    fireEvent.pointerMove(overlay, { clientX: 300, clientY: 100, pointerId: 1 })
+    expect(parseFloat(box.style.left)).toBeCloseTo(left + 10, 1)
+    const width = parseFloat(box.style.width)
+    fireEvent.pointerDown(box.querySelector('[data-handle]') as HTMLElement, { clientX: 0, clientY: 0, pointerId: 2 })
+    fireEvent.pointerMove(overlay, { clientX: 20, clientY: 0, pointerId: 2 })
+    fireEvent.pointerCancel(overlay, { pointerId: 2 })
+    expect(parseFloat(box.style.width)).toBeCloseTo(width + 5, 1)
+    fireEvent.click(screen.getByText('Reset to measured'))
+    expect(parseFloat(screen.getByRole('button', { name: 'Pod 2 box' }).style.left)).toBeCloseTo(left, 1)
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(screen.queryByRole('button', { name: 'Pod 2 box' })).toBeNull()
+    expect(calls.setRegions).not.toHaveBeenCalled()
+  })
+
+  it('shows why the boxes could not be saved', async () => {
+    data.set('setRegionsError', new Error('pod 16 is not on the upper camera'))
+    render(<AnalysisPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Pod bounds' }))
+    fireEvent.click(screen.getByText('Edit boxes'))
+    await act(async () => fireEvent.click(screen.getByText('Save boxes')))
+    expect(screen.getByRole('button', { name: 'Pod 1 box' })).toBeTruthy()
+    expect(screen.queryByText(/Saved/)).toBeNull()
   })
 
   it('reports progress, failures and empty states', () => {

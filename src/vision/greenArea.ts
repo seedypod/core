@@ -133,27 +133,6 @@ export function coverByPod(mask: Uint8Array, width: number, height: number, pods
   return out
 }
 
-/**
- * Static crop map: Gardyn cameras are fixed and pods sit in three columns of
- * ten; the upper camera sees slots 1–15, the lower 16–30. Calibrate the grid
- * per unit in settings (Phase 6); these defaults are a sane starting layout.
- */
-export function defaultPodRects(camera: 'upper' | 'lower', width: number, height: number): Record<number, Rect> {
-  const cols = 3
-  const rows = 5
-  const start = camera === 'upper' ? 1 : 16
-  const out: Record<number, Rect> = {}
-  const cw = width / cols
-  const rh = height / rows
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const slot = start + r * cols + c
-      out[slot] = { x: c * cw + cw * 0.1, y: r * rh + rh * 0.1, w: cw * 0.8, h: rh * 0.8 }
-    }
-  }
-  return out
-}
-
 export interface GrowthPoint { ts: string, slot: number, green: number }
 
 /**

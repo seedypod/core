@@ -37,3 +37,13 @@ export function tower(width: number, height: number, plants: Disc[]) {
   }
   return new Uint8Array(encode({ data, width, height }, 85).data)
 }
+
+/** The 3 × 5 grid the analysers used before the boxes were measured on the cups, for fixtures drawn on it. */
+export function grid(camera: 'upper' | 'lower'): Record<number, { x: number, y: number, w: number, h: number }> {
+  const first = camera === 'upper' ? 1 : 16
+  const out: Record<number, { x: number, y: number, w: number, h: number }> = {}
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 3; c++) out[first + r * 3 + c] = { x: (c + 0.1) / 3, y: (r + 0.1) / 5, w: 0.8 / 3, h: 0.8 / 5 }
+  }
+  return out
+}

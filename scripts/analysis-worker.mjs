@@ -23,15 +23,14 @@ if (!token) {
 }
 const readHeaders = apiKey ? { 'x-api-key': apiKey } : {}
 
-/** Pods 1–15 on the upper camera, 16–30 on the lower, in a 3 × 5 grid (matches the unit's default crop). */
+/**
+ * Each pod's box on each camera, as fractions of the frame: the unit's own
+ * (measured on the cups, or calibrated on its Analysis screen), so the worker
+ * scores the same part of the still as the unit does.
+ */
+const regions = Object.fromEntries((await (await fetch(`${base}/api/vision/regions`, { headers: readHeaders })).json()).map(c => [c.camera, c.regions]))
 function podRects(camera, width, height) {
-  const out = {}
-  const cw = width / 3
-  const rh = height / 5
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 3; c++) out[(camera === 'upper' ? 1 : 16) + r * 3 + c] = { x: c * cw + cw * 0.1, y: r * rh + rh * 0.1, w: cw * 0.8, h: rh * 0.8 }
-  }
-  return out
+  return Object.fromEntries((regions[camera] ?? []).map(r => [r.slot, { x: r.x * width, y: r.y * height, w: r.w * width, h: r.h * height }]))
 }
 
 /** A stricter excess-green cut than the unit's fixed threshold: a second opinion to compare against. */

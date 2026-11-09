@@ -5,10 +5,13 @@
  */
 import { DEVICE_ANALYZERS, runAnalyzers, type AnalyzerOptions, type AnalyzerOutput } from './analyzer'
 import { decodeJpeg, hasZeroFilledRows } from './analyze'
+import type { PodRegions } from './regions'
 
 export interface AnalysisJob {
   bytes: Uint8Array
   camera: 'upper' | 'lower'
+  /** The camera's pod boxes as fractions of the frame; the defaults when left out. */
+  regions?: PodRegions
   /** Analyser ids to run; unknown ids are ignored. */
   analyzers: string[]
   opts: AnalyzerOptions
@@ -26,7 +29,7 @@ export function execute(job: AnalysisJob): JobResult {
   const img = decodeJpeg(job.bytes)
   if (!img) return null
   if (hasZeroFilledRows(img)) return DAMAGED
-  return runAnalyzers(img, job.camera, DEVICE_ANALYZERS.filter(a => job.analyzers.includes(a.id)), job.opts)
+  return runAnalyzers(img, job.camera, DEVICE_ANALYZERS.filter(a => job.analyzers.includes(a.id)), job.opts, job.regions)
 }
 
 /** Runs a job somewhere: on this thread, or on a worker so the event loop never stalls. */

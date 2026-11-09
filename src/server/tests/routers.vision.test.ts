@@ -9,6 +9,7 @@ import { jpeg } from '../../vision/tests/fixtures'
 import { createCore } from '../bootstrap'
 import { appRouter } from '../routers/app'
 import { createCallerFactory } from '../trpc'
+import { DEFAULT_REGIONS } from '../../vision/regions'
 
 async function scored(n = 3) {
   const sink = new MemorySink()
@@ -87,5 +88,36 @@ describe('vision router (ADR-0019)', () => {
     expect(cmp.compare).toHaveLength(2)
     expect(cmp.compare[0]?.points).toHaveLength(2)
     await client.close()
+  })
+
+  it('calibrates one camera\'s pod boxes, keeping only the moved ones, and resets them', async () => {
+    const { c, ctx } = await scored(0)
+    const seen: string[] = []
+    ctx.events.subscribe(e => e.kind === 'mutation' && seen.push(e.path))
+    const before = await c.vision.regions()
+    expect(before.map(r => [r.camera, r.calibrated, r.regions.length])).toEqual([['upper', false, 15], ['lower', false, 15]])
+    expect(before[0]?.regions[0]).toEqual({ slot: 1, ...DEFAULT_REGIONS.upper[1], moved: false })
+
+    // Pod 16 moves (and is pulled back inside the frame); pod 17 is sent back unchanged.
+    const lower = await c.vision.setRegions({ camera: 'lower', regions: [{ slot: 16, x: 0.95, y: 0.5, w: 0.2, h: 0.1 }, { slot: 17, ...DEFAULT_REGIONS.lower[17] as { x: number, y: number, w: number, h: number } }] })
+    expect(lower.calibrated).toBe(true)
+    expect(lower.regions.filter(r => r.moved).map(r => r.slot)).toEqual([16])
+    expect(lower.regions[0]).toMatchObject({ x: 0.8, y: 0.5, w: 0.2, h: 0.1 })
+    expect(ctx.store.settings.get().podRegions).toEqual({ lower: { 16: { x: 0.8, y: 0.5, w: 0.2, h: 0.1 } } })
+    expect(seen).toContain('regions')
+    await c.vision.setRegions({ camera: 'upper', regions: [{ slot: 1, x: 0.1, y: 0.1, w: 0.1, h: 0.1 }] })
+    expect(Object.keys(ctx.store.settings.get().podRegions ?? {})).toEqual(['lower', 'upper'])
+
+    // New stills are scored on the calibrated boxes.
+    const capture = { id: 'upper-x', camera: 'upper' as const, ts: '2026-02-01T00:00:00Z', path: 'upper-x.jpg', bytes: 1 }
+    ctx.analysis.enqueue(capture, jpeg(200, 100, true))
+    await ctx.analysis.idle()
+    expect((await c.vision.capture({ captureId: 'upper-x' })).find(r => r.slot === 1 && r.analyzer === 'green-threshold')?.value).toBe(1)
+
+    await expect(c.vision.setRegions({ camera: 'upper', regions: [{ slot: 16, x: 0, y: 0, w: 0.1, h: 0.1 }] })).rejects.toThrow(/pod 16 is not on the upper camera/)
+    await c.vision.setRegions({ camera: 'lower', regions: null })
+    await c.vision.setRegions({ camera: 'upper', regions: [] })
+    expect(ctx.store.settings.get().podRegions).toBeNull()
+    expect((await c.vision.regions()).every(r => !r.calibrated)).toBe(true)
   })
 })

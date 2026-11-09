@@ -11,7 +11,9 @@ import { isDemo } from '@/src/demo/mode'
 import { fmtStamp } from '@/src/lib/timeAgo'
 import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
-import { defaultPodRects } from '@/src/vision/greenArea'
+import type { Rect } from '@/src/vision/greenArea'
+import { podRegions, type PodRegions } from '@/src/vision/regions'
+import { PodBounds } from './PodBounds'
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
 const key = (a: { analyzer: string, version: number }) => `${a.analyzer}@${a.version}`
@@ -60,6 +62,7 @@ export function AnalysisPage() {
   const [shown, setShown] = useState<Shown>('both')
   const [view, setView] = useState<View>('photo')
   const latest = [useLatest('upper'), useLatest('lower')]
+  const calibration = useCalibration()
   const st = status.data
   const list = analyzers.data ?? []
   const colorOf = (k: string) => colorAt(Math.max(0, list.findIndex(a => listingKey(a) === k)))
@@ -98,10 +101,19 @@ export function AnalysisPage() {
         </div>
         <div className={cn('grid grid-cols-1 gap-3', cameras.length > 1 && 'sm:grid-cols-2')}>
           {cameras.map(l => (
-            <Still key={l.camera} latest={l} view={view} analyzer={selected && listingKey(selected)} empty={slot => pod(slot)?.status === 'empty'} />
+            <Still
+              key={l.camera}
+              latest={l}
+              view={view}
+              analyzer={selected && listingKey(selected)}
+              empty={slot => pod(slot)?.status === 'empty'}
+              boxes={calibration.boxes(l.camera)}
+              calibrated={calibration.calibrated(l.camera)}
+              onChange={calibration.draft ? (slot, r) => calibration.move(l.camera, slot, r) : undefined}
+            />
           ))}
         </div>
-        {view === 'bounds' && <p className="-mt-1 text-xs text-fg-3">Each pod counts plant inside its box that grows from it: centred in the box, or reaching the dashed middle.</p>}
+        {view === 'bounds' && <Calibrate c={calibration} cameras={cameras.map(l => l.camera)} />}
         {selected && <AnalyzerDetail a={selected} color={colorOf(listingKey(selected))} busy={!!st?.backfill} />}
       </Panel>
 
@@ -118,7 +130,15 @@ export function AnalysisPage() {
 }
 
 /** One camera's still, with the pod bounds and the chosen analyser's reading per pod drawn over it on request. */
-function Still({ latest, view, analyzer, empty }: { latest: Latest, view: View, analyzer?: string, empty: (slot: number) => boolean }) {
+function Still({ latest, view, analyzer, empty, boxes, calibrated, onChange }: {
+  latest: Latest
+  view: View
+  analyzer?: string
+  empty: (slot: number) => boolean
+  boxes: PodRegions
+  calibrated: boolean
+  onChange?: (slot: number, r: Rect) => void
+}) {
   const { camera, frame, rows } = latest
   // The box takes the still's own shape once it loads, so the bounds sit where the analysers put them.
   const [ratio, setRatio] = useState(4 / 3)
@@ -143,11 +163,12 @@ function Still({ latest, view, analyzer, empty }: { latest: Latest, view: View, 
               />
             )
           : <div className="flex size-full items-center justify-center p-4 text-center text-[13px] text-fg-3">No photos from this camera yet.</div>}
-        {frame && view === 'bounds' && <PodBounds camera={camera} label={reading} />}
+        {frame && view === 'bounds' && <PodBounds boxes={boxes} label={reading} onChange={onChange} />}
       </div>
       <figcaption className="flex flex-wrap gap-x-2 text-xs text-fg-3">
         <span className="text-fg-2">{title(camera)}</span>
         <span>{camera === 'upper' ? 'pods 1–15' : 'pods 16–30'}</span>
+        {view === 'bounds' && <span>{calibrated ? '· calibrated boxes' : '· measured boxes'}</span>}
         {frame && <span className="ml-auto font-mono text-[11px]">{fmtStamp(frame.ts)}</span>}
       </figcaption>
     </figure>
@@ -301,24 +322,72 @@ function PerPod({ analyzers, latest, colorOf, plant, empty }: { analyzers: Listi
   )
 }
 
-/** Debug overlay (#132): the region each pod is scored on, and the core a plant must grow from, as the analysers use them. */
-export function PodBounds({ camera, label }: { camera: Camera, label?: (slot: number) => string | undefined }) {
-  const rects = Object.entries(defaultPodRects(camera, 1, 1))
-  const at = (n: number) => `${n * 100}%`
+type Calibration = ReturnType<typeof useCalibration>
+
+/**
+ * The pod boxes on each camera (#143): the unit's, or a draft while they are
+ * being edited. Saving sends each camera's boxes; the unit keeps only the ones
+ * that moved from the measured defaults.
+ */
+function useCalibration() {
+  const utils = trpc.useUtils()
+  const saved = trpc.vision.regions.useQuery()
+  const save = trpc.vision.setRegions.useMutation({ onSuccess: () => utils.vision.invalidate() })
+  const [draft, setDraft] = useState<Partial<Record<Camera, PodRegions>> | null>(null)
+  const [done, setDone] = useState(false)
+  const stored = (camera: Camera): PodRegions => {
+    const row = saved.data?.find(r => r.camera === camera)
+    return row ? Object.fromEntries(row.regions.map(({ slot, x, y, w, h }) => [slot, { x, y, w, h }])) : podRegions(camera)
+  }
+  const boxes = (camera: Camera) => draft?.[camera] ?? stored(camera)
+  return {
+    draft,
+    done,
+    error: save.error?.message,
+    pending: save.isPending,
+    boxes,
+    calibrated: (camera: Camera) => saved.data?.find(r => r.camera === camera)?.calibrated ?? false,
+    edit: () => {
+      setDone(false)
+      setDraft({ upper: stored('upper'), lower: stored('lower') })
+    },
+    move: (camera: Camera, slot: number, r: Rect) => setDraft(d => ({ ...d, [camera]: { ...boxes(camera), ...d?.[camera], [slot]: r } })),
+    reset: (cameras: Camera[]) => setDraft(d => ({ ...d, ...Object.fromEntries(cameras.map(c => [c, podRegions(c)])) })),
+    cancel: () => setDraft(null),
+    save: async () => {
+      if (!draft) return
+      for (const [camera, regions] of Object.entries(draft) as Array<[Camera, PodRegions]>) {
+        await save.mutateAsync({ camera, regions: Object.entries(regions).map(([slot, r]) => ({ slot: Number(slot), ...r })) })
+      }
+      setDraft(null)
+      setDone(true)
+    },
+  }
+}
+
+/** Editing the boxes: how, and saving, resetting or dropping the changes. */
+function Calibrate({ c, cameras }: { c: Calibration, cameras: Camera[] }) {
+  const action = 'cursor-pointer border-0 bg-transparent p-0 text-xs text-fg-2 hover:text-fg disabled:cursor-default disabled:opacity-45'
   return (
-    <div className="pointer-events-none absolute inset-0" data-testid="pod-bounds">
-      <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 size-full" aria-hidden>
-        {rects.map(([slot, r]) => (
-          <g key={slot} fill="none" stroke="var(--pod-ready)">
-            <rect x={r.x} y={r.y} width={r.w} height={r.h} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-            <rect x={r.x + r.w / 3} y={r.y + r.h / 3} width={r.w / 3} height={r.h / 3} strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-          </g>
-        ))}
-      </svg>
-      {rects.map(([slot, r]) => {
-        const v = label?.(Number(slot))
-        return <span key={slot} className="absolute rounded-br-[4px] bg-pod-ready px-1 font-mono text-[10px] leading-[14px] text-inverse" style={{ left: at(r.x), top: at(r.y) }}>{v ? `${slot} · ${v}` : slot}</span>
-      })}
+    <div className="-mt-1 flex flex-col gap-2 text-xs text-fg-3">
+      <p>
+        {c.draft
+          ? 'Drag a box onto its pod\'s cup and its corner to fit the plant. Arrow keys move the focused box; Shift with them resizes it.'
+          : 'Each pod counts plant inside its box that grows from it: centred in the box, or reaching the dashed middle.'}
+      </p>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {c.draft
+          ? (
+              <>
+                <Button size="sm" disabled={c.pending} onClick={() => void c.save().catch(() => {})}>Save boxes</Button>
+                <button type="button" className={action} onClick={() => c.reset(cameras)}>Reset to measured</button>
+                <button type="button" className={action} onClick={c.cancel}>Cancel</button>
+              </>
+            )
+          : <button type="button" className={action} onClick={c.edit}>Edit boxes</button>}
+        {c.done && !c.draft && <span>Saved. New photos use these boxes; Re-run an analyser to rescore stored ones.</span>}
+      </div>
+      {c.error && <InlineError>{c.error}</InlineError>}
     </div>
   )
 }

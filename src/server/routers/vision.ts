@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { podTrends } from '../../vision/analyze'
+import { CAMERAS, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
 import { publicProcedure, router } from '../trpc'
 
 const Trend = z.object({ slot: z.number(), green: z.number().nullable(), verdict: z.enum(['growing', 'stalled', 'declining', 'unknown']), slope: z.number(), samples: z.number(), recent: z.array(z.number()) })
@@ -40,6 +41,16 @@ const Result = z.object({
   detail: z.record(z.string(), z.unknown()).nullable(),
   artifact: z.string().nullable(),
 })
+const CameraName = z.enum(['upper', 'lower'])
+const Region = z.object({ slot: z.number().int(), x: z.number().min(0).max(1), y: z.number().min(0).max(1), w: z.number().gt(0).max(1), h: z.number().gt(0).max(1) })
+const CameraRegions = z.object({ camera: CameraName, calibrated: z.boolean(), regions: z.array(Region.extend({ moved: z.boolean() })) })
+
+/** One camera's boxes as rows, each marked moved when it isn't the measured default. */
+function regionRows(camera: Camera, own: PodRegions | undefined) {
+  const boxes = podRegions(camera, { [camera]: own })
+  return { camera, calibrated: !!own && Object.keys(own).length > 0, regions: cameraSlots(camera).map(slot => ({ slot, ...(boxes[slot] as PodRegions[number]), moved: !!own?.[slot] })) }
+}
+
 const Point = z.object({ ts: z.string(), value: z.number(), captureId: z.string() })
 
 export const visionRouter = router({
@@ -97,5 +108,33 @@ export const visionRouter = router({
       catch (e) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: (e as Error).message })
       }
+    }),
+  regions: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/regions', tags: ['vision'], summary: 'Each pod\'s box on each camera\'s stills, as fractions of the frame: the measured defaults or the owner\'s calibration' } })
+    .output(z.array(CameraRegions))
+    .query(({ ctx }) => {
+      const own = ctx.store.settings.get().podRegions
+      return CAMERAS.map(c => regionRows(c, own?.[c]))
+    }),
+  setRegions: publicProcedure
+    .meta({ openapi: { method: 'PUT', path: '/vision/regions/{camera}', tags: ['vision'], summary: 'Calibrate one camera\'s pod boxes; boxes left out keep their defaults, and null resets the camera' } })
+    .input(z.object({ camera: CameraName, regions: z.array(Region).max(15).nullable() }))
+    .output(CameraRegions)
+    .mutation(({ ctx, input }) => {
+      const slots = cameraSlots(input.camera)
+      const stray = input.regions?.find(r => !slots.includes(r.slot))
+      if (stray) throw new TRPCError({ code: 'BAD_REQUEST', message: `pod ${stray.slot} is not on the ${input.camera} camera` })
+      const own: PodRegions = {}
+      for (const { slot, ...box } of input.regions ?? []) {
+        const r = clampRegion(box)
+        const d = DEFAULT_REGIONS[input.camera][slot] as PodRegions[number]
+        // A box put back where it started is a default again, not a calibration.
+        if (r.x !== d.x || r.y !== d.y || r.w !== d.w || r.h !== d.h) own[slot] = r
+      }
+      const others = Object.entries(ctx.store.settings.get().podRegions ?? {}).filter(([c]) => c !== input.camera)
+      const all = Object.fromEntries(Object.keys(own).length > 0 ? [...others, [input.camera, own]] : others)
+      ctx.store.settings.update({ podRegions: Object.keys(all).length > 0 ? all : null })
+      ctx.events.emit({ kind: 'mutation', path: 'regions' })
+      return regionRows(input.camera, own)
     }),
 })

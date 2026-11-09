@@ -7,6 +7,7 @@ import type { AutomationRule, RunOutcome } from '../autopilot/types'
 import type { SensorId } from '../hardware/contract'
 import type { Category, Succession, Zone } from '../plants/catalog'
 import type { PlanResult, SowingWave } from '../plants/planner'
+import type { RegionCalibration } from '../vision/regions'
 
 export interface DeviceSettings {
   unitName: string
@@ -31,6 +32,8 @@ export interface DeviceSettings {
   primaryAnalyzer: string
   analysisArtifacts: boolean
   analysisIngestToken: string
+  /** Pod boxes the owner moved on the cameras' stills (#143); null keeps the measured defaults. */
+  podRegions: RegionCalibration | null
   mirrorEndpoint: string | null
   mirrorBucket: string | null
   mirrorRegion: string
@@ -330,6 +333,7 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   primaryAnalyzer: 'green-threshold',
   analysisArtifacts: false,
   analysisIngestToken: '',
+  podRegions: null,
   mirrorEndpoint: null,
   mirrorBucket: null,
   mirrorRegion: 'auto',

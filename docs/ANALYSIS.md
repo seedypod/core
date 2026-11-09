@@ -14,8 +14,8 @@ Each analyser says how much of each pod's crop looks like plant (the *green
 fraction*, 0–1), and the trend of that number drives the growing / stalled /
 declining verdicts on the Grow screen and the `pod_health` MCP tool.
 
-Pods 1–15 are seen by the upper camera and 16–30 by the lower one, in a
-3 × 5 grid.
+Pods 1–15 are seen by the upper camera and 16–30 by the lower one: three
+columns left to right, counted across then down from the top.
 
 ## On the unit
 
@@ -43,10 +43,28 @@ Both count only what can be a plant, in two steps (version 2, from
   and plants that have grown into each other still count for each pod they grow
   from. Specks too small to be a seedling count for no one.
 
-The boxes are a fixed 3 × 5 grid per camera. The **Pod bounds** view on the
-Analysis screen draws them, with the dashed middle third, over the still, so you can see what
-each pod is scored on. On a Gardyn the grid does not yet line up with the cups;
-calibrating it per unit is [#143](https://github.com/seedypod/core/issues/143).
+### Pod boxes
+
+Each pod is scored on a box around its cup. The defaults were measured on a
+Gardyn Home 3.0's stills, one box per cup centred on its opening
+(`src/vision/regions.ts`). The **Pod bounds** view on the Analysis screen draws
+them over the stills, each with its dashed middle third, so you can see what
+each pod is scored on.
+
+If your camera sits a little differently, press **Edit boxes** in that view.
+Drag a box onto its pod's cup, and drag its corner to fit the plant. You can
+also focus a box and move it with the arrow keys, or resize it with Shift and
+the arrow keys. **Save boxes** keeps them per camera. **Reset to measured**
+brings back the defaults. New photos are scored on the saved boxes, and so is
+the Grow page's crop of each pod. **Re-run** an analyser to rescore the photos
+already on the unit. Scripts read and set the boxes with `GET /api/vision/regions`
+and `PUT /api/vision/regions/{camera}`. The reference worker
+(`scripts/analysis-worker.mjs`) uses the unit's boxes.
+
+The slot order hasn't been checked against Gardyn's own pod numbering yet
+([pin map](hardware/pin-map.md)). If Gardyn numbers them differently, only the
+order of the measured boxes changes. Pod 28's cup is below the lower camera's
+frame, so its box sits at the bottom edge, where its plant comes into view.
 
 A pod marked **empty** in the app reads "no cover" on the Analysis screen,
 whatever the camera sees there; hover it for the analysers' numbers.

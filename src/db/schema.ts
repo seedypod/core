@@ -4,6 +4,7 @@
  * biometrics.db only if it grows.
  */
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import type { RegionCalibration } from '../vision/regions'
 
 export const deviceSettings = sqliteTable('device_settings', {
   id: integer().primaryKey().default(1),
@@ -35,6 +36,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   analysisArtifacts: integer({ mode: 'boolean' }).notNull().default(false),
   /** Bearer token for POST /api/analyses/results; empty = ingest off. */
   analysisIngestToken: text().notNull().default(''),
+  /** JSON: pod boxes moved per camera and slot, as fractions of the frame (#143); null = measured defaults. */
+  podRegions: text({ mode: 'json' }).$type<RegionCalibration>(),
   /** Opt-in S3-compatible mirror for stills and artifacts; unset = off. */
   mirrorEndpoint: text(),
   mirrorBucket: text(),
