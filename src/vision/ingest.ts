@@ -6,7 +6,7 @@
  */
 import { z } from 'zod'
 import type { AnalysisRow, Store } from '../store/types'
-import { DEVICE_ANALYZERS } from './analyzer'
+import { deviceAnalyzers } from './analyzer'
 
 export const IngestBatch = z.object({
   analyzer: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/, 'lowercase letters, digits, dot, dash or underscore, up to 64'),
@@ -29,7 +29,7 @@ export interface IngestOutcome { stored: number, skipped: string[] }
 export class IngestRefused extends Error {}
 
 export function ingestResults(store: Store, batch: IngestBatch): IngestOutcome {
-  if (DEVICE_ANALYZERS.some(a => a.id === batch.analyzer)) throw new IngestRefused(`${batch.analyzer} is an on-device analyser; post under your own id`)
+  if (deviceAnalyzers().some(a => a.id === batch.analyzer)) throw new IngestRefused(`${batch.analyzer} is an on-device analyser; post under your own id`)
   const rows: AnalysisRow[] = []
   const skipped = new Set<string>()
   for (const r of batch.results) {

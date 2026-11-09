@@ -12,6 +12,7 @@ import { fmtStamp } from '@/src/lib/timeAgo'
 import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
 import type { Rect } from '@/src/vision/greenArea'
+import { POD_STATES } from '@/src/vision/podState'
 import { podRegions, type PodRegions } from '@/src/vision/regions'
 import { PodBounds } from './PodBounds'
 
@@ -38,14 +39,22 @@ function Panel({ className, children }: { className?: string, children: ReactNod
   return <div className={cn('flex min-w-0 flex-col gap-4 rounded-[14px] border border-line bg-surface p-4 sm:p-5', className)}>{children}</div>
 }
 
-interface Latest { camera: Camera, frame: Frame | undefined, rows: Result[] }
+/** `rows` are green fractions; `states` are a learned analyser's pod states (#185). */
+interface Latest { camera: Camera, frame: Frame | undefined, rows: Result[], states: Result[] }
 
-/** One camera's newest still and every analyser's green fraction on it. */
+/** One camera's newest still and every analyser's green fraction and pod state on it. */
 function useLatest(camera: Camera): Latest {
   const list = trpc.camera.list.useQuery({ camera, limit: 1 })
   const frame = list.data?.[0]
   const results = trpc.vision.capture.useQuery({ captureId: frame?.id ?? '' }, { enabled: !!frame })
-  return { camera, frame, rows: (results.data ?? []).filter(r => r.metric === 'green_fraction') }
+  const all = results.data ?? []
+  return { camera, frame, rows: all.filter(r => r.metric === 'green_fraction'), states: all.filter(r => r.metric === 'pod_state') }
+}
+
+/** A pod-state row as words: `growing · 87%`. */
+export function stateText(r: Pick<Result, 'value' | 'detail'>): string {
+  const name = typeof r.detail?.state === 'string' ? r.detail.state : (POD_STATES[r.value] ?? `class ${r.value}`)
+  return typeof r.detail?.confidence === 'number' ? `${name} · ${pct(r.detail.confidence)}` : name
 }
 
 /**
@@ -139,10 +148,12 @@ function Still({ latest, view, analyzer, empty, boxes, calibrated, onChange }: {
   calibrated: boolean
   onChange?: (slot: number, r: Rect) => void
 }) {
-  const { camera, frame, rows } = latest
+  const { camera, frame, rows, states } = latest
   // The box takes the still's own shape once it loads, so the bounds sit where the analysers put them.
   const [ratio, setRatio] = useState(4 / 3)
   const reading = (slot: number) => {
+    const state = states.find(r => r.slot === slot && key(r) === analyzer)
+    if (state) return stateText(state).split(' · ')[0]
     if (empty(slot)) return undefined
     const v = rows.find(r => r.slot === slot && key(r) === analyzer)?.value
     return v === undefined ? undefined : pct(v)
@@ -180,7 +191,7 @@ function AnalyzerDetail({ a, color, busy }: { a: Listing, color: string, busy: b
   const utils = trpc.useUtils()
   const primary = trpc.vision.setPrimary.useMutation({ onSuccess: () => utils.vision.invalidate() })
   const rerun = trpc.vision.rerun.useMutation({ onSuccess: () => utils.vision.invalidate() })
-  const current = a.source === 'device' && a.runsOn.includes('device')
+  const current = a.source === 'device' && a.runsOn.includes('device') && !a.disabled
   const canBePrimary = a.metrics.length === 0 || a.metrics.some(m => m.name === 'green_fraction')
   const action = 'flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-xs text-fg-2 hover:text-fg disabled:cursor-default disabled:opacity-45'
   return (
@@ -194,6 +205,7 @@ function AnalyzerDetail({ a, color, busy }: { a: Listing, color: string, busy: b
         {a.primary && <span className="rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium text-pod-ok">PRIMARY</span>}
       </div>
       <p className="text-[13px] leading-[1.55] text-fg-2 text-pretty">{a.description}</p>
+      {a.disabled && <p className="rounded-[10px] bg-pod-attention/10 px-3 py-2 text-[13px] text-fg-2">{`Off. ${a.disabled}`}</p>}
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="flex-1 font-mono text-[11px] text-fg-3" title={a.lastTs ? `last ${new Date(a.lastTs).toLocaleString()}` : undefined}>
           {a.captures > 0 ? `${a.captures} captures · ${a.rows} results` : 'No results yet'}
@@ -239,11 +251,15 @@ export function gapSummary(rows: Result[], columns: string[], labels: Record<str
 /** Every pod on the cameras shown, one row each, with every analyser's reading of its camera's latest still. */
 function PerPod({ analyzers, latest, colorOf, plant, empty }: { analyzers: Listing[], latest: Latest[], colorOf: (k: string) => string, plant: (slot: number) => string, empty: (slot: number) => boolean }) {
   const rows = latest.flatMap(l => l.rows)
+  const stateRows = latest.flatMap(l => l.states)
   const order = analyzers.map(listingKey)
   // Listing order, so the columns and summary read in the same order as the analyser picker.
   const rank = (k: string) => (order.includes(k) ? order.indexOf(k) : order.length)
   const columns = [...new Set(rows.map(key))].sort((a, b) => rank(a) - rank(b))
+  // A learned analyser's pod state, one column each, after the green fractions.
+  const stateColumns = [...new Set(stateRows.map(key))].sort((a, b) => rank(a) - rank(b))
   const value = (l: Latest, slot: number, col: string) => l.rows.find(r => r.slot === slot && key(r) === col)?.value
+  const stateOf = (l: Latest, slot: number, col: string) => l.states.find(r => r.slot === slot && key(r) === col)
   const labels = Object.fromEntries(analyzers.map(a => [listingKey(a), a.label]))
   const summary = gapSummary(rows, columns, labels)
   const cell = 'border-b border-grid py-[9px]'
@@ -258,7 +274,7 @@ function PerPod({ analyzers, latest, colorOf, plant, empty }: { analyzers: Listi
       </div>
       {!any
         ? <p className="text-[13px] text-fg-2">No photos yet.</p>
-        : columns.length === 0
+        : columns.length + stateColumns.length === 0
           ? <p className="text-[13px] text-fg-2">These photos haven&apos;t been scored yet.</p>
           : (
               <div className="-mx-1 overflow-x-auto px-1">
@@ -269,14 +285,15 @@ function PerPod({ analyzers, latest, colorOf, plant, empty }: { analyzers: Listi
                       <th className={cn(th, 'pl-3 sm:w-[30%]')}>PLANT</th>
                       <th className={cn(th, 'hidden pl-3.5 sm:table-cell')}>LEAF COVER</th>
                       {columns.map(c => <th key={c} title={c} className={cn(th, 'w-[64px] pl-2 text-right sm:w-[84px] sm:pl-3.5')}>{head(c)}</th>)}
+                      {stateColumns.map(c => <th key={c} title={c} className={cn(th, 'w-[84px] pl-2 text-right sm:w-[104px] sm:pl-3.5')}>{head(c)}</th>)}
                     </tr>
                   </thead>
-                  {latest.filter(l => l.rows.length > 0).map((l) => {
-                    const slots = [...new Set(l.rows.map(r => r.slot))].sort((a, b) => a - b)
+                  {latest.filter(l => l.rows.length + l.states.length > 0).map((l) => {
+                    const slots = [...new Set([...l.rows, ...l.states].map(r => r.slot))].sort((a, b) => a - b)
                     return (
                       <tbody key={l.camera}>
                         <tr>
-                          <th colSpan={columns.length + 2} scope="rowgroup" className="pb-1 pt-3 text-left font-mono text-[10px] font-normal text-fg-3">
+                          <th colSpan={columns.length + stateColumns.length + 2} scope="rowgroup" className="pb-1 pt-3 text-left font-mono text-[10px] font-normal text-fg-3">
                             {`${l.camera.toUpperCase()}${l.frame ? ` · ${fmtStamp(l.frame.ts)}` : ''}`}
                           </th>
                           {/* The leaf-cover column is hidden on a phone; a span over it would leave a ghost column there. */}
@@ -308,6 +325,10 @@ function PerPod({ analyzers, latest, colorOf, plant, empty }: { analyzers: Listi
                               {columns.map((c, ci) => {
                                 const v = value(l, s, c)
                                 return <td key={c} className={cn(cell, 'pl-2 text-right font-mono text-xs sm:pl-3.5')} style={ci > 0 && !none ? { color: colorOf(c) } : undefined}>{v === undefined || none ? '—' : pct(v)}</td>
+                              })}
+                              {stateColumns.map((c) => {
+                                const r = stateOf(l, s, c)
+                                return <td key={c} title={r ? stateText(r) : undefined} className={cn(cell, 'truncate pl-2 text-right font-mono text-xs sm:pl-3.5')} style={{ color: colorOf(c) }}>{r ? stateText(r).split(' · ')[0] : '—'}</td>
                               })}
                             </tr>
                           )
@@ -395,6 +416,7 @@ function Calibrate({ c, cameras }: { c: Calibration, cameras: Camera[] }) {
 function ComparePod({ colorOf }: { colorOf: (k: string) => string }) {
   const [slot, setSlot] = useState(1)
   const cmp = trpc.vision.compare.useQuery({ slot, metric: 'green_fraction', limit: 200 })
+  const states = trpc.vision.compare.useQuery({ slot, metric: 'pod_state', limit: 1 })
   const series = (cmp.data ?? []).map(s => ({ name: key(s), color: colorOf(key(s)), points: s.points.map(p => ({ x: Date.parse(p.ts), y: p.value })) }))
   return (
     <Panel>
@@ -413,6 +435,16 @@ function ComparePod({ colorOf }: { colorOf: (k: string) => string }) {
           ))}
         </div>
       )}
+      {(states.data ?? []).map((s) => {
+        const p = s.points.at(-1)
+        return p && (
+          <span key={key(s)} className="text-sm text-fg-2">
+            {`${key(s)} `}
+            <span className="font-mono text-fg">{POD_STATES[p.value] ?? `class ${p.value}`}</span>
+            <span className="text-xs text-fg-3">{` · ${fmtStamp(p.ts)}`}</span>
+          </span>
+        )
+      })}
     </Panel>
   )
 }

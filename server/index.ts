@@ -25,6 +25,9 @@ import { createCore } from '../src/server/bootstrap'
 import { defaultMigrationsFolder, SqliteStore } from '../src/store/sqlite'
 import { nodeDiskUsage, nodeFlashSource } from '../src/telemetry/flashSource'
 import { UpdateClient, updateCommand } from '../src/update/client'
+import { installLearned } from '../src/vision/analyzer'
+import { readPodStateModel } from '../src/vision/modelFile'
+import { podStateFromText } from '../src/vision/podState'
 import { createWorkerExecutor } from '../src/vision/workerExecutor'
 import { createApp } from './app'
 import { flushCompileCacheSoon } from './compileCache'
@@ -45,8 +48,12 @@ const store = new SqliteStore({ url: dbPath })
 if (process.env.SEED_DEMO === '1' && seedIfFresh(store, hal)) console.log('seeded the demo data (SEED_DEMO=1)')
 // Capture analysis runs on a worker thread when the bundled worker sits next to this file (a build);
 // under `tsx watch` it runs inline.
+// The learned pod-state analyser (#185) comes from models/pod-state.json; without it, it is listed as off.
+// This thread lists it and the worker runs it, both from the same file's text.
+const podStateModel = readPodStateModel()
+installLearned([podStateFromText(podStateModel.text, podStateModel.missing)])
 const workerScript = new URL('./visionWorker.js', import.meta.url)
-const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(workerScript) : null
+const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(workerScript, { workerData: { podStateModel } }) : null
 // The Database view scans read-only on a worker thread, the same way.
 const inspectScript = new URL('./inspectWorker.js', import.meta.url)
 const database = new NodeDatabaseInspector({ path: dbPath, migrationsFolder: defaultMigrationsFolder(), worker: existsSync(fileURLToPath(inspectScript)) ? inspectScript : null })
