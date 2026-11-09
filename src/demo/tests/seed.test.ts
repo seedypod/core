@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { describeRule } from '../../autopilot/describe'
 import { RuleInput } from '../../autopilot/schema'
 import { catalog } from '../../autopilot/signals'
+import { matchProfile } from '../../grow/harvest'
 import { SimHal } from '../../hardware/sim'
+import { BUILTIN } from '../../plants/catalog'
 import { MemoryStore } from '../../store/memory'
 import { SqliteStore } from '../../store/sqlite'
 import { seedDemo, seedIfFresh } from '../seed'
@@ -25,6 +27,16 @@ describe('demo seed', () => {
       expect(RuleInput.safeParse(r).success).toBe(true)
       expect(describeRule(r, k => info.get(k))).toMatch(/\.$/)
     }
+  })
+
+  it('plants every pod with a catalog plant, so the planner knows them all', () => {
+    const store = new MemoryStore()
+    seedDemo(store, new SimHal({ tickMs: 0 }), new Date('2026-10-31T12:00:00Z'))
+    const planted = store.pods.list().filter(p => p.plant)
+    expect(planted).toHaveLength(24)
+    expect(planted.filter(p => !BUILTIN.find(p.plant ?? ''))).toEqual([])
+    // Every crop profile still covers a seeded pod.
+    for (const profile of store.plants.list()) expect(planted.some(p => matchProfile(p.plant, [profile])), profile.name).toBe(true)
   })
 
   it('seeds a fresh server database once, and never one that is set up', () => {

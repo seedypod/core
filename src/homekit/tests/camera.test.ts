@@ -93,7 +93,8 @@ describe('camera → snapshot-only CameraController', () => {
     t = CAPTURE_FLOOR_MS
     await snap(d)
     expect(capture).toHaveBeenCalledTimes(2)
-    expect(log).toEqual([])
+    // Logged once: the outcome never changed.
+    expect(log).toEqual(['homekit: upper camera: snapshot 640x480 found no stored still (0 ms)'])
   })
 
   it('serves what was stored even when it can\'t capture, and logs a storage failure', async () => {
@@ -104,7 +105,14 @@ describe('camera → snapshot-only CameraController', () => {
     expect((await snap(d)).buffer?.length).toBe(4)
     expect(await snap(d)).toEqual({ error: RESOURCE_DOES_NOT_EXIST, buffer: undefined })
     expect(capture).not.toHaveBeenCalled()
-    expect(log).toEqual(['homekit: upper camera: first snapshot served', 'homekit: upper snapshot failed: EIO'])
+    expect(log).toEqual([
+      expect.stringMatching(/^homekit: upper camera: snapshot 640x480 served 4 bytes in \d+ ms$/),
+      expect.stringMatching(/^homekit: upper camera: snapshot 640x480 failed: EIO \(\d+ ms\)$/),
+    ])
+    latest.mockResolvedValue(still('upper-2'))
+    await snap(d)
+    await snap(d)
+    expect(log).toHaveLength(3)
   })
 
   it('turns down live view', async () => {

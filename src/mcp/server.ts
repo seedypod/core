@@ -18,7 +18,7 @@ import { createCallerFactory } from '../server/trpc'
 const createCaller = createCallerFactory(appRouter)
 
 /** How the planner reads the tower, for the planner tools' descriptions. */
-const ZONE_RULES = 'Light zones follow Gardyn\'s map: high light is the centre-most cluster of pods, medium encircles it, low is the top and bottom rows on a Home (lower-left and upper-right on a Studio); planner_zones lists every slot by row. Each plant goes in its ideal zone; only when that zone is full does it drop one zone lower (never two, never up). Cucumbers start at the bottom of the middle column; large plants are spaced apart.'
+const ZONE_RULES = 'Light zones follow Gardyn\'s map: high light is the centre-most cluster of pods, medium encircles it, low is the top and bottom rows on a Home (lower-left and upper-right on a Studio); planner_zones lists every slot by row. Each plant goes in its ideal zone; only when that zone is full does it drop one zone lower (never two, never up); overrides.allowedZones can widen that. Cucumbers start at the bottom of the middle column; large plants are spaced apart.'
 const OVERRIDES_HELP = 'Optional. pins: [{slot, plantId}] puts one pod of that plant in that exact slot (counts toward its count). allowedZones: {plantId: ["high","medium","low"]} replaces its ideal-or-one-lower zones, e.g. to allow two zones lower or keep it in one zone.'
 
 function text(data: unknown) {
@@ -125,7 +125,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text({ ...(await caller.planner.zones({ model: i.model })), rules: ZONE_RULES }))
 
   server.registerTool('plan_layout', {
-    description: `Lay out plants on a Gardyn by light zone around pods already planted. model: home (30) or studio (16). ${ZONE_RULES} Returns slot assignments with reasons; zones (per zone: rows, slots, total, existing, planned, free); unplaced (code no_space | not_in_catalog | bad_pin, the zones it could use, and the pods blocking them); and suggestions (relocate another pod to a slot it tolerates, or allow_lower), each with an overrides object to pass back to carry it out. Read-only; use save_plan to keep it.`,
+    description: `Lay out plants on a Gardyn by light zone around pods already planted. model: home (30) or studio (16). ${ZONE_RULES} Returns slot assignments with reasons; zones (per zone: rows, slots, total, existing, planned, free); unplaced (code no_space | not_in_catalog | bad_pin, the zones it could use, and the pods blocking them); and suggestions, each with an overrides object to pass back as-is to carry it out: relocate (move another pod to a slot it tolerates), allow_lower (let it go one zone further down), or allow_higher (a herb, flower or legume whose zones are full may use the nearest brighter zone with free pods; e.g. oregano with low full gets overrides.allowedZones {"oregano": ["low", "medium"]}). Lettuces, leafy greens and vegetables never get allow_higher: more light makes them bolt. Read-only; use save_plan to keep it.`,
     inputSchema: { model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), overrides: Overrides.optional().describe(OVERRIDES_HELP) },
   }, async i => text(await caller.planner.layout({ model: i.model, plants: i.plants, respectExisting: true, overrides: i.overrides })))
 
@@ -140,7 +140,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.planner.savePlan({ id: i.id, name: i.name, model: i.model, plants: i.plants, mode: i.mode ?? 'staggered', start: i.start, overrides: i.overrides })))
 
   server.registerTool('match_order', {
-    description: 'Match a pasted order to the plant catalog in one call. Give the order lines as they read ("Genovese Basil x2", "3 × Butterhead Lettuce yCube", "Mint (2)"); a single pasted block is split on new lines, commas and semicolons. Returns matched lines (plantId, count, confidence 0–1 and close alternatives — check any under ~0.8 with the user), unmatched lines with suggestions (pick one, or add the plant with add_plant), skipped lines (no name), and plants: the matched counts summed per plantId, ready to pass to plan_layout or save_plan.',
+    description: 'Match a pasted order to the plant catalog in one call. Give the order lines as they read ("Genovese Basil x2", "3 × Butterhead Lettuce yCube", "Mint (2)"); a single pasted block is split on new lines, commas and semicolons. Returns matched lines (plantId, count, confidence 0–1 and close alternatives — check any under ~0.8 with the user), unmatched lines with suggestions (pick one, or add the plant with add_plant). A line naming a colour or variety a catalog plant lacks ("Pink Swiss Chard" when the catalog has only Red and Yellow Swiss Chard, "Red Russian Kale" against Kale) is never matched to that plant: it comes back unmatched, and those plants are suggestions with confidence under 0.5 and a reason such as "colour differs (pink; catalog has red)" — ask the user, or add_plant the variant they ordered. Also returns skipped lines (no name), and plants: the matched counts summed per plantId, ready to pass to plan_layout or save_plan.',
     inputSchema: { lines: z.array(z.string().max(500)).min(1).max(200) },
   }, async i => text(await caller.planner.matchOrder(i)))
 

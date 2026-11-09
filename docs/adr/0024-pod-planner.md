@@ -59,7 +59,9 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   layout carries a per-zone summary (rows, slots, planted, planned, free); each
   unplaced plant carries a code, the zones it could use and the pods in them;
   and suggestions name a pod to relocate to a slot its plant tolerates, or
-  offer to allow one zone further down. Callers can pin pods to slots or set a
+  offer to allow one zone further down, or (for herbs, flowers and legumes,
+  never lettuces, leafy greens or vegetables, which bolt) the nearest brighter
+  zone with free pods. Callers can pin pods to slots or set a
   plant's allowed zones; each suggestion carries the overrides that carry it
   out, and a saved plan keeps the overrides it was computed with.
 - **Custom plants** (#130): crops missing from Gardyn's list can be added on
@@ -75,7 +77,9 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   sets (distinctive words count more than shared ones like "pepper"), accepts
   near-miss spellings and a few common synonyms, and returns a confidence per
   line, close alternatives, and the lines it could not match with
-  suggestions. `list_plans`, `get_plan`, `update_plan` and `remove_plan`
+  suggestions. A line naming a colour or variety a plant lacks ("Pink Swiss
+  Chard" against Red Swiss Chard) never matches that plant: it comes back
+  unmatched with the plant as a suggestion and a `reason`. `list_plans`, `get_plan`, `update_plan` and `remove_plan`
   manage saved plans. A plan serves its first sow date, and the Plan screen's
   "Open" reloads a plan's plants, overrides and start date. Because the planner
   is deterministic, the screen then shows the layout and schedule that were
