@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buckets, cameraFailure, CamerasPage, failureHint } from '../CamerasPage'
 
@@ -113,6 +113,33 @@ describe('CamerasPage', () => {
     const upper = within(screen.getByTestId('camera-upper'))
     expect(upper.getByText('Last capture failed: upper camera returned no usable image. Check the ribbon cable, then capture again.')).toBeTruthy()
     expect(upper.getByText('Retry')).toBeTruthy()
+  })
+
+  it('plays a camera\'s timelapse at the chosen speed', async () => {
+    const fetch = vi.fn(async () => new Response(new Uint8Array(2000), { headers: { 'content-type': 'image/jpeg' } }))
+    vi.stubGlobal('fetch', fetch)
+    let n = 0
+    URL.createObjectURL = vi.fn(() => `blob:test/${n++}`)
+    URL.revokeObjectURL = vi.fn()
+    try {
+      render(<CamerasPage />)
+      const upper = within(screen.getByTestId('camera-upper'))
+      expect(upper.getByText('3 / 3')).toBeTruthy()
+      fireEvent.click(upper.getByLabelText('Upper playback speed'))
+      expect(upper.getByText('10 fps')).toBeTruthy()
+      fireEvent.click(upper.getByLabelText('Play upper timelapse'))
+      expect(upper.getByText('Pause')).toBeTruthy()
+      await waitFor(() => expect(upper.getByText('1 / 3')).toBeTruthy())
+      expect((upper.getByAltText('upper camera at 2026-10-28T09:00:00Z') as HTMLImageElement).src).toMatch(/^blob:test\//)
+      await waitFor(() => expect(upper.getByText('3 / 3')).toBeTruthy())
+      await waitFor(() => expect(upper.getByLabelText('Play upper timelapse')).toBeTruthy())
+      expect(fetch).toHaveBeenCalledTimes(3)
+      // One frame is nothing to play.
+      expect(within(screen.getByTestId('camera-lower')).queryByLabelText('Play lower timelapse')).toBeNull()
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('enlarges the frame and links to Analysis and the capture settings', () => {
