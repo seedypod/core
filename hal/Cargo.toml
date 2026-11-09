@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/hal-core", "crates/hal-sim", "crates/hal-drivers", "crates/hald"]
+members = ["crates/hal-core", "crates/hal-sim", "crates/hal-drivers", "crates/hald", "crates/podvision"]
 
 [workspace.package]
 version = "0.1.0"
@@ -28,3 +28,10 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# podvision is arithmetic, not I/O: it gets speed over size (#191).
+[profile.release.package.podvision]
+opt-level = 3
+
+[profile.release.package.jpeg-decoder]
+opt-level = 3
