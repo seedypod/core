@@ -1,5 +1,9 @@
 # Docs update log
 
+## 2026-11-09 (port 80)
+
+- **Update**: User-facing addresses drop `:3000` now that a Pi install forwards port 80 to core: [Installation](INSTALLATION.md) (and when `:3000` is still the address), [Maintenance](MAINTENANCE.md) and [Capture analysis](ANALYSIS.md).
+
 ## 2026-11-09
 
 - **Update**: Replaced "hasn't run on a real Gardyn" warnings with what the bring-up verified and what it didn't (pump, water level against water, button, the USB hub) in the README, [handoff](HANDOFF.md), [hald reference](hardware/hal.md#verification-status), [hardware map](hardware/pin-map.md), [Maintenance](MAINTENANCE.md), [Debugging](DEBUGGING.md) and [Installation](INSTALLATION.md#how-long-it-takes); added a status update to [ADR 0023](adr/0023-homekit.md). The README shows the web UI.

@@ -118,7 +118,7 @@ If **Settings → Backup** says a file was left out with "permission denied",
 rerun `install-hal`. It adds core's user to the `seedypod` group, which can
 read `hald`'s files.
 
-From a script: `curl -OJ http://seedypod.local:3000/api/backup/download`
+From a script: `curl -OJ http://seedypod.local/api/backup/download`
 (`?photos=1` for photos). `GET /api/backup` shows the last backup, and
 `POST /api/backup/run` runs a bucket backup.
 
@@ -216,7 +216,7 @@ A longer interval saves a little more wear and risks a little more history.
 To change it (1–60 minutes):
 
 ```bash
-curl -X PATCH http://seedypod.local:3000/api/settings \
+curl -X PATCH http://seedypod.local/api/settings \
   -H 'content-type: application/json' -d '{"telemetryFlushMin": 10}'
 ```
 
