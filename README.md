@@ -5,7 +5,7 @@
     <img src="web/public/brand/light/horizontal.png" width="320" alt="seedypod" />
   </picture>
 </h1>
-<p align="center"><strong>Truly own your Gardyn.</strong> Local, cloud-free control for Gardyn hydroponic towers.</p>
+<p align="center"><strong>Your garden, your rules.</strong> seedypod replaces the Gardyn cloud with software on the tower's own Raspberry Pi: light, water, sensors and cameras on your network, Autopilot and camera growth analysis, an MCP server so AI agents can plan your pods, and HomeKit and Home Assistant built in.</p>
 <p align="center">
   <a href="https://github.com/seedypod/core/actions/workflows/test.yml"><img src="https://github.com/seedypod/core/actions/workflows/test.yml/badge.svg?branch=dev" alt="CI" /></a>
   <a href="https://github.com/seedypod/core/actions/workflows/rust.yml"><img src="https://github.com/seedypod/core/actions/workflows/rust.yml/badge.svg?branch=dev" alt="HAL (Rust)" /></a>
