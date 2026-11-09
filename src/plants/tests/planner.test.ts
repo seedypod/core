@@ -58,11 +58,11 @@ describe('planLayout', () => {
     expect(r.assignments.filter(a => a.fallback === 1)).toHaveLength(2)
   })
 
-  it('reports plants that cannot fit in their zone or below', () => {
+  it('reports plants that cannot fit in their zone or one lower', () => {
     const r = planLayout({ model: 'home', plants: [{ plantId: 'mint', count: 7 }] })
     expect(r.assignments).toHaveLength(6)
     expect(r.unplaced).toHaveLength(1)
-    expect(r.unplaced[0]?.reason).toMatch(/low zone or below/)
+    expect(r.unplaced[0]).toMatchObject({ code: 'no_space', zones: ['low'], reason: 'no free slot in the low zone (low 6/6 taken)' })
   })
 
   it('places cucumbers bottom-centre (Gardyn’s exception)', () => {

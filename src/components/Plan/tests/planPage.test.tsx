@@ -127,7 +127,22 @@ describe('PlanPage', () => {
     expect(screen.getByText(/Outlined pods sit one zone lower than ideal/)).toBeTruthy()
     search('mint')
     for (let i = 0; i < 6; i++) add('Mint')
-    expect(screen.getByText(/Didn’t fit: Mint \(no free slot in the low zone or below\)/)).toBeTruthy()
+    expect(screen.getByText('Didn’t fit: Mint — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
+    expect(screen.queryByRole('list', { name: 'Suggested moves' })).toBeNull()
+    add('Mint')
+    expect(screen.getByText('Didn’t fit: Mint ×2 — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
+  })
+
+  it('suggests moves that would make room', () => {
+    render(<PlanPage />)
+    search('jalapeño')
+    for (let i = 0; i < 13; i++) add('Jalapeño')
+    search('basil')
+    for (let i = 0; i < 12; i++) add('Basil')
+    expect(screen.getByText(/^Didn’t fit: Jalapeño — no free slot in the high or medium zones/)).toBeTruthy()
+    const moves = within(screen.getByRole('list', { name: 'Suggested moves' })).getAllByRole('listitem').map(li => li.textContent)
+    expect(moves[0]).toMatch(/^Move Basil from pod \d+ to pod \d+ \(low light, which it tolerates\) so Jalapeño can take pod \d+ \(medium\)\.$/)
+    expect(moves[1]).toMatch(/^Allow Jalapeño in the low zone too/)
   })
 
   it('applies a saved plan only after confirming, and deletes one', () => {

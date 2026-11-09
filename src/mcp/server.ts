@@ -12,9 +12,14 @@ import { RuleInput } from '../autopilot/schema'
 import { SensorId } from '../hardware/contract'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
+import { Overrides } from '../server/routers/planner'
 import { createCallerFactory } from '../server/trpc'
 
 const createCaller = createCallerFactory(appRouter)
+
+/** How the planner reads the tower, for the planner tools' descriptions. */
+const ZONE_RULES = 'Light zones follow Gardyn\'s map: high light is the centre-most cluster of pods, medium encircles it, low is the top and bottom rows on a Home (lower-left and upper-right on a Studio); planner_zones lists every slot by row. Each plant goes in its ideal zone; only when that zone is full does it drop one zone lower (never two, never up). Cucumbers start at the bottom of the middle column; large plants are spaced apart.'
+const OVERRIDES_HELP = 'Optional. pins: [{slot, plantId}] puts one pod of that plant in that exact slot (counts toward its count). allowedZones: {plantId: ["high","medium","low"]} replaces its ideal-or-one-lower zones, e.g. to allow two zones lower or keep it in one zone.'
 
 function text(data: unknown) {
   return { content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] }
@@ -82,10 +87,15 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: { q: z.string().optional(), category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']).optional(), zone: z.enum(['high', 'medium', 'low']).optional() },
   }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, harvestMonths: p.harvestMonths, careLevel: p.careLevel, inStore: p.inStore }))))
 
+  server.registerTool('planner_zones', {
+    description: `Light-zone map of a Gardyn: every slot with its row, column and zone, and how many slots each zone has. ${ZONE_RULES}`,
+    inputSchema: { model: z.enum(['home', 'studio']) },
+  }, async i => text({ ...(await caller.planner.zones({ model: i.model })), rules: ZONE_RULES }))
+
   server.registerTool('plan_layout', {
-    description: 'Lay out plants on a Gardyn by light zone using Gardyn\'s rules (ideal zone, else one zone lower; cucumbers bottom-centre; large plants spaced apart), around pods already planted. model: home (30) or studio (16). Returns slot assignments with reasons and anything that did not fit. Read-only; use save_plan to keep it.',
-    inputSchema: { model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })) },
-  }, async i => text(await caller.planner.layout({ model: i.model, plants: i.plants, respectExisting: true })))
+    description: `Lay out plants on a Gardyn by light zone around pods already planted. model: home (30) or studio (16). ${ZONE_RULES} Returns slot assignments with reasons; zones (per zone: rows, slots, total, existing, planned, free); unplaced (code no_space | not_in_catalog | bad_pin, the zones it could use, and the pods blocking them); and suggestions (relocate another pod to a slot it tolerates, or allow_lower), each with an overrides object to pass back to carry it out. Read-only; use save_plan to keep it.`,
+    inputSchema: { model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), overrides: Overrides.optional().describe(OVERRIDES_HELP) },
+  }, async i => text(await caller.planner.layout({ model: i.model, plants: i.plants, respectExisting: true, overrides: i.overrides })))
 
   server.registerTool('best_spot', {
     description: 'Best free slots for adding one plant to the current tower, ranked by light-zone fit and shading.',
@@ -93,9 +103,9 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.planner.bestSpots({ model: i.model, plantId: i.plantId, limit: 5 })))
 
   server.registerTool('save_plan', {
-    description: 'Compute and save a layout plus a staggered sowing schedule (Gardyn succession guidance). Does not touch the pods until apply_plan.',
-    inputSchema: { id: z.string(), name: z.string(), model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), mode: z.enum(['staggered', 'batch']).optional() },
-  }, async i => text(await caller.planner.savePlan({ id: i.id, name: i.name, model: i.model, plants: i.plants, mode: i.mode ?? 'staggered' })))
+    description: 'Compute and save a layout plus a staggered sowing schedule (Gardyn succession guidance), with the same zone summary, unplaced reasons and suggestions as plan_layout. Pass the overrides you settled on with plan_layout. Does not touch the pods until apply_plan.',
+    inputSchema: { id: z.string(), name: z.string(), model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), mode: z.enum(['staggered', 'batch']).optional(), overrides: Overrides.optional().describe(OVERRIDES_HELP) },
+  }, async i => text(await caller.planner.savePlan({ id: i.id, name: i.name, model: i.model, plants: i.plants, mode: i.mode ?? 'staggered', overrides: i.overrides })))
 
   server.registerTool('apply_plan', {
     description: 'Write a saved plan onto the pods: first-wave pods are marked seeded today, later waves get their sow date and a reminder fires when it arrives. Overwrites the listed pods — confirm with the user first.',

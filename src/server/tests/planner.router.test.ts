@@ -1,6 +1,10 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it } from 'vitest'
 import { GrowEngine } from '../../grow/grow'
 import { SimHal } from '../../hardware/sim'
+import { createMcpServer } from '../../mcp/server'
+import type { PlanResult } from '../../plants/planner'
 import { MemoryStore } from '../../store/memory'
 import { createCore } from '../bootstrap'
 import { appRouter } from '../routers/app'
@@ -50,5 +54,46 @@ describe('planner router', () => {
     expect(store.alerts.list({ activeOnly: true }).find(a => a.kind === 'reminder_sow')?.detail).toMatch(/Butterhead/)
     await expect(c.planner.applyPlan({ id: 'missing' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
     expect((await c.planner.removePlan({ id: 'p1' })).removed).toBe(true)
+  })
+
+  it('explains what did not fit and takes overrides; plans saved before that still list', async () => {
+    const { c, store } = setup()
+    const plants = [{ plantId: 'jalapeno', count: 13 }, { plantId: 'basil', count: 12 }]
+    const l = await c.planner.layout({ model: 'home', plants, respectExisting: true })
+    expect(l.zones.map(z => [z.zone, z.free])).toEqual([['high', 0], ['medium', 0], ['low', 6]])
+    expect(l.unplaced).toMatchObject([{ plantId: 'jalapeno', code: 'no_space', zones: ['high', 'medium'] }])
+    const fix = l.suggestions.find(s => s.kind === 'relocate')?.overrides
+    expect(fix?.pins).toHaveLength(2)
+    const saved = await c.planner.savePlan({ id: 'p2', name: 'Peppers', model: 'home', mode: 'batch', plants, overrides: fix ?? undefined })
+    expect(saved.layout.unplaced).toEqual([])
+    expect(saved.layout.overrides).toEqual(fix)
+
+    const legacy = { model: 'home', assignments: [], unplaced: [{ plantId: 'mint', plantName: 'Mint', reason: 'no free slot in the low zone or below' }], free: [] } as unknown as PlanResult
+    store.plans.save({ id: 'old', name: 'Old', model: 'home', mode: 'batch', request: [{ plantId: 'mint', count: 1 }], layout: legacy, sowing: [] })
+    expect((await c.planner.plans()).find(p => p.id === 'old')?.layout.unplaced[0]?.reason).toMatch(/or below/)
+  })
+
+  it('serves the zone map, explanations and overrides over MCP', async () => {
+    const { core } = setup()
+    const server = createMcpServer(core.ctx)
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    await server.connect(a)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(b)
+    const body = async (name: string, args: Record<string, unknown> = {}) => JSON.parse((((await client.callTool({ name, arguments: args })).content) as Array<{ text: string }>)[0]?.text ?? 'null') as Record<string, unknown>
+    const tools = (await client.listTools()).tools
+    expect(tools.find(t => t.name === 'plan_layout')?.description).toMatch(/one zone lower \(never two, never up\)/)
+    const zones = await body('planner_zones', { model: 'studio' })
+    expect(zones).toMatchObject({ model: 'studio', counts: { high: 5, medium: 9, low: 2 }, rules: expect.stringMatching(/centre-most/) })
+
+    const plants = [{ plantId: 'jalapeno', count: 25 }]
+    const l = await body('plan_layout', { model: 'home', plants }) as unknown as PlanResult
+    const allow = l.suggestions.find(s => s.kind === 'allow_lower')
+    expect(allow?.overrides).toEqual({ allowedZones: { jalapeno: ['high', 'medium', 'low'] } })
+    const again = await body('plan_layout', { model: 'home', plants, overrides: allow?.overrides }) as unknown as PlanResult
+    expect(again.unplaced).toEqual([])
+    const saved = await body('save_plan', { id: 'm1', name: 'Hot', model: 'home', plants, overrides: { pins: [{ slot: 1, plantId: 'jalapeno' }] } }) as unknown as { layout: PlanResult }
+    expect(saved.layout.assignments.find(x => x.slot === 1)).toMatchObject({ plantId: 'jalapeno', reason: 'pinned to pod 1 by the caller (low light; ideal high)' })
+    await client.close()
   })
 })
