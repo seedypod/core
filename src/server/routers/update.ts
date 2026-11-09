@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { UPDATE_STATES, type UpdateClient } from '../../update/client'
+import type { UpdateClient } from '../../update/client'
+import { UPDATE_STATES } from '../../update/types'
 import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
 

@@ -11,15 +11,11 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { EventBus } from '../lib/eventBus'
+import { isRunning, UPDATE_STATES, type UpdateChannel, type UpdateState } from './types'
+
+export { isRunning, UPDATE_STATES, type UpdateChannel, type UpdateState } from './types'
 
 export const INSTALLED_UPDATER = '/usr/local/sbin/seedypod-update'
-
-export type UpdateChannel = 'stable' | 'dev'
-
-export const UPDATE_STATES = ['queued', 'downloading', 'verifying', 'stopping', 'swapping', 'installing', 'starting', 'health', 'rolling-back', 'done', 'rolled-back', 'rollback-failed', 'refused', 'failed'] as const
-export type UpdateState = typeof UPDATE_STATES[number]
-const RUNNING = new Set<UpdateState>(['queued', 'downloading', 'verifying', 'stopping', 'swapping', 'installing', 'starting', 'health', 'rolling-back'])
-export const isRunning = (s: UpdateState | undefined) => !!s && RUNNING.has(s)
 
 export interface UpdateStatus {
   op?: string
