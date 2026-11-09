@@ -67,6 +67,16 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   spots and sowing. Built-in plants stay read-only. Exposed as
   `/api/planner/catalog` POST/PATCH/DELETE, the MCP tools `add_plant`,
   `update_plant` and `remove_plant`, and "Add plant" on the Plan screen.
+- **Plan mode over MCP** (#126): `match_order` turns pasted order lines
+  ("Genovese Basil x2") into plant ids and counts. It compares weighted word
+  sets (distinctive words count more than shared ones like "pepper"), accepts
+  near-miss spellings and a few common synonyms, and returns a confidence per
+  line, close alternatives, and the lines it could not match with
+  suggestions. `list_plans`, `get_plan`, `update_plan` and `remove_plan`
+  manage saved plans. A plan serves its first sow date, and the Plan screen's
+  "Open" reloads a plan's plants, overrides and start date. Because the planner
+  is deterministic, the screen then shows the layout and schedule that were
+  saved, and saving updates the same plan.
 
 ## Consequences
 

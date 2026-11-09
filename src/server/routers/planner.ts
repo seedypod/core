@@ -2,9 +2,11 @@ import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { BUILTIN, type Catalog, Category, CATALOG_SOURCES, Plant, Zone } from '../../plants/catalog'
 import { catalogFor, CustomPlantFields, CustomPlantPatch, customToPlant, plantSlug, SUCCESSION_BY_CATEGORY } from '../../plants/custom'
+import { matchOrder } from '../../plants/match'
 import { bestSpots, planLayout, sowingPlan } from '../../plants/planner'
 import { MODELS, slots, zoneCounts } from '../../plants/zones'
-import type { Store } from '../../store/types'
+import type { PlanRow, Store } from '../../store/types'
+import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
 
 const Model = z.enum(['home', 'studio', 'nursery'])
@@ -30,7 +32,32 @@ const Wave = z.object({ plantId: z.string(), plantName: z.string(), wave: z.numb
 const PlanOut = z.object({
   id: z.string(), name: z.string(), model: Model, mode: z.enum(['staggered', 'batch']), request: Request, layout: SavedLayout, sowing: z.array(Wave),
   createdAt: z.string(), updatedAt: z.string(), appliedAt: z.string().nullable(), issued: z.array(z.string()),
+  /** First sow date (YYYY-MM-DD): pass it back as `start` to recompute the same schedule. Null when nothing is sown. */
+  start: z.string().nullable(),
 })
+const Candidate = z.object({ plantId: z.string(), plantName: z.string(), confidence: z.number() })
+const OrderOut = z.object({
+  matched: z.array(Candidate.extend({ line: z.string(), name: z.string(), count: z.number(), alternatives: z.array(Candidate) })),
+  unmatched: z.array(z.object({ line: z.string(), name: z.string(), count: z.number(), suggestions: z.array(Candidate) })),
+  plants: z.array(z.object({ plantId: z.string(), count: z.number() })),
+  skipped: z.array(z.string()),
+})
+const PlanFields = z.object({ name: z.string().min(1).max(60), model: Model, mode: z.enum(['staggered', 'batch']), plants: Request, start: z.string().optional(), overrides: Overrides.optional() })
+
+/** A saved plan as served: the row plus the first sow date its schedule was computed from. */
+function withStart(row: PlanRow) {
+  return { ...row, start: row.sowing.map(w => w.sowOn).sort()[0] ?? null }
+}
+
+/** Lay out and schedule a plan around the pods planted now, and store it. */
+function persist(ctx: Context, id: string, p: z.infer<typeof PlanFields>) {
+  const catalog = catalogFor(ctx.store)
+  const layout = planLayout({ model: p.model, plants: p.plants, occupied: occupiedFromPods(ctx.store.pods.list(), catalog), overrides: p.overrides }, catalog)
+  const sowing = sowingPlan(p.plants, p.start ? new Date(p.start) : (ctx.now ?? (() => new Date()))(), p.mode, catalog)
+  const row = ctx.store.plans.save({ id, name: p.name, model: p.model, mode: p.mode, request: p.plants, layout, sowing })
+  ctx.events.emit({ kind: 'mutation', path: 'plans' })
+  return withStart(row)
+}
 
 /** Pods currently planted, as slot → catalog plant id (unknown names are kept as occupied). */
 function occupiedFromPods(pods: { slot: number, plant: string | null, status: string }[], catalog: Catalog): Record<number, string> {
@@ -101,19 +128,40 @@ export const plannerRouter = router({
   plans: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/plans', tags: ['planner'] } })
     .output(z.array(PlanOut))
-    .query(({ ctx }) => ctx.store.plans.list()),
+    .query(({ ctx }) => ctx.store.plans.list().map(withStart)),
+
+  plan: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/plans/{id}', tags: ['planner'], summary: 'One saved plan: request, layout, sowing schedule and overrides' } })
+    .input(z.object({ id: z.string() }))
+    .output(PlanOut)
+    .query(({ ctx, input }) => {
+      const plan = ctx.store.plans.get(input.id)
+      if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: 'plan not found' })
+      return withStart(plan)
+    }),
+
+  matchOrder: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/planner/match-order', tags: ['planner'], summary: 'Match free-text order lines ("Genovese Basil x2") to catalog plants, with confidence and unmatched lines' } })
+    .input(z.object({ lines: z.array(z.string().max(500)).min(1).max(200) }))
+    .output(OrderOut)
+    .query(({ ctx, input }) => matchOrder(input.lines, catalogFor(ctx.store))),
 
   savePlan: publicProcedure
     .meta({ openapi: { method: 'PUT', path: '/plans/{id}', tags: ['planner'], summary: 'Compute and save a layout + sowing plan' } })
-    .input(z.object({ id: z.string().min(1), name: z.string().min(1).max(60), model: Model, mode: z.enum(['staggered', 'batch']).default('staggered'), plants: Request, start: z.string().optional(), overrides: Overrides.optional() }))
+    .input(PlanFields.extend({ id: z.string().min(1), mode: z.enum(['staggered', 'batch']).default('staggered') }))
+    .output(PlanOut)
+    .mutation(({ ctx, input }) => persist(ctx, input.id, input)),
+
+  updatePlan: publicProcedure
+    .meta({ openapi: { method: 'PATCH', path: '/plans/{id}', tags: ['planner'], summary: 'Change a saved plan and recompute it; unspecified fields (including its start date and overrides) stay as saved' } })
+    .input(PlanFields.partial().extend({ id: z.string(), overrides: Overrides.nullable().optional() }))
     .output(PlanOut)
     .mutation(({ ctx, input }) => {
-      const catalog = catalogFor(ctx.store)
-      const layout = planLayout({ model: input.model, plants: input.plants, occupied: occupiedFromPods(ctx.store.pods.list(), catalog), overrides: input.overrides }, catalog)
-      const sowing = sowingPlan(input.plants, input.start ? new Date(input.start) : (ctx.now ?? (() => new Date()))(), input.mode, catalog)
-      const row = ctx.store.plans.save({ id: input.id, name: input.name, model: input.model, mode: input.mode, request: input.plants, layout, sowing })
-      ctx.events.emit({ kind: 'mutation', path: 'plans' })
-      return row
+      const cur = ctx.store.plans.get(input.id)
+      if (!cur) throw new TRPCError({ code: 'NOT_FOUND', message: 'plan not found' })
+      const model = input.model ?? cur.model
+      const overrides = input.overrides === null ? undefined : input.overrides ?? cur.layout.overrides
+      return persist(ctx, cur.id, { name: input.name ?? cur.name, model, mode: input.mode ?? cur.mode, plants: input.plants ?? cur.request, start: input.start ?? withStart(cur).start ?? undefined, overrides })
     }),
 
   removePlan: publicProcedure

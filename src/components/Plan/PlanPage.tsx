@@ -11,6 +11,7 @@ import { CustomPlantDialog, type EditablePlant } from '@/src/components/Plan/Cus
 import { Unplaced } from '@/src/components/Plan/Unplaced'
 
 type Model = 'home' | 'studio'
+interface Overrides { pins?: { slot: number, plantId: string }[], allowedZones?: Record<string, Zone[]> }
 type Zone = 'high' | 'medium' | 'low'
 type Category = 'fruiting' | 'vegetable' | 'legume' | 'flower' | 'herb' | 'green' | 'lettuce'
 
@@ -32,12 +33,16 @@ export function PlanPage() {
   const [mode, setMode] = useState<'staggered' | 'batch'>('staggered')
   const [confirm, setConfirm] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditablePlant | 'new' | null>(null)
+  // A saved plan loaded for editing: saving updates it, with its own start date and overrides, so it lays out and sows as saved.
+  const [opened, setOpened] = useState<{ id: string, start: string | null, overrides?: Overrides } | null>(null)
 
   const zones = trpc.planner.zones.useQuery({ model })
   const catalog = trpc.planner.catalog.useQuery({ q: q || undefined, category: cat === 'all' ? undefined : cat })
   const request = useMemo(() => Object.entries(picks).filter(([, n]) => n > 0).map(([plantId, count]) => ({ plantId, count })), [picks])
-  const layout = trpc.planner.layout.useQuery({ model, plants: request, respectExisting: true }, { enabled: true })
-  const sowing = trpc.planner.sowing.useQuery({ plants: request, mode }, { enabled: request.length > 0 })
+  const overrides = opened?.overrides
+  const start = opened?.start ?? undefined
+  const layout = trpc.planner.layout.useQuery({ model, plants: request, respectExisting: true, ...(overrides && { overrides }) }, { enabled: true })
+  const sowing = trpc.planner.sowing.useQuery({ plants: request, mode, ...(start && { start }) }, { enabled: request.length > 0 })
   const pods = trpc.grow.pods.useQuery()
   const plans = trpc.planner.plans.useQuery()
   const save = trpc.planner.savePlan.useMutation({ onSuccess: () => utils.planner.plans.invalidate() })
@@ -145,8 +150,15 @@ export function PlanPage() {
           </Card>
           <div className="flex flex-wrap items-end gap-2">
             <TextField label="Plan name" mono={false} value={name} onChange={setName} className="min-w-[220px]" />
-            <Button variant="primary" disabled={save.isPending} onClick={() => save.mutate({ id: `plan-${Date.now().toString(36)}`, name, model, mode, plants: request })}>Save plan</Button>
-            <Button onClick={() => setPicks({})}>Clear</Button>
+            <Button variant="primary" disabled={save.isPending} onClick={() => save.mutate({ id: opened?.id ?? `plan-${Date.now().toString(36)}`, name, model, mode, plants: request, ...(start && { start }), ...(overrides && { overrides }) })}>{opened ? 'Update plan' : 'Save plan'}</Button>
+            <Button
+              onClick={() => {
+                setPicks({})
+                setOpened(null)
+              }}
+            >
+              Clear
+            </Button>
           </div>
         </>
       )}
@@ -174,6 +186,18 @@ export function PlanPage() {
                 {p.request.map(r => `${r.count}× ${r.plantId}`).join(', ')}
               </div>
             </div>
+            <Button
+              size="sm"
+              onClick={() => {
+                setModel(p.model === 'studio' ? 'studio' : 'home')
+                setPicks(Object.fromEntries(p.request.map(r => [r.plantId, r.count])))
+                setMode(p.mode)
+                setName(p.name)
+                setOpened({ id: p.id, start: p.start, overrides: p.layout.overrides })
+              }}
+            >
+              Open
+            </Button>
             <Button size="sm" variant="primary" onClick={() => setConfirm(p.id)}>Apply</Button>
             <GhostIcon icon={Trash2} label="Delete plan" onClick={() => remove.mutate({ id: p.id })} />
           </div>
