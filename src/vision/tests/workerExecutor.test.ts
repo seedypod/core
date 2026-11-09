@@ -30,18 +30,22 @@ describe('worker executor', () => {
 
   it('runs the learned analyser from the weights core passes it', async () => {
     const text = readFileSync(new URL('../../../models/pod-state.json', import.meta.url), 'utf8')
-    const w = createWorkerExecutor(script, { execArgv: ['--import', 'tsx'], workerData: { podStateModel: { text } } })
-    const off = createWorkerExecutor(script, { execArgv: ['--import', 'tsx'], workerData: { podStateModel: { text: null } } })
+    const w = createWorkerExecutor(script, { execArgv: ['--import', 'tsx'] }, [{ id: 'pod-state', label: 'Pod state', text }])
+    const job = (analyzers: string[]) => ({ bytes: jpeg(320, 240, true), camera: 'lower' as const, analyzers, opts: { artifacts: false } })
     try {
-      const out = await w.run({ bytes: jpeg(320, 240, true), camera: 'lower', analyzers: ['pod-state'], opts: { artifacts: false } })
+      const out = await w.run(job(['pod-state']))
       if (!Array.isArray(out)) throw new Error('should have scored it')
       expect(out[0]?.analyzer).toBe('pod-state')
       expect(out[0]?.results.filter(r => r.metric === 'pod_state').map(r => r.slot)).toEqual(Array.from({ length: 15 }, (_, i) => 16 + i))
-      expect(await off.run({ bytes: jpeg(320, 240, true), camera: 'lower', analyzers: ['pod-state'], opts: { artifacts: false } })).toEqual([])
+      // A revision enabled later runs as its own analyser; one switched off stops.
+      w.configure([{ id: 'pod-state-v2', label: 'Pod state: v2', text }])
+      const next = await w.run(job(['pod-state', 'pod-state-v2']))
+      expect(Array.isArray(next) && next.map(o => o.analyzer)).toEqual(['pod-state-v2'])
+      w.configure([{ id: 'pod-state', label: 'Pod state', text: null }])
+      expect(await w.run(job(['pod-state']))).toEqual([])
     }
     finally {
       await w.close()
-      await off.close()
     }
   }, 20_000)
 

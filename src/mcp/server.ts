@@ -15,6 +15,8 @@ import { appRouter } from '../server/routers/app'
 import { Overrides } from '../server/routers/planner'
 import { TankActionKind, TankUnit } from '../server/routers/tank'
 import { createCallerFactory } from '../server/trpc'
+import { fetchLanModel } from '../vision/modelFetch'
+import { POD_STATES } from '../vision/podState'
 
 const createCaller = createCallerFactory(appRouter)
 
@@ -85,6 +87,30 @@ export function createMcpServer(ctx: Context): McpServer {
     const compare = i.slot ? await caller.vision.compare({ slot: i.slot, metric: i.metric ?? 'green_fraction', limit: 48 }) : undefined
     return text({ analyzers, status, labels, compare })
   })
+
+  server.registerTool('list_models', {
+    description: 'Pod-state model revisions (the learned pod-state analyser, #186): the shipped one and every upload, with id (sha256 prefix), the analyser id each runs as, version, revision name, trained/uploaded dates, notes, whether it runs (enabled) and which is primary, plus the newest uploads, activations, resets and rollbacks. Compare enabled revisions with list_analyses.',
+    inputSchema: {},
+  }, async () => text({ revisions: await caller.models.list(), events: await caller.models.events({ limit: 10 }) }))
+
+  server.registerTool('export_dataset', {
+    description: 'A dataset export for training off the unit: a download path (relative to the core host; GET it for a tar of photos, every analyser\'s results, pod labels, pods, grow cycles and sensor history) and what it holds: captures, results, readings, labels, labels per class, image bytes and the date range. days is the window back from now (default 30, the unit keeps 30 days of photos); images false leaves the photos out.',
+    inputSchema: { days: z.number().int().min(1).max(365).optional(), images: z.boolean().optional() },
+  }, async (i) => {
+    const to = ctx.now?.() ?? new Date()
+    const from = new Date(to.getTime() - (i.days ?? 30) * 86_400_000)
+    const images = i.images ?? true
+    const summary = await caller.datasets.summary({ from: from.toISOString(), to: to.toISOString(), images })
+    const path = `/api/datasets/export?${new URLSearchParams({ from: summary.from, to: summary.to, images: images ? '1' : '0' }).toString()}`
+    const labelsPerClass = Object.fromEntries(POD_STATES.map(c => [c, 0]))
+    for (const l of ctx.store.podLabels.range(summary.from, summary.to)) labelsPerClass[l.label] = (labelsPerClass[l.label] ?? 0) + 1
+    return text({ path, ...summary, labelsPerClass })
+  })
+
+  server.registerTool('list_labels', {
+    description: 'The grower\'s pod labels (empty, sprouted, growing, ready, unhealthy), the training data for pod-state models: how many pods carry each label and the labelled captures, newest first. With capture_id, that capture\'s label for each pod. Labels are set in the app\'s Analysis screen.',
+    inputSchema: { capture_id: z.string().optional(), limit: z.number().int().min(1).max(500).optional() },
+  }, async i => text(i.capture_id ? await caller.vision.labels({ captureId: i.capture_id }) : await caller.vision.labelStats({ limit: i.limit ?? 50 })))
 
   server.registerTool('list_automations', {
     description: 'Autopilot rules (WHEN trigger / IF conditions / THEN actions, as JSON), whether each is enabled or in dry-run, its last run, the kill switch, which source owns the light (manual hold, Autopilot or schedule), and the latest audit-log entries. Read-only: creating, arming or disabling rules changes what the unit does unattended, so that is done in the app.',
@@ -288,6 +314,27 @@ export function createMcpServer(ctx: Context): McpServer {
     if (i.action === 'start') return text(await caller.grow.start({ notes: i.notes ?? '' }))
     if (i.action === 'stage') return text(await caller.grow.setStage({ stage: i.stage ?? 'germination' }))
     return text(await caller.grow.end())
+  })
+
+  server.registerTool('upload_model', {
+    description: 'Add a pod-state weights file (seedypod-cnn v1, from seedypod/training) as a model revision. Give its contents as base64, or a URL on the local network (the laptop that trained it; the unit fetches nothing from the internet), and its SHA-256, which must match. Stored disabled unless enable is true; an enabled revision runs on every capture as its own analyser beside the others. Confirm with the user before enabling.',
+    inputSchema: { base64: z.string().optional(), url: z.string().optional(), sha256: z.string().length(64), enable: z.boolean().optional() },
+  }, async (i) => {
+    if (!i.base64 === !i.url) throw new Error('give exactly one of base64 or url')
+    const body = i.base64 ? Buffer.from(i.base64, 'base64').toString('utf8') : await fetchLanModel(i.url as string)
+    return text(await caller.models.upload({ text: body, sha256: i.sha256, enable: i.enable }))
+  })
+
+  server.registerTool('set_model', {
+    description: 'Change which pod-state model revisions run (ids from list_models): enable or disable one, make one primary (enables it), delete an uploaded one, reset (only the shipped model runs, as primary; uploads are kept), or rollback (undo the newest enable, disable, primary or reset). Every change is recorded. Confirm with the user first.',
+    inputSchema: { action: z.enum(['enable', 'disable', 'primary', 'delete', 'reset', 'rollback']), id: z.string().optional() },
+  }, async (i) => {
+    if (i.action === 'reset') return text(await caller.models.reset())
+    if (i.action === 'rollback') return text(await caller.models.rollback())
+    if (!i.id) throw new Error(`${i.action} needs the revision id`)
+    if (i.action === 'delete') return text(await caller.models.remove({ id: i.id }))
+    if (i.action === 'primary') return text(await caller.models.set({ id: i.id, primary: true }))
+    return text(await caller.models.set({ id: i.id, enabled: i.action === 'enable' }))
   })
 
   server.registerTool('capture_still', { description: 'Take a still from a camera now and return its record (URL relative to the core host).', inputSchema: { camera: z.enum(['upper', 'lower']) } }, async i => text(await caller.camera.capture(i)))

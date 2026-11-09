@@ -111,7 +111,7 @@ export class AnalysisService {
         id: s.analyzer,
         version: s.version,
         label: known?.label ?? s.analyzer,
-        description: known ? `Older version of ${known.label}.` : 'Results posted by an off-device worker.',
+        description: known ? `Older version of ${known.label}.` : s.source === 'device' ? 'A model revision that no longer runs here; enable it again under GET /api/models.' : 'Results posted by an off-device worker.',
         metrics: known?.metrics ?? [],
         runsOn: [s.source],
         source: s.source,

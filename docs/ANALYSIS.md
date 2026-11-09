@@ -230,20 +230,58 @@ Without the file, or with one that doesn't parse or lists other classes, the
 analyser is listed as off: the Analysis screen says why, and it is never run
 or re-run.
 
-### Train a better one
+### Train, upload and compare models
 
-Training lives in [seedypod/training](https://github.com/seedypod/training):
-label pods on the Analysis screen ([Label pods](#label-pods)), export a
-dataset with photos, then
+A new model gets onto the unit without a release. The whole loop runs over the
+REST API or MCP, so an agent can drive it:
 
-```sh
-uv run --locked python scripts/train.py --pod seedypod.local --version 2 --revision my-model-2026-12
-```
+1. **Label and export.** Label pods on the Analysis screen
+   ([Label pods](#label-pods); MCP `list_labels` shows what is labelled), then
+   `GET /api/datasets/export?images=1` (MCP `export_dataset` gives the path and
+   what the window holds, with labels per class).
+2. **Train** with [seedypod/training](https://github.com/seedypod/training):
 
-It writes `pod-state.json` and a `report.json` with held-out scores for the
-model and for the rule-based analysers. Give each new model a new `--version`,
-so its results sit beside the old ones instead of mixing with them. To ship it,
-replace `models/pod-state.json` in a core PR. The parity test
+   ```sh
+   uv run --locked python scripts/train.py --pod seedypod.local --version 2 --revision my-model-2026-12
+   ```
+
+   It writes `pod-state.json` and a `report.json` with held-out scores for the
+   model and for the rule-based analysers. Give each model its own
+   `--revision`: an uploaded model runs as `pod-state-<revision>`.
+3. **Upload** it as a revision, with the result ingest token (**Settings →
+   Off-device storage and analysis**) and the file's SHA-256:
+
+   ```sh
+   curl -X POST "http://seedypod.local/api/models?sha256=$(shasum -a 256 pod-state.json | cut -d' ' -f1)&enable=1" \
+     -H "Authorization: Bearer $SEEDYPOD_INGEST_TOKEN" --data-binary @pod-state.json
+   ```
+
+   MCP `upload_model` takes the file as base64, or a URL on the local network
+   (the unit fetches nothing from the internet). Core checks the header (format,
+   layers, classes, input size, version), the size (2 MB at most) and the hash
+   before storing anything, and answers 400 with the reason otherwise. Uploads
+   live under `DATA_DIR/models`, outside the release, so updates keep them. They
+   are stored disabled unless `enable=1`.
+4. **Compare.** Every enabled revision runs on each new capture as its own
+   analyser, so the Analysis screen shows them beside each other, the shipped
+   `pod-state` and the rule-based analysers. **Re-run** scores the stored photos
+   with one.
+5. **Choose.** `PATCH /api/models/{id}` with `{"enabled": true|false}` or
+   `{"primary": true}` (MCP `set_model`). `GET /api/models` (MCP `list_models`)
+   lists every revision: id (the first 12 hex digits of its SHA-256), version,
+   revision, when it was trained and uploaded, whether it runs and which is
+   primary, and whether it is `shipped` or `uploaded`. `DELETE /api/models/{id}`
+   removes an upload; the shipped model can only be disabled.
+
+Every upload, enable, disable, primary change, delete, reset and rollback is
+recorded (`GET /api/models/events`). `POST /api/models/reset` goes back to the
+shipped model alone, as primary, keeping the uploads disabled.
+`POST /api/models/rollback` undoes the newest enable, disable, primary change
+or reset, one per call. The primary revision is the one to trust when they
+disagree; pod trends still follow the primary green-fraction analyser.
+
+To ship a model with every unit instead, replace `models/pod-state.json` in a
+core PR, with a new `--version`. The parity test
 (`src/vision/tests/podState.test.ts`) checks that core's forward pass matches
 PyTorch's within 1e-4 on a fixture the training repository generates.
 

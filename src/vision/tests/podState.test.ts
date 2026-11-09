@@ -149,6 +149,8 @@ describe('pod-state analyser', () => {
   it('is disabled with the reason when the file is bad or for another analyser', () => {
     expect(podStateFromText('{').disabled).toMatch(/could not be loaded/)
     expect(podStateFromText(JSON.stringify({ ...fixture.model, analyzer: 'leaf-count' })).disabled).toMatch(/for leaf-count/)
+    expect(podStateFromText(JSON.stringify({ ...fixture.model, classes: ['a', 'b', 'c', 'd', 'e'] })).disabled).toMatch(/classes must be/)
+    expect(podStateFromText('{').disabled).toMatch(/not JSON/)
     expect(podStateFromText(null, 'gone').disabled).toBe('gone')
   })
 })
