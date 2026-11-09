@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { bridgeStatus } from '../mqtt/bridge'
 import type { Context } from './context'
 import { HUB_ALERT, LINK_ALERT } from '../camera/linkHealth'
+import { setupReport } from '../care/setup'
 
 export const CheckState = z.enum(['ok', 'idle', 'stalled', 'down'])
 export type CheckState = z.infer<typeof CheckState>
@@ -76,6 +77,10 @@ export async function systemChecks(ctx: Context): Promise<Check[]> {
     else if (id === 'light') add(id, label, 'ok', a.on ? `On · ${a.level}%` : 'Off', a.since)
     else add(id, label, 'ok', a.on ? `Running${a.remainingS ? ` · ${a.remainingS} s left` : ''}` : 'Resting', a.since)
   }
+
+  // What a planted unit is missing (ADR-0029): schedules, and a tank sensor to trust.
+  const setup = setupReport(ctx.store, snap)
+  add('setup', 'Setup', setup.issues.length ? 'stalled' : 'ok', setup.summary)
 
   const cameras = caps?.cameras ?? []
   const last = ctx.store.captures.list(undefined, 1)[0]

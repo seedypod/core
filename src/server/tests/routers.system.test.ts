@@ -107,7 +107,7 @@ describe('system.checks', () => {
     const { c, store } = rig()
     store.captures.add({ id: 'c1', camera: 'upper', ts: iso(5), path: 'x', bytes: 10 })
     const { checks } = await c.system.checks()
-    expect(checks.map(k => k.id)).toEqual(['hal', 'sensors', 'light', 'pump', 'cameras', 'autopilot', 'network', 'storage', 'backup', 'mirror', 'homekit', 'bridge'])
+    expect(checks.map(k => k.id)).toEqual(['hal', 'sensors', 'light', 'pump', 'setup', 'cameras', 'autopilot', 'network', 'storage', 'backup', 'mirror', 'homekit', 'bridge'])
     const by = Object.fromEntries(checks.map(k => [k.id, k]))
     expect(by.hal).toMatchObject({ label: 'Hardware daemon', state: 'ok', detail: 'gardyn 3.0 (sim) · hald 0.0.0-sim' })
     expect(by.sensors).toMatchObject({ state: 'ok', detail: '8 of 8 reporting' })

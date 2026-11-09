@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Bell, Cable, CameraOff, Check, ChevronRight, CloudOff, Droplets, FlaskConical, Info, Scissors, Sprout, Sun, Thermometer, Unplug, Wheat, Waves, X } from 'lucide-react'
+import { Bell, CalendarClock, Cable, CameraOff, Check, ChevronRight, CloudOff, Droplets, FlaskConical, Info, Scissors, Sprout, Sun, Thermometer, Unplug, Wheat, Waves, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useState } from 'react'
@@ -19,11 +19,13 @@ const LABEL: Record<string, string> = {
   camera_link_upper: 'Top camera connection', camera_link_lower: 'Bottom camera connection', camera_hub_flaky: 'Camera hub connection',
   water_low: 'Water low', pump_fault: 'Pump fault', dose_fault: 'Dosing lockout', over_temp: 'Board over temperature', camera_missing: 'Camera not capturing', hal_offline: 'Hardware daemon offline', mirror_failed: 'Off-device copy failed',
   reminder_thinning: 'Thin seedlings', reminder_root_check: 'Check roots', reminder_harvest: 'Harvest window', reminder_nutrients: 'Add nutrients', reminder_sow: 'Start new yCubes', light_fault: 'Light fault',
+  setup_light_schedule: 'No light schedule', setup_pump_schedule: 'No pump schedule', setup_water_sensor: 'Tank sensor',
 }
 const ICON: Record<string, LucideIcon> = {
   camera_link_upper: Cable, camera_link_lower: Cable, camera_hub_flaky: Cable,
   water_low: Droplets, pump_fault: Waves, dose_fault: FlaskConical, over_temp: Thermometer, camera_missing: CameraOff, hal_offline: Unplug, mirror_failed: CloudOff, light_fault: Sun,
   reminder_thinning: Scissors, reminder_root_check: Sprout, reminder_harvest: Wheat, reminder_nutrients: FlaskConical, reminder_sow: Sprout,
+  setup_light_schedule: CalendarClock, setup_pump_schedule: CalendarClock, setup_water_sensor: Waves,
 }
 const HARDWARE = new Set(['water_low', 'pump_fault', 'dose_fault', 'over_temp', 'camera_missing', 'hal_offline', 'light_fault', 'camera_link_upper', 'camera_link_lower', 'camera_hub_flaky'])
 /** Notices with a repair to follow in the docs. */
@@ -47,6 +49,9 @@ const VIEW: Record<string, { to: string, label: string }> = {
   light_fault: { to: '/light', label: 'View light' },
   over_temp: { to: '/sensors', label: 'View sensors' },
   mirror_failed: { to: '/settings', label: 'View settings' },
+  setup_light_schedule: { to: '/light', label: 'View light' },
+  setup_pump_schedule: { to: '/water', label: 'View water' },
+  setup_water_sensor: { to: '/sensors', label: 'View sensors' },
 }
 const PODS = { upper: '1–15', lower: '16–30' } as const
 
