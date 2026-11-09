@@ -31,6 +31,7 @@ cp "$STATE/release/\${url##*/}" "$out" 2>/dev/null || exit 22`,
 esac`,
   // better-sqlite3's install script: prebuild-install, then node-gyp. pnpm only runs it on a package it hasn't built.
   'pnpm': `echo "pnpm $* source=\${npm_config_build_from_source:-}" >> "$STATE/log"
+echo "pnpm $1 prompt=\${COREPACK_ENABLE_DOWNLOAD_PROMPT:-unset}" >> "$STATE/corepack"
 [ ! -f "$STATE/fail-pnpm" ] || exit 1
 [ "$1" != install ] || [ ! -f "$SQLITE_BINARY" ] || exit 0
 mkdir -p "$(dirname "$SQLITE_BINARY")"
@@ -232,6 +233,16 @@ describe('a rerun', () => {
     publish()
     expect(install().code).toBe(0)
     expect(installed()).toBe('armv6')
+  })
+})
+
+describe('corepack', () => {
+  // A packageManager pin past the unit's cached pnpm made Corepack ask [Y/n] mid-install.
+  it('never stops to ask before fetching pnpm, for the install or the rebuild', () => {
+    publish()
+    writeFileSync(join(state, 'misnamed'), '')
+    expect(install()).toMatchObject({ code: 0 })
+    expect(readFileSync(join(state, 'corepack'), 'utf8')).toBe('pnpm install prompt=0\npnpm rebuild prompt=0\n')
   })
 })
 
