@@ -120,8 +120,8 @@ pub struct UsbRecovery {
     pub enabled: bool,
     /// Seconds after boot before an empty bus counts as a failure.
     pub boot_wait_s: u64,
-    /// Root hub re-probes before anything else. Off: on the Gardyn's hub they have
-    /// never brought it back, because the port is stuck until the next boot.
+    /// Root hub re-probes before anything else. Off by default for now; some hubs
+    /// have connected late after them, and whether they helped is still being tested.
     pub attempts: u32,
     /// Seconds to wait for the bus to fill after each re-probe.
     pub settle_s: u64,
@@ -723,7 +723,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # reboot_attempts = 4     # reboots in a row; 0 turns this off
 # busy_checks = 20        # waits for the pump and dosers to finish first,
 # busy_wait_s = 60        # then leaves this boot alone
-# attempts = 0            # root hub re-probes; none has ever helped this hub
+# attempts = 0            # root hub re-probes before any reboot
 # settle_s = 20
 
 # Cameras get stable names from udev rules keyed on their USB port

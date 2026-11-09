@@ -59,13 +59,15 @@ Lower resolutions didn't help, and neither did `uvcvideo quirks=128` or removing
 
 ## Known issue: USB hub missing at boot
 
-On our 3.0 the hub came up on about 1 boot in 4, independently each time. On a boot
-it misses, `hprt0` is stuck at `0x1c00`, which is SE1: both data lines high, which a
-healthy USB link never holds. Toggling bus power, disabling the port, re-probing the
-root hub, and unbinding before a reboot all failed, and binding `dwc_otg` again
-segfaulted the kernel. Only a fresh boot gets another chance, so hald reboots a
-bounded number of times ([USB recovery](hal.md#usb-recovery)). That works around the
-fault without fixing it. **Swap the Pi-to-hub cable next.**
+On our 3.0 the hub came up on about 1 boot in 4 to 2 in 5. On a boot it misses,
+`hprt0` reads `0x1c00`, which is SE1: both data lines high, which a healthy USB link
+never holds. Toggling bus power, disabling the port and unbinding before a reboot all
+failed, and binding `dwc_otg` again segfaulted the kernel. In a controlled series of
+40 warm reboots, though, 7 found the hub late, at 123-151 s, after root hub re-probes
+at about 90 and 111 s and without a reboot. Whether the wait or the re-probes did it
+isn't settled. hald can reboot a bounded number of times
+([USB recovery](hal.md#usb-recovery)); that works around the fault without fixing it.
+**Swap the Pi-to-hub cable next.**
 
 ## Model detection
 

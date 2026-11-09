@@ -443,8 +443,9 @@ that dies part way still restarts hald on the rerun.
 
 The cameras sit behind a USB hub that often doesn't enumerate at boot, on stock
 firmware too. On our unit it comes up on about 1 boot in 4, independently each time.
-When it misses, the port is stuck in SE1 (`hprt0` reads `0x1c00`) and only another
-boot clears it: see the [hardware map](pin-map.md#known-issue-usb-hub-missing-at-boot).
+When it misses, the port reads SE1 (`hprt0` `0x1c00`). Usually only another boot
+clears it, but some boots connect late without one: see the
+[hardware map](pin-map.md#known-issue-usb-hub-missing-at-boot).
 
 `seedypod-usb-recover.service` runs `hald --usb-recover` once per boot, as root. If
 the bus still has nothing on it `boot_wait_s` after boot, it reboots to try again,
@@ -478,8 +479,10 @@ which outlasts a full pump run, then leaves this boot alone. It also won't reboo
   left alone. It only acts on the Pi's `dwc_otg` and `dwc2` controllers, never in
   gadget mode. Wi-Fi is on SDIO, not USB.
 
-`attempts` adds root hub re-probes before any reboot. It's off because none has ever
-helped this hub. **Don't rebind the USB controller:** binding `dwc_otg` again segfaults
+`attempts` adds root hub re-probes before any reboot. It's off by default for now. In
+a controlled series, 7 of 40 boots found the hub at 123-151 s, after re-probes at about
+90 and 111 s, and none rebooted. It isn't known yet whether the re-probes or the wait
+did it, so the defaults (`boot_wait_s = 90`, `attempts = 0`) are pending that test. **Don't rebind the USB controller:** binding `dwc_otg` again segfaults
 the kernel, and a hung kernel leaves the pump's GPIO as it was. `rebind_controller`
 did that once; it now has no effect, and stays only so a `hal.toml` that sets it loads.
 

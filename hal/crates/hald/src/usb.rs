@@ -1,8 +1,10 @@
 //! Boot-time USB recovery. The Gardyn's cameras sit behind a USB hub that often
-//! doesn't enumerate at boot, on stock firmware too. When it misses, the port is
-//! stuck in SE1 (`hprt0` reads 0x1c00) and nothing short of a reboot clears it: bus
-//! power, port disable, root hub re-probes and unbinding all fail, and binding
-//! `dwc_otg` again segfaults the kernel. Each boot is its own chance.
+//! doesn't enumerate at boot, on stock firmware too. When it misses, the port reads
+//! SE1 (`hprt0` 0x1c00). Bus power, port disable and unbinding haven't brought it
+//! back, and binding `dwc_otg` again segfaults the kernel. Some boots connect late,
+//! though: in a controlled series 7 of 40 found the hub at 123-151 s, after root hub
+//! re-probes at about 90 and 111 s and without a reboot. Whether waiting or the
+//! re-probes did that isn't known yet, so the timing and defaults here are pending.
 //!
 //! So `hald --usb-recover` runs once per boot as root. If the bus is still empty
 //! after `boot_wait_s` it asks for a reboot, up to `reboot_attempts` in a row. That
