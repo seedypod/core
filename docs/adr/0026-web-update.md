@@ -169,10 +169,13 @@ They can only choose the channel, never the source.
 
 - An update from the web replaces core's files and hald's binary. It does
   **not** redo the rest of `scripts/install`: the systemd units, polkit
-  rule, port 80 forward, login logo and Node itself stay as they are. A
-  release that needs those changes needs `scripts/install` over SSH. The
-  update helper and restore helper are refreshed, so later updates use the
-  newest helper.
+  rule, port 80 forward and Node itself stay as they are. A release that
+  needs those changes needs `scripts/install` over SSH. The update helper
+  and restore helper are refreshed, so later updates use the newest helper.
+- Status update 2026-11-09: the SSH login screen's scripts (`login-logo`,
+  `login-stats`, `logo.frames`) are now refreshed too, taken from the
+  checked release like the helpers, on units where `scripts/install` set
+  the login screen up (#178). `/etc/profile.d/seedypod-logo.sh` is not.
 - An update stops the unit for as long as core takes to start. On a Pi Zero
   that's up to a few minutes. Schedules don't run while it's stopped, and
   hald stops the pump when it restarts.
