@@ -72,8 +72,8 @@ saved, a unit installed from `main` is on stable and anything else is on dev.
 
 The unit downloads what CI built and nothing else: `seedypod-core.tar.gz`, the
 `hald` binary for its CPU when hald runs on this machine, and, on a Pi Zero W
-whose dependencies changed, the ARMv6 better-sqlite3. `build.yml`,
-`dev-release.yml` and `release.yml` attach a `<asset>.sha256` next to the
+whose dependencies changed, the ARMv6 better-sqlite3. `dev-release.yml` and
+`release.yml` attach a `<asset>.sha256` next to the
 tarball and each `hald` binary (the better-sqlite3 build already had one).
 
 Each download must match every checksum the release has for it: the
