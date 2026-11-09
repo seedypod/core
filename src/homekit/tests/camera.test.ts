@@ -11,7 +11,7 @@ import { appRouter } from '../../server/routers/app'
 import { createCallerFactory } from '../../server/trpc'
 import { MemoryStore } from '../../store/memory'
 import type { Capture } from '../../store/types'
-import { buildCamera, CAPTURE_FLOOR_MS, LIVE_VIEW_OFF, RESOURCE_DOES_NOT_EXIST, snapshotDelegate } from '../accessories/camera'
+import { buildCamera, CAPTURE_FLOOR_MS, LIVE_VIEW_OFF, RESOLUTIONS, RESOURCE_DOES_NOT_EXIST, snapshotDelegate } from '../accessories/camera'
 import type { AccessoryDeps } from '../accessories/common'
 
 const stops: Array<() => void> = []
@@ -59,14 +59,18 @@ describe('camera → snapshot-only CameraController', () => {
     expect(stills).not.toHaveBeenCalled()
   })
 
-  it('on the accessory: one RTP stream service with H.264 baseline, and no microphone', () => {
+  it('on the accessory: what HomeKit cameras declare, two RTP streams and a microphone, but no recording', () => {
     const { deps } = setup()
     const acc = new hap.Accessory('Upper camera', hap.uuid.generate('seedypod:test:camera_upper'))
     for (const c of buildCamera('upper', deps).controllers ?? []) acc.configureController(c)
     const uuids = acc.services.map(s => s.UUID)
-    expect(uuids.filter(u => u === hap.Service.CameraRTPStreamManagement.UUID)).toHaveLength(1)
-    expect(uuids).not.toContain(hap.Service.Microphone.UUID)
+    expect(uuids.filter(u => u === hap.Service.CameraRTPStreamManagement.UUID)).toHaveLength(2)
+    expect(uuids).toContain(hap.Service.Microphone.UUID)
+    expect(uuids).not.toContain(hap.Service.Speaker.UUID)
     expect(uuids).not.toContain(hap.Service.CameraRecordingManagement.UUID)
+    // 30 fps sizes, as working cameras declare; 1280×960 (the stored still's size) among them.
+    expect(RESOLUTIONS).toContainEqual([1280, 960, 30])
+    expect(RESOLUTIONS.every(([, , fps]) => fps >= 15)).toBe(true)
     acc.destroy()
   })
 

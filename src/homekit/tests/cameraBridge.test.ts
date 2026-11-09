@@ -75,15 +75,22 @@ describe('a bridged camera over HAP\'s resource request', () => {
     const { bridge, camera, caller, log } = await setup()
     await caller.camera.capture({ camera: 'upper' })
     const acc = camera('Upper camera')
-    const active = acc.getService(hap.Service.CameraRTPStreamManagement)?.getCharacteristic(hap.Characteristic.Active)
-    await active?.handleSetRequest(0)
+    const streams = acc.services.filter(sv => sv.UUID === hap.Service.CameraRTPStreamManagement.UUID).map(sv => sv.getCharacteristic(hap.Characteristic.Active))
+    expect(streams).toHaveLength(2)
+    // Home writing 1 over hap-nodejs's initial `true` is no switch.
+    await streams[0]?.handleSetRequest(1)
+    expect(log).toEqual([])
+    // One stream off still serves; all off is what hap-nodejs refuses.
+    await streams[0]?.handleSetRequest(0)
+    expect(log).toEqual([])
+    await streams[1]?.handleSetRequest(0)
     const got = await request(bridge, { 'resource-type': 'image', 'image-width': 640, 'image-height': 360, 'aid': acc.aid as number })
     expect(got.error).toEqual({ httpCode: 207, status: -70412 })
     expect(log).toEqual([
       'homekit: Upper camera: Home turned streaming off, so its snapshots are refused',
       expect.stringMatching(/^homekit: image request for Upper camera, 640x360, reason none: HTTP 207, status -70412 in \d+ ms$/),
     ])
-    await active?.handleSetRequest(1)
+    await streams[1]?.handleSetRequest(1)
     expect(log.at(-1)).toBe('homekit: Upper camera: Home turned streaming on')
     expect((await request(bridge, { 'resource-type': 'image', 'image-width': 640, 'image-height': 360, 'aid': acc.aid as number })).error).toBeUndefined()
   })

@@ -39,6 +39,10 @@ describe('accessory tree', () => {
     for (const cam of [3, 4]) expect(services(cam)).toContain(hap.Service.CameraRTPStreamManagement.UUID)
     const info = a.bridge.getService(hap.Service.AccessoryInformation) as hap.Service
     expect(info.getCharacteristic(hap.Characteristic.SerialNumber).value).toBe(identity.username)
+    // Home reads every bridged accessory's firmware on connect; they report core's, not hap-nodejs's 0.0.0.
+    const v0 = buildBridge({ identity, name: 'Kitchen', version: 'v0.3.1', deps: { ...d, hap } })
+    expect(v0.bridge.bridgedAccessories.map(x => x.getService(hap.Service.AccessoryInformation)?.getCharacteristic(hap.Characteristic.FirmwareRevision).value)).toEqual(Array(5).fill('0.3.1'))
+    for (const s of v0.stops) s()
     for (const s of [...a.stops, ...b.stops, ...other.stops]) s()
   })
 

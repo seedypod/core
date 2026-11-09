@@ -88,16 +88,24 @@ export function buildBridge(o: Pick<BridgeOptions, 'identity' | 'name' | 'versio
         ?.setCharacteristic(Characteristic.Manufacturer, 'seedypod')
         .setCharacteristic(Characteristic.Model, a.name)
         .setCharacteristic(Characteristic.SerialNumber, `${username}-${a.id}`)
+        .setCharacteristic(Characteristic.FirmwareRevision, firmware(o.version))
       for (const s of built.services) acc.addService(s)
       for (const c of built.controllers ?? []) acc.configureController(c)
-      const streaming = acc.getService(Service.CameraRTPStreamManagement)?.getCharacteristic(Characteristic.Active)
-      if (streaming) {
-        // hap-nodejs refuses every snapshot, without a word, while Home has the camera's streaming off.
-        const onChange = (c: { newValue: unknown }) => {
-          o.deps.log(`homekit: ${a.name}: Home turned streaming ${c.newValue ? 'on' : 'off'}${c.newValue ? '' : ', so its snapshots are refused'}`)
+      // hap-nodejs refuses every snapshot, without a word, once Home has all of a camera's streams off.
+      const streams = acc.services.filter(sv => sv.UUID === Service.CameraRTPStreamManagement.UUID).map(sv => sv.getCharacteristic(Characteristic.Active))
+      if (streams.length) {
+        const anyOn = () => streams.some(c => !!c.value)
+        let on = anyOn()
+        const onChange = () => {
+          // hap-nodejs starts them at `true` and Home writes 1 on connect: only a real switch is news.
+          if (anyOn() === on) return
+          on = !on
+          o.deps.log(`homekit: ${a.name}: Home turned streaming ${on ? 'on' : 'off'}${on ? '' : ', so its snapshots are refused'}`)
         }
-        streaming.on('change', onChange)
-        stops.push(() => void streaming.removeListener('change', onChange))
+        for (const c of streams) {
+          c.on('change', onChange)
+          stops.push(() => void c.removeListener('change', onChange))
+        }
       }
       bridge.addBridgedAccessory(acc)
     }
