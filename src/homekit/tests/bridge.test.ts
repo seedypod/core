@@ -35,7 +35,7 @@ describe('accessory tree', () => {
     const services = (i: number) => (accs[i] as hap.Accessory).services.map(s => s.UUID).filter(u => u !== hap.Service.AccessoryInformation.UUID)
     expect(services(0)).toEqual([hap.Service.Lightbulb.UUID])
     expect(services(1)).toEqual([hap.Service.Switch.UUID])
-    expect(services(2)).toEqual([hap.Service.TemperatureSensor.UUID, hap.Service.HumiditySensor.UUID, hap.Service.Battery.UUID, hap.Service.OccupancySensor.UUID])
+    expect(services(2)).toEqual([hap.Service.TemperatureSensor.UUID, hap.Service.HumiditySensor.UUID, hap.Service.Battery.UUID])
     for (const cam of [3, 4]) expect(services(cam)).toContain(hap.Service.CameraRTPStreamManagement.UUID)
     const info = a.bridge.getService(hap.Service.AccessoryInformation) as hap.Service
     expect(info.getCharacteristic(hap.Characteristic.SerialNumber).value).toBe(identity.username)
@@ -119,7 +119,7 @@ describe('publishBridge', () => {
     const unpublish = vi.spyOn(hap.Bridge.prototype, 'unpublish').mockRejectedValue(new Error('advertiser destroy failed'))
     const b = await publishBridge(options(d))
     await expect(b.unpublish()).resolves.toBeUndefined()
-    expect(log).toEqual(['homekit: mDNS cleanup failed after stop: advertiser destroy failed'])
+    expect(log).toEqual(['homekit: bridged Grow light, Pump, Sensors, Upper camera, Lower camera', 'homekit: mDNS cleanup failed after stop: advertiser destroy failed'])
 
     unpublish.mockImplementation(async function (this: hap.Bridge) {
       (this as unknown as { _server: unknown })._server = {}
