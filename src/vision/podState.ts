@@ -85,14 +85,19 @@ export function classifyPods(model: CnnModel, img: Rgba, pods: Record<number, Re
     const p = softmax(forward(model, cropInput(img, pods[slot] as Rect, input, buf)))
     let best = 0
     for (let i = 1; i < p.length; i++) if ((p[i] as number) > (p[best] as number)) best = i
-    const confidence = round3(p[best] as number)
-    const probabilities = Object.fromEntries(classes.map((c, i) => [c, round3(p[i] as number)]))
-    const detail = { state: classes[best], confidence, probabilities, revision }
-    return [
-      { slot, metric: 'pod_state', value: best, detail },
-      { slot, metric: 'pod_state_confidence', value: confidence },
-    ]
+    return podStateRows(slot, p, best, classes, revision)
   })
+}
+
+/** One pod's rows: the class index, its probability as the confidence, and every class's probability in `detail`. podvision's results (#191) are stored through this too. */
+export function podStateRows(slot: number, p: ArrayLike<number>, best: number, classes: string[], revision: string): PodResult[] {
+  const confidence = round3(p[best] as number)
+  const probabilities = Object.fromEntries(classes.map((c, i) => [c, round3(p[i] as number)]))
+  const detail = { state: classes[best], confidence, probabilities, revision }
+  return [
+    { slot, metric: 'pod_state', value: best, detail },
+    { slot, metric: 'pod_state_confidence', value: confidence },
+  ]
 }
 
 /** What the analyser listing says when it can't run. */
@@ -160,8 +165,12 @@ export function podStateFromText(text: string | null, missing: string = NO_WEIGH
   }
 }
 
-/** A learned analyser as it crosses to the vision worker: the weights file's text, and what it runs as. */
-export interface LearnedSpec { id: string, label: string, text: string | null, missing?: string }
+/**
+ * A learned analyser as it crosses to the vision worker: the weights file's
+ * text, and what it runs as. `path` is where the file is on disk, for
+ * podvision (#191); it is absent where there is no file (tests, the demo).
+ */
+export interface LearnedSpec { id: string, label: string, text: string | null, missing?: string, path?: string }
 
 export function learnedAnalyzers(specs: LearnedSpec[]): CaptureAnalyzer[] {
   return specs.map(s => podStateFromText(s.text, s.missing, { id: s.id, label: s.label }))

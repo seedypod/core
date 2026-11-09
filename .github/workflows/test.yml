@@ -53,6 +53,22 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
+      # The podvision tests run the real binary against core's forward pass (#191).
+      - name: Set up Rust
+        if: matrix.task.name == 'Unit Tests'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        if: matrix.task.name == 'Unit Tests'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hal
+
+      - name: Build podvision
+        if: matrix.task.name == 'Unit Tests'
+        run: cargo build -p podvision
+        working-directory: hal
+
       - name: Install browser
         # Playwright arrives with the first real e2e spec (Phase 4.3); until
         # then tests/browser/run.mjs is a plain Node smoke and needs no browser.
