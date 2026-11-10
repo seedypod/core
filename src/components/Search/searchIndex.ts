@@ -37,6 +37,7 @@ const PAGES: Record<string, { description: string, keywords: string }> = {
   '/': { description: 'The tower at a glance: light, water, air and alerts', keywords: 'dashboard overview status home tower 3d' },
   '/light': { description: 'Brightness, on and off, the manual hold and light curves', keywords: 'grow light led lamp brightness dim hold schedule timer curve sunrise sunset program' },
   '/water': { description: 'Tank level, running the pump and pump cycles', keywords: 'water tank reservoir pump level refill watering schedule timer cycle program' },
+  '/care': { description: 'Chores, the tank log, setup issues, starter rules and connecting an AI assistant', keywords: 'care chores feed top off refresh thin trim roots clean tank log nutrients setup check starter rules ai assistant agent claude mcp kelby' },
   '/autopilot': { description: 'Rules that react to readings, with backtests', keywords: 'automation automations rules backtest dry run kill switch' },
   '/grow': { description: 'Grow cycle, stages, reminders and the 30 pods', keywords: 'grow cycle pods plants harvest seedling stage tower' },
   '/plan': { description: 'Lay out pods by light zone and stagger sowing dates', keywords: 'plan planner layout light zone placement sow sowing succession catalog ycube seed' },

@@ -100,14 +100,14 @@ function NeedsYou() {
         <NeedRow color="var(--pod-ready)" title={`${ready.length} ready to harvest`} sub={names.length > 2 ? `${names.slice(0, 2).join(', ')}, +${names.length - 2}` : names.join(', ')} />
       )}
       {due.map(c => (
-        <NeedRow key={c.id} route={c.id === 'thin' ? '/grow' : '/water'} color="var(--pod-ready)" title={c.title} sub={c.reason} tag={c.basis === 'reading' ? undefined : 'calendar'} />
+        <NeedRow key={c.id} route="/care" color="var(--pod-ready)" title={c.title} sub={c.reason} tag={c.basis === 'reading' ? undefined : 'calendar'} />
       ))}
     </div>
   )
 }
 
 /** A pod's row; with `thumb` (its plant's picture) the status colour rides on the picture's corner. */
-function NeedRow({ to, route = '/grow', color, thumb, title, sub, tag }: { to?: number, route?: '/grow' | '/water', color: string, thumb?: ReactNode, title: string, sub: string, tag?: string }) {
+function NeedRow({ to, route = '/grow', color, thumb, title, sub, tag }: { to?: number, route?: '/grow' | '/care', color: string, thumb?: ReactNode, title: string, sub: string, tag?: string }) {
   return (
     <Link to={route} search={to ? { pod: to } : {}} className="flex gap-2.5 rounded-lg px-2.5 py-2 hover:bg-active/60">
       {thumb

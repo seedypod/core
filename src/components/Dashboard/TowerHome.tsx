@@ -1,6 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Camera, History } from 'lucide-react'
 import { useState } from 'react'
+import { CareSummary } from '@/src/components/Care/CareSummary'
 import { TowerView } from '@/src/components/Grow/TowerView'
 import { ageDays, podShown, SHOWN_TOKEN, type PodShown } from '@/src/components/Grow/towerLayout'
 import type { TowerPart } from '@/src/components/Grow/towerScene'
@@ -81,6 +82,7 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
           </span>
         ))}
       </div>
+      <CareSummary className="pt-0.5" />
     </div>
   )
 

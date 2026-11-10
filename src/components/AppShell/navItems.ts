@@ -1,4 +1,4 @@
-import { Activity, Bell, Camera, Cpu, Droplets, LayoutDashboard, LayoutGrid, Leaf, ScanEye, Settings, Sun, Wand2 } from 'lucide-react'
+import { Activity, Bell, Camera, Cpu, Droplets, LayoutDashboard, LayoutGrid, Leaf, ListChecks, ScanEye, Settings, Sun, Wand2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 export interface NavItem {
@@ -22,6 +22,7 @@ export const navItems: NavItem[] = [
   { to: '/', label: 'Home', icon: LayoutDashboard, group: 'garden', tab: true },
   { to: '/grow', label: 'Grow', icon: Leaf, group: 'garden', tab: true },
   { to: '/plan', label: 'Plan', icon: LayoutGrid, group: 'garden' },
+  { to: '/care', label: 'Care', icon: ListChecks, group: 'garden' },
   { to: '/light', label: 'Light', icon: Sun, group: 'control', tab: true },
   { to: '/water', label: 'Water', icon: Droplets, group: 'control', tab: true },
   { to: '/autopilot', label: 'Autopilot', icon: Wand2, group: 'control' },

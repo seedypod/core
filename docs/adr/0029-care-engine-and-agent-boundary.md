@@ -185,11 +185,14 @@ to act on them subscribes there, so a quiet tank costs no tokens.
 - Setup check: `src/care/setup.ts`. Alerts `setup_light_schedule`,
   `setup_pump_schedule` and `setup_water_sensor`; a **Setup** line on Status.
 - Tank action log: table `tank_actions` (migration 0014), `tank.*` router,
-  **Water → Tank log**.
+  **Care → Tank log** (first on Water).
 - Chores: `src/care/chores.ts`, with citations from `src/care/knowledge.ts`.
-  **Water → Chores** and **Needs you**. A reading that makes a chore due raises
+  **Care → Chores** (first on Water) and **Needs you**. A reading that makes a chore due raises
   `chore_top_off`, `chore_feed` or `chore_thin`; marking one done logs the
   action.
+- **Care** page (2026-11-10): chores, the tank log, the setup check, starter
+  rules and how to connect an MCP client, in one place; Home and Water show
+  one line of what's due and link to it.
 - Starter rules: `src/care/starters.ts`, **Autopilot → Starter rules**.
 - Engine: `src/care/engine.ts`, started with the other services in
   `src/server/bootstrap.ts`.
