@@ -1,4 +1,5 @@
 import { withUnit } from '@/src/lib/sensorMeta'
+import { toDisplay } from '@/src/lib/units'
 import { CalendarClock, MoreHorizontal, Play, Plus, Square } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -37,7 +38,7 @@ export function WaterPage() {
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const limits = system.data?.system?.limits
   const cfg = settings.data
-  const tank = s.water_level_pct?.value
+  const tank = s.water_level_pct && Math.round(s.water_level_pct.value)
   const cutoff = cutoffPct(limits?.waterLowCm, cfg?.waterFullCm, cfg?.waterEmptyCm)
   const cycles = (schedules.data ?? []).flatMap(x => asCycle(x) ?? []).sort((a, b) => a.spec.minute - b.spec.minute)
   const now = new Date()
@@ -62,16 +63,16 @@ export function WaterPage() {
         <div className="flex flex-col gap-3.5">
           <div className="flex items-baseline gap-2.5">
             <span className="font-mono text-[44px] font-medium leading-none">{tank === undefined ? '…' : `${tank}%`}</span>
-            {tank !== undefined && cfg && <span className="text-[13px] text-fg-2">{`≈ ${Math.round(cfg.tankCapacityL * tank / 10) / 10} of ${cfg.tankCapacityL} L`}</span>}
+            {tank !== undefined && cfg && <span className="text-[13px] text-fg-2">{`≈ ${toDisplay(Math.round(cfg.tankCapacityL * tank / 10) / 10, 'L').value} of ${withUnit(cfg.tankCapacityL, 'L')}`}</span>}
           </div>
           <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100}>
             <div className="h-full rounded-full bg-meter transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
             {cutoff !== null && <div className="absolute -top-1 h-[18px] w-px bg-pod-ready" style={{ left: `${cutoff}%` }} />}
           </div>
           <div className={AXIS}>
-            <span>{cfg ? `empty · ${cfg.waterEmptyCm} cm` : 'empty'}</span>
+            <span>{cfg ? `empty · ${withUnit(cfg.waterEmptyCm, 'cm')}` : 'empty'}</span>
             {cutoff !== null && <span className="text-pod-ready">{`pump cutoff ${cutoff}%`}</span>}
-            <span>{cfg ? `full · ${cfg.waterFullCm} cm` : 'full'}</span>
+            <span>{cfg ? `full · ${withUnit(cfg.waterFullCm, 'cm')}` : 'full'}</span>
           </div>
           <div className="flex flex-wrap gap-5 border-t border-line pt-2.5 font-mono text-[12px] text-fg-3">
             <span>
@@ -95,7 +96,7 @@ export function WaterPage() {
             ? <Button full icon={Square} className="py-2.5 text-sm" disabled={stop.isPending} onClick={() => stop.mutate()}>Stop</Button>
             : <Button full variant="primary" icon={Play} className="py-2.5 text-sm" disabled={!!p?.fault} onClick={() => runOnce.mutate({ durationS: Number(dur) })}>Run pump</Button>}
           {runOnce.error && <InlineError>{runOnce.error.message}</InlineError>}
-          {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${limits.pumpMaxRunS} s per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm ?? '—'} cm of water.`}</p>}
+          {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${limits.pumpMaxRunS} s per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.`}</p>}
         </div>
       </Card>
 

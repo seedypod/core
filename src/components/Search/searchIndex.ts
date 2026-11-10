@@ -51,7 +51,7 @@ const PAGES: Record<string, { description: string, keywords: string }> = {
 
 /** The Settings cards, linked by their anchor on the page. */
 const SETTINGS: ReadonlyArray<Omit<SearchEntry, 'crumbs' | 'href'> & { anchor: string }> = [
-  { id: 'unit', anchor: 'unit', title: 'Unit', description: 'Name, timezone and temperature unit', keywords: 'name timezone time zone celsius fahrenheit degrees units', icon: Settings },
+  { id: 'unit', anchor: 'unit', title: 'Unit', description: 'Name, timezone and units (°C, L, cm or °F, gal, in)', keywords: 'name timezone time zone celsius fahrenheit degrees units metric imperial us gallons litres liters inches centimetres', icon: Settings },
   { id: 'tank', anchor: 'tank', title: 'Tank calibration', description: 'Distance to the water when full and when empty, and the capacity', keywords: 'tank calibration full empty capacity litres liters distance ultrasonic water level', icon: Ruler },
   { id: 'reminders', anchor: 'reminders', title: 'Grow reminders', description: 'Days to thinning, root check, harvest and nutrients', keywords: 'reminders thinning root check harvest nutrients feed days', icon: Timer },
   { id: 'cameras', anchor: 'cameras', title: 'Capture interval', description: 'How often the cameras take a still, and analysis masks', keywords: 'camera capture interval timelapse masks artifacts photos', icon: Camera },
