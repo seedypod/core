@@ -65,6 +65,22 @@ pub struct Timing {
     pub forward: u64,
 }
 
+/// Flush subnormal floats to zero on 32-bit ARM. The Pi Zero W's VFP11 hands every
+/// subnormal operand or result to the kernel's support code, and the shipped model
+/// has hundreds of subnormal weights (405 in its last conv): found on the unit
+/// (#191), where the forward pass ran 3–5× slower for it. Values that small move no
+/// logit by anything a float32 sum can hold, so results stay core's runner's.
+pub fn flush_subnormals() {
+    #[cfg(target_arch = "arm")]
+    // SAFETY: sets only FPSCR's flush-to-zero (bit 24) and default-NaN (bit 25) mode bits, for this thread.
+    unsafe {
+        let mut fpscr: u32;
+        std::arch::asm!("vmrs {0}, fpscr", out(reg) fpscr);
+        fpscr |= (1 << 24) | (1 << 25);
+        std::arch::asm!("vmsr fpscr, {0}", in(reg) fpscr);
+    }
+}
+
 /// Score one still. `pods` are fractions of the frame, as core's pod regions are.
 pub fn run(
     bytes: &[u8],
@@ -72,6 +88,7 @@ pub fn run(
     models: &[(String, Model)],
     scale: Scale,
 ) -> Result<Response> {
+    flush_subnormals();
     let started = Instant::now();
     let inputs: Vec<_> = models.iter().map(|(_, m)| &m.input).collect();
     let d = decode(bytes, scale, pods, &inputs)?;
