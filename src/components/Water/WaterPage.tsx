@@ -39,7 +39,7 @@ export function WaterPage() {
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const limits = system.data?.system?.limits
   const cfg = settings.data
-  const tank = s.water_level_pct?.value
+  const tank = s.water_level_pct && Math.round(s.water_level_pct.value)
   const cutoff = cutoffPct(limits?.waterLowCm, cfg?.waterFullCm, cfg?.waterEmptyCm)
   const cycles = (schedules.data ?? []).flatMap(x => asCycle(x) ?? []).sort((a, b) => a.spec.minute - b.spec.minute)
   const now = new Date()

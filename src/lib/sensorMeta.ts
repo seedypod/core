@@ -27,9 +27,9 @@ export const SENSOR_META: Record<SensorId, SensorMeta> = {
   water_temp: { label: 'Water temp', icon: Gauge, group: 'water-quality', color: 'var(--chart-temp)' },
 }
 
-/** A value and its unit in the display units: `22.5°C` and `53%` close up, `7 cm` and `3.1 W` spaced; `72.5°F` and `2.8 in` in US units. */
+/** A value and its unit in the display units, percentages whole: `22.5°C` and `53%` close up, `7 cm` and `3.1 W` spaced; `72.5°F` and `2.8 in` in US units. */
 export function withUnit(value: number | string, unit: string): string {
-  if (typeof value === 'number') ({ value, unit } = toDisplay(value, unit))
+  if (typeof value === 'number') ({ value, unit } = toDisplay(unit === '%' ? Math.round(value) : value, unit))
   if (!unit) return `${value}`
   return `${value}${unit.startsWith('°') || unit === '%' ? unit : ` ${unit}`}`
 }

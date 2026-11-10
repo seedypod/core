@@ -33,6 +33,7 @@ describe('display units', () => {
     expect(withUnit(26.2, '°C')).toBe('79.2°F')
     expect(withUnit(12.7, 'cm')).toBe('5 in')
     expect(withUnit(53, '%')).toBe('53%')
+    expect(withUnit(48.67, '%')).toBe('49%')
     // Already-formatted text isn't converted.
     expect(withUnit('—', '°C')).toBe('—°C')
   })
