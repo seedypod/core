@@ -68,7 +68,7 @@ prints every key with its default; the important ones:
 | `[i2c]` | `ina219_shunt_ohms`, `ina219_max_amps` | 0.08, 3.2 | Calibration register derived from these. |
 | `[limits]` | `pump_max_run_s`, `pump_max_duty` | 900, 30 | ADR-0009. |
 | `[limits]` | `water_low_cm`, `over_temp_c` | 16, 65 | Comment out to disable an interlock. |
-| `[limits]` | `distance_samples`, `distance_timeout_ms` | 5, 60 | Median of N pings. |
+| `[limits]` | `distance_samples`, `distance_timeout_ms`, `distance_gap_ms` | 5, 60, 60 | Median of N pings, taken `distance_gap_ms` apart so one ping doesn't hear the last one's echo. With an even count of answers the lower middle one counts, since stray echoes only read long. Fewer than half answering marks the distance, and the level from it, `suspect`. |
 | `[tank]` | `full_cm`, `empty_cm` | 5, 20 | Geometry for `water_level_pct`. |
 | `[button]` | `debounce_ms`, `double_window_ms`, `long_press_ms`, `setup_hold_ms`, `active_low`, `pump_run_s` | 30, 400, 1000, 10000, true, 300 | |
 | `[dosing]` | `enabled` | **false** | Phase 6.3, ADR-0014: off until you turn it on. |

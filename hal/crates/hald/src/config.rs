@@ -86,6 +86,8 @@ pub struct Limits {
     pub over_temp_c: Option<f64>,
     pub distance_samples: usize,
     pub distance_timeout_ms: u64,
+    /// Quiet time between pings, so one doesn't hear the last one's echo.
+    pub distance_gap_ms: u64,
 }
 
 /// Distance from the ranger to the surface when full / empty (cm).
@@ -349,6 +351,7 @@ impl Default for Limits {
             over_temp_c: Some(65.0),
             distance_samples: 5,
             distance_timeout_ms: 60,
+            distance_gap_ms: 60,
         }
     }
 }
@@ -673,6 +676,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # over_temp_c = 65.0      # PCB cutoff; comment out to disable
 # distance_samples = 5    # median of N pings
 # distance_timeout_ms = 60
+# distance_gap_ms = 60    # between pings, so one doesn't hear the last one's echo
 
 [tank]
 # full_cm = 5.0           # ranger-to-surface distance when full
