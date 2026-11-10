@@ -31,6 +31,12 @@ export const LoginSummary = z.object({
   activeAlerts: z.number(),
   /** Seconds since the newest still from either camera. */
   captureAgeS: z.number().nullable(),
+  /** Where the learned pod-state models run: natively in podvision (#191), or in TypeScript when it isn't installed. */
+  visionRunner: z.enum(['podvision', 'typescript']),
+  /** podvision failed on the last still it was given, which then ran in TypeScript. */
+  visionFallback: z.boolean(),
+  /** Enabled pod-state model revisions with weights to run; null where core keeps no registry. */
+  podStateModels: z.number().nullable(),
 })
 export type LoginSummary = z.infer<typeof LoginSummary>
 
@@ -67,5 +73,8 @@ export function loginSummary(ctx: Context): LoginSummary {
     staleSensors: stale.length,
     activeAlerts: ctx.store.alerts.list({ activeOnly: true }).length,
     captureAgeS: ageS(capture && Date.parse(capture.ts), now),
+    visionRunner: ctx.podvision ? 'podvision' : 'typescript',
+    visionFallback: !!ctx.podvision?.lastError(),
+    podStateModels: ctx.models ? ctx.models.specs().filter(s => s.text !== null).length : null,
   }
 }

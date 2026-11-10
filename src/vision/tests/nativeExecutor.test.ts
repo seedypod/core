@@ -142,6 +142,19 @@ describe('native executor', () => {
     })
   }
 
+  it('remembers why the last still fell back, until podvision runs one', async () => {
+    const ex = createNativeExecutor({ bin: fake({ exit: 1, stderr: 'podvision: not a decodable JPEG\n' }), fallback, learned: [shipped], log })
+    expect(ex.lastError()).toBeNull()
+    await ex.run(job(['pod-state']))
+    expect(ex.lastError()).toContain('not a decodable JPEG')
+    // A still podvision isn't given leaves it as it was.
+    await ex.run(job(['exg-otsu']))
+    expect(ex.lastError()).toContain('not a decodable JPEG')
+    fake({ stdout: answer() })
+    await ex.run(job(['pod-state']))
+    expect(ex.lastError()).toBeNull()
+  })
+
   it('kills podvision when it runs past the timeout', async () => {
     const ex = createNativeExecutor({ bin: fake({ stdout: answer(), sleep: 5000 }), fallback, learned: [shipped], log, timeoutMs: 300 })
     const started = Date.now()

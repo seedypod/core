@@ -121,12 +121,15 @@ export interface NativeExecutor {
   run: Executor
   /** Change the learned analysers podvision runs (#186), with the worker's. */
   configure(learned: LearnedSpec[]): void
+  /** Why the last still podvision was given went to TypeScript instead, or null if it ran there or hasn't run yet. */
+  lastError(): string | null
 }
 
 const isJpeg = (b: Uint8Array) => b.byteLength >= 4 && b[0] === 0xFF && b[1] === 0xD8
 
 export function createNativeExecutor(o: NativeExecutorOptions): NativeExecutor {
   let specs = o.learned ?? []
+  let lastError: string | null = null
   const log = o.log ?? (m => console.warn(m))
 
   /** The learned analysers of this job that podvision can run: enabled, listed here, with a file on disk. */
@@ -141,6 +144,7 @@ export function createNativeExecutor(o: NativeExecutorOptions): NativeExecutor {
     let scored: JobOutput
     try {
       const out = await runPodvision(o.bin, job.bytes, job.regions ?? podRegions(job.camera), native, o.timeoutMs)
+      lastError = null
       if (out.damaged) return DAMAGED
       scored = native.map((n) => {
         const m = out.models.find(x => x.id === n.id)
@@ -150,6 +154,7 @@ export function createNativeExecutor(o: NativeExecutorOptions): NativeExecutor {
       })
     }
     catch (e) {
+      lastError = (e as Error).message
       log(`podvision: ${(e as Error).message}; running ${native.map(n => n.id).join(', ')} in TypeScript`)
       return o.fallback(job)
     }
@@ -167,5 +172,6 @@ export function createNativeExecutor(o: NativeExecutorOptions): NativeExecutor {
     configure(next) {
       specs = next
     },
+    lastError: () => lastError,
   }
 }
