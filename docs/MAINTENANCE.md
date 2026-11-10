@@ -244,6 +244,10 @@ sudo seedypod-update --now              # update, with its log on the terminal
 sudo seedypod-update --rollback         # put the previous version back
 ```
 
+The SSH login screen shows what the last check found, from the web or from
+`--check`, and how long ago it ran: `update  dev@aed156b available · checked 2h
+ago`, or `up to date`. It doesn't check by itself.
+
 It replaces core and `hald`, not the rest of what the installers set up
 (systemd units, Node, the port 80 forward). When a release needs those, or
 the helper refuses one, rerun the installers. They keep your config and data:

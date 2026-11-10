@@ -37,6 +37,14 @@ export interface UpdateCheck {
   problem: string | null
 }
 
+/** What `check.json` keeps of the helper's last check. */
+export interface LastCheck {
+  at: string
+  channel: UpdateChannel
+  available: { tag: string, commit: string, name: string }
+  problem: string | null
+}
+
 export interface UpdateInfo {
   available: boolean
   channel: UpdateChannel
@@ -128,6 +136,18 @@ export class UpdateClient {
   status(): UpdateStatus | null {
     const s = this.json<UpdateStatus>('status.json')
     return s && (UPDATE_STATES as readonly string[]).includes(s.state) ? s : null
+  }
+
+  /**
+   * The helper's last check on this channel, or null if there's been none. Whether
+   * it's newer is worked out against the build core runs, so an update since
+   * doesn't leave it saying there's one to install.
+   */
+  lastCheck(): (LastCheck & { updateAvailable: boolean }) | null {
+    const c = this.json<LastCheck>('check.json')
+    if (!c || c.channel !== this.channel() || typeof c.available?.commit !== 'string' || Number.isNaN(Date.parse(c.at))) return null
+    const commit = this.o.version.split('@')[1]
+    return { ...c, updateAvailable: !commit || !c.available.commit.startsWith(commit) }
   }
 
   channel(): UpdateChannel {

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { HalSnapshot } from '../../hardware/types'
 import { SimHal } from '../../hardware/sim'
@@ -6,6 +9,7 @@ import { SimWifi } from '../../network/wifi'
 import { MemoryStore } from '../../store/memory'
 import { createCore, type CoreOptions } from '../bootstrap'
 import type { ModelRegistry } from '../../vision/registry'
+import { UpdateClient } from '../../update/client'
 import { openApiDocument } from '../openapi'
 import { appRouter } from '../routers/app'
 import { createCallerFactory } from '../trpc'
@@ -64,6 +68,9 @@ describe('system.loginSummary', () => {
       visionRunner: 'typescript',
       visionFallback: false,
       podStateModels: null,
+      updateState: null,
+      updateTo: null,
+      updateCheckedAgeS: null,
     })
   })
 
@@ -101,6 +108,9 @@ describe('system.loginSummary', () => {
       visionRunner: 'typescript',
       visionFallback: false,
       podStateModels: null,
+      updateState: null,
+      updateTo: null,
+      updateCheckedAgeS: null,
     })
   })
 
@@ -111,6 +121,20 @@ describe('system.loginSummary', () => {
     expect(await c.system.loginSummary()).toMatchObject({ visionRunner: 'podvision', visionFallback: false, podStateModels: 2 })
     lastError = 'timed out after 60000 ms'
     expect(await c.system.loginSummary()).toMatchObject({ visionFallback: true })
+  })
+
+  it('says what the last update check found, against the build core runs', async () => {
+    const work = mkdtempSync(join(tmpdir(), 'login-update-'))
+    const check = (commit: string, tag = 'dev-latest') => writeFileSync(join(work, 'check.json'), JSON.stringify({ at: iso(7200), channel: 'dev', available: { tag, commit, name: tag }, problem: null }))
+    const { c } = rig(undefined, { update: new UpdateClient({ command: ['true'], workDir: work, version: 'dev@aaaaaaa' }) })
+    expect(await c.system.loginSummary()).toMatchObject({ updateState: 'unchecked', updateTo: null, updateCheckedAgeS: null })
+    check(`bbbbbbb${'0'.repeat(33)}`)
+    expect(await c.system.loginSummary()).toMatchObject({ updateState: 'available', updateTo: 'dev@bbbbbbb', updateCheckedAgeS: 7200 })
+    check(`aaaaaaa${'0'.repeat(33)}`)
+    expect(await c.system.loginSummary()).toMatchObject({ updateState: 'current', updateTo: null, updateCheckedAgeS: 7200 })
+    check('c'.repeat(40), 'v1.2.0')
+    expect(await c.system.loginSummary()).toMatchObject({ updateTo: 'v1.2.0' })
+    rmSync(work, { recursive: true, force: true })
   })
 
   it('is a GET in the REST API, where login-stats reads it', () => {

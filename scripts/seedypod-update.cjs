@@ -53,6 +53,8 @@ const STATUS = path.join(P.work, 'status.json')
 const LOG = path.join(P.work, 'update.log')
 const CHANNEL = path.join(P.work, 'channel')
 const INSTALLED = path.join(P.work, 'installed.json')
+// The last check's answer, which core shows on the SSH login screen without going online.
+const CHECKED = path.join(P.work, 'check.json')
 const PLAN = path.join(P.work, 'plan.json')
 const LOCK = path.join(P.work, 'lock')
 const DL = path.join(P.work, 'downloads')
@@ -201,12 +203,20 @@ async function check() {
   const absent = missing.filter(n => !release.assets[n])
   const unchecked = missing.filter(n => release.assets[n] && !release.assets[n].digest && !release.assets[`${n}.sha256`])
   const fresh = !here.commit || !release.commit.startsWith(here.commit)
+  const available = { tag: release.tag, commit: release.commit, name: release.name, publishedAt: release.publishedAt, url: release.url }
+  const problem = absent.length ? `the release has no ${absent.join(' or ')}` : unchecked.length ? `the release has no checksum for ${unchecked.join(' or ')}` : null
+  try {
+    writeJson(CHECKED, { at: new Date().toISOString(), channel: ch, available, problem })
+  }
+  catch {
+    // Only the login screen reads it.
+  }
   return {
     channel: ch,
     installed: here,
-    available: { tag: release.tag, commit: release.commit, name: release.name, publishedAt: release.publishedAt, url: release.url },
+    available,
     updateAvailable: fresh,
-    problem: absent.length ? `the release has no ${absent.join(' or ')}` : unchecked.length ? `the release has no checksum for ${unchecked.join(' or ')}` : null,
+    problem,
     release,
   }
 }

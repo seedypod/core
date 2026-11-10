@@ -114,6 +114,23 @@ elif [ -n "$summary" ]; then
 fi
 [ "${#services[@]}" -gt 0 ] && emit status "${services[@]}"
 
+# The last update check, which runs only when someone asks (ADR 0026), and how to act on it here.
+if pick updateState; then
+  check=$v
+  updates=()
+  case "$check" in
+    available) pick updateTo && updates+=("warn:$v available") || updates+=("warn:update available") ;;
+    current) updates+=("ok:up to date") ;;
+    *) updates+=("-:not checked") ;;
+  esac
+  pick updateCheckedAgeS && ago "$v" && updates+=("dim:checked $r")
+  case "$check" in
+    available) updates+=("dim:sudo seedypod-update --now") ;;
+    unchecked) updates+=("dim:sudo seedypod-update --check") ;;
+  esac
+  emit update "${updates[@]}"
+fi
+
 up=()
 if read -r secs _ < "$root/proc/uptime" && secs=${secs%%.*} && [[ $secs =~ ^[0-9]+$ ]]; then
   d=$((secs / 86400)) h=$((secs % 86400 / 3600)) m=$((secs % 3600 / 60))

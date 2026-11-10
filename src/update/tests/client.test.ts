@@ -74,6 +74,20 @@ describe('UpdateClient', () => {
     await expect(none.check()).rejects.toMatchObject({ code: 'unavailable' })
   })
 
+  it('reads the last check, newer or not against the build core runs, and only for this channel', () => {
+    const c = new UpdateClient({ command: helper({ ok: true }), workDir: work, version: 'dev@aaaaaaa' })
+    expect(c.lastCheck()).toBeNull()
+    const check = (commit: string, channel = 'dev') => writeFileSync(join(work, 'check.json'), JSON.stringify({ at: '2026-11-10T10:00:00Z', channel, available: { tag: 'dev-latest', commit, name: 'Dev (latest)' }, problem: null }))
+    check('b'.repeat(40))
+    expect(c.lastCheck()).toMatchObject({ at: '2026-11-10T10:00:00Z', available: { commit: 'b'.repeat(40) }, updateAvailable: true })
+    check(`aaaaaaa${'c'.repeat(33)}`)
+    expect(c.lastCheck()).toMatchObject({ updateAvailable: false })
+    check('b'.repeat(40), 'stable')
+    expect(c.lastCheck()).toBeNull()
+    writeFileSync(join(work, 'check.json'), '{"at": "never"')
+    expect(c.lastCheck()).toBeNull()
+  })
+
   it('reads the channel, the last run, its log and the release tag from the helper\'s files', () => {
     const c = new UpdateClient({ command: helper({ ok: true }), workDir: work, version: 'main@bbbbbbb' })
     expect(c.info()).toEqual({ available: true, channel: 'stable', tag: null, status: null, log: [] })

@@ -140,7 +140,9 @@ Core still never connects to the internet. The helper does, only when
 someone on the LAN asks it to:
 
 - **Settings → Update → Check** runs `--check`: two GET requests to
-  `api.github.com` (the release, and its tag's commit).
+  `api.github.com` (the release, and its tag's commit). The helper keeps the
+  answer in `check.json`, so the SSH login screen can say what it found
+  without going online.
 - **Update** runs `--start`: those two again, then downloads from
   `github.com/seedypod/core/releases/download/`, which redirects to GitHub's
   asset storage. If dependencies changed, pnpm fetches packages from the npm
