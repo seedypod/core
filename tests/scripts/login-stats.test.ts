@@ -28,6 +28,7 @@ const SUMMARY = {
   tankPct: 18.17, airC: 26.2, humidityPct: 50.4, boardC: 36,
   readingAgeS: 4, staleSensors: 1, activeAlerts: 2, captureAgeS: 2640,
   visionRunner: 'podvision', visionFallback: false, podStateModels: 1,
+  updateState: 'available', updateTo: 'dev@aed156b', updateCheckedAgeS: 7200,
 }
 
 let dir: string
@@ -108,6 +109,7 @@ describe('login-stats', () => {
       ['unit', '-:gardyn-db753a85', 'dim:gardyn 3.0'],
       ['web', '-:http://192.168.2.177:3000'],
       ['status', 'ok:core up', 'ok:hald up'],
+      ['update', 'warn:dev@aed156b available', 'dim:checked 2h ago', 'dim:sudo seedypod-update --now'],
       ['uptime', '-:1d 21h', 'dim:load 2.10'],
       ['outputs', 'ok:light on 80%', '-:pump off'],
       ['tank', '-:18%'],
@@ -130,6 +132,15 @@ describe('login-stats', () => {
     expect((await stats()).facts).toContainEqual(['vision', '-:TypeScript', 'dim:no model'])
     core.body = { ...SUMMARY, podStateModels: null }
     expect((await stats()).facts).toContainEqual(['vision', 'ok:podvision'])
+  })
+
+  it('says what the last update check found, and how to act on it', async () => {
+    core.body = { ...SUMMARY, updateState: 'current', updateTo: null }
+    expect((await stats()).facts).toContainEqual(['update', 'ok:up to date', 'dim:checked 2h ago'])
+    core.body = { ...SUMMARY, updateState: 'unchecked', updateTo: null, updateCheckedAgeS: null }
+    expect((await stats()).facts).toContainEqual(['update', '-:not checked', 'dim:sudo seedypod-update --check'])
+    core.body = { ...SUMMARY, updateState: null, updateTo: null, updateCheckedAgeS: null }
+    expect((await stats()).facts.map(f => f[0])).not.toContain('update')
   })
 
   it('drops the port when port 80 forwards to core, and brackets IPv6', async () => {
@@ -202,7 +213,7 @@ describe('login-stats', () => {
     rmSync(join(bin, 'vcgencmd'))
     core.body = { ...SUMMARY, unitId: null, tankPct: null, captureAgeS: null, airC: null, humidityPct: null }
     const { facts } = await stats({ SSH_CONNECTION: undefined })
-    expect(facts.map(f => f[0])).toEqual(['version', 'status', 'outputs', 'board', 'vision', 'sensors', 'alerts', 'disk'])
+    expect(facts.map(f => f[0])).toEqual(['version', 'status', 'update', 'outputs', 'board', 'vision', 'sensors', 'alerts', 'disk'])
     expect(facts).toContainEqual(['status', 'ok:core up', 'ok:hald up'])
     expect(facts).toContainEqual(['board', '-:36°C'])
   })
@@ -224,8 +235,8 @@ describe('login-logo with login-stats', () => {
     expect(after).toContain('\x1b[0m\r\n\r\n\r\x1b[46C\x1b[38;5;72munit    \x1b[0mgardyn-db753a85\r\n')
     expect(after).toContain('\x1b[38;5;72mstatus  \x1b[0m\x1b[38;5;114mcore up\x1b[0m\x1b[38;5;245m · \x1b[0m\x1b[38;5;114mhald up\x1b[0m')
     expect(after).toContain('\x1b[38;5;221m2 active\x1b[0m')
-    // Fifteen facts on rows 4 to 18 fit beside the 20-row logo: back to its corner, then below it.
-    expect(after.endsWith('power   \x1b[0m\x1b[38;5;114mok\x1b[0m\r\x1b[18A\x1b[20B\r\r\n\x1b[0m\x1b[?25h')).toBe(true)
+    // Sixteen facts on rows 4 to 19 fit beside the 20-row logo: back to its corner, then below it.
+    expect(after.endsWith('power   \x1b[0m\x1b[38;5;114mok\x1b[0m\r\x1b[19A\x1b[20B\r\r\n\x1b[0m\x1b[?25h')).toBe(true)
   })
 
   it('carries on past the bottom of the logo when there are more facts than rows', async () => {
@@ -284,6 +295,7 @@ describe('login-logo with login-stats', () => {
       'unit    gardyn-db753a85 · gardyn 3.0',
       'web     http://192.168.2.177:3000',
       'status  core up · hald up',
+      'update  dev@aed156b available · checked 2h ago · sudo seedypod-update --now',
       'uptime  1d 21h · load 2.10',
       'outputs light on 80% · pump off',
       'tank    18%',

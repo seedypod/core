@@ -37,6 +37,12 @@ export const LoginSummary = z.object({
   visionFallback: z.boolean(),
   /** Enabled pod-state model revisions with weights to run; null where core keeps no registry. */
   podStateModels: z.number().nullable(),
+  /** The last update check (ADR 0026), which only runs when someone asks; null where the update helper isn't installed. */
+  updateState: z.enum(['unchecked', 'current', 'available']).nullable(),
+  /** What the channel had at that check, when it's newer than core: a vX.Y.Z tag, or dev@commit for dev-latest. */
+  updateTo: z.string().nullable(),
+  /** Seconds since that check. */
+  updateCheckedAgeS: z.number().nullable(),
 })
 export type LoginSummary = z.infer<typeof LoginSummary>
 
@@ -54,6 +60,7 @@ export function loginSummary(ctx: Context): LoginSummary {
     const r = s[id]
     return !r || r.quality !== 'good' || now - Date.parse(r.ts) > SENSOR_STALE_MS
   })
+  const check = ctx.update?.available ? ctx.update.lastCheck() : null
   return {
     coreVersion: ctx.version,
     unitId: snap.system?.unitId ?? null,
@@ -76,5 +83,8 @@ export function loginSummary(ctx: Context): LoginSummary {
     visionRunner: ctx.podvision ? 'podvision' : 'typescript',
     visionFallback: !!ctx.podvision?.lastError(),
     podStateModels: ctx.models ? ctx.models.specs().filter(s => s.text !== null).length : null,
+    updateState: !ctx.update?.available ? null : !check ? 'unchecked' : check.updateAvailable ? 'available' : 'current',
+    updateTo: check?.updateAvailable ? (check.available.tag === 'dev-latest' ? `dev@${check.available.commit.slice(0, 7)}` : check.available.tag) : null,
+    updateCheckedAgeS: check ? ageS(Date.parse(check.at), now) : null,
   }
 }

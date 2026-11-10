@@ -218,6 +218,8 @@ describe('checking', () => {
     const r = await run('--check')
     expect(r.code).toBe(0)
     expect(r.out).toMatchObject({ ok: true, channel: 'dev', installed: { commit: OLD }, available: { tag: 'dev-latest', commit: SHA }, updateAvailable: true, problem: null })
+    // Kept for the SSH login screen.
+    expect(JSON.parse(readFileSync(work('check.json'), 'utf8'))).toMatchObject({ channel: 'dev', available: { tag: 'dev-latest', commit: SHA }, problem: null })
     await run('--channel', 'stable')
     expect((await run('--check')).out).toMatchObject({ channel: 'stable', available: { tag: 'v1.2.0' } })
   })
