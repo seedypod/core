@@ -344,8 +344,12 @@ pub struct Scratch([Vec<f32>; 2]);
 
 /// conv3x3 + ReLU, HWC, stride 1, zero padding 1. Weights [out][ky][kx][in].
 ///
-/// One output channel at a time, summed in a register: the Pi Zero's VFP has no
-/// vector unit to keep many sums at once, so a load and a multiply-add per weight is the floor.
+/// Four output channels at a time, swept over the whole map before the next
+/// four. Their weights (at most 4 × 9 × 64 floats) then stay in the Pi Zero's
+/// 16 KB L1 cache instead of every weight streaming from RAM once per pixel,
+/// and the four independent sums keep the VFP, which has no vector unit and a
+/// long multiply-add latency, busy. Each sum adds its terms in cnn.ts's order:
+/// bias, then the window row by row, channels innermost.
 #[allow(clippy::too_many_arguments)]
 fn conv3x3(
     src: &[f32],
@@ -357,24 +361,57 @@ fn conv3x3(
     bias: &[f32],
     dst: &mut [f32],
 ) {
-    for y in 0..h {
-        let (ky0, ky1) = (usize::from(y == 0), if y + 1 == h { 2 } else { 3 });
-        for x in 0..w {
-            let (kx0, kx1) = (usize::from(x == 0), if x + 1 == w { 2 } else { 3 });
-            let o = (y * w + x) * cout;
-            for k in 0..cout {
-                let kw = &wt[k * 9 * cin..(k + 1) * 9 * cin];
+    let tap = 9 * cin;
+    // The window's rows and columns inside the map: (first, last + 1) of ky and of kx.
+    let rows = |y: usize| (usize::from(y == 0), if y + 1 == h { 2 } else { 3 });
+    let cols = |x: usize| (usize::from(x == 0), if x + 1 == w { 2 } else { 3 });
+    let mut k = 0;
+    while k + 4 <= cout {
+        let (w0, rest) = wt[k * tap..(k + 4) * tap].split_at(tap);
+        let (w1, rest) = rest.split_at(tap);
+        let (w2, w3) = rest.split_at(tap);
+        for y in 0..h {
+            let (ky0, ky1) = rows(y);
+            for x in 0..w {
+                let (kx0, kx1) = cols(x);
+                let mut s = [bias[k], bias[k + 1], bias[k + 2], bias[k + 3]];
+                for ky in ky0..ky1 {
+                    // One row of the window is contiguous in HWC: (kx1 − kx0) pixels × cin channels.
+                    let start = ((y + ky - 1) * w + x + kx0 - 1) * cin;
+                    let px = &src[start..start + (kx1 - kx0) * cin];
+                    let t = (ky * 3 + kx0) * cin..(ky * 3 + kx1) * cin;
+                    let (a, b, c, d) = (&w0[t.clone()], &w1[t.clone()], &w2[t.clone()], &w3[t]);
+                    for i in 0..px.len() {
+                        let v = px[i];
+                        s[0] += v * a[i];
+                        s[1] += v * b[i];
+                        s[2] += v * c[i];
+                        s[3] += v * d[i];
+                    }
+                }
+                let o = (y * w + x) * cout + k;
+                for (d, v) in dst[o..o + 4].iter_mut().zip(s) {
+                    *d = if v > 0.0 { v } else { 0.0 };
+                }
+            }
+        }
+        k += 4;
+    }
+    for k in k..cout {
+        let wk = &wt[k * tap..(k + 1) * tap];
+        for y in 0..h {
+            let (ky0, ky1) = rows(y);
+            for x in 0..w {
+                let (kx0, kx1) = cols(x);
                 let mut s = bias[k];
                 for ky in ky0..ky1 {
-                    let yy = y + ky - 1;
-                    // One row of the window is contiguous in HWC: (kx1 − kx0) pixels × cin channels.
-                    let px = &src[(yy * w + x + kx0 - 1) * cin..(yy * w + x + kx1 - 1) * cin];
-                    let taps = &kw[(ky * 3 + kx0) * cin..(ky * 3 + kx1) * cin];
-                    for (a, b) in px.iter().zip(taps) {
+                    let start = ((y + ky - 1) * w + x + kx0 - 1) * cin;
+                    let px = &src[start..start + (kx1 - kx0) * cin];
+                    for (a, b) in px.iter().zip(&wk[(ky * 3 + kx0) * cin..(ky * 3 + kx1) * cin]) {
                         s += a * b;
                     }
                 }
-                dst[o + k] = if s > 0.0 { s } else { 0.0 };
+                dst[(y * w + x) * cout + k] = if s > 0.0 { s } else { 0.0 };
             }
         }
     }
