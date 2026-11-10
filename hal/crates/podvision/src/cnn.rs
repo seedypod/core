@@ -2,10 +2,10 @@
 //! `src/vision/cnn.ts` runs: conv3x3 (+ ReLU), maxpool2, gap and dense, on
 //! height × width × channels (HWC) activations.
 //!
-//! The file stores a conv3x3 weight as [out][ky][kx][in]. Here it is
-//! transposed to [ky][kx][in][out] once at load, so the inner loop adds one
-//! input value times a contiguous row of weights into every output channel's
-//! sum. Sums are f32, as PyTorch's are; the parity fixture holds to 1e-4.
+//! The file stores a conv3x3 weight as [out][ky][kx][in], so for one output
+//! channel each row of the 3×3 window is one contiguous run of weights against
+//! one contiguous run of the HWC input. Sums are f32, as PyTorch's are; the
+//! parity fixture holds to 1e-4.
 
 use std::collections::HashMap;
 
@@ -77,7 +77,7 @@ struct ModelFile {
 }
 
 enum Layer {
-    /// Weights [ky][kx][in][out].
+    /// Weights [out][ky][kx][in], as the file stores them.
     Conv3x3 {
         cin: usize,
         out: usize,
@@ -203,23 +203,15 @@ impl Model {
                     if *cin != c {
                         bail!("layer {i} (conv3x3) takes {cin} channels, gets {c}");
                     }
-                    let raw = tensor(&file, weight, &[*out, 3, 3, *cin])?;
+                    let cw = tensor(&file, weight, &[*out, 3, 3, *cin])?;
                     let b = tensor(&file, bias, &[*out])?;
-                    params += raw.len() + b.len();
-                    let mut wt = vec![0f32; raw.len()];
-                    for k in 0..*out {
-                        for tap in 0..9 {
-                            for ch in 0..*cin {
-                                wt[(tap * cin + ch) * out + k] = raw[(k * 9 + tap) * cin + ch];
-                            }
-                        }
-                    }
+                    params += cw.len() + b.len();
                     c = *out;
                     biggest = biggest.max(h * w * c);
                     Layer::Conv3x3 {
                         cin: *cin,
                         out: *out,
-                        w: wt,
+                        w: cw,
                         b,
                     }
                 }
@@ -350,7 +342,10 @@ impl Model {
 
 pub struct Scratch([Vec<f32>; 2]);
 
-/// conv3x3 + ReLU, HWC, stride 1, zero padding 1. Weights [ky][kx][in][out].
+/// conv3x3 + ReLU, HWC, stride 1, zero padding 1. Weights [out][ky][kx][in].
+///
+/// One output channel at a time, summed in a register: the Pi Zero's VFP has no
+/// vector unit to keep many sums at once, so a load and a multiply-add per weight is the floor.
 #[allow(clippy::too_many_arguments)]
 fn conv3x3(
     src: &[f32],
@@ -362,34 +357,24 @@ fn conv3x3(
     bias: &[f32],
     dst: &mut [f32],
 ) {
-    let mut acc = vec![0f32; cout];
     for y in 0..h {
+        let (ky0, ky1) = (usize::from(y == 0), if y + 1 == h { 2 } else { 3 });
         for x in 0..w {
-            acc.copy_from_slice(bias);
-            for ky in 0..3 {
-                let Some(yy) = (y + ky).checked_sub(1).filter(|v| *v < h) else {
-                    continue;
-                };
-                for kx in 0..3 {
-                    let Some(xx) = (x + kx).checked_sub(1).filter(|v| *v < w) else {
-                        continue;
-                    };
-                    let px = &src[(yy * w + xx) * cin..(yy * w + xx + 1) * cin];
-                    let taps = &wt[(ky * 3 + kx) * cin * cout..(ky * 3 + kx + 1) * cin * cout];
-                    for (ch, &v) in px.iter().enumerate() {
-                        // After a ReLU most inputs are 0, and adding 0 × w changes nothing.
-                        if v == 0.0 {
-                            continue;
-                        }
-                        for (a, &wv) in acc.iter_mut().zip(&taps[ch * cout..(ch + 1) * cout]) {
-                            *a += v * wv;
-                        }
+            let (kx0, kx1) = (usize::from(x == 0), if x + 1 == w { 2 } else { 3 });
+            let o = (y * w + x) * cout;
+            for k in 0..cout {
+                let kw = &wt[k * 9 * cin..(k + 1) * 9 * cin];
+                let mut s = bias[k];
+                for ky in ky0..ky1 {
+                    let yy = y + ky - 1;
+                    // One row of the window is contiguous in HWC: (kx1 − kx0) pixels × cin channels.
+                    let px = &src[(yy * w + x + kx0 - 1) * cin..(yy * w + x + kx1 - 1) * cin];
+                    let taps = &kw[(ky * 3 + kx0) * cin..(ky * 3 + kx1) * cin];
+                    for (a, b) in px.iter().zip(taps) {
+                        s += a * b;
                     }
                 }
-            }
-            let o = (y * w + x) * cout;
-            for (d, &s) in dst[o..o + cout].iter_mut().zip(&acc) {
-                *d = if s > 0.0 { s } else { 0.0 };
+                dst[o + k] = if s > 0.0 { s } else { 0.0 };
             }
         }
     }
