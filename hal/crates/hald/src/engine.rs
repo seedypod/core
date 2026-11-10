@@ -692,7 +692,8 @@ impl Engine {
     /// between telemetry rounds).
     fn refresh_env(&mut self, _now: Now) {
         if let Some(s) = self.registry.sensor_mut(SensorId::WaterDistance) {
-            self.env.water_distance_cm = s.read().ok().map(|r| r.value);
+            // One more try before calling it no reading: a start shouldn't be refused on one bad read.
+            self.env.water_distance_cm = s.read().or_else(|_| s.read()).ok().map(|r| r.value);
         }
         if let Some(s) = self.registry.sensor_mut(SensorId::PcbTemp) {
             self.env.pcb_temp_c = s.read().ok().map(|r| r.value);

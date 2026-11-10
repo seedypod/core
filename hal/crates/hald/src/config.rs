@@ -88,6 +88,8 @@ pub struct Limits {
     pub distance_timeout_ms: u64,
     /// Quiet time between pings, so one doesn't hear the last one's echo.
     pub distance_gap_ms: u64,
+    /// A ping further than this is a stray echo, not water. Unset: the empty depth plus half again.
+    pub distance_max_cm: Option<f64>,
 }
 
 /// Distance from the ranger to the surface when full / empty (cm).
@@ -352,6 +354,7 @@ impl Default for Limits {
             distance_samples: 5,
             distance_timeout_ms: 60,
             distance_gap_ms: 60,
+            distance_max_cm: None,
         }
     }
 }
@@ -677,6 +680,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # distance_samples = 5    # median of N pings
 # distance_timeout_ms = 60
 # distance_gap_ms = 60    # between pings, so one doesn't hear the last one's echo
+# distance_max_cm = 30.0  # further is a stray echo; default tank.empty_cm × 1.5
 
 [tank]
 # full_cm = 5.0           # ranger-to-surface distance when full

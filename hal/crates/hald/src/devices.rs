@@ -180,7 +180,8 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                         },
                     );
                     let mut m = MedianSensor::new(Box::new(d), cfg.limits.distance_samples)
-                        .with_gap(Duration::from_millis(cfg.limits.distance_gap_ms));
+                        .with_gap(Duration::from_millis(cfg.limits.distance_gap_ms))
+                        .with_max(cfg.limits.distance_max_cm.unwrap_or(cfg.tank.empty_cm * 1.5));
                     probe_sensor(&mut m, &s)?;
                     let level = LevelPctSensor::new(m.shared(), tank);
                     registry.add_sensor(Box::new(m));
