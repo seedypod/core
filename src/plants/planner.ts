@@ -40,6 +40,8 @@ export interface PlanOverrides {
   pins?: { slot: number, plantId: string }[]
   /** Zones a plant may use instead of Gardyn's ideal-or-one-lower: one zone only, or two zones lower. */
   allowedZones?: Record<string, Zone[]>
+  /** Lay out the whole tower afresh, as if nothing were planted; applying it moves the planted pods. */
+  replant?: boolean
 }
 
 export interface PlanRequest {

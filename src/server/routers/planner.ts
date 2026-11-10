@@ -16,6 +16,7 @@ const Assignment = z.object({ slot: z.number(), row: z.number(), col: z.number()
 export const Overrides = z.object({
   pins: z.array(z.object({ slot: z.number().int().min(1).max(60), plantId: z.string() })).max(60).optional(),
   allowedZones: z.record(z.string(), z.array(Zone).min(1).max(3)).optional(),
+  replant: z.boolean().optional(),
 })
 const ZoneSummary = z.object({ zone: Zone, rows: z.array(z.number()), slots: z.array(z.number()), total: z.number(), existing: z.number(), planned: z.number(), free: z.number() })
 const Blocker = z.object({ slot: z.number(), zone: Zone, plantId: z.string(), plantName: z.string(), existing: z.boolean() })
@@ -49,10 +50,10 @@ function withStart(row: PlanRow) {
   return { ...row, start: row.sowing.map(w => w.sowOn).sort()[0] ?? null }
 }
 
-/** Lay out and schedule a plan around the pods planted now, and store it. */
+/** Lay out and schedule a plan around the pods planted now (over the whole tower for a replant), and store it. */
 function persist(ctx: Context, id: string, p: z.infer<typeof PlanFields>) {
   const catalog = catalogFor(ctx.store)
-  const layout = planLayout({ model: p.model, plants: p.plants, occupied: occupiedFromPods(ctx.store.pods.list(), catalog), overrides: p.overrides }, catalog)
+  const layout = planLayout({ model: p.model, plants: p.plants, occupied: p.overrides?.replant ? {} : occupiedFromPods(ctx.store.pods.list(), catalog), overrides: p.overrides }, catalog)
   const sowing = sowingPlan(p.plants, p.start ? new Date(p.start) : (ctx.now ?? (() => new Date()))(), p.mode, catalog)
   const row = ctx.store.plans.save({ id, name: p.name, model: p.model, mode: p.mode, request: p.plants, layout, sowing })
   ctx.events.emit({ kind: 'mutation', path: 'plans' })
@@ -107,7 +108,7 @@ export const plannerRouter = router({
     .output(Layout)
     .query(({ ctx, input }) => {
       const catalog = catalogFor(ctx.store)
-      return planLayout({ model: input.model, plants: input.plants, occupied: input.respectExisting ? occupiedFromPods(ctx.store.pods.list(), catalog) : {}, overrides: input.overrides }, catalog)
+      return planLayout({ model: input.model, plants: input.plants, occupied: input.respectExisting && !input.overrides?.replant ? occupiedFromPods(ctx.store.pods.list(), catalog) : {}, overrides: input.overrides }, catalog)
     }),
 
   bestSpots: publicProcedure
@@ -183,19 +184,43 @@ export const plannerRouter = router({
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: 'plan not found' })
       const now = (ctx.now ?? (() => new Date()))()
       const today = now.toISOString().slice(0, 10)
-      const podCount = ctx.store.pods.list().length
+      const before = ctx.store.pods.list()
+      const podCount = before.length
       const seeded: number[] = []
       const scheduled: { slot: number, plantName: string, sowOn: string }[] = []
+      // A replant moves what's planted: each plant keeps its sow date and status in its new pod.
+      const catalog = catalogFor(ctx.store)
+      const replant = !!plan.layout.overrides?.replant
+      const moving = new Map<string, typeof before>()
+      if (replant) {
+        for (const [slot, id] of Object.entries(occupiedFromPods(before, catalog))) {
+          const pod = before.find(p => p.slot === Number(slot))
+          if (pod) moving.set(id, [...moving.get(id) ?? [], pod])
+        }
+      }
+      const used = new Set<number>()
       for (const a of podSchedule(plan.layout, plan.sowing)) {
         if (a.slot > podCount) continue
+        used.add(a.slot)
+        const from = moving.get(a.plantId)?.shift()
         const sowOn = a.wave?.sowOn ?? today
-        if (sowOn <= today) {
+        if (from) {
+          ctx.store.pods.update(a.slot, { plant: a.plantName, plantedAt: from.plantedAt, status: from.status, notes: `${a.reason}${from.slot === a.slot ? '' : ` (moved from pod ${from.slot})`}` }, now.toISOString())
+          seeded.push(a.slot)
+        }
+        else if (sowOn <= today) {
           ctx.store.pods.update(a.slot, { plant: a.plantName, plantedAt: today, status: 'seeded', notes: `${a.reason}${a.fallback ? ' (zone fallback)' : ''}` }, now.toISOString())
           seeded.push(a.slot)
         }
         else {
           ctx.store.pods.update(a.slot, { plant: a.plantName, plantedAt: null, status: 'empty', notes: `planned: sow ${a.plantName} on ${sowOn}` }, now.toISOString())
           scheduled.push({ slot: a.slot, plantName: a.plantName, sowOn })
+        }
+      }
+      // What a replant doesn't place is empty now: it was moved, or isn't in the plan.
+      if (replant) {
+        for (const p of before) {
+          if (!used.has(p.slot) && p.status !== 'empty') ctx.store.pods.update(p.slot, { plant: null, plantedAt: null, status: 'empty', notes: '' }, now.toISOString())
         }
       }
       ctx.store.plans.markApplied(plan.id, now.toISOString())
