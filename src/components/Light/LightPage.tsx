@@ -1,10 +1,13 @@
-import { CalendarClock, ChevronDown, ChevronUp, Hand, Plus, Wand2 } from 'lucide-react'
+import { CalendarClock, ChevronDown, ChevronUp, Clock, Hand, Plus, Wand2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { cn } from '@/lib/utils'
 import { Badge, Button, Card, GhostIcon } from '@/src/components/ds/core'
 import { Slider, Toggle } from '@/src/components/ds/forms'
 import { LineChart } from '@/src/components/ds/charts'
 import { fmtClock } from '@/src/components/charts/format'
 import { daysLabel, weekdayOf } from '@/src/lib/days'
+import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '@/src/scheduler/lightPlan'
 import { trpc } from '@/src/utils/trpc'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
@@ -12,6 +15,8 @@ import { asCurve, levelAt, litHours, runningToday, SAMPLE_MINUTES, todayLevels, 
 
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
+/** Gardyn's ratings: Great is the aim; Low and Too much want hours added or taken away. */
+const RATING_TONE: Record<ReturnType<typeof lightRating>, string> = { 'low': 'bg-pod-attention/15 text-pod-attention', 'ok': 'bg-pod-ready/15 text-pod-ready', 'great': 'bg-pod-ok/15 text-pod-ok', 'intense': 'bg-pod-ready/15 text-pod-ready', 'too much': 'bg-pod-attention/15 text-pod-attention' }
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 export function LightPage() {
@@ -24,6 +29,9 @@ export function LightPage() {
   const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const lightHours = trpc.telemetry.lightHours.useQuery()
   const [openId, setOpenId] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const settings = trpc.settings.get.useQuery()
+  const timezone = settings.data?.timezone
   const curves = (schedules.data ?? []).flatMap(s => asCurve(s) ?? [])
   const now = new Date()
   const minutesNow = now.getHours() * 60 + now.getMinutes()
@@ -120,18 +128,61 @@ export function LightPage() {
 
       <div className="flex items-center gap-3">
         <h2 className={`${EYEBROW} flex-1`}>Curves</h2>
-        <Button
-          icon={Plus}
-          onClick={() => {
-            const id = `curve-${Date.now().toString(36)}`
-            upsert.mutate({ id, kind: 'light', name: 'New curve', enabled: false, days: 127, spec: { setpoints: [{ minute: 420, level: 0 }, { minute: 480, level: 80 }, { minute: 1200, level: 80 }, { minute: 1260, level: 0 }] } })
-            setOpenId(id)
-          }}
-        >
-          Add curve
-        </Button>
+        <Button icon={Plus} aria-expanded={adding || curves.length === 0} onClick={() => setAdding(!adding)}>Add curve</Button>
       </div>
-      {curves.length === 0 && <Card dashed><p className="text-[13px] text-fg-2">No curves yet. A curve is a set of setpoints by time of day; brightness ramps between them, so sunrise and sunset are free.</p></Card>}
+      {timezone === 'UTC' && (
+        <p className="flex items-center gap-2 text-[13px] text-warn" data-testid="utc-warning">
+          <Clock size={16} className="shrink-0" />
+          <span>
+            {'Curves run on the unit’s clock, which is set to UTC. '}
+            <Link to="/settings" hash="unit" className="underline underline-offset-2">Set your timezone</Link>
+            {' so 6 AM means your morning.'}
+          </span>
+        </p>
+      )}
+      {(adding || curves.length === 0) && (
+        <Card dashed className="gap-3">
+          <p className="text-[13px] text-fg-2 text-pretty">
+            {'Gardyn recommends 14–16 hours a day at full brightness (Boost); dimmed hours don’t count, 17 or more stress the plants, and nights need unbroken dark. '}
+            <a href={GARDYN_LIGHT_GUIDE} target="_blank" rel="noopener noreferrer" className="underline decoration-line-2 underline-offset-2 hover:text-fg">Gardyn’s guide</a>
+            {curves.length === 0 ? '. Start from one of these:' : '. Start from:'}
+          </p>
+          <div className="grid gap-2 min-[720px]:grid-cols-4">
+            {LIGHT_PRESETS.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                data-testid={`preset-${p.id}`}
+                onClick={() => {
+                  const id = `curve-${Date.now().toString(36)}`
+                  // The first curve runs straight away; another starts off, since enabled curves stack.
+                  upsert.mutate({ id, kind: 'light', name: p.name, enabled: curves.length === 0, days: 127, spec: { setpoints: p.setpoints } })
+                  setAdding(false)
+                  setOpenId(id)
+                }}
+                className="flex cursor-pointer flex-col gap-1 rounded-card border border-line bg-surface px-3.5 py-3 text-left hover:border-line-2"
+              >
+                <span className="text-sm font-medium">{p.name}</span>
+                <span className="text-[12px] leading-snug text-fg-2">{p.description}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              data-testid="preset-blank"
+              onClick={() => {
+                const id = `curve-${Date.now().toString(36)}`
+                upsert.mutate({ id, kind: 'light', name: 'New curve', enabled: false, days: 127, spec: { setpoints: [{ minute: 420, level: 0 }, { minute: 480, level: 80 }, { minute: 1200, level: 80 }, { minute: 1260, level: 0 }] } })
+                setAdding(false)
+                setOpenId(id)
+              }}
+              className="flex cursor-pointer flex-col gap-1 rounded-card border border-dashed border-line-2 px-3.5 py-3 text-left hover:border-fg-3"
+            >
+              <span className="text-sm font-medium">Blank</span>
+              <span className="text-[12px] leading-snug text-fg-2">Your own setpoints by time of day; brightness ramps between them.</span>
+            </button>
+          </div>
+        </Card>
+      )}
       {curves.map(c => (
         <CurveCard
           key={c.id}
@@ -148,7 +199,9 @@ export function LightPage() {
 
 function CurveCard({ curve: c, running, open, onOpen, onSave }: { curve: LightCurve, running: boolean, open: boolean, onOpen: (open: boolean) => void, onSave: (next: LightCurve) => void }) {
   const n = c.spec.setpoints.length
-  const meta = [`${n} setpoint${n === 1 ? '' : 's'}`, daysLabel(c.days), c.enabled ? `${litHours(c.spec)} h of light` : 'off'].join(' · ')
+  const boost = boostHours(c.spec)
+  const meta = [`${n} setpoint${n === 1 ? '' : 's'}`, daysLabel(c.days), c.enabled ? `${litHours(c.spec)} h of light, ${boost} h at full` : 'off'].join(' · ')
+  const rating = lightRating(boost)
   return (
     <Card className="gap-0 p-0">
       <div className="flex flex-wrap items-center gap-4 px-5 py-[18px]">
@@ -156,6 +209,7 @@ function CurveCard({ curve: c, running, open, onOpen, onSave }: { curve: LightCu
           <span className="flex items-center gap-2">
             <span className={c.enabled ? 'text-[15px] font-medium' : 'text-[15px] font-medium text-fg-2'}>{c.name}</span>
             {running && <Badge variant="active" />}
+            <span data-testid={`rating-${c.id}`} className={cn('rounded-[10px] px-2 py-0.5 font-mono text-[10px] font-medium uppercase', RATING_TONE[rating])}>{rating}</span>
           </span>
           <span className="text-[12px] text-fg-3">{meta}</span>
         </button>

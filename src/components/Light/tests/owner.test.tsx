@@ -10,6 +10,7 @@ const { data, calls, setLight } = vi.hoisted(() => ({
   setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onMutate?: () => { command: number }, onSuccess?: (s: unknown, sent: unknown, context: { command: number }) => void, onError?: (e: Error, sent: { level?: number }) => void } },
 }))
 
+vi.mock('@tanstack/react-router', () => ({ Link: ({ children, to, hash }: { children: React.ReactNode, to: string, hash?: string }) => <a href={hash ? `${to}#${hash}` : to}>{children}</a> }))
 vi.mock('../CurveEditor', () => ({ CurveEditor: ({ schedule }: { schedule: { name: string } }) => <div>{`editing ${schedule.name}`}</div> }))
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
@@ -26,6 +27,7 @@ vi.mock('@/src/utils/trpc', () => {
       light: { get: query('light'), owner: query('owner'), set, resume: mutation('resume') },
       schedules: { list: query('schedules'), upsert: mutation('upsert') },
       telemetry: { lightHours: query('hours') },
+      settings: { get: query('settings') },
     },
   }
 })
@@ -187,7 +189,9 @@ describe('LightPage: curves', () => {
     render(<LightPage />)
     const day = screen.getByText('Daylight curve').closest('button') as HTMLElement
     expect(within(day).getByText('ACTIVE')).toBeTruthy()
-    expect(within(day).getByText('4 setpoints · Every day · 15 h of light')).toBeTruthy()
+    // 85% all day is no Boost at all, so Gardyn would rate it low.
+    expect(within(day).getByText('4 setpoints · Every day · 15 h of light, 0 h at full')).toBeTruthy()
+    expect(within(day).getByTestId('rating-daylight').textContent).toBe('low')
     expect(screen.getByText('3 setpoints · Weekends · off')).toBeTruthy()
     expect(screen.getByText('editing Daylight curve')).toBeTruthy()
     expect(screen.queryByText('editing Weekend boost')).toBeNull()
@@ -202,10 +206,33 @@ describe('LightPage: curves', () => {
     expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'boost', enabled: true, spec: boost.spec }))
   })
 
-  it('adds a curve and opens it', () => {
+  it('offers Gardyn presets with no curve yet, and runs the first one picked', () => {
     render(<LightPage />)
-    expect(screen.getByText(/No curves yet/)).toBeTruthy()
+    expect(screen.getByText(/Gardyn recommends 14–16 hours a day at full brightness/)).toBeTruthy()
+    fireEvent.click(screen.getByTestId('preset-day-15h'))
+    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ kind: 'light', name: 'Gardyn day · 15 h', enabled: true, days: 127 }))
+  })
+
+  it('adds a later curve switched off, since enabled curves stack, or a blank one', () => {
+    data.set('schedules', [daylight])
+    render(<LightPage />)
+    expect(screen.queryByTestId('preset-day-16h')).toBeNull()
     fireEvent.click(screen.getByText('Add curve'))
-    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ kind: 'light', name: 'New curve', enabled: false }))
+    fireEvent.click(screen.getByTestId('preset-day-16h'))
+    expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'Long day · 16 h', enabled: false }))
+    fireEvent.click(screen.getByText('Add curve'))
+    fireEvent.click(screen.getByTestId('preset-blank'))
+    expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'New curve', enabled: false }))
+  })
+
+  it('warns while the unit keeps UTC, since curves run on its clock', () => {
+    data.set('settings', { timezone: 'UTC' })
+    render(<LightPage />)
+    expect(screen.getByTestId('utc-warning').textContent).toMatch(/set to UTC/)
+    expect(screen.getByRole('link', { name: 'Set your timezone' }).getAttribute('href')).toBe('/settings#unit')
+    cleanup()
+    data.set('settings', { timezone: 'America/Los_Angeles' })
+    render(<LightPage />)
+    expect(screen.queryByTestId('utc-warning')).toBeNull()
   })
 })
