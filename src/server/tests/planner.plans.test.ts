@@ -95,6 +95,32 @@ describe('plan mode over MCP', () => {
     await client.close()
   })
 
+  it('replants: lays out over planted pods, moves each plant with its sow date, and empties what it leaves out', async () => {
+    const { store, c, setNow } = setup()
+    setNow('2026-11-09T10:00:00Z')
+    await c.grow.updatePod({ slot: 2, plant: 'Catnip', status: 'seeded', plantedAt: '2026-11-09' })
+    await c.grow.updatePod({ slot: 7, plant: 'Bunching Onions', status: 'seeded', plantedAt: '2026-11-09' })
+    await c.grow.updatePod({ slot: 12, plant: 'Kale', status: 'growing', plantedAt: '2026-10-20' })
+    setNow('2026-11-10T22:00:00Z')
+    const plants = [{ plantId: 'catnip', count: 1 }, { plantId: 'bunching-onions', count: 1 }]
+    const pins = [{ slot: 29, plantId: 'catnip' }, { slot: 2, plantId: 'bunching-onions' }]
+
+    // Without replant, pod 2 is taken; with it, the tower is laid out afresh.
+    expect((await c.planner.layout({ model: 'home', plants, respectExisting: true, overrides: { pins } })).unplaced.map(u => u.code)).toContain('bad_pin')
+    const saved = await c.planner.savePlan({ id: 'r', name: 'Remap', model: 'home', mode: 'batch', plants, start: '2026-11-09', overrides: { pins, replant: true } })
+    expect(saved.layout.unplaced).toEqual([])
+    expect(saved.layout.assignments.map(a => [a.slot, a.plantId])).toEqual([[2, 'bunching-onions'], [29, 'catnip']])
+    expect((await c.planner.layout({ model: 'home', plants, respectExisting: true, overrides: saved.layout.overrides ?? undefined })).assignments).toEqual(saved.layout.assignments)
+
+    await c.planner.applyPlan({ id: 'r' })
+    const pod = (slot: number) => store.pods.list().find(p => p.slot === slot)
+    expect(pod(29)).toMatchObject({ plant: 'Catnip', plantedAt: '2026-11-09', status: 'seeded', notes: expect.stringContaining('moved from pod 2') })
+    expect(pod(2)).toMatchObject({ plant: 'Bunching Onions', plantedAt: '2026-11-09', status: 'seeded', notes: expect.stringContaining('moved from pod 7') })
+    // Kale isn't in the plan, and onions left pod 7.
+    expect(pod(7)).toMatchObject({ plant: null, status: 'empty' })
+    expect(pod(12)).toMatchObject({ plant: null, status: 'empty' })
+  })
+
   it('serves an empty plan with no start date', async () => {
     const { c } = setup()
     expect((await c.planner.savePlan({ id: 'e', name: 'Empty', model: 'home', mode: 'staggered', plants: [] })).start).toBeNull()

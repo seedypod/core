@@ -22,7 +22,7 @@ const createCaller = createCallerFactory(appRouter)
 
 /** How the planner reads the tower, for the planner tools' descriptions. */
 const ZONE_RULES = 'Light zones follow Gardyn\'s map: high light is the centre-most cluster of pods, medium encircles it, low is the top and bottom rows on a Home (lower-left and upper-right on a Studio); planner_zones lists every slot by row. Each plant goes in its ideal zone; only when that zone is full does it drop one zone lower (never two, never up); overrides.allowedZones can widen that. Cucumbers start at the bottom of the middle column; large plants are spaced apart.'
-const OVERRIDES_HELP = 'Optional. pins: [{slot, plantId}] puts one pod of that plant in that exact slot (counts toward its count). allowedZones: {plantId: ["high","medium","low"]} replaces its ideal-or-one-lower zones, e.g. to allow two zones lower or keep it in one zone.'
+const OVERRIDES_HELP = 'Optional. pins: [{slot, plantId}] puts one pod of that plant in that exact slot (counts toward its count). allowedZones: {plantId: ["high","medium","low"]} replaces its ideal-or-one-lower zones, e.g. to allow two zones lower or keep it in one zone. replant: true lays out the whole tower as if nothing were planted (pins may then name planted pods); apply_plan then moves the planted pods, each plant keeping its sow date and status, and empties pods the plan leaves out.'
 
 function text(data: unknown) {
   return { content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] }
@@ -218,7 +218,7 @@ export function createMcpServer(ctx: Context): McpServer {
   server.registerTool('remove_plan', { description: 'Delete a saved plan by id. Pods it was applied to keep what was written on them.', inputSchema: { id: z.string() } }, async i => text(await caller.planner.removePlan(i)))
 
   server.registerTool('apply_plan', {
-    description: 'Write a saved plan onto the pods: first-wave pods are marked seeded today, later waves get their sow date and a reminder fires when it arrives. Overwrites the listed pods — confirm with the user first.',
+    description: 'Write a saved plan onto the pods: first-wave pods are marked seeded today, later waves get their sow date and a reminder fires when it arrives. A replant plan (overrides.replant) moves the planted pods instead: each plant keeps its sow date and status in its new pod, and pods it leaves out are emptied, so the person must move the pods to match. Overwrites the listed pods — confirm with the user first.',
     inputSchema: { id: z.string() },
   }, async i => text(await caller.planner.applyPlan(i)))
 
