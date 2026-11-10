@@ -1,7 +1,7 @@
 import { TriangleAlert } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { describeAlert } from '@/src/components/Alerts/AlertsPage'
+import { alertActions, describeAlert } from '@/src/components/Alerts/AlertsPage'
 import { apiBase, trpc } from '@/src/utils/trpc'
 import { checkSummary, worstState } from './checkState'
 import { StatusCards } from './StatusCards'
@@ -228,13 +228,13 @@ function AlertCard() {
           <span className="size-1.5 shrink-0 rounded-full bg-pod-attention" />
           <span className="min-w-0 flex-1">{`${alertSource(a.kind, a.detail)} · ${a.kind} · ${fmtAgo(a.raisedAt, now)}`}</span>
           <button type="button" disabled={ack.isPending} onClick={() => ack.mutate({ id: a.id })} className="cursor-pointer rounded-md border border-line bg-transparent px-2.5 py-1 font-sans text-xs font-medium text-fg hover:bg-active disabled:opacity-60">
-            Acknowledge
+            {alertActions(a.kind).resolve}
           </button>
         </div>
       ))}
       <p className="text-[13px] leading-normal text-fg-2 text-pretty">
         {detail}
-        {LATCHED.has(first.kind) && `${detail ? ' ' : ''}The alert stays latched until you acknowledge it, even after the cause clears.`}
+        {LATCHED.has(first.kind) && first.kind !== 'water_low' && `${detail ? ' ' : ''}It stays until you clear it, once the cause is fixed; a pump dry-run clears by itself after a minute of good water.`}
       </p>
     </section>
   )

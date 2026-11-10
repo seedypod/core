@@ -32,14 +32,33 @@ const ICON: Record<string, LucideIcon> = {
 const HARDWARE = new Set(['water_low', 'pump_fault', 'dose_fault', 'over_temp', 'camera_missing', 'hal_offline', 'light_fault', 'camera_link_upper', 'camera_link_lower', 'camera_hub_flaky'])
 /** Notices with a repair to follow in the docs. */
 const GUIDE: Record<string, string> = { camera_link_upper: LINK_GUIDE, camera_link_lower: LINK_GUIDE, camera_hub_flaky: LINK_GUIDE }
-/** What acknowledging a latched fault turns back on, and what to fix first. */
+/** What clearing a latched fault turns back on, and what to fix first. */
 const LATCH: Record<string, string> = {
-  water_low: 'Acknowledging re-enables the pump. Refill the tank first.',
-  pump_fault: 'Acknowledging re-enables the pump. Fix the cause first.',
-  dose_fault: 'Acknowledging re-enables dosing. Fix the cause first.',
-  over_temp: 'Acknowledging re-enables the outputs. Let the board cool first.',
-  camera_missing: 'Acknowledging re-enables the camera. Fix the cause first.',
-  light_fault: 'Acknowledging re-enables the light. Fix the cause first.',
+  water_low: 'It clears by itself after a minute of good readings once the tank is filled.',
+  pump_fault: 'Clearing it re-enables the pump; fix the cause first. A dry-run clears by itself once the water has read good for a minute.',
+  dose_fault: 'Clearing it re-enables dosing. Fix the cause first.',
+  over_temp: 'Clearing it re-enables the outputs. Let the board cool first.',
+  camera_missing: 'Clearing it re-enables the camera. Fix the cause first.',
+  light_fault: 'Clearing it re-enables the light. Fix the cause first.',
+}
+
+/**
+ * The buttons an open alert gets: a latched fault is cleared, a reminder is done
+ * (logged) or skipped, anything else dismissed. `resolve` acknowledges, which
+ * clears a hardware latch and logs a chore; `skip` closes it without either.
+ */
+export function alertActions(kind: string): { resolve: string, skip: string | null } {
+  if (kind in LATCH && kind !== 'water_low') return { resolve: 'Clear fault', skip: null }
+  if (categoryOf(kind) === 'reminder') return { resolve: 'Done', skip: 'Skip' }
+  return { resolve: 'Dismiss', skip: null }
+}
+
+/** How a closed alert ended. */
+export function alertOutcome(a: Pick<AlertRow, 'kind' | 'active' | 'clearedAt' | 'acknowledgedAt' | 'dismissedAt'>): string {
+  if (a.active) return ''
+  if (a.acknowledgedAt) return categoryOf(a.kind) === 'reminder' ? ' · done' : a.kind in LATCH ? ' · cleared by you' : ' · dismissed'
+  if (a.dismissedAt) return ' · skipped'
+  return a.clearedAt ? ' · resolved by itself' : ''
 }
 const VIEW: Record<string, { to: string, label: string }> = {
   camera_missing: { to: '/cameras', label: 'View camera' },
@@ -111,7 +130,7 @@ export function AlertsPage() {
       <div className="flex flex-col gap-3">
         {rows.length === 0 && (
           <div className="rounded-[14px] border border-dashed border-line-2 px-5 py-4 text-[13px] text-fg-2">
-            Nothing to see. Faults latch here until you acknowledge them; reminders clear when you mark the chore done.
+            Nothing to see. Faults stay here until you clear them or they resolve by themselves; reminders clear when you mark the chore done.
           </div>
         )}
         {rows.map((a) => {
@@ -121,6 +140,7 @@ export function AlertsPage() {
           const hot = a.active && cat === 'hardware'
           const tone = cat === 'hardware' ? 'attention' : 'ready'
           const go = a.active ? VIEW[a.kind] : undefined
+          const actions = alertActions(a.kind)
           return (
             <div key={a.id} data-testid={`alert-${a.kind}`} className={cn('flex flex-col gap-3.5 rounded-[14px] border bg-surface px-5 py-[18px]', hot ? 'border-pod-attention/45' : 'border-line', !a.active && 'opacity-75')}>
               <div className="flex flex-wrap items-start gap-3.5">
@@ -136,16 +156,15 @@ export function AlertsPage() {
                   <span className="font-mono text-[11px] text-fg-3">
                     {`${fmtStamp(a.raisedAt)} · ${timeAgo(a.raisedAt, now)}`}
                     {a.clearedAt ? ` → cleared ${fmtStamp(a.clearedAt)}` : ''}
-                    {a.acknowledgedAt ? ' · acknowledged' : ''}
-                    {a.dismissedAt && !a.acknowledgedAt ? ' · dismissed' : ''}
+                    {alertOutcome(a)}
                   </span>
                 </div>
                 {a.active && (
                   <div className="flex flex-wrap gap-2">
                     {go && <Link to={go.to} className="rounded-ctl border border-line-2 px-3 py-[7px] text-[13px] text-fg hover:bg-active">{go.label}</Link>}
                     {a.active && GUIDE[a.kind] && <a href={GUIDE[a.kind]} target="_blank" rel="noopener noreferrer" className="rounded-ctl border border-line-2 px-3 py-[7px] text-[13px] text-fg hover:bg-active">How to reseat it</a>}
-                    <Button icon={X} className="px-3 py-[7px] text-fg-2" onClick={() => dismiss.mutate({ id: a.id })}>Dismiss</Button>
-                    <Button variant="primary" icon={Check} className="px-3 py-[7px]" onClick={() => ack.mutate({ id: a.id })}>{cat === 'reminder' ? 'Done' : 'Acknowledge'}</Button>
+                    {actions.skip && <Button icon={X} className="px-3 py-[7px] text-fg-2" title="Close it without logging it as done" onClick={() => dismiss.mutate({ id: a.id })}>{actions.skip}</Button>}
+                    <Button variant="primary" icon={Check} className="px-3 py-[7px]" onClick={() => ack.mutate({ id: a.id })}>{actions.resolve}</Button>
                   </div>
                 )}
               </div>

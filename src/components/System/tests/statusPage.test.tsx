@@ -201,8 +201,8 @@ describe('alert card', () => {
     const card = within(main()).getByRole('region', { name: 'Alerts' })
     expect(within(card).getByRole('heading', { name: 'Camera alert' })).toBeTruthy()
     expect(within(card).getByText('lower · camera_missing · 2h 5m ago')).toBeTruthy()
-    expect(within(card).getByText(/Pods 16–30 have no new photos\. The alert stays latched/)).toBeTruthy()
-    fireEvent.click(within(card).getByRole('button', { name: 'Acknowledge' }))
+    expect(within(card).getByText(/Pods 16–30 have no new photos\. It stays until you clear it/)).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: 'Clear fault' }))
     expect(mutate).toHaveBeenCalledWith('alerts.acknowledge', { id: 7 })
   })
 

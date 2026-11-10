@@ -44,7 +44,7 @@ describe('Sidebar', () => {
     render(<Sidebar status={online} />)
     expect(screen.getByText('49%').closest('a')?.getAttribute('href')).toBe('/light')
     expect(screen.getByText('71%').closest('a')?.getAttribute('href')).toBe('/water')
-    expect(screen.getByText('25.5°C · 55%').closest('a')?.getAttribute('href')).toBe('/sensors')
+    expect(screen.getByText('26°C · 55%').closest('a')?.getAttribute('href')).toBe('/sensors')
   })
 
   it('says how old the readings are once, at the bottom, and nothing on fresh rows', () => {
@@ -70,7 +70,7 @@ describe('Sidebar', () => {
     const flag = within(screen.getByText('71%').closest('a') as HTMLElement).getByTestId('reading-flag')
     expect(flag.textContent).toBe('stale')
     expect(flag.className).toContain('text-warn')
-    expect(within(screen.getByText('25.5°C').closest('a') as HTMLElement).queryByTestId('reading-flag')).toBeNull()
+    expect(within(screen.getByText('26°C').closest('a') as HTMLElement).queryByTestId('reading-flag')).toBeNull()
     expect(screen.getAllByTestId('reading-flag')).toHaveLength(1)
     expect(screen.getByTestId('readings-updated').textContent).toMatch(/^updated \ds ago$/)
   })

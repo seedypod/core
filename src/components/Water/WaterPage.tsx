@@ -49,14 +49,17 @@ export function WaterPage() {
   }
   const isNew = !!editing && !cycles.some(c => c.id === editing.id)
 
-  const pumpLine = p ? (p.on ? `pump running at ${p.level}% · ${p.remainingS ?? '—'}s left` : p.fault ? `pump fault: ${p.fault} — acknowledge in Alerts after fixing` : 'pump idle') : '…'
+  const pumpLine = p ? (p.on ? `pump running at ${p.level}% · ${p.remainingS ?? '—'}s left` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
   const subtitle = [tank === undefined ? null : `Tank ${tank}%`, pumpLine, next ? `next run ${fmtClock(next.cycle.spec.minute)}` : null].filter(Boolean).join(' · ')
 
   return (
     <div className="mx-auto flex max-w-[1000px] flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Water</h1>
-        <p className={cn('text-[13px]', p?.fault ? 'text-danger' : 'text-fg-2')}>{subtitle}</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className={cn('text-[13px]', p?.fault ? 'text-danger' : 'text-fg-2')}>{subtitle}</p>
+          {p?.fault && <ClearFault />}
+        </div>
       </div>
 
       <Card tone={p?.fault ? 'danger' : undefined} className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-7 p-[22px]">
@@ -280,4 +283,24 @@ function TankHistory({ cutoff }: { cutoff: number | null }) {
 
 function fmt(r: { value: number, unit: string } | undefined): string {
   return r ? withUnit(r.value, r.unit) : '—'
+}
+
+/** Clears the pump's latched fault from here, as Alerts does, once the cause is fixed. A dry-run clears by itself after a minute of good water. */
+function ClearFault() {
+  const utils = trpc.useUtils()
+  const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
+  const ack = trpc.alerts.acknowledge.useMutation({
+    onSuccess: () => {
+      void utils.alerts.invalidate()
+      void utils.pump.invalidate()
+    },
+  })
+  const fault = (alerts.data ?? []).find(a => a.kind === 'pump_fault')
+  if (!fault) return null
+  return (
+    <>
+      <Button className="px-3 py-[5px] text-[13px]" disabled={ack.isPending} onClick={() => ack.mutate({ id: fault.id })}>Clear fault</Button>
+      {ack.error && <InlineError>{ack.error.message}</InlineError>}
+    </>
+  )
 }

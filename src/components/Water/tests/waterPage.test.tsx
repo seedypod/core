@@ -5,7 +5,7 @@ import { WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { runOnce: vi.fn(), stop: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
+  calls: { runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
   pumpSuccess: new Map<string, (s: unknown) => void>(),
   state: { runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string } },
 }))
@@ -23,7 +23,8 @@ vi.mock('@/src/utils/trpc', () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() } }),
+      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() } }),
+      alerts: { list: query('alerts'), acknowledge: { useMutation: () => ({ isPending: false, error: null, mutate: (i: unknown) => calls.ack(i) }) } },
       pump: { get: query('pump'), runOnce: mutation('runOnce'), stop: mutation('stop') },
       sensors: { latest: query('sensors') },
       care: { chores: query('chores') },
@@ -110,6 +111,14 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.getByText('tank too low')).toBeTruthy()
     expect(screen.getByText(/pump fault: dry run/)).toBeTruthy()
     expect(screen.getByText('Run pump').closest('button')?.disabled).toBe(true)
+  })
+
+  it('clears a latched pump fault from the page, without going to Alerts', () => {
+    data.set('pump', { ...idle, fault: 'dry-run' })
+    data.set('alerts', [{ id: 174, kind: 'pump_fault', active: true, detail: 'pump: dry-run' }])
+    render(<WaterPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear fault' }))
+    expect(calls.ack).toHaveBeenCalledWith({ id: 174 })
   })
 
   it('waits for readings without guessing', () => {
