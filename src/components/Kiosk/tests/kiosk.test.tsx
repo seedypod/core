@@ -77,4 +77,10 @@ describe('KioskPage', () => {
     render(<KioskPage />)
     expect(screen.getByText('idle')).toBeTruthy()
   })
+
+  it('says watering for a run with no known end', () => {
+    q.pump.data = { on: true, fault: null }
+    render(<KioskPage />)
+    expect(screen.getByText('watering')).toBeTruthy()
+  })
 })

@@ -45,6 +45,14 @@ describe('Sidebar', () => {
     expect(screen.getByText('49%').closest('a')?.getAttribute('href')).toBe('/light')
     expect(screen.getByText('71%').closest('a')?.getAttribute('href')).toBe('/water')
     expect(screen.getByText('26°C · 55%').closest('a')?.getAttribute('href')).toBe('/sensors')
+    expect(screen.queryByText('Tank · watering')).toBeNull()
+  })
+
+  it('says the tank is watering while the pump runs', () => {
+    data.set('sensors.latest', { water_level_pct: { value: 71, unit: '%' } })
+    data.set('pump.get', { on: true, level: 30, remainingS: 200 })
+    render(<Sidebar status={online} />)
+    expect(screen.getByText('Tank · watering').closest('a')?.getAttribute('href')).toBe('/water')
   })
 
   it('says how old the readings are once, at the bottom, and nothing on fresh rows', () => {

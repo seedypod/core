@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { WaterPage } from '../WaterPage'
+import { START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
@@ -107,8 +107,35 @@ describe('WaterPage: tank and pump', () => {
     expect(watering.textContent).toMatch(/^Watering2:00 left of 3 min$/)
     expect(screen.getByRole('progressbar', { name: 'Watering' })).toBeTruthy()
     expect(screen.queryByText('Run pump')).toBeNull()
-    fireEvent.click(screen.getByText('Stop'))
+    // Stop carries the run: the time left, and a fill as far through as it is.
+    const stopButton = screen.getByTestId('stop-pump')
+    expect(stopButton.textContent).toBe('Stop · 2:00 left')
+    fireEvent.click(stopButton)
     expect(calls.stop).toHaveBeenCalled()
+  })
+
+  it('waters with no known end without a clock', () => {
+    data.set('pump', { ...idle, on: true, level: 30, remainingS: null })
+    render(<WaterPage />)
+    expect(screen.getByText(/watering at 30%/)).toBeTruthy()
+    expect(screen.getByTestId('watering').textContent).toBe('Watering…')
+    expect(screen.getByTestId('stop-pump').textContent).toBe('Stop')
+  })
+
+  it('says Starting… after Run, and why when the pump doesn\'t come on', () => {
+    vi.useFakeTimers()
+    data.set('alerts', [{ id: 188, kind: 'water_low', active: true, detail: 'water distance 86.9 cm ≥ 16.0 cm' }])
+    render(<WaterPage />)
+    fireEvent.click(screen.getByText('Run pump'))
+    expect(screen.getByText('Starting…').closest('button')?.disabled).toBe(true)
+    expect(screen.queryByText(/Didn't start/)).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(START_WAIT_MS + 1000)
+    })
+    expect(screen.getByText(/Didn't start: the tank reads low \(water distance 86\.9 cm ≥ 16\.0 cm\)/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Try again'))
+    expect(screen.getByText('Run pump')).toBeTruthy()
+    vi.useRealTimers()
   })
 
   it('reports a refused run and a latched fault', () => {

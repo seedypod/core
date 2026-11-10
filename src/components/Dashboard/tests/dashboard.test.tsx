@@ -84,6 +84,17 @@ describe('Dashboard', () => {
     expect(screen.getByText('backup_stale: No off-card backup yet.')).toBeTruthy()
   })
 
+  it('says watering with the time left on the cards Home, and no time for an open-ended run', async () => {
+    data.set('settings.get', { setupComplete: true })
+    data.set('pump.get', { on: true, level: 30, since: '2026-11-01T10:00:00Z', fault: null, remainingS: 150 })
+    const { unmount } = render(<Dashboard />)
+    expect(await screen.findByText('watering at 30% · 2 min 30 s left')).toBeTruthy()
+    unmount()
+    data.set('pump.get', { on: true, level: 30, since: '2026-11-01T10:00:00Z', fault: null, remainingS: null })
+    render(<Dashboard />)
+    expect(await screen.findByText('watering at 30%')).toBeTruthy()
+  })
+
   describe('cards Home controls', () => {
     const lit = { on: true, level: 40, since: '2026-11-01T10:00:00Z', fault: null, remainingS: null }
     const brightness = async () => {

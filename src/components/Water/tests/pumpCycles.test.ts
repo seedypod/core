@@ -39,6 +39,7 @@ describe('formatting', () => {
     expect(fmtMinutes(45)).toBe('45 s')
     expect(fmtMinutes(900)).toBe('15 min')
     expect(fmtMinutes(3900)).toBe('1 h 5 min')
+    expect(fmtMinutes(7200)).toBe('2 h')
     expect(fmtCountdown(899.2)).toBe('15:00')
     expect(fmtCountdown(5)).toBe('0:05')
     expect(fmtWhen(new Date(2026, 10, 1, 8, 0), now)).toBe('Today 08:00')

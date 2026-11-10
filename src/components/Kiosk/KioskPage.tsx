@@ -31,7 +31,7 @@ export function KioskPage() {
     { label: 'Air', value: s.air_temp ? `${s.air_temp.value}°` : '—', reading: s.air_temp, spark: airH.data?.map(p => p.value), color: SENSOR_META.air_temp.color },
     { label: 'Humidity', value: s.humidity ? `${s.humidity.value}%` : '—', reading: s.humidity, spark: humH.data?.map(p => p.value), color: SENSOR_META.humidity.color },
     { label: 'Light', value: light.data?.on ? `${light.data.level}%` : 'off' },
-    { label: 'Pump', value: pump.data?.on ? (pump.data.remainingS === null ? 'watering' : fmtMinutes(pump.data.remainingS)) : pump.data?.fault ? 'FAULT' : 'idle' },
+    { label: 'Pump', value: pump.data?.on ? (pump.data.remainingS == null ? 'watering' : fmtMinutes(pump.data.remainingS)) : pump.data?.fault ? 'FAULT' : 'idle' },
     ...(system.data?.system?.caps.sensors ?? [])
       .filter(id => SENSOR_META[id].group === 'water-quality')
       .map(id => ({ label: SENSOR_META[id].label, value: formatReading(s[id]), reading: s[id] })),
