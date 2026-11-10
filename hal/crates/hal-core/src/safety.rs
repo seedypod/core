@@ -202,17 +202,16 @@ impl PumpGuard {
 
 /// Median of a small sample set; the guard is fed this, never a single ping
 /// (upstream bug #111: guard and alert disagreed because one used a raw read).
+/// With an even count it takes the lower middle value, not their mean: a
+/// ranger's errors only lengthen (a stray echo, a timer preempted mid-pulse),
+/// so one good ping and one bad must not average to a level nobody measured.
 pub fn median(samples: &mut [f64]) -> Option<f64> {
     if samples.is_empty() {
         return None;
     }
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = samples.len();
-    Some(if n % 2 == 1 {
-        samples[n / 2]
-    } else {
-        (samples[n / 2 - 1] + samples[n / 2]) / 2.0
-    })
+    Some(samples[(n - 1) / 2])
 }
 
 #[cfg(test)]
@@ -399,7 +398,8 @@ mod tests {
     #[test]
     fn median_handles_odd_even_and_empty() {
         assert_eq!(median(&mut [3.0, 1.0, 2.0]), Some(2.0));
-        assert_eq!(median(&mut [4.0, 1.0, 3.0, 2.0]), Some(2.5));
+        assert_eq!(median(&mut [4.0, 1.0, 3.0, 2.0]), Some(2.0));
+        assert_eq!(median(&mut [53.0, 12.7]), Some(12.7));
         assert_eq!(median(&mut []), None);
     }
 }
