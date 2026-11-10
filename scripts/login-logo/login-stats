@@ -156,6 +156,17 @@ fi
 
 if [ -n "$summary" ]; then
   pick captureAgeS && ago "$v" && emit camera "-:$r"
+  # Where the learned pod-state models run (#191), and how many are on.
+  if pick visionRunner; then
+    if [ "$v" != podvision ]; then vision=("-:TypeScript")
+    elif pick visionFallback && [ "$v" = true ]; then vision=("warn:fell back to TypeScript")
+    else vision=("ok:podvision")
+    fi
+    if pick podStateModels; then
+      case "$v" in 0) vision+=("dim:no model") ;; 1) vision+=("dim:1 model") ;; *) vision+=("dim:$v models") ;; esac
+    fi
+    emit vision "${vision[@]}"
+  fi
   if pick readingAgeS; then
     # Fifteen minutes is core's SENSOR_STALE_MS.
     ago "$v"

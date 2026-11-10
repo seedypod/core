@@ -44,6 +44,8 @@ export interface Context {
   homekit?: HomeKitControl
   /** Pod-state model revisions (#186); on the unit only. */
   models?: ModelRegistry
+  /** The native pod-state runner (#191) and why its last still fell back to TypeScript; absent when it isn't installed. */
+  podvision?: { bin: string, lastError: () => string | null }
   /** The Home Assistant MQTT bridge (ADR-0013); node hosts only, where server/index.ts owns it. */
   bridge?: () => BridgeStatus
   /** How much core and hald log; node hosts only, where the policy file lives. */

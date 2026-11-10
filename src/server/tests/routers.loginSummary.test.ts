@@ -4,7 +4,8 @@ import { SimHal } from '../../hardware/sim'
 import { createEventBus } from '../../lib/eventBus'
 import { SimWifi } from '../../network/wifi'
 import { MemoryStore } from '../../store/memory'
-import { createCore } from '../bootstrap'
+import { createCore, type CoreOptions } from '../bootstrap'
+import type { ModelRegistry } from '../../vision/registry'
 import { openApiDocument } from '../openapi'
 import { appRouter } from '../routers/app'
 import { createCallerFactory } from '../trpc'
@@ -13,12 +14,12 @@ const NOW = new Date('2026-11-01T12:00:00Z')
 const iso = (sAgo: number) => new Date(NOW.getTime() - sAgo * 1000).toISOString()
 const reading = (value: number, sAgo: number, quality: 'good' | 'suspect' = 'good') => ({ ts: iso(sAgo), value, unit: '', quality })
 
-function rig(snap: (s: HalSnapshot) => HalSnapshot = s => s) {
+function rig(snap: (s: HalSnapshot) => HalSnapshot = s => s, opts: Partial<CoreOptions> = {}) {
   const hal = new SimHal({ tickMs: 0, now: () => NOW })
   const base = hal.snapshot.bind(hal)
   hal.snapshot = () => snap(base())
   const store = new MemoryStore()
-  const core = createCore({ hal, store, events: createEventBus(), version: 'test', now: () => NOW, wifi: new SimWifi(true) })
+  const core = createCore({ hal, store, events: createEventBus(), version: 'test', now: () => NOW, wifi: new SimWifi(true), ...opts })
   return { c: createCallerFactory(appRouter)(core.ctx), store }
 }
 
@@ -60,6 +61,9 @@ describe('system.loginSummary', () => {
       staleSensors: 1,
       activeAlerts: 2,
       captureAgeS: 600,
+      visionRunner: 'typescript',
+      visionFallback: false,
+      podStateModels: null,
     })
   })
 
@@ -94,7 +98,19 @@ describe('system.loginSummary', () => {
       staleSensors: 0,
       activeAlerts: 0,
       captureAgeS: null,
+      visionRunner: 'typescript',
+      visionFallback: false,
+      podStateModels: null,
     })
+  })
+
+  it('says where pod-state runs and how many models it has', async () => {
+    let lastError: string | null = null
+    const models = { specs: () => [{ id: 'pod-state', label: 'a', text: '{}' }, { id: 'pod-state-b', label: 'b', text: '{}' }, { id: 'pod-state', label: 'shipped', text: null, missing: 'no file' }] } as unknown as ModelRegistry
+    const { c } = rig(undefined, { podvision: { bin: '/usr/local/bin/podvision', lastError: () => lastError }, models })
+    expect(await c.system.loginSummary()).toMatchObject({ visionRunner: 'podvision', visionFallback: false, podStateModels: 2 })
+    lastError = 'timed out after 60000 ms'
+    expect(await c.system.loginSummary()).toMatchObject({ visionFallback: true })
   })
 
   it('is a GET in the REST API, where login-stats reads it', () => {

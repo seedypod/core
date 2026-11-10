@@ -303,8 +303,10 @@ and a backup goes to your bucket every night.
 
 An SSH login then opens with an animated logo, the version and the unit's
 address, and beside it the unit's live facts: core and hald, uptime, light and
-pump, tank, air, temperatures, the last photo, how fresh the readings are,
-alerts, free memory and disk, and power. They come from
+pump, tank, air, temperatures, the last photo, where pod-state runs (natively
+in podvision, or in TypeScript, and whether podvision just fell back) and how
+many models it has, how fresh the readings are, alerts, free memory and disk,
+and power. They come from
 `/api/system/login-summary` and the Pi itself; any that don't answer within a
 second are left out. It runs from `/etc/profile.d/seedypod-logo.sh`, only for an interactive
 login on a terminal, so `ssh host cmd`, `scp`, `sftp` and `rsync` never see it.
