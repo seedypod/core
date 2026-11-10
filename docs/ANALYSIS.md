@@ -222,7 +222,9 @@ on the vision worker when that isn't there.
 does what the TypeScript runner does, natively: it decodes the still, crops
 each pod, runs every enabled pod-state revision and prints the results. Core
 runs it once per capture as a child process at `nice` 19, so the API keeps
-answering, and kills it after 60 s. Releases carry it next to `hald`
+answering, and kills it after 60 s. On a Pi Zero W it takes 3–4.5 s for a
+camera's 15 pods (0.6–1.1 s to decode the still, 2.1–3.0 s for the forward
+passes), where the TypeScript runner took about 33 s. Releases carry it next to `hald`
 (`podvision-<target>` with a `.sha256`), `scripts/install` puts it in
 `/usr/local/bin`, and the web updater swaps it with each release and puts it
 back on a rollback. Core logs `pod-state runs in /usr/local/bin/podvision` at
