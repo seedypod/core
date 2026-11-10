@@ -34,8 +34,21 @@ export function fmtSpan(ms: number): string {
   return h < 48 ? `${h} h` : `${Math.round(h / 24)} d`
 }
 
+/** A length of time as people say it: `45 s`, `15 min`, `2 min 30 s`, `1 h 5 min`. */
 export function fmtMinutes(s: number): string {
-  return s % 60 === 0 ? `${s / 60} min` : `${s} s`
+  const secs = Math.max(0, Math.round(s))
+  if (secs < 60) return `${secs} s`
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const rest = secs % 60
+  if (h) return m ? `${h} h ${m} min` : `${h} h`
+  return rest ? `${m} min ${rest} s` : `${m} min`
+}
+
+/** A countdown clock: `14:59`, `0:05`. */
+export const fmtCountdown = (s: number): string => {
+  const secs = Math.max(0, Math.ceil(s))
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
 }
 
 /** "Today 20:00", "Yesterday 14:12", else "Oct 29 08:00". */

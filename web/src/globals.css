@@ -29,6 +29,7 @@
   --color-icon: var(--text-icon);
   --color-inverse: var(--text-inverse);
   --color-water: var(--accent-water);
+  --color-tank: var(--tank-fill);
   --color-light: var(--accent-light);
   --color-hold: var(--accent-neutral);
   --color-track: var(--dial-track);
@@ -128,6 +129,8 @@
   --lp-fg-3: #847c6b;
   --lp-fg-icon: #b8af9c;
   --lp-cool: #8fb4c4;
+  /* Water standing in the tank: a cool pastel blue, apart from the chart colours. */
+  --lp-tank: #a7d3f2;
   --lp-warm: oklch(0.82 0.11 85);
   --lp-neutral: #a8a08c;
   --lp-green: oklch(0.76 0.08 140);
@@ -154,6 +157,7 @@
   --text-inverse: var(--lp-ink-0);
 
   --accent-water: var(--lp-cool);
+  --tank-fill: var(--lp-tank);
   --accent-light: var(--lp-warm);
   --accent-neutral: var(--lp-neutral);
   --dial-track: var(--lp-line-1);
@@ -218,6 +222,7 @@
   --lp-fg-3: #958c78;
   --lp-fg-icon: #4a4538;
   --lp-cool: #3f7489;
+  --lp-tank: #78b6e3;
   --lp-warm: oklch(0.6 0.12 75);
   --lp-neutral: #6f6857;
   --lp-green: oklch(0.55 0.09 140);

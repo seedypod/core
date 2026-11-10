@@ -47,7 +47,7 @@ describe('KioskPage', () => {
     expect(screen.getByText('42%')).toBeTruthy()
     expect(screen.getByText('22.5°')).toBeTruthy()
     expect(screen.getByText('80%')).toBeTruthy()
-    expect(screen.getByText('12s')).toBeTruthy()
+    expect(screen.getByText('12 s')).toBeTruthy()
     expect(screen.getByText('6.1')).toBeTruthy()
     expect(document.querySelectorAll('svg path').length).toBeGreaterThanOrEqual(3)
     expect(screen.getByText(/water low/)).toBeTruthy()
@@ -76,5 +76,11 @@ describe('KioskPage', () => {
     q.pump.data = { on: false, fault: null }
     render(<KioskPage />)
     expect(screen.getByText('idle')).toBeTruthy()
+  })
+
+  it('says watering for a run with no known end', () => {
+    q.pump.data = { on: true, fault: null }
+    render(<KioskPage />)
+    expect(screen.getByText('watering')).toBeTruthy()
   })
 })

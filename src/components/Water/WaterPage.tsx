@@ -1,7 +1,7 @@
 import { withUnit } from '@/src/lib/sensorMeta'
 import { toDisplay } from '@/src/lib/units'
 import { CalendarClock, MoreHorizontal, Play, Plus, Square } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, Card, GhostIcon, InlineError, Skeleton } from '@/src/components/ds/core'
 import { LineChart } from '@/src/components/ds/charts'
@@ -12,7 +12,8 @@ import { bin } from '@/src/components/charts/TimeChart'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { trpc } from '@/src/utils/trpc'
-import { asCycle, cutoffPct, cycleWhen, fmtMinutes, fmtWhen, nextRun, tankTrend, type PumpCycle } from './pumpCycles'
+import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, nextRun, tankTrend, type PumpCycle } from './pumpCycles'
+import { useNow } from '@/src/components/System/useNow'
 import { CareSummary } from '@/src/components/Care/CareSummary'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
@@ -28,7 +29,9 @@ export function WaterPage() {
   const settings = trpc.settings.get.useQuery()
   const schedules = trpc.schedules.list.useQuery()
   const runs = trpc.schedules.recentRuns.useQuery()
-  const runOnce = trpc.pump.runOnce.useMutation({ onSuccess: () => utils.pump.invalidate() })
+  // When Run was pressed, until the pump answers by coming on.
+  const [asked, setAsked] = useState<number | null>(null)
+  const runOnce = trpc.pump.runOnce.useMutation({ onSuccess: () => utils.pump.invalidate(), onError: () => setAsked(null) })
   const stop = trpc.pump.stop.useMutation({ onSuccess: () => utils.pump.invalidate() })
   const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const remove = trpc.schedules.remove.useMutation({ onSuccess: () => utils.schedules.invalidate() })
@@ -49,7 +52,7 @@ export function WaterPage() {
   }
   const isNew = !!editing && !cycles.some(c => c.id === editing.id)
 
-  const pumpLine = p ? (p.on ? `pump running at ${p.level}% · ${p.remainingS ?? '—'}s left` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
+  const pumpLine = p ? (p.on ? `watering at ${p.level}%${p.remainingS === null ? '' : ` · ${fmtMinutes(p.remainingS)} left`}` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
   const subtitle = [tank === undefined ? null : `Tank ${tank}%`, pumpLine, next ? `next run ${fmtClock(next.cycle.spec.minute)}` : null].filter(Boolean).join(' · ')
 
   return (
@@ -69,7 +72,7 @@ export function WaterPage() {
             {tank !== undefined && cfg && <span className="text-[13px] text-fg-2">{`≈ ${toDisplay(Math.round(cfg.tankCapacityL * tank / 10) / 10, 'L').value} of ${withUnit(cfg.tankCapacityL, 'L')}`}</span>}
           </div>
           <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100}>
-            <div className="h-full rounded-full bg-meter transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
+            <div className="h-full rounded-full bg-tank transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
             {cutoff !== null && <div className="absolute -top-1 h-[18px] w-px bg-pod-ready" style={{ left: `${cutoff}%` }} />}
           </div>
           <div className={AXIS}>
@@ -77,6 +80,7 @@ export function WaterPage() {
             {cutoff !== null && <span className="text-pod-ready">{`pump cutoff ${cutoff}%`}</span>}
             <span>{cfg ? `full · ${withUnit(cfg.waterFullCm, 'cm')}` : 'full'}</span>
           </div>
+          {p?.on && <Watering since={p.since} remainingS={p.remainingS} at={pump.dataUpdatedAt} />}
           <div className="flex flex-wrap gap-5 border-t border-line pt-2.5 font-mono text-[12px] text-fg-3">
             <span>
               {'distance '}
@@ -96,10 +100,26 @@ export function WaterPage() {
           <h2 className={EYEBROW}>Run now</h2>
           <SegmentedControl full value={dur} onChange={setDur} options={DURATIONS.map(d => ({ value: d.value, label: d.label }))} ariaLabel="Run length" />
           {p?.on
-            ? <Button full icon={Square} className="py-2.5 text-sm" disabled={stop.isPending} onClick={() => stop.mutate()}>Stop</Button>
-            : <Button full variant="primary" icon={Play} className="py-2.5 text-sm" disabled={!!p?.fault} onClick={() => runOnce.mutate({ durationS: Number(dur) })}>Run pump</Button>}
+            ? <StopButton since={p.since} remainingS={p.remainingS} at={pump.dataUpdatedAt} disabled={stop.isPending} onStop={() => stop.mutate()} />
+            : (
+                <Button
+                  full
+                  variant="primary"
+                  icon={Play}
+                  className="py-2.5 text-sm"
+                  disabled={!!p?.fault || asked !== null}
+                  onClick={() => {
+                    setAsked(Date.now())
+                    runOnce.mutate({ durationS: Number(dur) })
+                  }}
+                >
+                  {asked !== null ? 'Starting…' : 'Run pump'}
+                </Button>
+              )}
           {runOnce.error && <InlineError>{runOnce.error.message}</InlineError>}
-          {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${limits.pumpMaxRunS} s per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.`}</p>}
+          {asked !== null && !p?.on && <NotStarted asked={asked} onGiveUp={() => setAsked(null)} />}
+          {asked !== null && p?.on && <Started onSeen={() => setAsked(null)} />}
+          {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${fmtMinutes(limits.pumpMaxRunS)} per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.`}</p>}
         </div>
       </Card>
 
@@ -302,5 +322,82 @@ function ClearFault() {
       <Button className="px-3 py-[5px] text-[13px]" disabled={ack.isPending} onClick={() => ack.mutate({ id: fault.id })}>Clear fault</Button>
       {ack.error && <InlineError>{ack.error.message}</InlineError>}
     </>
+  )
+}
+
+/**
+ * While the pump runs: the run so far as a filling bar and the time left on a
+ * clock, counted down here between the pump's updates. `at` is when the pump's
+ * state (and its seconds left) was fetched.
+ */
+function Watering({ since, remainingS, at }: { since: string, remainingS: number | null, at: number }) {
+  const run = useRun(since, remainingS, at)
+  if (!run) return <div data-testid="watering" className="text-[13px] text-fg">Watering…</div>
+  return (
+    <div data-testid="watering" className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between text-[13px]">
+        <span className="flex items-center gap-1.5 font-medium text-fg">
+          <span className="size-2 animate-pulse rounded-full bg-tank" />
+          Watering
+        </span>
+        <span className="font-mono text-fg-2">{`${fmtCountdown(run.left)} left of ${fmtMinutes(run.total)}`}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-line" role="progressbar" aria-label="Watering" aria-valuenow={Math.round(run.done)} aria-valuemin={0} aria-valuemax={100}>
+        <div className="h-full rounded-full bg-tank transition-[width] duration-1000 ease-linear" style={{ width: `${run.done}%` }} />
+      </div>
+    </div>
+  )
+}
+
+/** The seconds a run has left, its whole length and how far through it is, counted down here between the pump's updates. */
+function useRun(since: string, remainingS: number | null, at: number) {
+  const now = useNow(1000)
+  if (remainingS === null) return null
+  const end = (at || now) + remainingS * 1000
+  const total = Math.max(1, (end - Date.parse(since)) / 1000)
+  const left = Math.max(0, (end - now) / 1000)
+  return { left, total, done: Math.min(100, Math.max(0, (1 - left / total) * 100)) }
+}
+
+/** Stop, filling with the run as it goes and saying how long is left, so a running pump shows where you pressed. */
+function StopButton({ since, remainingS, at, disabled, onStop }: { since: string, remainingS: number | null, at: number, disabled: boolean, onStop: () => void }) {
+  const run = useRun(since, remainingS, at)
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onStop}
+      data-testid="stop-pump"
+      className="relative flex w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-ctl border border-line-2 bg-field py-2.5 text-sm font-medium text-fg hover:bg-active disabled:opacity-60"
+    >
+      {run && <span aria-hidden className="absolute inset-y-0 left-0 bg-tank/35 transition-[width] duration-1000 ease-linear" style={{ width: `${run.done}%` }} />}
+      <Square size={16} className="relative" />
+      <span className="relative">{run ? `Stop · ${fmtCountdown(run.left)} left` : 'Stop'}</span>
+    </button>
+  )
+}
+
+/** Once the pump comes on after Run, let go of the request. */
+function Started({ onSeen }: { onSeen: () => void }) {
+  useEffect(onSeen, [onSeen])
+  return null
+}
+
+/** How long the pump gets to come on after Run before the page says it didn't, and why if an alert says. */
+export const START_WAIT_MS = 6000
+
+function NotStarted({ asked, onGiveUp }: { asked: number, onGiveUp: () => void }) {
+  const now = useNow(1000)
+  const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
+  if (now - asked < START_WAIT_MS) return null
+  const open = alerts.data ?? []
+  const low = open.find(a => a.kind === 'water_low')
+  const fault = open.find(a => a.kind === 'pump_fault')
+  const why = low ? `the tank reads low (${low.detail})` : fault ? `the pump has a fault (${fault.detail})` : 'the hardware refused it; see Alerts'
+  return (
+    <InlineError>
+      {`Didn't start: ${why}. `}
+      <button type="button" className="cursor-pointer border-0 bg-transparent p-0 underline" onClick={onGiveUp}>Try again</button>
+    </InlineError>
   )
 }

@@ -31,7 +31,7 @@ function savedCollapsed(): Set<string> {
 }
 
 /** A system reading with a neutral meter under it, linking to its page. */
-function Meter({ to, icon: Icon, label, value, pct, readings }: { to: string, icon: typeof Sun, label: string, value: string, pct: number | null, readings?: ReadonlyArray<Reading | undefined> }) {
+function Meter({ to, icon: Icon, label, value, pct, readings, fill = 'bg-meter' }: { to: string, icon: typeof Sun, label: string, value: string, pct: number | null, readings?: ReadonlyArray<Reading | undefined>, fill?: string }) {
   return (
     <Link to={to} className="flex flex-col gap-1.5 text-fg-2 hover:text-fg">
       <span className="flex items-center gap-1.5">
@@ -41,7 +41,7 @@ function Meter({ to, icon: Icon, label, value, pct, readings }: { to: string, ic
       </span>
       {pct !== null && (
         <span className="h-[3px] rounded-full bg-line">
-          <span className="block h-full rounded-full bg-meter" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+          <span className={cn('block h-full rounded-full', fill)} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
         </span>
       )}
       {readings && <ReadingFlag readings={readings} className="text-right" />}
@@ -56,6 +56,7 @@ function Readings() {
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const l = light.data
   const tank = s.water_level_pct
+  const watering = trpc.pump.get.useQuery().data?.on
   const air = [s.air_temp, s.humidity].filter((r): r is Reading => !!r).map(r => toDisplay(r.value, r.unit)).map(r => withUnit(Math.round(r.value), r.unit)).join(' · ')
   // Water-quality probes are optional, so the line shows only for those installed.
   const system = trpc.system.info.useQuery()
@@ -64,7 +65,7 @@ function Readings() {
   return (
     <div className="flex flex-col gap-2.5 rounded-[10px] border border-line bg-active/40 p-3 font-mono text-[11px]">
       <Meter to="/light" icon={Sun} label="Light" value={l ? (l.on ? `${l.level}%` : 'off') : '…'} pct={l ? (l.on ? l.level : 0) : null} />
-      <Meter to="/water" icon={Droplets} label="Tank" value={tank ? withUnit(tank.value, tank.unit) : '—'} pct={tank ? Number(tank.value) : null} readings={[tank]} />
+      <Meter to="/water" icon={Droplets} label={watering ? 'Tank · watering' : 'Tank'} value={tank ? withUnit(tank.value, tank.unit) : '—'} pct={tank ? Number(tank.value) : null} readings={[tank]} fill="bg-tank" />
       <Meter to="/sensors" icon={Thermometer} label="Air" value={air || '—'} pct={null} readings={[s.air_temp, s.humidity]} />
       {water && <Meter to="/sensors" icon={FlaskConical} label="Water" value={water} pct={null} readings={quality.map(id => s[id])} />}
     </div>

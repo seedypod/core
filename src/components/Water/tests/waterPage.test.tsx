@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { WaterPage } from '../WaterPage'
+import { START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
@@ -90,7 +90,7 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.getByText('full · 5 cm')).toBeTruthy()
     expect(screen.getByText('pump cutoff 27%')).toBeTruthy()
     expect(screen.getByText('9.4 cm')).toBeTruthy()
-    expect(screen.getByText(/Up to 900 s per run at 30% duty\. Won't start below 16 cm of water\./)).toBeTruthy()
+    expect(screen.getByText(/Up to 15 min per run at 30% duty\. Won't start below 16 cm of water\./)).toBeTruthy()
   })
 
   it('runs the pump for the chosen length, and swaps to Stop while it runs', () => {
@@ -99,12 +99,43 @@ describe('WaterPage: tank and pump', () => {
     fireEvent.click(screen.getByText('Run pump'))
     expect(calls.runOnce).toHaveBeenCalledWith({ durationS: 600 })
     cleanup()
-    data.set('pump', { ...idle, on: true, level: 30, remainingS: 120 })
+    // Started a minute ago with two left: a three-minute run.
+    data.set('pump', { ...idle, on: true, level: 30, remainingS: 120, since: new Date(Date.now() - 60_000).toISOString() })
     render(<WaterPage />)
-    expect(screen.getByText(/pump running at 30% · 120s left/)).toBeTruthy()
+    expect(screen.getByText(/watering at 30% · 2 min left/)).toBeTruthy()
+    const watering = screen.getByTestId('watering')
+    expect(watering.textContent).toMatch(/^Watering2:00 left of 3 min$/)
+    expect(screen.getByRole('progressbar', { name: 'Watering' })).toBeTruthy()
     expect(screen.queryByText('Run pump')).toBeNull()
-    fireEvent.click(screen.getByText('Stop'))
+    // Stop carries the run: the time left, and a fill as far through as it is.
+    const stopButton = screen.getByTestId('stop-pump')
+    expect(stopButton.textContent).toBe('Stop · 2:00 left')
+    fireEvent.click(stopButton)
     expect(calls.stop).toHaveBeenCalled()
+  })
+
+  it('waters with no known end without a clock', () => {
+    data.set('pump', { ...idle, on: true, level: 30, remainingS: null })
+    render(<WaterPage />)
+    expect(screen.getByText(/watering at 30%/)).toBeTruthy()
+    expect(screen.getByTestId('watering').textContent).toBe('Watering…')
+    expect(screen.getByTestId('stop-pump').textContent).toBe('Stop')
+  })
+
+  it('says Starting… after Run, and why when the pump doesn\'t come on', () => {
+    vi.useFakeTimers()
+    data.set('alerts', [{ id: 188, kind: 'water_low', active: true, detail: 'water distance 86.9 cm ≥ 16.0 cm' }])
+    render(<WaterPage />)
+    fireEvent.click(screen.getByText('Run pump'))
+    expect(screen.getByText('Starting…').closest('button')?.disabled).toBe(true)
+    expect(screen.queryByText(/Didn't start/)).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(START_WAIT_MS + 1000)
+    })
+    expect(screen.getByText(/Didn't start: the tank reads low \(water distance 86\.9 cm ≥ 16\.0 cm\)/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Try again'))
+    expect(screen.getByText('Run pump')).toBeTruthy()
+    vi.useRealTimers()
   })
 
   it('reports a refused run and a latched fault', () => {
