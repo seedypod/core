@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setUnitSystem } from '@/src/lib/units'
 import { SettingsPage } from '../SettingsPage'
 
 const { data, calls } = vi.hoisted(() => ({
@@ -355,11 +356,27 @@ describe('Settings: grow reminders', () => {
   })
 })
 
+describe('Settings: units', () => {
+  afterEach(() => setUnitSystem('metric'))
+
+  it('shows the tank in inches and gallons in US units, and saves centimetres and litres', () => {
+    setUnitSystem('us')
+    render(<SettingsPage />)
+    // 20 cm is 7.87 in, shown to the quarter inch; 19 L is 5 gal.
+    expect(screen.getByText('8 in')).toBeTruthy()
+    expect(screen.getByText('5 gal')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Empty' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease Capacity' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.update.mock.calls[0]?.[0]).toMatchObject({ waterEmptyCm: 20.96, tankCapacityL: 17.98 })
+  })
+})
+
 describe('Settings: every field saves', () => {
   it('collects unit, tank, reminder, camera, key, bucket and MQTT edits into one patch', () => {
     render(<SettingsPage />)
     fireEvent.change(field('Name'), { target: { value: 'Kitchen' } })
-    fireEvent.click(screen.getByRole('tab', { name: '°F' }))
+    fireEvent.click(screen.getByRole('tab', { name: '°F · gal · in' }))
     fireEvent.click(screen.getByRole('button', { name: 'Increase Empty' }))
     fireEvent.click(screen.getByRole('button', { name: 'Decrease Capacity' }))
     fireEvent.click(screen.getByRole('button', { name: 'Increase Harvest' }))

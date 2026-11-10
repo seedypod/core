@@ -12,6 +12,8 @@ import { Row, Section } from '@/src/components/Settings/Section'
 import { UpdateSection } from '@/src/components/Settings/UpdateSection'
 import type { inferRouterOutputs } from '@trpc/server'
 import type { AppRouter } from '@/src/server/routers/app'
+import { withUnit } from '@/src/lib/sensorMeta'
+import { displayUnit, fromDisplay, toDisplay, unitSystem } from '@/src/lib/units'
 import { apiBase, trpc } from '@/src/utils/trpc'
 
 type SettingsView = inferRouterOutputs<AppRouter>['settings']['get']
@@ -82,6 +84,17 @@ function useActiveSection(): [SectionId, (id: SectionId) => void] {
 
 const stepper = 'border-line bg-field [&>span]:min-w-16 [&>span]:font-medium [&>span]:text-[13px]'
 
+/** Steps for a stored metric setting in the display units: half a cm or a quarter inch, a litre or a quarter gallon. */
+const STEP: Record<string, { metric: number, us: number }> = { cm: { metric: 0.5, us: 0.25 }, L: { metric: 1, us: 0.25 } }
+const snap = (v: number, step: number) => Math.round(v / step) * step
+function shown(unit: string, value: number, min: number, max: number) {
+  const step = STEP[unit]?.[unitSystem()] ?? 1
+  const at = (v: number) => snap(toDisplay(v, unit).value, step)
+  return { value: at(value), min: at(min), max: at(max), step, format: (v: number) => `${v} ${displayUnit(unit)}` }
+}
+/** A stepper's display value back to the stored unit, to two decimals. */
+const stored = (v: number, unit: string) => Math.round(fromDisplay(v, unit) * 100) / 100
+
 function timezones(current: string): string[] {
   const all = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
   return all.includes(current) ? all : [current, ...all]
@@ -149,17 +162,17 @@ function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
                 <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-2" />
               </span>
             </Row>
-            <Row label="Temperature unit"><SegmentedControl size="sm" ariaLabel="Temperature unit" value={str('temperatureUnit') as 'C' | 'F'} options={[{ value: 'C', label: '°C' }, { value: 'F', label: '°F' }]} onChange={v => setD({ ...d, temperatureUnit: v })} /></Row>
+            <Row label="Units" sub="Temperature, tank volume and water depth"><SegmentedControl size="sm" ariaLabel="Units" value={str('temperatureUnit') as 'C' | 'F'} options={[{ value: 'C', label: '°C · L · cm' }, { value: 'F', label: '°F · gal · in' }]} onChange={v => setD({ ...d, temperatureUnit: v })} /></Row>
           </Section>
 
           <Section id="tank" title="Tank" sub="Ultrasonic distance from the sensor to the water surface">
-            <Row label="Full" sub="cm when just filled"><Stepper label="Full" className={stepper} value={num('waterFullCm', 5)} min={1} max={30} step={0.5} onChange={v => setD({ ...d, waterFullCm: v })} format={v => `${v} cm`} /></Row>
-            <Row label="Empty" sub="cm when the pump would run dry"><Stepper label="Empty" className={stepper} value={num('waterEmptyCm', 20)} min={5} max={40} step={0.5} onChange={v => setD({ ...d, waterEmptyCm: v })} format={v => `${v} cm`} /></Row>
-            <Row label="Capacity" sub="Used for litre estimates"><Stepper label="Capacity" className={stepper} value={num('tankCapacityL', 19)} min={1} max={60} step={1} onChange={v => setD({ ...d, tankCapacityL: v })} format={v => `${v} L`} /></Row>
+            <Row label="Full" sub="Distance when just filled"><Stepper label="Full" className={stepper} {...shown('cm', num('waterFullCm', 5), 1, 30)} onChange={v => setD({ ...d, waterFullCm: stored(v, 'cm') })} /></Row>
+            <Row label="Empty" sub="Distance when the pump would run dry"><Stepper label="Empty" className={stepper} {...shown('cm', num('waterEmptyCm', 20), 5, 40)} onChange={v => setD({ ...d, waterEmptyCm: stored(v, 'cm') })} /></Row>
+            <Row label="Capacity" sub="Used for volume estimates"><Stepper label="Capacity" className={stepper} {...shown('L', num('tankCapacityL', 19), 1, 60)} onChange={v => setD({ ...d, tankCapacityL: stored(v, 'L') })} /></Row>
             {distance !== undefined && (
               <div className="flex items-center gap-2.5 border-t border-line py-3 text-xs text-fg-2">
                 <Ruler size={16} className="shrink-0" />
-                <span className="flex-1" data-testid="tank-reading">{`Reading now: ${distance} cm${level !== undefined ? `, which is ${Math.round(level)}%` : ''}.`}</span>
+                <span className="flex-1" data-testid="tank-reading">{`Reading now: ${withUnit(distance, 'cm')}${level !== undefined ? `, which is ${Math.round(level)}%` : ''}.`}</span>
                 <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-fg hover:underline" onClick={() => setD({ ...d, waterFullCm: Math.min(30, Math.max(1, Math.round(distance * 2) / 2)) })}>Set as full</button>
               </div>
             )}
