@@ -146,11 +146,11 @@ describe('Sidebar', () => {
     render(<Sidebar status={online} />)
     expect(screen.getByText('Needs you')).toBeTruthy()
     const top = screen.getByText('Top off the tank').closest('a') as HTMLElement
-    expect(top.getAttribute('href')).toBe('/water')
+    expect(top.getAttribute('href')).toBe('/care')
     expect(within(top).getByText(/Tank at 40%, falling 8% a day/)).toBeTruthy()
     expect(within(top).queryByText('calendar')).toBeNull()
     const thin = screen.getByText('Thin seedlings').closest('a') as HTMLElement
-    expect(thin.getAttribute('href')).toBe('/grow')
+    expect(thin.getAttribute('href')).toBe('/care')
     expect(within(thin).getByText('calendar')).toBeTruthy()
     expect(screen.queryByText('Feed')).toBeNull()
   })

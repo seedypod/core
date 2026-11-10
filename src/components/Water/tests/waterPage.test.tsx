@@ -10,6 +10,9 @@ const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   state: { runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string } },
 }))
 
+// Care has its own tests; the Water page only points at it.
+vi.mock('@/src/components/Care/CareSummary', () => ({ CareSummary: () => null }))
+
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
   const mutation = (name: 'runOnce' | 'stop' | 'upsert' | 'remove') => ({

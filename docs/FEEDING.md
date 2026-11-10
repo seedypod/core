@@ -72,7 +72,7 @@ rather than on a weekly reminder.
 
 ## Chores
 
-**Water → Chores** lists what the tower needs: thin, trim roots, top off,
+**Care → Chores** lists what the tower needs: thin, trim roots, top off,
 refresh, feed and clean. Each says whether it comes **from a reading** or the
 **calendar**:
 
@@ -89,7 +89,7 @@ list over MCP (`list_chores`).
 
 ## Keep a tank log
 
-**Water → Tank log → Log action** records what you did and when: fed 1 tsp
+**Care → Tank log → Log action** records what you did and when: fed 1 tsp
 MaxiGro, topped off, refreshed, added 2 mL pH Down. Amount, product and note are
 optional. With a log, a jump in EC or a drop in pH can be traced to the feed or
 dose that caused it, and the unit can learn your tank's response

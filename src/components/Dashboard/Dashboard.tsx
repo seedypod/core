@@ -1,6 +1,7 @@
 import { Droplets, Sun, Thermometer, Waves, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { TowerHome } from './TowerHome'
+import { CareSummary } from '@/src/components/Care/CareSummary'
 import { ReadingAge } from '@/src/components/Sensors/ReadingAge'
 import { Card, CardHeader, GrowBackdrop, InlineError, Metric, SectionLabel, StatusDot } from '@/src/components/ds/core'
 import { Slider } from '@/src/components/ds/forms'
@@ -47,6 +48,10 @@ export function CardsHome() {
           <CardHeader title={`${active.length} alert${active.length > 1 ? 's' : ''}`} subtitle={active.map(a => `${a.kind}: ${a.detail}`).join(' · ')} />
         </Card>
       )}
+
+      <Card>
+        <CareSummary />
+      </Card>
 
       <Card backdrop={<GrowBackdrop brightness={l?.on ? l.level : null} minutes={minutesNow()} off={!l?.on} />}>
         <CardHeader

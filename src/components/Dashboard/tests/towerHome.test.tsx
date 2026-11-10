@@ -26,6 +26,7 @@ vi.mock('@/src/utils/trpc', () => {
       pump: { get: query('pump') },
       grow: { current: query('grow'), pods: query('pods'), harvest: query('harvest'), markHarvested: mutation('markHarvested'), updatePod: mutation('updatePod') },
       vision: { podTrends: query('trends') },
+      care: { chores: query('chores'), setup: query('setup') },
     },
   }
 })
@@ -79,6 +80,15 @@ describe('Home', () => {
     expect(screen.queryByRole('button')).toBeNull()
     expect(tower.props?.aside).toBeUndefined()
     expect(tower.props?.status).toBeUndefined()
+  })
+
+  it('says what Care has due now under the counts, linking to Care', () => {
+    data.set('chores', [{ id: 'top_off', title: 'Top off the tank', state: 'due' }, { id: 'feed', title: 'Feed', state: 'soon' }])
+    data.set('setup', { planted: 2, issues: [{ id: 'no_pump_schedule' }], summary: '' })
+    render(<TowerHome onUnavailable={vi.fn()} />)
+    const care = screen.getByTestId('care-summary')
+    expect(care.getAttribute('href')).toBe('/care')
+    expect(care.textContent).toBe('Top off the tank due · 1 setup issue')
   })
 
   it('sends a fresh unit to Grow to start a cycle', () => {
