@@ -111,6 +111,12 @@ describe('podvision from the release', () => {
     expect(existsSync(dest())).toBe(false)
   })
 
+  it('says so when the copy into place fails', () => {
+    publish('arm-unknown-linux-gnueabihf')
+    writeFileSync(join(bin, 'sudo'), '#!/bin/sh\n[ "$1" = install ] && exit 1\nexec "$@"\n')
+    expect(install()).toMatchObject({ code: 1, err: expect.stringContaining(`couldn't copy podvision-arm-unknown-linux-gnueabihf to ${dest()}`) })
+  })
+
   it('skips a machine it has no build for, without failing the install', () => {
     machine('x86_64', 64)
     const r = install()
