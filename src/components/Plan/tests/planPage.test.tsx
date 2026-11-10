@@ -270,6 +270,49 @@ describe('PlanPage', () => {
     expect(slotOf('Mint')).toBe(1)
   })
 
+  it('swaps from the keyboard, moves a plant to a free pod, and lets go of a pod tapped twice', () => {
+    render(<PlanPage />)
+    flat()
+    search('basil')
+    add('Basil')
+    const grid = within(screen.getByTestId('plan-grid'))
+    const slotOf = (name: string) => Number(grid.getAllByText(name)[0]?.closest('[data-slot]')?.getAttribute('data-slot'))
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const basil = slotOf('Basil')
+    const free = basil === 30 ? 29 : 30
+
+    fireEvent.click(cell(basil))
+    fireEvent.click(cell(basil))
+    expect(cell(basil).getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.keyDown(cell(basil), { key: 'Enter' })
+    expect(cell(basil).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.keyDown(cell(free), { key: ' ' })
+    expect(slotOf('Basil')).toBe(free)
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual([{ slot: free, plantId: 'basil' }])
+    // Another key does nothing.
+    fireEvent.keyDown(cell(free), { key: 'a' })
+    expect(cell(free).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('drops pins past a lower count, and forgets swaps on another model', () => {
+    render(<PlanPage />)
+    flat()
+    search('basil')
+    add('Basil')
+    add('Basil')
+    const grid = within(screen.getByTestId('plan-grid'))
+    const cells = grid.getAllByText('Basil').map(n => Number(n.closest('[data-slot]')?.getAttribute('data-slot')))
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    fireEvent.click(cell(cells[0] as number))
+    fireEvent.click(cell(cells[1] as number))
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Basil' }))
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toHaveLength(1)
+    fireEvent.click(screen.getByRole('tab', { name: 'Studio · 16' }))
+    expect(calls.layout.mock.lastCall?.[0].overrides).toBeUndefined()
+  })
+
   it('counts the pods a plan leaves empty, not the pods unplanted today', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
     render(<PlanPage />)
