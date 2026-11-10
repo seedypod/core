@@ -151,6 +151,7 @@ writeFileSync('node_modules/fresh', '')
     SEEDYPOD_UPDATE_DOWNLOADS: `${base}/dl/`,
     SEEDYPOD_UPDATE_CORE_UNIT: join(dir, 'core.service'),
     SEEDYPOD_UPDATE_HALD_UNIT: join(dir, 'no-hald.service'),
+    SEEDYPOD_UPDATE_PODVISION: join(dir, 'bin/podvision'),
     SEEDYPOD_UPDATE_CORE_URL: `${base}/core`,
     SEEDYPOD_UPDATE_HEALTH_TIMEOUT: '15',
     SEEDYPOD_UPDATE_POLL_MS: '50',
@@ -423,5 +424,94 @@ describe('updating', () => {
     expect(read('server/dist/index.js')).toBe(`core ${OLD}`)
     expect(status()).toMatchObject({ state: 'rolled-back' })
     expect(await run('--rollback')).toMatchObject({ code: 4, out: { code: 'invalid' } })
+  })
+})
+
+describe('podvision (#191)', () => {
+  const PV = 'podvision-arm-unknown-linux-gnueabihf'
+  const installed = () => join(dir, 'bin/podvision')
+
+  /** Puts a podvision in the release that prints its version, or fails to run. */
+  function podvision(version: string, opts: { runs?: boolean, sum?: string } = {}) {
+    const body = Buffer.from(`#!/bin/sh\n${opts.runs === false ? 'exit 126' : `echo "podvision ${version}"`}\n`)
+    assets.set(PV, body)
+    assets.set(`${PV}.sha256`, Buffer.from(`${opts.sum ?? sha(body)}  ${PV}\n`))
+    digests.set(PV, sha(body))
+  }
+
+  function have(version: string) {
+    put(dir, { 'bin/podvision': `#!/bin/sh\necho "podvision ${version}"\n` })
+    chmodSync(installed(), 0o755)
+  }
+
+  beforeEach(() => {
+    envs.SEEDYPOD_UPDATE_TARGET = 'arm-unknown-linux-gnueabihf'
+  })
+
+  it('installs the release\'s podvision, checked', async () => {
+    podvision('0.2.0')
+    release(tree(NEW))
+    const r = await run('--now')
+    expect(r).toMatchObject({ code: 0, out: { ok: true } })
+    expect(readFileSync(installed(), 'utf8')).toContain('podvision 0.2.0')
+    expect(statSync(installed()).mode & 0o777).toBe(0o755)
+    expect(readFileSync(work('update.log'), 'utf8')).toMatch(/podvision-arm-unknown-linux-gnueabihf: \d+ bytes, sha256 .* matches[\s\S]*podvision: podvision 0\.2\.0/)
+    expect(JSON.parse(readFileSync(`${prefix}.previous/meta.json`, 'utf8'))).toMatchObject({ podvision: 'added' })
+  })
+
+  it('puts the old podvision back when the update rolls back, and removes one it added', async () => {
+    have('0.1.0')
+    podvision('0.2.0')
+    release(tree(NEW, { 'server/dist/index.js': 'core broken' }))
+    envs.SEEDYPOD_UPDATE_HEALTH_TIMEOUT = '1'
+    expect(await run('--now')).toMatchObject({ out: { code: 'rolled-back' } })
+    expect(readFileSync(installed(), 'utf8')).toContain('podvision 0.1.0')
+    rmSync(installed())
+    rmSync(work('lock'), { force: true })
+    expect(await run('--now')).toMatchObject({ out: { code: 'rolled-back' } })
+    expect(existsSync(installed())).toBe(false)
+  })
+
+  it('puts the old podvision back with --rollback by hand', async () => {
+    have('0.1.0')
+    podvision('0.2.0')
+    release(tree(NEW))
+    await run('--now')
+    expect(readFileSync(installed(), 'utf8')).toContain('podvision 0.2.0')
+    chmodSync(prefix, 0o755)
+    expect(await run('--rollback')).toMatchObject({ code: 0 })
+    expect(readFileSync(installed(), 'utf8')).toContain('podvision 0.1.0')
+  })
+
+  it('updates without it when the release has none, it won\'t run here, or it is unchanged', async () => {
+    have('0.1.0')
+    release(tree(NEW))
+    expect(await run('--now')).toMatchObject({ code: 0 })
+    expect(readFileSync(installed(), 'utf8')).toContain('podvision 0.1.0')
+
+    releaseCommit = `${'e'.repeat(7)}${'c'.repeat(33)}`
+    release(tree('eeeeeee'))
+    podvision('0.2.0', { runs: false })
+    expect(await run('--now')).toMatchObject({ code: 0 })
+    expect(readFileSync(work('update.log'), 'utf8')).toContain('doesn\'t run on this machine; podvision stays as it is')
+    expect(readFileSync(installed(), 'utf8')).toContain('podvision 0.1.0')
+
+    releaseCommit = `${'f'.repeat(7)}${'c'.repeat(33)}`
+    release(tree('fffffff'))
+    assets.set(PV, readFileSync(installed()))
+    assets.set(`${PV}.sha256`, Buffer.from(`${sha(readFileSync(installed()))}  ${PV}\n`))
+    digests.set(PV, sha(readFileSync(installed())))
+    expect(await run('--now')).toMatchObject({ code: 0 })
+    expect(readFileSync(work('update.log'), 'utf8')).toContain('podvision is unchanged')
+  })
+
+  it('refuses the whole update when podvision fails its checksum', async () => {
+    have('0.1.0')
+    podvision('0.2.0', { sum: 'f'.repeat(64) })
+    release(tree(NEW))
+    expect(await run('--now')).toMatchObject({ code: 4, out: { code: 'checksum' } })
+    expect(read('server/dist/index.js')).toBe(`core ${OLD}`)
+    expect(readFileSync(installed(), 'utf8')).toContain('podvision 0.1.0')
+    expect(calls()).toEqual([])
   })
 })

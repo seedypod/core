@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   hal:
-    name: hald ${{ matrix.target }}
+    name: hald + podvision ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -36,6 +36,16 @@ jobs:
           path: |
             hal/hald-${{ matrix.target }}
             hal/hald-${{ matrix.target }}.sha256
+      # Core's native pod-state runner (#191): its own binary, never linked into hald.
+      - run: cross build --release --target ${{ matrix.target }} -p podvision
+      - run: cp target/${{ matrix.target }}/release/podvision podvision-${{ matrix.target }}
+      - run: sha256sum podvision-${{ matrix.target }} > podvision-${{ matrix.target }}.sha256
+      - uses: actions/upload-artifact@v6
+        with:
+          name: podvision-${{ matrix.target }}
+          path: |
+            hal/podvision-${{ matrix.target }}
+            hal/podvision-${{ matrix.target }}.sha256
 
   sqlite-armv6:
     uses: ./.github/workflows/sqlite-armv6.yml
@@ -120,10 +130,10 @@ jobs:
           path: seedypod-core.tar.gz
           retention-days: 1
 
-      - name: Download hald binaries
+      - name: Download hald and podvision binaries
         uses: actions/download-artifact@v8
         with:
-          pattern: hald-*
+          pattern: '{hald,podvision}-*'
           merge-multiple: true
           path: release-assets
 

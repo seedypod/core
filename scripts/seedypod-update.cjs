@@ -13,7 +13,7 @@
 //        seedypod-update --rollback               put back what the last update replaced (over SSH)
 // It only downloads release assets CI built, checks each one's sha256, and
 // never compiles: a release that would need it is refused. A failed health
-// check puts the previous version back.
+// check puts the previous version back, hald and podvision (#191) with it.
 // Exit codes: 0 ok, 1 failed, 2 usage, 4 refused (checksum, nothing newer, needs scripts/install), 5 busy.
 // The last line of stdout is a JSON result for core.
 'use strict'
@@ -42,6 +42,8 @@ const P = {
   coreUnit: env('SEEDYPOD_UPDATE_CORE_UNIT') ?? '/etc/systemd/system/seedypod-core.service',
   haldUnit: env('SEEDYPOD_UPDATE_HALD_UNIT') ?? '/etc/systemd/system/hald.service',
   hald: env('SEEDYPOD_UPDATE_HALD') ?? '/usr/local/bin/hald',
+  podvision: env('SEEDYPOD_UPDATE_PODVISION') ?? '/usr/local/bin/podvision',
+  target: env('SEEDYPOD_UPDATE_TARGET'),
   sbin: env('SEEDYPOD_UPDATE_SBIN') ?? '/usr/local/sbin',
   compileCache: env('SEEDYPOD_UPDATE_COMPILE_CACHE') ?? '/var/cache/seedypod/compile-cache',
   busy: env('SEEDYPOD_UPDATE_BUSY') ?? '/run/seedypod-busy',
@@ -167,6 +169,7 @@ async function resolve(ch) {
 }
 
 function haldTarget() {
+  if (P.target) return P.target
   const m = os.machine()
   if (m === 'aarch64' || m === 'arm64') return (() => {
     try {
@@ -632,6 +635,12 @@ async function putBack(meta) {
     fs.chmodSync(`${P.hald}.new`, 0o755)
     fs.renameSync(`${P.hald}.new`, P.hald)
   }
+  if (meta.podvision === 'replaced' && fs.existsSync(path.join(P.previous, 'podvision'))) {
+    fs.copyFileSync(path.join(P.previous, 'podvision'), `${P.podvision}.new`)
+    fs.chmodSync(`${P.podvision}.new`, 0o755)
+    fs.renameSync(`${P.podvision}.new`, P.podvision)
+  }
+  else if (meta.podvision === 'added') fs.rmSync(P.podvision, { force: true })
   pinVersion()
   return startAndCheck(meta, meta.fromVersion)
 }
@@ -687,6 +696,21 @@ async function apply() {
     if (!fs.readFileSync(file).equals(fs.readFileSync(P.hald))) hald = file
     log(hald ? `hald: ${ver.out.trim()}` : 'hald is unchanged')
   }
+  // Core scores pods in TypeScript without podvision, so a release without one, or one
+  // that won't run here, leaves what's installed as it is instead of refusing the update.
+  let podvision = null
+  const pvName = haldTarget() ? `podvision-${haldTarget()}` : null
+  if (pvName && release.assets[pvName]) {
+    const file = await fetchAsset(release, pvName)
+    fs.chmodSync(file, 0o755)
+    const ver = await run(file, ['--version'], { uid: acct.uid, gid: acct.gid })
+    if (ver.code !== 0) log(`${pvName} doesn't run on this machine; podvision stays as it is`)
+    else if (fs.existsSync(P.podvision) && fs.readFileSync(file).equals(fs.readFileSync(P.podvision))) log('podvision is unchanged')
+    else {
+      podvision = file
+      log(`podvision: ${ver.out.trim()}`)
+    }
+  }
   // The helpers come from the checked release, before its files are handed to core's account.
   const helpers = path.join(DL, 'helpers')
   fs.mkdirSync(helpers, { recursive: true, mode: 0o700 })
@@ -702,7 +726,7 @@ async function apply() {
   log('stopping core')
   fs.rmSync(P.previous, { recursive: true, force: true })
   fs.mkdirSync(path.join(P.previous, 'code'), { recursive: true, mode: 0o755 })
-  const meta = { at: new Date().toISOString(), fromVersion, toVersion: to.version, tag: release.tag, moved: [], placed: [], nodeModules: false, db: false, hald: false, halOnline }
+  const meta = { at: new Date().toISOString(), fromVersion, toVersion: to.version, tag: release.tag, moved: [], placed: [], nodeModules: false, db: false, hald: false, podvision: false, halOnline }
   writeJson(META, meta)
   try {
     await systemctl('stop', 'seedypod-core')
@@ -746,6 +770,16 @@ async function apply() {
       fs.copyFileSync(hald, `${P.hald}.new`)
       fs.chmodSync(`${P.hald}.new`, 0o755)
       fs.renameSync(`${P.hald}.new`, P.hald)
+    }
+    if (podvision) {
+      const had = fs.existsSync(P.podvision)
+      if (had) fs.copyFileSync(P.podvision, path.join(P.previous, 'podvision'))
+      meta.podvision = had ? 'replaced' : 'added'
+      writeJson(META, meta)
+      fs.mkdirSync(path.dirname(P.podvision), { recursive: true })
+      fs.copyFileSync(podvision, `${P.podvision}.new`)
+      fs.chmodSync(`${P.podvision}.new`, 0o755)
+      fs.renameSync(`${P.podvision}.new`, P.podvision)
     }
     // Keyed on content, so stale entries are only dead weight.
     fs.rmSync(P.compileCache, { recursive: true, force: true })

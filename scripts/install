@@ -8,7 +8,8 @@
 # installs production deps, and enables seedypod-core.service on :3000. It also
 # installs the restore helper (/usr/local/sbin/seedypod-restore, ADR-0021) and
 # lets this user run it with sudo, for that one path, and the update helper
-# (/usr/local/sbin/seedypod-update, ADR-0026) with its fixed arguments only.
+# (/usr/local/sbin/seedypod-update, ADR-0026) with its fixed arguments only, and
+# podvision (/usr/local/bin/podvision, #191), core's native pod-state runner.
 #   --restore <file|url>  then restore that backup bundle (seedypod-backup-….tar.gz)
 #                         instead of choosing on the Welcome screen
 #   --check               only say whether this machine can run core, and why not
@@ -444,6 +445,45 @@ install_update_helper() {
   return $ok
 }
 
+# ---- podvision -------------------------------------------------------------------
+# Core's native pod-state runner (#191), a release binary like hald that core runs
+# at nice 19 for each capture. Without it, or with one that won't run here, core
+# scores pods in TypeScript as before, so a failure here only warns.
+# tests/scripts/install.podvision.test.ts sources this file with SEEDYPOD_LIB_ONLY=1.
+PODVISION=/usr/local/bin/podvision
+podvision_target() {
+  case "$(uname -m):$(getconf LONG_BIT 2>/dev/null || echo 64)" in
+    aarch64:64|arm64:64) echo aarch64-unknown-linux-gnu ;;
+    aarch64:32|armv6l:*|armv7l:*|armv8l:*) echo arm-unknown-linux-gnueabihf ;;
+    *) return 1 ;;
+  esac
+}
+install_podvision() {
+  local target asset base dir="$TMP/podvision" dest="$ROOT$PODVISION"
+  if ! target="$(podvision_target)"; then
+    note "   no podvision build for $(uname -m): pod-state runs in TypeScript"
+    return 0
+  fi
+  asset="podvision-$target"
+  base="https://github.com/$REPO/releases/download/dev-latest"
+  [ "$BRANCH" != main ] || base="https://github.com/$REPO/releases/latest/download"
+  base="${SEEDYPOD_RELEASE_URL:-$base}"
+  mkdir -p "$dir"
+  if ! curl -fsSL --retry 3 "$base/$asset" -o "$dir/$asset" || ! curl -fsSL --retry 3 "$base/$asset.sha256" -o "$dir/$asset.sha256"; then
+    warn "   no $asset in this release"; return 1
+  fi
+  if ! (cd "$dir" && sha256sum -c --quiet "$asset.sha256") >/dev/null 2>&1; then
+    warn "   $asset fails its sha256"; return 1
+  fi
+  chmod 0755 "$dir/$asset"
+  if ! "$dir/$asset" --version >/dev/null 2>&1; then
+    warn "   $asset doesn't run on this machine"; return 1
+  fi
+  cmp -s "$dir/$asset" "$dest" && return 0
+  sudo mkdir -p "$(dirname "$dest")" && sudo install -m 0755 "$dir/$asset" "$dest" || return 1
+  step "installed $("$dest" --version) for pod-state"
+}
+
 # An update that dies halfway must not leave core stopped, or unable to write its database.
 abandon_update() {
   finish_prefix || true
@@ -562,6 +602,7 @@ else
 fi
 rm -f "$SUDOERS_TMP"
 install_update_helper || warn "   couldn't install the update helper; update from the web UI is off"
+install_podvision || warn "   couldn't install podvision; pod-state runs in TypeScript"
 
 # Backups read hal.toml, hald's state and the broker password through the seedypod
 # group that install-hal creates (ADR-0021); install-hal adds us too if it runs later.

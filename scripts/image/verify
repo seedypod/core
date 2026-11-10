@@ -20,6 +20,8 @@ check "node is 22.23.4" test "$(node -v)" = v22.23.4
 check "node is the ARMv6 build" armv6 "$(readlink -f /usr/local/bin/node)"
 check "hald runs" hald --version
 check "hald is built for ARMv6" armv6 /usr/local/bin/hald
+check "podvision runs" podvision --version
+check "podvision is built for ARMv6" armv6 /usr/local/bin/podvision
 check "better-sqlite3 is the ARMv6 build" armv6 "$sqlite/build/Release/better_sqlite3.node"
 check "better-sqlite3 loads and writes" bash -c "cd /opt/seedypod && node -e \"new (require('better-sqlite3'))(':memory:').exec('create table t (x)')\""
 check "core's bundle is there" test -f /opt/seedypod/server/dist/index.js

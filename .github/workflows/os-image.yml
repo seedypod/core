@@ -44,11 +44,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Fetch this run's hald, better-sqlite3 and tarball
+      - name: Fetch this run's hald, podvision, better-sqlite3 and tarball
         if: inputs.tag != ''
         uses: actions/download-artifact@v8
         with:
-          pattern: '{hald-arm-unknown-linux-gnueabihf,better-sqlite3-armv6,seedypod-core}'
+          pattern: '{hald-arm-unknown-linux-gnueabihf,podvision-arm-unknown-linux-gnueabihf,better-sqlite3-armv6,seedypod-core}'
           merge-multiple: true
           path: assets
 
@@ -56,7 +56,7 @@ jobs:
         if: inputs.tag == ''
         run: |
           mkdir assets
-          gh release download dev-latest --dir assets --pattern 'hald-arm-*' --pattern 'better-sqlite3-*' --pattern seedypod-core.tar.gz
+          gh release download dev-latest --dir assets --pattern 'hald-arm-*' --pattern 'podvision-arm-*' --pattern 'better-sqlite3-*' --pattern seedypod-core.tar.gz
           mkdir "$RUNNER_TEMP/core"
           tar xzf assets/seedypod-core.tar.gz -C "$RUNNER_TEMP/core"
           cp -rf scripts/. "$RUNNER_TEMP/core/scripts/"
