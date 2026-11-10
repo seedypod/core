@@ -9,6 +9,7 @@ import { ReadingFlag, ReadingsUpdated } from '@/src/components/Sensors/ReadingAg
 import { ageDays, podShown } from '@/src/components/Grow/towerLayout'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
+import { toDisplay } from '@/src/lib/units'
 import { checkSummary, STATE_TEXT, worstState } from '@/src/components/System/checkState'
 import { trpc } from '@/src/utils/trpc'
 import { NAV_GROUPS, navItems, type NavItem } from './navItems'
@@ -55,7 +56,7 @@ function Readings() {
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const l = light.data
   const tank = s.water_level_pct
-  const air = [s.air_temp, s.humidity].filter((r): r is Reading => !!r).map(r => withUnit(r.value, r.unit)).join(' · ')
+  const air = [s.air_temp, s.humidity].filter((r): r is Reading => !!r).map(r => toDisplay(r.value, r.unit)).map(r => withUnit(Math.round(r.value), r.unit)).join(' · ')
   // Water-quality probes are optional, so the line shows only for those installed.
   const system = trpc.system.info.useQuery()
   const quality = (system.data?.system?.caps.sensors ?? []).filter(id => SENSOR_META[id].group === 'water-quality')

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AlertsPage, categoryOf, describeAlert, openSummary } from '../AlertsPage'
+import { alertActions, alertOutcome, AlertsPage, categoryOf, describeAlert, openSummary } from '../AlertsPage'
 
 const { data, calls, invalidate } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
@@ -54,6 +54,27 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('alert actions and outcomes', () => {
+  it('gives a latched fault Clear fault, a reminder Done and Skip, and the rest Dismiss', () => {
+    expect(alertActions('pump_fault')).toEqual({ resolve: 'Clear fault', skip: null })
+    expect(alertActions('chore_top_off')).toEqual({ resolve: 'Done', skip: 'Skip' })
+    expect(alertActions('setup_pump_schedule')).toEqual({ resolve: 'Dismiss', skip: null })
+    expect(alertActions('water_low')).toEqual({ resolve: 'Dismiss', skip: null })
+  })
+
+  it('says how each closed alert ended', () => {
+    const at = '2026-11-10T22:40:00Z'
+    const row = { active: false, clearedAt: at, acknowledgedAt: null, dismissedAt: null }
+    expect(alertOutcome({ ...row, kind: 'pump_fault' })).toBe(' · resolved by itself')
+    expect(alertOutcome({ ...row, kind: 'pump_fault', acknowledgedAt: at })).toBe(' · cleared by you')
+    expect(alertOutcome({ ...row, kind: 'chore_feed', acknowledgedAt: at })).toBe(' · done')
+    expect(alertOutcome({ ...row, kind: 'chore_feed', dismissedAt: at })).toBe(' · skipped')
+    expect(alertOutcome({ ...row, kind: 'backup_stale', acknowledgedAt: at })).toBe(' · dismissed')
+    expect(alertOutcome({ ...row, kind: 'pump_fault', active: true, clearedAt: null })).toBe('')
+    expect(alertOutcome({ ...row, kind: 'pump_fault', clearedAt: null })).toBe('')
+  })
+})
+
 describe('AlertsPage', () => {
   it('summarises what is open and shows each alert with its category and age', () => {
     render(<AlertsPage />)
@@ -63,20 +84,21 @@ describe('AlertsPage', () => {
     expect(cam.getByText('hardware')).toBeTruthy()
     expect(cam.getByText('Returned 4 bytes on the last capture. Pods 16–30 have no new photos.')).toBeTruthy()
     expect(cam.getByText(/4 h ago/)).toBeTruthy()
-    expect(cam.getByText('Acknowledging re-enables the camera. Fix the cause first.')).toBeTruthy()
+    expect(cam.getByText('Clearing it re-enables the camera. Fix the cause first.')).toBeTruthy()
+    expect(cam.queryByText('Skip')).toBeNull()
     expect(cam.getByText('View camera').getAttribute('href')).toBe('/cameras')
     const chore = within(screen.getByTestId('alert-reminder_nutrients'))
     expect(chore.getByText('reminder')).toBeTruthy()
     expect(chore.queryByText(/re-enables/)).toBeNull()
   })
 
-  it('acknowledges a fault, marks a reminder done and dismisses', () => {
+  it('clears a fault, marks a reminder done and skips one', () => {
     render(<AlertsPage />)
-    fireEvent.click(screen.getByText('Acknowledge'))
+    fireEvent.click(screen.getByText('Clear fault'))
     expect(calls.acknowledge).toHaveBeenCalledWith({ id: 2 })
     fireEvent.click(screen.getByText('Done'))
     expect(calls.acknowledge).toHaveBeenLastCalledWith({ id: 1 })
-    fireEvent.click(screen.getAllByText('Dismiss')[1] as HTMLElement)
+    fireEvent.click(screen.getByText('Skip'))
     expect(calls.dismiss).toHaveBeenCalledWith({ id: 1 })
     expect(invalidate).toHaveBeenCalled()
   })
@@ -95,8 +117,8 @@ describe('AlertsPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'History' }))
     expect(calls.list).toHaveBeenCalledWith({ activeOnly: false })
     const old = within(screen.getByTestId('alert-water_low'))
-    expect(old.getByText(/cleared .* · acknowledged/)).toBeTruthy()
-    expect(old.queryByText('Acknowledge')).toBeNull()
+    expect(old.getByText(/cleared .* · cleared by you/)).toBeTruthy()
+    expect(old.queryByText('Clear fault')).toBeNull()
     expect(screen.queryByText('Plants · from Grow')).toBeNull()
   })
 

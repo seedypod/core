@@ -201,8 +201,8 @@ describe('alert card', () => {
     const card = within(main()).getByRole('region', { name: 'Alerts' })
     expect(within(card).getByRole('heading', { name: 'Camera alert' })).toBeTruthy()
     expect(within(card).getByText('lower · camera_missing · 2h 5m ago')).toBeTruthy()
-    expect(within(card).getByText(/Pods 16–30 have no new photos\. The alert stays latched/)).toBeTruthy()
-    fireEvent.click(within(card).getByRole('button', { name: 'Acknowledge' }))
+    expect(within(card).getByText(/Pods 16–30 have no new photos\. It stays until you clear it/)).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: 'Clear fault' }))
     expect(mutate).toHaveBeenCalledWith('alerts.acknowledge', { id: 7 })
   })
 
@@ -216,6 +216,14 @@ describe('alert card', () => {
     expect(within(card).getByRole('heading', { name: '2 alerts' })).toBeTruthy()
     expect(within(card).getByText('Add nutrients')).toBeTruthy()
     expect(within(card).queryByText(/stays latched/)).toBeNull()
+  })
+
+  it('leaves the stay-until-cleared line off a low-water alert, which clears by itself', () => {
+    data.set('alerts.list', [{ id: 3, kind: 'water_low', active: true, detail: 'water distance 17.0 cm ≥ 16.0 cm', raisedAt: at(17) }])
+    page()
+    const card = within(main()).getByRole('region', { name: 'Alerts' })
+    expect(within(card).queryByText(/It stays until you clear it/)).toBeNull()
+    expect(within(card).getByRole('button', { name: 'Dismiss' })).toBeTruthy()
   })
 
   it('names titles and sources from the kind', () => {
