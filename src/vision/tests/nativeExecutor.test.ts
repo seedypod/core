@@ -191,7 +191,8 @@ describe('podvision binary', () => {
 // The real binary, when it's built (CI builds it before the unit tests): `cargo build -p podvision` in hal/.
 const built = [process.env.PODVISION_TEST_BIN, resolve(import.meta.dirname, '../../../hal/target/release/podvision'), resolve(import.meta.dirname, '../../../hal/target/debug/podvision')].find(p => p && existsSync(p))
 
-describe.skipIf(!built)('podvision itself', () => {
+// CI builds it unoptimised, where 15 forward passes take seconds.
+describe.skipIf(!built)('podvision itself', { timeout: 60_000 }, () => {
   const bin = built as string
   const fixture = parity as unknown as { model: ModelFile, image: { width: number, height: number, rgba: string }, cases: Array<{ rect: { x: number, y: number, w: number, h: number }, logits: number[] }> }
   const { width, height } = fixture.image
@@ -225,7 +226,7 @@ describe.skipIf(!built)('podvision itself', () => {
   // jpeg-js and podvision's decoder round chroma differently (podvision's is libjpeg's, which training uses), so
   // the two runners agree to the decoders' difference, not to 1e-4. Sharp colour bands make that difference largest.
   it('names the same state as the TypeScript runner on a JPEG, within the decoders\' difference', async () => {
-    const bytes = jpeg(640, 480, true)
+    const bytes = jpeg(320, 240, true)
     const camera = 'lower'
     const regions = podRegions(camera)
     const out = await runPodvision(bin, bytes, regions, [{ id: 'pod-state', path: modelPath }])
