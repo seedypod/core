@@ -26,6 +26,10 @@ export class FsModelFiles implements ModelFiles {
     return readdirSync(this.dir).map(f => SHA_FILE.exec(f)?.[1]).filter((s): s is string => !!s)
   }
 
+  path(sha: string): string {
+    return join(this.dir, `${sha}.json`)
+  }
+
   read(sha: string): string | null {
     const path = join(this.dir, `${sha}.json`)
     return existsSync(path) ? readFileSync(path, 'utf8') : null

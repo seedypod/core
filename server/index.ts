@@ -28,6 +28,8 @@ import { UpdateClient, updateCommand } from '../src/update/client'
 import { installLearned } from '../src/vision/analyzer'
 import { FsModelFiles, sha256 } from '../src/vision/modelFiles'
 import { learnedAnalyzers } from '../src/vision/podState'
+import { inlineExecutor } from '../src/vision/execute'
+import { createNativeExecutor, podvisionBinary } from '../src/vision/nativeExecutor'
 import { ModelRegistry } from '../src/vision/registry'
 import { createWorkerExecutor } from '../src/vision/workerExecutor'
 import { createApp } from './app'
@@ -58,10 +60,15 @@ const models = new ModelRegistry({
   onChange: (specs) => {
     installLearned(learnedAnalyzers(specs))
     vision?.configure(specs)
+    native?.configure(specs)
   },
 })
 installLearned(learnedAnalyzers(models.specs()))
 const vision = existsSync(fileURLToPath(workerScript)) ? createWorkerExecutor(workerScript, undefined, models.specs()) : null
+// podvision (#191) runs the learned analysers natively, at nice 19, when it's installed; the worker is its fallback.
+const podvision = podvisionBinary()
+const native = podvision ? createNativeExecutor({ bin: podvision, fallback: vision?.run ?? inlineExecutor, learned: models.specs(), timeoutMs: Number(process.env.PODVISION_TIMEOUT_MS) || undefined }) : null
+console.log(podvision ? `pod-state runs in ${podvision}` : 'no podvision binary: pod-state runs in TypeScript')
 // The Database view scans read-only on a worker thread, the same way.
 const inspectScript = new URL('./inspectWorker.js', import.meta.url)
 const database = new NodeDatabaseInspector({ path: dbPath, migrationsFolder: defaultMigrationsFolder(), worker: existsSync(fileURLToPath(inspectScript)) ? inspectScript : null })
@@ -90,7 +97,7 @@ const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA
 const haBridge = superviseBridge(() => connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim', stills: camera => latestStill(store, mirror, camera) }), events)
 // hald's boot log survives the reboots the journal doesn't; world-readable, so core can read it.
 const bootLog = () => readFile(join(backupPaths(process.env, DATA_DIR).stateDir, 'boot-log'), 'utf8').catch(() => null)
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, update, bootLog, homekit, startServices: process.env.CI !== '1', analysisExecutor: vision?.run, models, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, update, bootLog, homekit, startServices: process.env.CI !== '1', analysisExecutor: native?.run ?? vision?.run, models, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
 
 const { app, injectWebSocket } = createApp({ ctx: core.ctx, staticRoot: './web/dist' })
 

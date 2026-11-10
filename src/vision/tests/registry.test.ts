@@ -68,6 +68,18 @@ describe('model registry', () => {
     expect(r.events()).toEqual([])
   })
 
+  it('says where each running file is on disk, for podvision (#191), when the files have paths', () => {
+    const { r, files } = registry()
+    files.shipped = () => ({ text: shippedText, path: '/opt/seedypod/models/pod-state.json' })
+    const paths = files as MemFiles & { path?: (sha: string) => string }
+    const text = model('On disk')
+    const id = r.upload(text, sha256(text), { enable: true }).id
+    expect(r.specs().map(s => s.path)).toEqual(['/opt/seedypod/models/pod-state.json', undefined])
+    paths.path = sha => `/data/models/${sha}.json`
+    expect(r.specs().find(s => s.id === 'pod-state-on-disk')?.path).toBe(`/data/models/${sha256(text)}.json`)
+    expect(id).toBe(sha256(text).slice(0, 12))
+  })
+
   it('stores an upload disabled, bound by its hash, and runs it as its own analyser once enabled', () => {
     const { r, files, changes } = registry()
     const text = model('My model 2026-12')
@@ -167,6 +179,7 @@ describe('model files on disk', () => {
     const { id } = r.upload(text, sha256(text), { enable: true })
     expect(files.list()).toEqual([sha256(text)])
     expect(files.shipped().text).toBe(shippedText)
+    expect(readFileSync(files.path(sha256(text)), 'utf8')).toBe(text)
     // A new registry over the same folder, as after a restart or an update.
     expect(new ModelRegistry({ files, sha256 }).get(id)).toMatchObject({ enabled: true })
     writeFileSync(join(dir, 'models', 'registry.json'), '{')

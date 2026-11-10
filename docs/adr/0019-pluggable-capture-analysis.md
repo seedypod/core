@@ -9,8 +9,22 @@ sources: [{"resource": "/adr/0004-two-tier-hal-core.md", "title": "ADR 0004: Two
 
 # ADR 0019: Pluggable capture analysis
 
-**Status:** Accepted, amended 2026-11-09 (learned models run in plain TypeScript, not ONNX)
+**Status:** Accepted, amended 2026-11-09 (learned models run in plain TypeScript, not ONNX) and 2026-11-09 (a native runner, `podvision`, runs them first)
 **Date:** 2026-10-31
+
+> **Status note, 2026-11-09 ([#191](https://github.com/seedypod/core/issues/191)).** The native
+> backend the amendment below left room for exists. On the unit, `pod-state@1` took about 33 s
+> per capture in TypeScript, and the vision worker shared the Pi Zero W's one core with core's
+> API, which slowed from 30 ms to as much as 1 s. `podvision` (`hal/crates/podvision`) is a small
+> Rust binary that core runs once per capture as a `nice` 19 child, under a timeout. It decodes the
+> still, crops the pods and runs every enabled pod-state revision from the same `seedypod-cnn`
+> weights files, then prints JSON. It is a separate release binary like `hald`, but it links none
+> of `hald`, and analysis stays core's: core decides what runs and stores the results under the
+> same analyser ids and versions. The TypeScript runner stays as the fallback, used when the
+> binary is missing, fails, times out or reports another version, and always for the rule-based
+> analysers. Both runners match the training repository's parity fixture within 1e-4. On real
+> stills they differ by what their JPEG decoders do, and podvision's decoder is the one that
+> matches training's (PIL). [Capture analysis](../ANALYSIS.md#native-runner) gives the numbers.
 
 > **Amendment, 2026-11-09 ([#185](https://github.com/seedypod/core/issues/185)).** Decision 1
 > said a learned model would be "one more analyser that loads an ONNX file". That does not work

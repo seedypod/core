@@ -211,10 +211,51 @@ made them), and on held-out synthetic plants it got 89 % right, where leaf
 cover alone gets 49 %. Neither number says how it does on real seedlings.
 Stills taken with the grow light off are skipped, since it never saw one.
 
-It runs in plain TypeScript, not ONNX: the Pi Zero W has no ONNX runtime that
-fits ([ADR 0019](adr/0019-pluggable-capture-analysis.md), 2026-11-09
-amendment). On the unit that costs about 0.75 s per pod, about 23 s for a
-capture of 30 pods, on the vision worker.
+It runs without ONNX: the Pi Zero W has no ONNX runtime that fits
+([ADR 0019](adr/0019-pluggable-capture-analysis.md), 2026-11-09 amendment).
+Core runs it in `podvision`, a small native binary, and in plain TypeScript
+on the vision worker when that isn't there.
+
+### Native runner
+
+`podvision` (`hal/crates/podvision`, [#191](https://github.com/seedypod/core/issues/191))
+does what the TypeScript runner does, natively: it decodes the still, crops
+each pod, runs every enabled pod-state revision and prints the results. Core
+runs it once per capture as a child process at `nice` 19, so the API keeps
+answering, and kills it after 60 s. On a Pi Zero W it takes 3–4.5 s for a
+camera's 15 pods (0.6–1.1 s to decode the still, 2.1–3.0 s for the forward
+passes), where the TypeScript runner took about 33 s. Releases carry it next to `hald`
+(`podvision-<target>` with a `.sha256`), `scripts/install` puts it in
+`/usr/local/bin`, and the web updater swaps it with each release and puts it
+back on a rollback. Core logs `pod-state runs in /usr/local/bin/podvision` at
+startup when it finds the binary.
+
+Results are stored under the same analyser ids and versions either way. When
+podvision is missing, fails, times out or reports another version than core
+lists, core logs why and runs the learned analysers in TypeScript instead.
+The rule-based analysers always run in TypeScript. `PODVISION` points core at
+another binary; set it empty to use the TypeScript runner only.
+`PODVISION_TIMEOUT_MS` changes the timeout.
+
+The two runners share the forward pass's parity fixture to 1e-4, but not
+their JPEG decoders, so on real stills they agree to within the decoders'
+difference. podvision's decoder is the closer one to training's (PIL). On
+three of the unit's stills, with the shipped model:
+
+| Compared with | podvision | TypeScript (jpeg-js) |
+|---|---|---|
+| PIL's pixels | mean 0.07, max 3 levels | mean 0.76–0.95, max 24 levels |
+
+| podvision against the TypeScript runner | At full size | Forced to 1/2 scale |
+|---|---|---|
+| Crop inputs (normalised) | mean 0.009–0.012, max 0.33 | mean 0.07–0.09, max 2.7 |
+| Probabilities | mean 0.001–0.007, max 0.075 | mean 0.002–0.013, max 0.14 |
+| Same class | 45 of 45 pods | 45 of 45 pods |
+
+podvision decodes at 1/2, 1/4 or 1/8 scale (DCT scaling) only when every
+pod's crop stays at least as large as the model's 64×64 input there. The
+smallest default box is about 65 px across at 1280×960, so with the default
+regions it decodes at full size.
 
 ### Weights file
 
@@ -281,9 +322,11 @@ or reset, one per call. The primary revision is the one to trust when they
 disagree; pod trends still follow the primary green-fraction analyser.
 
 To ship a model with every unit instead, replace `models/pod-state.json` in a
-core PR, with a new `--version`. The parity test
-(`src/vision/tests/podState.test.ts`) checks that core's forward pass matches
-PyTorch's within 1e-4 on a fixture the training repository generates.
+core PR, with a new `--version`. The parity tests
+(`src/vision/tests/podState.test.ts`, `cargo test -p podvision`, and
+`src/vision/tests/nativeExecutor.test.ts` against the built binary) check that
+both forward passes match PyTorch's within 1e-4 on a fixture the training
+repository generates.
 
 ## Mirror photos off the unit (opt-in)
 
