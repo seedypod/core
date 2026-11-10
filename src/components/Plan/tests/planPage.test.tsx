@@ -237,6 +237,39 @@ describe('PlanPage', () => {
     expect(calls.removePlant).toHaveBeenCalledWith({ id: 'okra' })
   })
 
+  it('swaps two planned pods by tapping one then the other, or by dragging, and never moves a planted pod', () => {
+    state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
+    render(<PlanPage />)
+    flat()
+    search('basil')
+    add('Basil')
+    search('chives')
+    add('Chives')
+    const grid = within(screen.getByTestId('plan-grid'))
+    const slotOf = (name: string) => Number(grid.getAllByText(name)[0]?.closest('[data-slot]')?.getAttribute('data-slot'))
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const basil = slotOf('Basil')
+    const chives = slotOf('Chives')
+    expect(basil).not.toBe(chives)
+
+    fireEvent.click(cell(basil))
+    expect(cell(basil).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(cell(chives))
+    expect([slotOf('Basil'), slotOf('Chives')]).toEqual([chives, basil])
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual(expect.arrayContaining([{ slot: chives, plantId: 'basil' }, { slot: basil, plantId: 'chives' }]))
+
+    // Dragged back; a planted pod (Mint, pod 1) takes no drop.
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (k: string, v: string) => data.set(k, v), getData: (k: string) => data.get(k) ?? '' }
+    fireEvent.dragStart(cell(chives), { dataTransfer })
+    fireEvent.drop(cell(basil), { dataTransfer })
+    expect([slotOf('Basil'), slotOf('Chives')]).toEqual([basil, chives])
+    fireEvent.dragStart(cell(basil), { dataTransfer })
+    fireEvent.drop(cell(1), { dataTransfer })
+    expect(slotOf('Basil')).toBe(basil)
+    expect(slotOf('Mint')).toBe(1)
+  })
+
   it('counts the pods a plan leaves empty, not the pods unplanted today', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
     render(<PlanPage />)
@@ -254,7 +287,7 @@ describe('PlanPage', () => {
     expect(screen.getByText(/^0 planned · 29 empty ·/)).toBeTruthy()
     expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there.')).toBeTruthy()
     flat()
-    expect(screen.getByText('Italic = already planted.')).toBeTruthy()
+    expect(screen.getByText('Drag a plant onto another pod, or tap one then the other, to swap them. Italic = already planted.')).toBeTruthy()
     cleanup()
 
     // Nothing has answered: no count to give yet.
@@ -271,7 +304,7 @@ describe('PlanPage', () => {
   })
 
   it('says “lower than ideal”, not “one zone lower”, once a pod sits two zones down', () => {
-    const at = (fallback: number, shift: 'lower' | 'higher' | null) => ({ slot: 1, plantName: 'Jalapeño', reason: '', fallback, shift })
+    const at = (fallback: number, shift: 'lower' | 'higher' | null) => ({ slot: 1, plantId: 'jalapeno', plantName: 'Jalapeño', reason: '', fallback, shift })
     expect(shiftNotes([at(1, 'lower'), at(2, 'lower')], '2d')).toBe(' Outlined pods sit lower than ideal — Gardyn’s rule when the ideal zone is full, or zones allowed for them.')
     expect(shiftNotes([at(2, 'lower'), at(1, 'higher')], '3d')).toBe(' Some sit lower than ideal — Gardyn’s rule when the ideal zone is full, or zones allowed for them. Some sit higher than ideal, in more light, in a zone allowed for them.')
     expect(shiftNotes([at(0, null)], '3d')).toBe('')
@@ -287,7 +320,7 @@ describe('PlanPage', () => {
     expect(screen.queryByText(/lower than ideal/)).toBeNull()
     expect(towerPods().filter(p => p.harvest?.reason === 'Planned: medium zone, allowed by the caller (ideal low).')).toHaveLength(1)
     flat()
-    expect(screen.getByText(/^Italic = already planted\. Dashed outlines sit higher than ideal/)).toBeTruthy()
+    expect(screen.getByText(/Italic = already planted\. Dashed outlines sit higher than ideal/)).toBeTruthy()
     expect(screen.queryByText(/lower than ideal/)).toBeNull()
     const higher = screen.getByTitle('medium zone, allowed by the caller (ideal low)')
     expect(higher.className).toContain('outline-dashed')
@@ -431,6 +464,6 @@ describe('PlanPage', () => {
     expect(await screen.findByText(/needs WebGL/)).toBeTruthy()
     expect(screen.getByTestId('plan-grid')).toBeTruthy()
     expect(screen.queryByRole('tablist', { name: 'Plan view' })).toBeNull()
-    expect(screen.getByText(/^Italic = already planted\./)).toBeTruthy()
+    expect(screen.getByText(/swap them\. Italic = already planted\./)).toBeTruthy()
   })
 })
