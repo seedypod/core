@@ -21,6 +21,7 @@ pub struct MedianSensor {
     inner: Box<dyn Sensor>,
     samples: usize,
     gap: Duration,
+    max: Option<f64>,
     last: SharedDistance,
 }
 
@@ -30,6 +31,7 @@ impl MedianSensor {
             inner,
             samples: samples.max(1),
             gap: Duration::ZERO,
+            max: None,
             last: Arc::new(Mutex::new(None)),
         }
     }
@@ -38,6 +40,14 @@ impl MedianSensor {
     /// last one still rings round a small tank hears its echo, or nothing.
     pub fn with_gap(mut self, gap: Duration) -> Self {
         self.gap = gap;
+        self
+    }
+
+    /// Count a sample further than `max` as no answer. The water can't be
+    /// further than the bottom of the tank, so a longer echo is a stray (the
+    /// unit has read 53, 87 and 129 cm in a 23 cm tank), not low water.
+    pub fn with_max(mut self, max: f64) -> Self {
+        self.max = Some(max);
         self
     }
 
@@ -63,6 +73,12 @@ impl Sensor for MedianSensor {
                 std::thread::sleep(self.gap);
             }
             match self.inner.read() {
+                Ok(r) if self.max.is_some_and(|max| r.value > max) => {
+                    last_err = Some(DeviceError::Other(format!(
+                        "stray echo at {:.1} {}",
+                        r.value, r.unit
+                    )));
+                }
                 Ok(r) => {
                     unit = r.unit;
                     vals.push(r.value);
@@ -235,6 +251,23 @@ mod tests {
         let r = m.read().unwrap();
         assert_eq!((r.value, r.quality), (12.7, Quality::Suspect));
         assert_eq!(*shared.lock().unwrap(), Some((12.7, Quality::Suspect)));
+    }
+
+    #[test]
+    fn echoes_past_the_tank_bottom_count_as_no_answer() {
+        // The unit's start check: 86.9 cm from a 23 cm tank raised water_low.
+        let inner = Noisy {
+            seq: vec![Ok(86.9), Ok(12.6), Ok(129.0), Ok(12.7), Ok(12.6)],
+        };
+        let mut m = MedianSensor::new(Box::new(inner), 5).with_max(30.0);
+        let r = m.read().unwrap();
+        assert_eq!((r.value, r.quality), (12.6, Quality::Good));
+        // Nothing but strays is no reading at all, so the guard fails safe.
+        let inner = Noisy {
+            seq: vec![Ok(53.0), Ok(87.0), Ok(61.0)],
+        };
+        let mut m = MedianSensor::new(Box::new(inner), 3).with_max(30.0);
+        assert!(matches!(m.read(), Err(DeviceError::Other(_))));
     }
 
     #[test]
