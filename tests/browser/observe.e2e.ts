@@ -17,15 +17,15 @@ test('cameras: a failed capture shows the failure with Retry, and raises an aler
   await expect(main.getByText(/\d+ open · .*\d+ hardware/)).toBeVisible()
   const alert = main.getByTestId('alert-camera_missing')
   await expect(alert.getByText('Upper camera not capturing')).toBeVisible()
-  await expect(alert.getByText('Acknowledging re-enables the camera. Fix the cause first.')).toBeVisible()
+  await expect(alert.getByText('Clearing it re-enables the camera. Fix the cause first.')).toBeVisible()
   await alert.getByRole('link', { name: 'View camera' }).click()
   await expect(page).toHaveURL(/\/cameras$/)
 
   await page.goto('/alerts')
-  await main.getByTestId('alert-camera_missing').getByRole('button', { name: 'Acknowledge' }).click()
+  await main.getByTestId('alert-camera_missing').getByRole('button', { name: 'Clear fault' }).click()
   await expect(main.getByTestId('alert-camera_missing')).toHaveCount(0)
   await main.getByRole('tab', { name: 'History' }).click()
-  await expect(main.getByText(/acknowledged/).first()).toBeVisible()
+  await expect(main.getByText(/cleared by you/).first()).toBeVisible()
 })
 
 test('analysis: the dataset export opens from the header', async ({ page }) => {

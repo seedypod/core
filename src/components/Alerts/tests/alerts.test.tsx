@@ -71,6 +71,7 @@ describe('alert actions and outcomes', () => {
     expect(alertOutcome({ ...row, kind: 'chore_feed', dismissedAt: at })).toBe(' · skipped')
     expect(alertOutcome({ ...row, kind: 'backup_stale', acknowledgedAt: at })).toBe(' · dismissed')
     expect(alertOutcome({ ...row, kind: 'pump_fault', active: true, clearedAt: null })).toBe('')
+    expect(alertOutcome({ ...row, kind: 'pump_fault', clearedAt: null })).toBe('')
   })
 })
 

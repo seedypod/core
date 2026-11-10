@@ -218,6 +218,14 @@ describe('alert card', () => {
     expect(within(card).queryByText(/stays latched/)).toBeNull()
   })
 
+  it('leaves the stay-until-cleared line off a low-water alert, which clears by itself', () => {
+    data.set('alerts.list', [{ id: 3, kind: 'water_low', active: true, detail: 'water distance 17.0 cm ≥ 16.0 cm', raisedAt: at(17) }])
+    page()
+    const card = within(main()).getByRole('region', { name: 'Alerts' })
+    expect(within(card).queryByText(/It stays until you clear it/)).toBeNull()
+    expect(within(card).getByRole('button', { name: 'Dismiss' })).toBeTruthy()
+  })
+
   it('names titles and sources from the kind', () => {
     expect(alertTitle(['pump_fault'])).toBe('Pump alert')
     expect(alertTitle(['camera_link_upper'])).toBe('Camera alert')

@@ -7,7 +7,7 @@ const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   calls: { runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
   pumpSuccess: new Map<string, (s: unknown) => void>(),
-  state: { runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string } },
+  state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string } },
 }))
 
 // Care has its own tests; the Water page only points at it.
@@ -24,7 +24,10 @@ vi.mock('@/src/utils/trpc', () => {
   return {
     trpc: {
       useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() } }),
-      alerts: { list: query('alerts'), acknowledge: { useMutation: () => ({ isPending: false, error: null, mutate: (i: unknown) => calls.ack(i) }) } },
+      alerts: { list: query('alerts'), acknowledge: { useMutation: (o: { onSuccess: () => void }) => ({ isPending: false, error: state.ackError, mutate: (i: unknown) => {
+        calls.ack(i)
+        o.onSuccess()
+      } }) } },
       pump: { get: query('pump'), runOnce: mutation('runOnce'), stop: mutation('stop') },
       sensors: { latest: query('sensors') },
       care: { chores: query('chores') },
@@ -119,6 +122,18 @@ describe('WaterPage: tank and pump', () => {
     render(<WaterPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Clear fault' }))
     expect(calls.ack).toHaveBeenCalledWith({ id: 174 })
+    expect(calls.invalidatePump).toHaveBeenCalled()
+    cleanup()
+    // The fault's alert row hasn't arrived yet: nothing to clear from here.
+    data.set('alerts', [])
+    render(<WaterPage />)
+    expect(screen.queryByRole('button', { name: 'Clear fault' })).toBeNull()
+    cleanup()
+    data.set('alerts', [{ id: 174, kind: 'pump_fault', active: true, detail: 'pump: dry-run' }])
+    state.ackError = { message: 'the daemon is offline' }
+    render(<WaterPage />)
+    expect(screen.getByText('the daemon is offline')).toBeTruthy()
+    state.ackError = null
   })
 
   it('waits for readings without guessing', () => {
