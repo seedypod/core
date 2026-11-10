@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asCycle, cutoffPct, cycleWhen, fmtMinutes, fmtSpan, fmtWhen, nextFire, nextRun, tankTrend, type PumpCycle } from '../pumpCycles'
+import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtSpan, fmtWhen, nextFire, nextRun, tankTrend, type PumpCycle } from '../pumpCycles'
 
 const cycle = (id: string, minute: number, days = 127, enabled = true): PumpCycle => ({ id, kind: 'pump', name: id, enabled, days, spec: { minute, durationS: 300 } })
 // Sunday 1 Nov 2026, 12:00 local.
@@ -35,7 +35,12 @@ describe('formatting', () => {
     expect(fmtSpan(30 * 3_600_000)).toBe('30 h')
     expect(fmtSpan(72 * 3_600_000)).toBe('3 d')
     expect(fmtMinutes(300)).toBe('5 min')
-    expect(fmtMinutes(90)).toBe('90 s')
+    expect(fmtMinutes(90)).toBe('1 min 30 s')
+    expect(fmtMinutes(45)).toBe('45 s')
+    expect(fmtMinutes(900)).toBe('15 min')
+    expect(fmtMinutes(3900)).toBe('1 h 5 min')
+    expect(fmtCountdown(899.2)).toBe('15:00')
+    expect(fmtCountdown(5)).toBe('0:05')
     expect(fmtWhen(new Date(2026, 10, 1, 8, 0), now)).toBe('Today 08:00')
     expect(fmtWhen(new Date(2026, 9, 31, 20, 5), now)).toBe('Yesterday 20:05')
     expect(fmtWhen(new Date(2026, 9, 29, 8, 0), now)).toMatch(/29.* 08:00$/)

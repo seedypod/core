@@ -8,6 +8,7 @@ import { Slider } from '@/src/components/ds/forms'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
 import { useLightControl } from '@/src/components/Light/useLightControl'
+import { fmtMinutes } from '@/src/components/Water/pumpCycles'
 import { Welcome } from '@/src/components/Welcome/Welcome'
 import { trpc } from '@/src/utils/trpc'
 
@@ -74,7 +75,7 @@ export function CardsHome() {
       <Card>
         <CardHeader
           title="Water"
-          subtitle={p ? (p.on ? `pump ${p.level}% · ${p.remainingS ?? '∞'}s left` : p.fault ? `fault: ${p.fault}` : 'pump idle') : '…'}
+          subtitle={p ? (p.on ? `watering at ${p.level}%${p.remainingS === null ? '' : ` · ${fmtMinutes(p.remainingS)} left`}` : p.fault ? `fault: ${p.fault}` : 'pump idle') : '…'}
           icon={Droplets}
           right={<StatusDot tone={p?.fault ? 'danger' : p?.on ? 'ok' : 'muted'} label={p?.fault ? 'fault' : p?.on ? 'running' : 'idle'} />}
         />

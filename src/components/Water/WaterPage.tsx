@@ -12,7 +12,8 @@ import { bin } from '@/src/components/charts/TimeChart'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { trpc } from '@/src/utils/trpc'
-import { asCycle, cutoffPct, cycleWhen, fmtMinutes, fmtWhen, nextRun, tankTrend, type PumpCycle } from './pumpCycles'
+import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, nextRun, tankTrend, type PumpCycle } from './pumpCycles'
+import { useNow } from '@/src/components/System/useNow'
 import { CareSummary } from '@/src/components/Care/CareSummary'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
@@ -49,7 +50,7 @@ export function WaterPage() {
   }
   const isNew = !!editing && !cycles.some(c => c.id === editing.id)
 
-  const pumpLine = p ? (p.on ? `pump running at ${p.level}% · ${p.remainingS ?? '—'}s left` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
+  const pumpLine = p ? (p.on ? `watering at ${p.level}%${p.remainingS === null ? '' : ` · ${fmtMinutes(p.remainingS)} left`}` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
   const subtitle = [tank === undefined ? null : `Tank ${tank}%`, pumpLine, next ? `next run ${fmtClock(next.cycle.spec.minute)}` : null].filter(Boolean).join(' · ')
 
   return (
@@ -69,7 +70,7 @@ export function WaterPage() {
             {tank !== undefined && cfg && <span className="text-[13px] text-fg-2">{`≈ ${toDisplay(Math.round(cfg.tankCapacityL * tank / 10) / 10, 'L').value} of ${withUnit(cfg.tankCapacityL, 'L')}`}</span>}
           </div>
           <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100}>
-            <div className="h-full rounded-full bg-meter transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
+            <div className="h-full rounded-full bg-tank transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
             {cutoff !== null && <div className="absolute -top-1 h-[18px] w-px bg-pod-ready" style={{ left: `${cutoff}%` }} />}
           </div>
           <div className={AXIS}>
@@ -77,6 +78,7 @@ export function WaterPage() {
             {cutoff !== null && <span className="text-pod-ready">{`pump cutoff ${cutoff}%`}</span>}
             <span>{cfg ? `full · ${withUnit(cfg.waterFullCm, 'cm')}` : 'full'}</span>
           </div>
+          {p?.on && <Watering since={p.since} remainingS={p.remainingS} at={pump.dataUpdatedAt} />}
           <div className="flex flex-wrap gap-5 border-t border-line pt-2.5 font-mono text-[12px] text-fg-3">
             <span>
               {'distance '}
@@ -99,7 +101,7 @@ export function WaterPage() {
             ? <Button full icon={Square} className="py-2.5 text-sm" disabled={stop.isPending} onClick={() => stop.mutate()}>Stop</Button>
             : <Button full variant="primary" icon={Play} className="py-2.5 text-sm" disabled={!!p?.fault} onClick={() => runOnce.mutate({ durationS: Number(dur) })}>Run pump</Button>}
           {runOnce.error && <InlineError>{runOnce.error.message}</InlineError>}
-          {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${limits.pumpMaxRunS} s per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.`}</p>}
+          {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${fmtMinutes(limits.pumpMaxRunS)} per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.`}</p>}
         </div>
       </Card>
 
@@ -302,5 +304,33 @@ function ClearFault() {
       <Button className="px-3 py-[5px] text-[13px]" disabled={ack.isPending} onClick={() => ack.mutate({ id: fault.id })}>Clear fault</Button>
       {ack.error && <InlineError>{ack.error.message}</InlineError>}
     </>
+  )
+}
+
+/**
+ * While the pump runs: the run so far as a filling bar and the time left on a
+ * clock, counted down here between the pump's updates. `at` is when the pump's
+ * state (and its seconds left) was fetched.
+ */
+function Watering({ since, remainingS, at }: { since: string, remainingS: number | null, at: number }) {
+  const now = useNow(1000)
+  if (remainingS === null) return <div data-testid="watering" className="text-[13px] text-fg">Watering…</div>
+  const end = (at || now) + remainingS * 1000
+  const total = Math.max(1, (end - Date.parse(since)) / 1000)
+  const left = Math.max(0, (end - now) / 1000)
+  const done = Math.min(100, Math.max(0, (1 - left / total) * 100))
+  return (
+    <div data-testid="watering" className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between text-[13px]">
+        <span className="flex items-center gap-1.5 font-medium text-fg">
+          <span className="size-2 animate-pulse rounded-full bg-tank" />
+          Watering
+        </span>
+        <span className="font-mono text-fg-2">{`${fmtCountdown(left)} left of ${fmtMinutes(total)}`}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-line" role="progressbar" aria-label="Watering" aria-valuenow={Math.round(done)} aria-valuemin={0} aria-valuemax={100}>
+        <div className="h-full rounded-full bg-tank transition-[width] duration-1000 ease-linear" style={{ width: `${done}%` }} />
+      </div>
+    </div>
   )
 }

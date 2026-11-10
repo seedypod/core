@@ -90,7 +90,7 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.getByText('full · 5 cm')).toBeTruthy()
     expect(screen.getByText('pump cutoff 27%')).toBeTruthy()
     expect(screen.getByText('9.4 cm')).toBeTruthy()
-    expect(screen.getByText(/Up to 900 s per run at 30% duty\. Won't start below 16 cm of water\./)).toBeTruthy()
+    expect(screen.getByText(/Up to 15 min per run at 30% duty\. Won't start below 16 cm of water\./)).toBeTruthy()
   })
 
   it('runs the pump for the chosen length, and swaps to Stop while it runs', () => {
@@ -99,9 +99,13 @@ describe('WaterPage: tank and pump', () => {
     fireEvent.click(screen.getByText('Run pump'))
     expect(calls.runOnce).toHaveBeenCalledWith({ durationS: 600 })
     cleanup()
-    data.set('pump', { ...idle, on: true, level: 30, remainingS: 120 })
+    // Started a minute ago with two left: a three-minute run.
+    data.set('pump', { ...idle, on: true, level: 30, remainingS: 120, since: new Date(Date.now() - 60_000).toISOString() })
     render(<WaterPage />)
-    expect(screen.getByText(/pump running at 30% · 120s left/)).toBeTruthy()
+    expect(screen.getByText(/watering at 30% · 2 min left/)).toBeTruthy()
+    const watering = screen.getByTestId('watering')
+    expect(watering.textContent).toMatch(/^Watering2:00 left of 3 min$/)
+    expect(screen.getByRole('progressbar', { name: 'Watering' })).toBeTruthy()
     expect(screen.queryByText('Run pump')).toBeNull()
     fireEvent.click(screen.getByText('Stop'))
     expect(calls.stop).toHaveBeenCalled()
