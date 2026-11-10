@@ -9,6 +9,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { RuleInput } from '../autopilot/schema'
+import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '../scheduler/lightPlan'
 import { SensorId } from '../hardware/contract'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
@@ -53,7 +54,19 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: {},
   }, async () => text(await caller.devices.list()))
 
-  server.registerTool('list_schedules', { description: 'Light curves (interpolated setpoints by minute-of-day) and pump cycles, with day masks (Mon=1 … Sun=64).', inputSchema: {} }, async () => text(await caller.schedules.list()))
+  server.registerTool('list_schedules', {
+    description: `Light curves (interpolated setpoints by minute-of-day, the unit's local time) and pump cycles, with day masks (Mon=1 … Sun=64). Each light curve also has boostHours (hours a day at full brightness) and Gardyn's rating of them (low | ok | great | intense | too much; aim for great, 14–16 h). timezone is the unit's.`,
+    inputSchema: {},
+  }, async () => {
+    const rows = await caller.schedules.list()
+    const timezone = (await caller.settings.get()).timezone
+    return text({ timezone, schedules: rows.map(s => ('setpoints' in s.spec ? { ...s, boostHours: boostHours(s.spec), rating: lightRating(boostHours(s.spec)) } : s)) })
+  })
+
+  server.registerTool('light_presets', {
+    description: `Starting points for a light curve, and Gardyn's guidance to judge one by: 14–16 hours a day at full brightness (Boost); dimmed hours don't count towards them; 17 or more stress the plants (bitter leaves, bolting); nights need unbroken dark (${GARDYN_LIGHT_GUIDE}). Each preset has setpoints to pass to upsert_schedule as spec.setpoints, its boostHours and rating. To set a schedule from the tower: read pods and list_schedules, pick or adjust a preset, upsert it, and turn off any other enabled curve (enabled curves stack, highest level wins). Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
+    inputSchema: {},
+  }, async () => text({ timezone: (await caller.settings.get()).timezone, presets: LIGHT_PRESETS.map(p => ({ ...p, boostHours: boostHours({ setpoints: p.setpoints }), rating: lightRating(boostHours({ setpoints: p.setpoints })) })) }))
 
   server.registerTool('pods', { description: 'The 30 plant pods: slot, plant, planted date, status (empty, seeded, growing, harvest, attention) and notes.', inputSchema: {} }, async () => text(await caller.grow.pods()))
 
@@ -256,7 +269,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.alerts.acknowledge({ id: i.id })))
 
   server.registerTool('upsert_schedule', {
-    description: 'Create or replace a schedule. Light: {id, kind:"light", name, enabled, days, spec:{setpoints:[{minute, level}]}} — levels are interpolated between setpoints and wrap past midnight. Pump: {id, kind:"pump", name, enabled, days, spec:{minute, durationS, level?}}. days is a bitmask Mon=1 … Sun=64 (127 = daily).',
+    description: 'Create or replace a schedule. Light: {id, kind:"light", name, enabled, days, spec:{setpoints:[{minute, level}]}} — levels are interpolated between setpoints and wrap past midnight; minutes are the unit\'s local time. Gardyn recommends 14–16 h a day at full brightness and no more than 16 (see light_presets); enabled light curves stack, highest wins, so turn off the one a new curve replaces. Pump: {id, kind:"pump", name, enabled, days, spec:{minute, durationS, level?}}. days is a bitmask Mon=1 … Sun=64 (127 = daily).',
     inputSchema: {
       id: z.string().min(1), kind: z.enum(['light', 'pump']), name: z.string().min(1), enabled: z.boolean().default(true), days: z.number().int().min(0).max(127).default(127),
       spec: z.union([
