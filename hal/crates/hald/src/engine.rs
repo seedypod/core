@@ -185,6 +185,11 @@ struct WaterAlert {
 }
 
 impl WaterAlert {
+    /// A whole window of rounds that each read the water above the limit.
+    fn all_good(&self) -> bool {
+        self.rounds.len() == WATER_WINDOW && self.rounds.iter().all(|b| !*b)
+    }
+
     fn observe(&mut self, distance: Option<f64>, low: f64) {
         let is_low = distance.is_some_and(|d| d >= low);
         let bad = is_low || distance.is_none();
@@ -581,14 +586,26 @@ impl Engine {
         });
         if due {
             out.extend(self.telemetry(now, false));
+            // A dry-run clears itself once the water has read good for a whole window, as
+            // `water_low` does: a trip on a lost read clears a round later, a real one once
+            // the tank is filled. Over-temp and other latches still wait for a person.
+            if self.pump.fault() == Some("dry-run") && !self.water.active && self.water.all_good() {
+                self.pump.acknowledge();
+                info!("pump dry-run cleared: the water has read good for a minute");
+                out.extend(self.publish_actuator(ActuatorId::Pump, now));
+            }
         } else if self.pump.is_running(now.instant) {
             self.refresh_env(now);
         }
 
+        let mut tripped = false;
         if let Some(Decision::Stop) = self.pump.tick(self.env, now.instant) {
             self.apply_pump(0.0, now);
             match self.pump.fault() {
-                Some(f) => warn!(fault = f, "pump stopped by guard; latched until acknowledged"),
+                Some(f) => {
+                    warn!(fault = f, "pump stopped by guard; latched until acknowledged");
+                    tripped = true;
+                }
                 None => info!("pump run complete"),
             }
             out.extend(self.publish_actuator(ActuatorId::Pump, now));
@@ -606,7 +623,8 @@ impl Engine {
             self.light_fault = light_fault;
             out.extend(self.publish_actuator(ActuatorId::Light, now));
         }
-        if due {
+        // A trip between telemetry rounds raises its alert now, not a round later.
+        if due || tripped {
             self.refresh_alerts(now, false, &mut out);
         }
         if self
@@ -1326,15 +1344,23 @@ mod tests {
         r.engine
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
         assert_eq!(r.world.lock().unwrap().pump_level, 30.0);
-        // Drain the tank past the threshold; the next tick trips the guard.
+        // Drain the tank past the threshold; once it has stayed low for DRY_CONFIRM, the guard trips.
         r.world.lock().unwrap().water_distance_cm = 17.0;
         r.now.advance(Duration::from_secs(10));
+        let first = r.engine.tick(r.now);
+        assert_eq!(
+            r.world.lock().unwrap().pump_level,
+            30.0,
+            "one low read is not enough"
+        );
+        assert_eq!(payload(&first, "seedypod/u1/alert/water_low")["active"], true);
+        r.now.advance(hal_core::safety::DRY_CONFIRM);
         let out = r.engine.tick(r.now);
         assert_eq!(r.world.lock().unwrap().pump_level, 0.0);
         let st = payload(&out, "seedypod/u1/actuator/pump/state");
         assert_eq!(st["fault"], "dry-run");
+        // The trip raises its alert at once, between telemetry rounds.
         assert_eq!(payload(&out, "seedypod/u1/alert/pump_fault")["active"], true);
-        assert_eq!(payload(&out, "seedypod/u1/alert/water_low")["active"], true);
         // Refill: still latched, start refused, and the refusal is visible in state.
         r.world.lock().unwrap().water_distance_cm = 7.0;
         let out = r
@@ -1364,6 +1390,36 @@ mod tests {
                 .find(|o| o.topic == "seedypod/u1/alert/water_low");
         }
         assert!(cleared.unwrap().payload.contains(r#""active":false"#));
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn a_dry_run_clears_itself_once_the_water_reads_good_for_a_window() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "dry-clears");
+        r.engine.boot(r.now);
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        r.world.lock().unwrap().water_distance_cm = 17.0;
+        r.now.advance(Duration::from_secs(10));
+        r.engine.tick(r.now);
+        r.now.advance(hal_core::safety::DRY_CONFIRM);
+        r.engine.tick(r.now);
+        assert_eq!(r.engine.pump.fault(), Some("dry-run"));
+        // Topped off: still latched until a whole window has read good, then clear without an ack.
+        r.world.lock().unwrap().water_distance_cm = 7.0;
+        let mut last = Vec::new();
+        for i in 0..WATER_WINDOW {
+            assert_eq!(r.engine.pump.fault(), Some("dry-run"), "round {i}");
+            r.now.advance(Duration::from_secs(10));
+            last = r.engine.tick(r.now);
+        }
+        assert_eq!(r.engine.pump.fault(), None);
+        assert!(payload(&last, "seedypod/u1/actuator/pump/state")["fault"].is_null());
+        assert_eq!(payload(&last, "seedypod/u1/alert/pump_fault")["active"], false);
         let out = r
             .engine
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
@@ -1564,6 +1620,8 @@ mod tests {
                 .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
             r.world.lock().unwrap().water_distance_cm = 17.0;
             r.now.advance(Duration::from_secs(10));
+            r.engine.tick(r.now);
+            r.now.advance(hal_core::safety::DRY_CONFIRM);
             r.engine.tick(r.now);
             r.engine
                 .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
@@ -1826,6 +1884,8 @@ mod tests {
         f.r.world.lock().unwrap().water_distance_cm = 17.0;
         f.r.now.advance(Duration::from_secs(10));
         f.r.engine.tick(f.r.now);
+        f.r.now.advance(hal_core::safety::DRY_CONFIRM);
+        f.r.engine.tick(f.r.now);
         assert_eq!(f.r.world.lock().unwrap().pump_level, 0.0, "tripped mid-fade");
         assert_eq!(f.r.engine.pump.fault(), Some("dry-run"));
         f.frames(40);
@@ -1945,6 +2005,8 @@ mod tests {
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
         r.world.lock().unwrap().water_distance_cm = 18.0;
         r.now.advance(Duration::from_secs(10));
+        r.engine.tick(r.now);
+        r.now.advance(hal_core::safety::DRY_CONFIRM);
         r.engine.tick(r.now);
         assert_eq!(r.engine.pump.fault(), Some("dry-run"));
         r.engine.handle(Inbound::Button(ButtonPress::Long), r.now);

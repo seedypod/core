@@ -73,12 +73,20 @@ pub enum Decision {
     Stop,
 }
 
+/// How long the water must read low (or not at all) while the pump runs before
+/// it trips. The ranger drops a read now and then, most often with the pump
+/// stirring the tank; one lost read must not latch a dry-run on a full tank. A
+/// tank that is really low stays low, and a pump takes a few dry seconds.
+pub const DRY_CONFIRM: Duration = Duration::from_secs(3);
+
 #[derive(Debug)]
 pub struct PumpGuard {
     limits: PumpLimits,
     level: f64,
     running_until: Option<Instant>,
     fault: Option<String>,
+    /// When the running pump first saw the water low or missing, in this run of such checks.
+    dry_since: Option<Instant>,
 }
 
 impl PumpGuard {
@@ -88,6 +96,7 @@ impl PumpGuard {
             level: 0.0,
             running_until: None,
             fault: None,
+            dry_since: None,
         }
     }
 
@@ -149,6 +158,7 @@ impl PumpGuard {
         let deadline_in = Duration::from_secs(secs);
         self.level = level;
         self.running_until = Some(now + deadline_in);
+        self.dry_since = None;
         Ok(Decision::Run { level, deadline_in })
     }
 
@@ -164,7 +174,9 @@ impl PumpGuard {
             }
             return None;
         }
-        if self.is_dry(env) {
+        if !self.is_dry(env) {
+            self.dry_since = None;
+        } else if now.duration_since(*self.dry_since.get_or_insert(now)) >= DRY_CONFIRM {
             return Some(self.trip("dry-run"));
         }
         if self.is_hot(env) {
@@ -180,6 +192,7 @@ impl PumpGuard {
 
     fn trip(&mut self, reason: &str) -> Decision {
         self.fault = Some(reason.to_owned());
+        self.dry_since = None;
         self.running_until = None;
         self.level = 0.0;
         Decision::Stop
@@ -334,6 +347,27 @@ mod tests {
     }
 
     #[test]
+    fn a_lost_read_or_a_blip_while_running_does_not_trip() {
+        let mut g = guard();
+        let t0 = Instant::now();
+        g.request(&on(None, None), wet(), t0).unwrap();
+        let lost = Env {
+            water_distance_cm: None,
+            ..wet()
+        };
+        // The unit's dry-run on a 3-gallon tank: one read lost mid-run.
+        assert_eq!(g.tick(lost, t0 + Duration::from_secs(5)), None);
+        assert_eq!(g.tick(wet(), t0 + Duration::from_secs(6)), None);
+        // Low again later starts the count afresh.
+        assert_eq!(g.tick(lost, t0 + Duration::from_secs(10)), None);
+        assert_eq!(g.tick(lost, t0 + Duration::from_secs(12)), None);
+        assert_eq!(g.fault(), None);
+        // Still missing past the confirm time: the sensor is gone, so fail safe.
+        assert_eq!(g.tick(lost, t0 + Duration::from_secs(13)), Some(Decision::Stop));
+        assert_eq!(g.fault(), Some("dry-run"));
+    }
+
+    #[test]
     fn running_dry_trips_and_latches_until_acknowledged() {
         let mut g = guard();
         let t0 = Instant::now();
@@ -343,7 +377,9 @@ mod tests {
             pcb_temp_c: Some(30.0),
             over_temp_signal: false,
         };
-        assert_eq!(g.tick(dry, t0 + Duration::from_secs(60)), Some(Decision::Stop));
+        let t1 = t0 + Duration::from_secs(60);
+        assert_eq!(g.tick(dry, t1), None);
+        assert_eq!(g.tick(dry, t1 + DRY_CONFIRM), Some(Decision::Stop));
         assert_eq!(g.fault(), Some("dry-run"));
         // Even with water back, the latch holds.
         assert!(matches!(
