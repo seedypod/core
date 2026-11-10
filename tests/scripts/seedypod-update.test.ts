@@ -459,6 +459,16 @@ describe('podvision (#191)', () => {
     expect(JSON.parse(readFileSync(`${prefix}.previous/meta.json`, 'utf8'))).toMatchObject({ podvision: 'added' })
   })
 
+  it('updates podvision on armv8l, where hald isn\'t updated, with the 32-bit build', async () => {
+    delete envs.SEEDYPOD_UPDATE_TARGET
+    put(dir, { 'armv8l.cjs': 'require(\'node:os\').machine = () => \'armv8l\'\n' })
+    envs.NODE_OPTIONS = `--require ${join(dir, 'armv8l.cjs')}`
+    podvision('0.2.0')
+    release(tree(NEW))
+    expect(await run('--now')).toMatchObject({ code: 0, out: { ok: true } })
+    expect(readFileSync(installed(), 'utf8')).toContain('podvision 0.2.0')
+  })
+
   it('puts the old podvision back when the update rolls back, and removes one it added', async () => {
     have('0.1.0')
     podvision('0.2.0')
