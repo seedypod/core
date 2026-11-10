@@ -480,7 +480,9 @@ install_podvision() {
     warn "   $asset doesn't run on this machine"; return 1
   fi
   cmp -s "$dir/$asset" "$dest" && return 0
-  sudo mkdir -p "$(dirname "$dest")" && sudo install -m 0755 "$dir/$asset" "$dest" || return 1
+  if ! { sudo mkdir -p "$(dirname "$dest")" && sudo install -m 0755 "$dir/$asset" "$dest"; }; then
+    warn "   couldn't copy $asset to $dest"; return 1
+  fi
   step "installed $("$dest" --version) for pod-state"
 }
 

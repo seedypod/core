@@ -183,6 +183,11 @@ function haldTarget() {
   return null
 }
 
+/** hald's target, and on armv8l, which hald isn't updated for, the 32-bit build scripts/install picks there. */
+function podvisionTarget() {
+  return haldTarget() ?? (os.machine() === 'armv8l' ? 'arm-unknown-linux-gnueabihf' : null)
+}
+
 function updatesHald() {
   return fs.existsSync(P.haldUnit) && fs.existsSync(P.hald) && !!haldTarget()
 }
@@ -699,7 +704,7 @@ async function apply() {
   // Core scores pods in TypeScript without podvision, so a release without one, or one
   // that won't run here, leaves what's installed as it is instead of refusing the update.
   let podvision = null
-  const pvName = haldTarget() ? `podvision-${haldTarget()}` : null
+  const pvName = podvisionTarget() ? `podvision-${podvisionTarget()}` : null
   if (pvName && release.assets[pvName]) {
     const file = await fetchAsset(release, pvName)
     fs.chmodSync(file, 0o755)
