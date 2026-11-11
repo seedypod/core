@@ -47,6 +47,8 @@ export class MqttHalClient implements HalClient {
   private readonly u: string
   private readonly timeoutMs: number
   private readonly damaged = new Map<'upper' | 'lower', number>()
+  /** When each actuator's state arrived: hald sends the seconds left only when the state changes. */
+  private readonly actuatorAt = new Map<ActuatorId, number>()
   private boots: { missing: number, total: number } | null = null
   private readonly fetchImpl: typeof fetch
 
@@ -65,7 +67,18 @@ export class MqttHalClient implements HalClient {
   }
 
   snapshot(): HalSnapshot {
-    return { ...this.snap, sensors: { ...this.snap.sensors }, actuators: { ...this.snap.actuators }, alerts: { ...this.snap.alerts } }
+    return { ...this.snap, sensors: { ...this.snap.sensors }, actuators: this.liveActuators(), alerts: { ...this.snap.alerts } }
+  }
+
+  /** Each actuator's state with its seconds left counted down to now, not left at what they were when it changed. */
+  private liveActuators(): HalSnapshot['actuators'] {
+    const now = (this.o.now?.() ?? new Date()).getTime()
+    const out: HalSnapshot['actuators'] = {}
+    for (const [id, s] of Object.entries(this.snap.actuators) as [ActuatorId, ActuatorState][]) {
+      const at = this.actuatorAt.get(id)
+      out[id] = s.remainingS === null || at === undefined ? s : { ...s, remainingS: Math.max(0, s.remainingS - Math.floor((now - at) / 1000)) }
+    }
+    return out
   }
 
   setActuator(id: ActuatorId, cmd: ActuatorCommand): Promise<ActuatorState> {
@@ -199,6 +212,7 @@ export class MqttHalClient implements HalClient {
         const id = ActuatorId.parse(parts[1])
         const state = ActuatorState.parse(JSON.parse(payload))
         this.snap.actuators[id] = state
+        this.actuatorAt.set(id, (this.o.now?.() ?? new Date()).getTime())
         const p = this.pending.get(id)
         if (p) {
           clearTimeout(p.timer)
