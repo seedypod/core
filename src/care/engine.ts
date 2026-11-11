@@ -91,7 +91,7 @@ export class CareEngine {
     this.stop()
     this.unsub = this.deps.events.subscribe((e) => {
       const relevant = (e.kind === 'schedule' && e.action === 'changed')
-        || (e.kind === 'mutation' && (e.path === 'pods' || e.path === 'devices' || e.path === 'tank' || e.path === 'captures'))
+        || (e.kind === 'mutation' && (e.path === 'pods' || e.path === 'grow' || e.path === 'devices' || e.path === 'tank' || e.path === 'captures'))
         || (e.kind === 'hal' && (e.event.type === 'availability' || e.event.type === 'system' || e.event.type === 'devices'))
         // Turning suspect warns at once; turning good again clears on the tick, so a flapping sensor can't churn the card.
         || (e.kind === 'hal' && e.event.type === 'sensor' && e.event.id === 'water_level_pct' && e.event.reading.quality === 'suspect' && this.lastQuality !== 'suspect')

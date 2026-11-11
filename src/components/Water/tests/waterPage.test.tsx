@@ -6,7 +6,7 @@ import { editorLengths, START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { updateSettings: vi.fn(), runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
+  calls: { updateSettings: vi.fn(), runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), growStart: vi.fn(), setStart: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
   pumpSuccess: new Map<string, (s: unknown) => void>(),
   state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string }, failOn: null as null | string, order: [] as string[] },
 }))
@@ -33,7 +33,7 @@ vi.mock('@/src/components/Care/ChoreItem', () => ({ DueChores: () => <div data-t
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
-  const mutation = (name: 'runOnce' | 'stop' | 'upsert' | 'remove') => ({
+  const mutation = (name: 'runOnce' | 'stop' | 'upsert' | 'remove' | 'growStart' | 'setStart') => ({
     useMutation: (o: { onSuccess: (s: unknown) => void }) => {
       pumpSuccess.set(name, o.onSuccess)
       return {
@@ -51,7 +51,7 @@ vi.mock('@/src/utils/trpc', () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() } }),
+      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() }, grow: { invalidate: vi.fn() } }),
       alerts: { list: query('alerts'), acknowledge: { useMutation: (o: { onSuccess: () => void }) => ({ isPending: false, error: state.ackError, mutate: (i: unknown) => {
         calls.ack(i)
         o.onSuccess()
@@ -65,7 +65,7 @@ vi.mock('@/src/utils/trpc', () => {
         calls.updateSettings(i)
         o?.onSuccess?.()
       } }) } },
-      grow: { current: query('grow'), pods: query('pods') },
+      grow: { current: query('grow'), pods: query('pods'), start: mutation('growStart'), setStart: mutation('setStart') },
       schedules: { list: query('schedules'), recentRuns: query('runs'), upsert: mutation('upsert'), remove: mutation('remove') },
       telemetry: {
         history: {
@@ -550,6 +550,35 @@ describe('WaterPage: pump cycles', () => {
     data.set('grow', { cycle: { id: 'c', startedAt: at(6).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
     render(<WaterPage />)
     expect(screen.queryByTestId('pump-missed')).toBeNull()
+  })
+
+  it('says when the tower was sown, and moves the start to another day', () => {
+    // Sown on Sunday the 1st, in this zone; today is the 1st too.
+    data.set('grow', { cycle: { id: 'c', startedAt: at(0, 0, 1).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+    render(<WaterPage />)
+    const track = within(screen.getByTestId('sown'))
+    expect(track.getByTestId('sown-on').textContent).toBe('Sown Sun 1 Nov')
+    fireEvent.click(track.getByText('Change'))
+    const input = track.getByLabelText(/Sown on/) as HTMLInputElement
+    expect(input.max).toBe('2026-11-01')
+    fireEvent.change(input, { target: { value: '2026-10-30' } })
+    fireEvent.click(track.getByRole('button', { name: 'Save' }))
+    expect(calls.setStart).toHaveBeenCalledWith({ startedAt: '2026-10-30' })
+  })
+
+  it('starts germination today in one go when there is no grow cycle, after a confirmation', async () => {
+    data.delete('grow')
+    render(<WaterPage />)
+    fireEvent.click(within(screen.getByTestId('sown')).getByRole('button', { name: 'Start germination today' }))
+    const dialog = within(screen.getByRole('dialog'))
+    // Today is Sunday the 1st: the weekly run is on Sundays, and the cycles there now go.
+    expect(dialog.getByTestId('start-germination').textContent).toMatch(/^A grow cycle starts today, Sun 1 Nov, and watering moves to Germination: 15 min at 08:00, once a week on Sundays\.These go:/)
+    await act(async () => {
+      fireEvent.click(dialog.getByRole('button', { name: 'Start' }))
+    })
+    expect(state.order).toEqual(['growStart:', 'upsert:water-germination-0800', 'remove:morning', 'remove:evening'])
+    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'water-germination-0800', days: 64 }))
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('reads the stages as a path while watering follows the grow cycle: the one it\'s at now, the rest from their day', () => {

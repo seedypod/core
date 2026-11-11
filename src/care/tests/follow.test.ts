@@ -215,6 +215,38 @@ describe('grow cycle start date', () => {
     await expect(c.grow.start({ notes: '', startedAt: '2026-13-01' })).rejects.toThrow(/not a real date/)
   })
 
+  it('moves the open cycle to another sowing day on the unit\'s calendar, and germination follows it', async () => {
+    const { core, c } = caller()
+    const store = core.ctx.store
+    store.settings.update({ timezone: 'America/Los_Angeles' })
+    await expect(c.grow.setStart({ startedAt: '2026-11-09' })).rejects.toThrow(/No open grow cycle/)
+    store.pods.update(1, { plant: 'Basil', plantedAt: '2026-11-09', status: 'seeded' }, '2026-11-09T12:00:00Z')
+    await c.grow.start({ notes: '', startedAt: '2026-11-09' })
+    for (const sch of presetSchedules(PUMP_PRESETS[0] as typeof PUMP_PRESETS[number], { enabled: true, weekday: 0 })) store.schedules.upsert(sch)
+    // day(1) is 04:00 on Tuesday the 10th in Los Angeles: "start germination today" is the 10th there.
+    const moved = await c.grow.setStart({ startedAt: '2026-11-10' })
+    expect(moved.startedAt).toBe('2026-11-10T08:00:00.000Z')
+    expect(store.grow.current()?.startedAt).toBe('2026-11-10T08:00:00.000Z')
+    // Follow moves the weekly run to Tuesdays.
+    expect(followGrowCycle(store, day(1))).toMatchObject({ from: 'germination', to: 'germination', days: 0 })
+    expect(store.schedules.list().find(s => s.kind === 'pump')?.days).toBe(1 << 1)
+    await expect(c.grow.setStart({ startedAt: '2026-11-11' })).rejects.toThrow(/after today/)
+    await expect(c.grow.setStart({ startedAt: '2026-06-01' })).rejects.toThrow(/more than 120 days ago/)
+    await expect(c.grow.setStart({ startedAt: '2026-02-30' })).rejects.toThrow(/not a real date/)
+  })
+
+  it('takes today on a unit east of UTC when moving the start, and the care engine re-runs on it', async () => {
+    const { core, c } = caller()
+    core.ctx.store.settings.update({ timezone: 'Australia/Sydney' })
+    await c.grow.start({ notes: '' })
+    // 2026-11-10T12:00Z is 23:00 on the 10th in Sydney.
+    expect((await c.grow.setStart({ startedAt: '2026-11-10' })).startedAt).toBe('2026-11-09T13:00:00.000Z')
+    const seen: string[] = []
+    core.ctx.events.subscribe(e => (e.kind === 'mutation' ? void seen.push(e.path) : undefined))
+    await c.grow.setStart({ startedAt: '2026-11-09' })
+    expect(seen).toContain('grow')
+  })
+
   it('takes started_at over MCP, and pump_presets says whether watering follows the cycle', async () => {
     const { core } = caller()
     const [a, b] = InMemoryTransport.createLinkedPair()
@@ -224,6 +256,9 @@ describe('grow cycle start date', () => {
     const body = async (name: string, args: Record<string, unknown>) => JSON.parse(((await client.callTool({ name, arguments: args })).content as Array<{ text: string }>)[0]?.text ?? '')
     expect(await body('grow_cycle', { action: 'start', started_at: '2026-11-09' })).toMatchObject({ startedAt: '2026-11-09T00:00:00.000Z' })
     expect(await body('pump_presets', {})).toMatchObject({ followGrowCycle: true, daysSinceSowing: 1 })
+    expect(await body('grow_cycle', { action: 'set_start', started_at: '2026-11-10' })).toMatchObject({ startedAt: '2026-11-10T00:00:00.000Z' })
+    expect(await body('pump_presets', {})).toMatchObject({ daysSinceSowing: 0 })
+    expect((await client.callTool({ name: 'grow_cycle', arguments: { action: 'set_start' } })).isError).toBe(true)
     await client.close()
   })
 })

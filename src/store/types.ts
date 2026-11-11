@@ -264,6 +264,8 @@ export interface Store {
   grow: {
     current(): GrowCycle | null
     start(ts: string, notes?: string): GrowCycle
+    /** Move the open cycle's start; null with none open. */
+    setStart(ts: string): GrowCycle | null
     setStage(stage: GrowStage, ts: string): GrowCycle | null
     markIssued(reminder: string): void
     end(ts: string): GrowCycle | null
