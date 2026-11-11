@@ -13,6 +13,19 @@ describe('next run', () => {
     expect(nextFire(cycle('never', 480, 0), now)).toBeNull()
   })
 
+  it('finds it on the unit\'s clock, not this machine\'s, across a clock change', () => {
+    // 12:00 PDT on Saturday 31 October; Los Angeles falls back at 02:00 on the 1st.
+    const sat = new Date('2026-10-31T19:00:00Z')
+    expect(nextFire(cycle('m', 480), sat, 'America/Los_Angeles')?.toISOString()).toBe('2026-11-01T16:00:00.000Z')
+    // A Sunday-only run (Sun = 64): tomorrow in Los Angeles; in Tokyo it's already 04:00 Sunday, so later today.
+    expect(nextFire(cycle('sun', 480, 64), sat, 'America/Los_Angeles')?.toISOString()).toBe('2026-11-01T16:00:00.000Z')
+    expect(nextFire(cycle('sun', 480, 64), sat, 'Asia/Tokyo')?.toISOString()).toBe('2026-10-31T23:00:00.000Z')
+    // And a Saturday-only one there is next week's.
+    expect(nextFire(cycle('sat', 480, 32), sat, 'Asia/Tokyo')?.toISOString()).toBe('2026-11-06T23:00:00.000Z')
+    expect(nextRun([cycle('m', 480)], sat, 'UTC')?.at.toISOString()).toBe('2026-11-01T08:00:00.000Z')
+    expect(cycleWhen(cycle('m', 480), null, sat, 'UTC')).toBe('next in 13 h')
+  })
+
   it('picks the soonest enabled cycle', () => {
     expect(nextRun([cycle('m', 480), cycle('e', 1200)], now)?.cycle.id).toBe('e')
     expect(nextRun([cycle('m', 480), cycle('e', 1200, 127, false)], now)?.cycle.id).toBe('m')

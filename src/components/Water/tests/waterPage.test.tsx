@@ -116,6 +116,9 @@ describe('WaterPage: tank and pump', () => {
   it('sums up the pump and the next run, and the tank against the calibration', () => {
     render(<WaterPage />)
     expect(screen.getByText('pump idle · next run 20:00')).toBeTruthy()
+    // Today's timeline, water first, says the same.
+    expect(screen.getAllByTestId(/^lane-/).map(l => l.dataset.testid)).toEqual(['lane-water', 'lane-light'])
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 5 min in 8h 0m')
     const strip = within(screen.getByTestId('pump-strip'))
     expect(strip.getByText('Pump idle')).toBeTruthy()
     expect(strip.getByText('Next run 20:00 (Evening watering) · supply 12.3 V')).toBeTruthy()
@@ -127,6 +130,20 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.getByText('9.4 cm')).toBeTruthy()
     // The pump's limits are Run's tooltip.
     expect(strip.getByRole('button', { name: 'Run' }).getAttribute('title')).toBe('Up to 15 min per run at 30% duty. Won\'t start below 16 cm of water.')
+  })
+
+  it('finds the next run on the unit\'s clock, not the browser\'s', () => {
+    // 12:00 UTC is 21:00 in Tokyo: the evening run there has gone, so the morning's is next.
+    vi.setSystemTime(new Date('2026-11-01T12:00:00Z'))
+    data.set('settings', { waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19, timezone: 'Asia/Tokyo' })
+    render(<WaterPage />)
+    expect(screen.getByText('pump idle · next run 08:00')).toBeTruthy()
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 5 min in 11h 0m')
+    cleanup()
+    data.set('settings', { waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19, timezone: 'UTC' })
+    render(<WaterPage />)
+    expect(screen.getByText('pump idle · next run 20:00')).toBeTruthy()
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 5 min in 8h 0m')
   })
 
   it('runs the pump for the chosen length, and turns the strip into the run with a countdown and Stop', () => {
@@ -335,9 +352,12 @@ describe('WaterPage: pump cycles', () => {
 
   it('previews a preset on the strip and the day\'s chart without saving, and applies it in place of the cycles after a confirmation', async () => {
     render(<WaterPage />)
+    expect(screen.queryByTestId('lane-preview')).toBeNull()
     fireEvent.click(screen.getByTestId('pump-preset-mature'))
     expect(screen.getByTestId('pump-preset-mature').getAttribute('aria-pressed')).toBe('true')
     expect(calls.upsert).not.toHaveBeenCalled()
+    // The day's timeline draws the preset hatched under the real runs.
+    expect(within(screen.getByTestId('lane-preview')).getAllByTestId('mark-preview').map(m => m.textContent)).toEqual(['6 min', '6 min', '6 min'])
     const strip = within(screen.getByTestId('pump-strip'))
     expect(strip.getByTestId('strip-preview').textContent).toBe('Preview: 3 × 6 min·Apply·Cancel')
     fireEvent.click(strip.getByText('Apply'))
@@ -474,12 +494,13 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.queryByText('No watering schedule')).toBeNull()
   })
 
-  it('adds a cycle through the editor, from Blank or Add cycle, with no Delete until it exists', () => {
+  it('adds a custom cycle through the editor, with no Delete until it exists', () => {
     data.set('schedules', [])
     render(<WaterPage />)
-    fireEvent.click(screen.getByText('Add cycle'))
-    fireEvent.click(within(screen.getByRole('dialog')).getByText('Cancel'))
-    fireEvent.click(screen.getByTestId('pump-preset-blank'))
+    // The presets are the four stages; a cycle of your own comes from Add custom cycle.
+    expect(screen.queryByTestId('pump-preset-blank')).toBeNull()
+    expect(screen.getAllByTestId(/^pump-preset-/).map(e => e.dataset.testid)).toEqual(['pump-preset-seedlings', 'pump-preset-young', 'pump-preset-mature', 'pump-preset-fruiting'])
+    fireEvent.click(screen.getByText('Add custom cycle'))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).queryByText('Delete')).toBeNull()
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Noon' } })

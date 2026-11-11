@@ -28,6 +28,9 @@ export function localTime(now: Date, timezone: string): LocalTime {
   }
 }
 
+/** The zone this process runs in: a fallback until the unit's is known. */
+export const systemZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
 export function dayEnabled(mask: number, weekday: number): boolean {
   return (mask & (1 << weekday)) !== 0
 }

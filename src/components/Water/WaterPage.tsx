@@ -1,7 +1,7 @@
 import { withUnit } from '@/src/lib/sensorMeta'
 import { toDisplay } from '@/src/lib/units'
 import { CalendarClock, MoreHorizontal, Play, Plus, Square } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, Card, GhostIcon, InlineError, Skeleton } from '@/src/components/ds/core'
 import { LineChart } from '@/src/components/ds/charts'
@@ -13,7 +13,8 @@ import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from 
 import { tankData, type TankMarks } from '@/src/components/charts/viz3d/shape'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
-import { dayOn, daysLabel, daysToList, listToDays, weekdayOf } from '@/src/lib/days'
+import { dayOn, daysLabel, daysToList, listToDays } from '@/src/lib/days'
+import { localTime, systemZone } from '@/src/scheduler/time'
 import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, SOAK_NOTE, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { trpc } from '@/src/utils/trpc'
@@ -21,6 +22,7 @@ import { asCycle, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun
 import { useNow } from '@/src/components/System/useNow'
 import { useTankReserve } from './useTankReserve'
 import { CareSummary } from '@/src/components/Care/CareSummary'
+import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
 /** The editor's run lengths, in seconds: the presets' among them, so a 6-minute preset cycle reads as itself. */
@@ -59,10 +61,16 @@ export function WaterPage() {
   const tank = s.water_level_pct && Math.round(s.water_level_pct.value)
   // The one place "in the reserve" is decided, for the readout, the meter and the scene alike.
   const { cutoff, low } = useTankReserve(s)
-  const cycles = (schedules.data ?? []).flatMap(x => asCycle(x) ?? []).sort((a, b) => a.spec.minute - b.spec.minute)
+  const cycles = useMemo(() => (schedules.data ?? []).flatMap(x => asCycle(x) ?? []).sort((a, b) => a.spec.minute - b.spec.minute), [schedules.data])
+  const curves = useMemo(() => (schedules.data ?? []).flatMap(x => asCurve(x) ?? []), [schedules.data])
   const now = new Date()
-  const next = nextRun(cycles, now)
-  const light = lightWindow(runningToday((schedules.data ?? []).flatMap(x => asCurve(x) ?? []), weekdayOf(now)).map(c => c.spec))
+  // The cycles run on the unit's clock, so today and now are its, not this browser's.
+  const zone = cfg?.timezone ?? systemZone()
+  const { minute: nowMin, weekday } = localTime(now, zone)
+  // Each weekday's light window, worked out once per set of curves.
+  const lightByDay = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map(d => lightWindow(runningToday(curves, d).map(c => c.spec))), [curves])
+  const light = lightByDay[weekday] ?? null
+  const next = nextRun(cycles, now, zone)
   const planted = (pods.data ?? []).filter(x => x.status !== 'empty')
   const sown = daysSinceSowing(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), now)
   const recommended = recommendedPreset(sown, plantCategories(planted.map(x => x.plant)))
@@ -172,8 +180,8 @@ export function WaterPage() {
                   current={s.water_level_pct?.value ?? null}
                   run={p?.on ? { since: p.since } : null}
                   ran={(runs.data ?? []).filter(r => cycles.some(c => c.id === r.scheduleId)).map(r => r.firedAt)}
-                  nowMin={now.getHours() * 60 + now.getMinutes()}
-                  later={cycles.filter(c => c.enabled && dayOn(c.days, weekdayOf(now)) && c.spec.minute > now.getHours() * 60 + now.getMinutes()).map(c => c.spec.minute)}
+                  nowMin={nowMin}
+                  later={cycles.filter(c => c.enabled && dayOn(c.days, weekday) && c.spec.minute > nowMin).map(c => c.spec.minute)}
                   marks={{
                     full: `full · ${cfg ? withUnit(cfg.waterFullCm, 'cm') : '—'}`,
                     now: `now · ${fmt(s.water_distance)}`,
@@ -190,8 +198,16 @@ export function WaterPage() {
       <div id="pump-cycles" className="flex scroll-mt-6 items-center gap-3">
         <h2 className={`${EYEBROW} flex-1`}>Pump cycles</h2>
         <FollowToggle />
-        <Button icon={Plus} onClick={() => setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })}>Add cycle</Button>
+        <Button icon={Plus} onClick={() => setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })}>Add custom cycle</Button>
       </div>
+      <ScheduleTimeline
+        lead="water"
+        curves={curves}
+        cycles={cycles}
+        timezone={cfg?.timezone}
+        pumpRun={p?.on ? { since: p.since, remainingS: p.remainingS } : null}
+        preview={previewing && previewRuns ? { name: previewing.name, short: previewing.short, runs: previewRuns, durationS: previewing.durationS } : null}
+      />
       {applyError && !confirming && <InlineError>{applyError}</InlineError>}
       <PumpPresets
         light={light}
@@ -204,7 +220,6 @@ export function WaterPage() {
           // The preview reads on a day's axis.
           if (id !== preview) setHours('24')
         }}
-        onBlank={() => setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })}
       />
       {cycles.length > 0 && (
         <Card className="gap-0 p-0">
@@ -215,7 +230,7 @@ export function WaterPage() {
                 <span className={cn('text-sm font-medium', !c.enabled && 'text-fg-2')}>{c.name}</span>
                 <span className="text-[12px] text-fg-3">{[fmtMinutes(c.spec.durationS) + (c.spec.level ? ` at ${c.spec.level}%` : ''), daysLabel(c.days)].join(' · ')}</span>
               </button>
-              <span className="font-mono text-[11px] text-fg-3">{cycleWhen(c, lastRun(c.id), now)}</span>
+              <span className="font-mono text-[11px] text-fg-3">{cycleWhen(c, lastRun(c.id), now, zone)}</span>
               <Toggle on={c.enabled} size="md" label={`Enable ${c.name}`} onChange={enabled => upsert.mutate({ ...c, enabled })} />
               <GhostIcon icon={MoreHorizontal} label={`Edit ${c.name}`} className="text-fg-3" onClick={() => setEditing(c)} />
             </div>
@@ -549,10 +564,10 @@ function DayStrip({ runs, light }: { runs: number[], light: { on: number, off: n
  * Watering starting points by growth stage, as Light offers curves: each
  * with its day in a line, what it adds up to, the note behind it and a link
  * to the source, the one for this tower marked. Picking one previews it on
- * the chart and the strip; Apply there replaces the cycles. Blank opens the
- * editor.
+ * the chart and the strip; Apply there replaces the cycles. Add custom cycle
+ * opens the editor.
  */
-function PumpPresets({ light, recommended, sown, applied, previewing, onPreview, onBlank }: {
+function PumpPresets({ light, recommended, sown, applied, previewing, onPreview }: {
   light: { on: number, off: number } | null
   recommended: { id: PumpPresetId, why: string, soak?: boolean } | null
   sown: number | null
@@ -560,7 +575,6 @@ function PumpPresets({ light, recommended, sown, applied, previewing, onPreview,
   applied: PumpPresetId | null
   previewing: PumpPresetId | null
   onPreview: (id: PumpPresetId) => void
-  onBlank: () => void
 }) {
   return (
     <Card dashed className="gap-3">
@@ -569,7 +583,7 @@ function PumpPresets({ light, recommended, sown, applied, previewing, onPreview,
         <a href={GARDYN_WATERING_GUIDE} target="_blank" rel="noopener noreferrer" className="underline decoration-line-2 underline-offset-2 hover:text-fg">Gardyn’s guide</a>
         . Pick one to preview it on the chart; Apply replaces your cycles.
       </p>
-      <div className="grid gap-2 min-[560px]:grid-cols-2 min-[900px]:grid-cols-5">
+      <div className="grid gap-2 min-[560px]:grid-cols-2 min-[900px]:grid-cols-4">
         {PUMP_PRESETS.map((p) => {
           const runs = presetRuns(p, light)
           const mins = Math.round(p.durationS / 60)
@@ -595,10 +609,6 @@ function PumpPresets({ light, recommended, sown, applied, previewing, onPreview,
             </div>
           )
         })}
-        <button type="button" data-testid="pump-preset-blank" onClick={onBlank} className="flex cursor-pointer flex-col gap-1 rounded-card border border-dashed border-line-2 px-3.5 py-3 text-left hover:border-fg-3">
-          <span className="text-sm font-medium">Blank</span>
-          <span className="text-[12px] leading-snug text-fg-2">A run time and length of your own. Each run is bounded by the pump’s max run and refused when the tank is low.</span>
-        </button>
       </div>
       <ul className="flex list-disc flex-col gap-1 pl-4 text-[12px] leading-snug text-fg-3" data-testid="watering-tips">
         {WATERING_TIPS.map(tip => <li key={tip}>{tip}</li>)}

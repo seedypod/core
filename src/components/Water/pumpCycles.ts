@@ -1,5 +1,6 @@
 import { fmtClock } from '@/src/components/charts/format'
-import { dayOn, weekdayOf } from '@/src/lib/days'
+import { dayOn } from '@/src/lib/days'
+import { localTime, systemZone } from '@/src/scheduler/time'
 
 export interface PumpCycle { id: string, kind: 'pump', name: string, enabled: boolean, days: number, spec: { minute: number, durationS: number, level?: number } }
 
@@ -7,20 +8,26 @@ export function asCycle(s: { id: string, kind: string, name: string, enabled: bo
   return s.kind === 'pump' && 'durationS' in s.spec ? { id: s.id, kind: 'pump', name: s.name, enabled: s.enabled, days: s.days, spec: s.spec as PumpCycle['spec'] } : null
 }
 
-/** When the cycle next fires after `now`, in local time; null when it has no days. */
-export function nextFire(c: PumpCycle, now: Date): Date | null {
+/** When the cycle next fires after `now`, on the clock of `timezone` (the unit's); null when it has no days. */
+export function nextFire(c: PumpCycle, now: Date, timezone = systemZone()): Date | null {
+  const lt = localTime(now, timezone)
+  // The start of this minute, then whole minutes on to the run's on its day.
+  const minuteStart = now.getTime() - (now.getTime() % 60_000)
   for (let d = 0; d <= 7; d++) {
-    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, Math.floor(c.spec.minute / 60), c.spec.minute % 60)
-    if (dayOn(c.days, weekdayOf(at)) && at > now) return at
+    if (!dayOn(c.days, (lt.weekday + d) % 7) || (d === 0 && c.spec.minute <= lt.minute)) continue
+    const at = minuteStart + (d * 1440 + c.spec.minute - lt.minute) * 60_000
+    // A clock change between now and then moves the run by its size.
+    const drift = ((c.spec.minute - localTime(new Date(at), timezone).minute + 720 + 1440) % 1440) - 720
+    return new Date(at + drift * 60_000)
   }
   return null
 }
 
-/** The soonest enabled cycle. */
-export function nextRun(cycles: PumpCycle[], now: Date): { at: Date, cycle: PumpCycle } | null {
+/** The soonest enabled cycle, on the clock of `timezone`. */
+export function nextRun(cycles: PumpCycle[], now: Date, timezone = systemZone()): { at: Date, cycle: PumpCycle } | null {
   let best: { at: Date, cycle: PumpCycle } | null = null
   for (const cycle of cycles) {
-    const at = cycle.enabled ? nextFire(cycle, now) : null
+    const at = cycle.enabled ? nextFire(cycle, now, timezone) : null
     if (at && (!best || at < best.at)) best = { at, cycle }
   }
   return best
@@ -59,8 +66,8 @@ export function fmtWhen(at: Date, now: Date): string {
 }
 
 /** A cycle's status line: whichever is nearer, its last run or its next. */
-export function cycleWhen(c: PumpCycle, lastRun: Date | null, now: Date): string {
-  const next = c.enabled ? nextFire(c, now) : null
+export function cycleWhen(c: PumpCycle, lastRun: Date | null, now: Date, timezone = systemZone()): string {
+  const next = c.enabled ? nextFire(c, now, timezone) : null
   const sinceLast = lastRun ? now.getTime() - lastRun.getTime() : Number.POSITIVE_INFINITY
   if (next && next.getTime() - now.getTime() <= sinceLast) return `next in ${fmtSpan(next.getTime() - now.getTime())}`
   if (lastRun) return `ran ${fmtSpan(sinceLast)} ago`

@@ -5,21 +5,25 @@ import { cn } from '@/lib/utils'
 import { Badge, Button, Card, GhostIcon } from '@/src/components/ds/core'
 import { Slider, Toggle } from '@/src/components/ds/forms'
 import { LineChart } from '@/src/components/ds/charts'
+import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 import { fmtClock } from '@/src/components/charts/format'
 import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { lightData } from '@/src/components/charts/viz3d/shape'
-import { daysLabel, weekdayOf } from '@/src/lib/days'
+import { daysLabel } from '@/src/lib/days'
 import { BOOST_LEVEL, boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '@/src/scheduler/lightPlan'
+import { localTime, systemZone } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
+import { asCycle } from '@/src/components/Water/pumpCycles'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
-import { asCurve, boostHoursToday, levelAt, litHours, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
+import { asCurve, boostHoursToday, holdWindow, levelAt, litHours, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
 
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
 /** Gardyn's ratings: Great is the aim; Low and Too much want hours added or taken away. */
 const RATING_TONE: Record<ReturnType<typeof lightRating>, string> = { 'low': 'bg-pod-attention/15 text-pod-attention', 'ok': 'bg-pod-ready/15 text-pod-ready', 'great': 'bg-pod-ok/15 text-pod-ok', 'intense': 'bg-pod-ready/15 text-pod-ready', 'too much': 'bg-pod-attention/15 text-pod-attention' }
-const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+/** A moment as the unit's clock reads it. */
+const clock = (iso: string, zone: string) => fmtClock(localTime(new Date(iso), zone).minute)
 
 export function LightPage() {
   const { light: l, query: lightQuery, level, requested, lightOn, preview, commit, power } = useLightControl()
@@ -36,8 +40,16 @@ export function LightPage() {
   const timezone = settings.data?.timezone
   const curves = useMemo(() => (schedules.data ?? []).flatMap(s => asCurve(s) ?? []), [schedules.data])
   const now = new Date()
-  const minutesNow = now.getHours() * 60 + now.getMinutes()
-  const running = runningToday(curves, weekdayOf(now))
+  // Curves run on the unit's clock, so today and now are its, not this browser's.
+  const zone = timezone ?? systemZone()
+  const { minute: minutesNow, weekday } = localTime(now, zone)
+  // Each weekday's Boost hours, once per set of curves, not on every slider move.
+  const boostByDay = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map((d) => {
+    const today = runningToday(curves, d)
+    return today.length ? boostHoursToday(today, BOOST_LEVEL) : null
+  }), [curves])
+  const boostH = boostByDay[weekday] ?? null
+  const running = runningToday(curves, weekday)
   const today = todayLevels(running)
   // With nothing picked, the first curve running today is the open one.
   const open = openId ?? running[0]?.id ?? null
@@ -45,17 +57,11 @@ export function LightPage() {
   const queries = [schedules, lightQuery]
   const status = vizStatus(queries, today === null)
   const scene = status === 'ready' && today
-    ? lightData({ planned: today, nowMin: minutesNow + now.getSeconds() / 60, level: l?.on ? l.level : 0, hold: o?.source === 'manual' && o.manualUntil && l ? holdWindow(l.since, o.manualUntil, now) : null })
+    ? lightData({ planned: today, nowMin: minutesNow + now.getSeconds() / 60, level: l?.on ? l.level : 0, hold: o?.source === 'manual' && o.manualUntil && l ? holdWindow(l.since, o.manualUntil, now, zone) : null })
     : null
 
   const following = running.length === 1 ? `Following ${running[0]?.name}` : running.length > 1 ? `Following ${running.length} curves` : 'No curve today'
-  const holding = o?.source === 'manual' && o.manualUntil ? `held by hand until ${clock(o.manualUntil)}` : o?.source === 'autopilot' ? 'Autopilot is in charge' : null
-  // A day's minutes, once per day's curves, not on every slider move.
-  const weekday = weekdayOf(now)
-  const boostH = useMemo(() => {
-    const today = runningToday(curves, weekday)
-    return today.length ? boostHoursToday(today, BOOST_LEVEL) : null
-  }, [curves, weekday])
+  const holding = o?.source === 'manual' && o.manualUntil ? `held by hand until ${clock(o.manualUntil, zone)}` : o?.source === 'autopilot' ? 'Autopilot is in charge' : null
   const rating = boostH === null ? null : lightRating(boostH)
 
   return (
@@ -72,7 +78,9 @@ export function LightPage() {
           owner={o}
           running={running}
           curves={curves}
-          now={now}
+          minute={minutesNow}
+          weekday={weekday}
+          zone={zone}
           level={level}
           resuming={resume.isPending}
           onResume={() => resume.mutate()}
@@ -128,6 +136,14 @@ export function LightPage() {
       {lightHours.data && (
         <p className="-mt-3 font-mono text-[11px] text-fg-3" data-testid="led-hours">{`LED life ${Math.round(Math.max(0, 100 - lightHours.data.pctUsed))}% · ${Math.round(lightHours.data.hours).toLocaleString()} / ${lightHours.data.ratedHours.toLocaleString()} h`}</p>
       )}
+
+      <ScheduleTimeline
+        lead="light"
+        curves={curves}
+        cycles={(schedules.data ?? []).flatMap(s => asCycle(s) ?? [])}
+        timezone={timezone}
+        hold={o?.source === 'manual' && o.manualUntil && l ? { since: l.since, until: o.manualUntil, level: l.on ? l.level : 0 } : null}
+      />
 
       <div className="flex items-center gap-3">
         <h2 className={`${EYEBROW} flex-1`}>Curves</h2>
@@ -209,14 +225,17 @@ type Owner = { source: 'manual' | 'autopilot' | 'schedule' | null, manualUntil: 
  * right. It tints amber while the light is on. A change here holds for 30
  * minutes, as before.
  */
-function LightStrip({ on, known, owner: o, running, curves, now, level, resuming, onResume, onPower, onPreview, onCommit }: {
+function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, resuming, onResume, onPower, onPreview, onCommit }: {
   on: boolean
   known: boolean
   owner: Owner
   running: LightCurve[]
   /** Every light curve, for tomorrow's. */
   curves: LightCurve[]
-  now: Date
+  /** Now on the unit's clock. */
+  minute: number
+  weekday: number
+  zone: string
   level: number
   resuming: boolean
   onResume: () => void
@@ -224,8 +243,6 @@ function LightStrip({ on, known, owner: o, running, curves, now, level, resuming
   onPreview: (level: number) => void
   onCommit: (level: number) => void
 }) {
-  const minute = now.getHours() * 60 + now.getMinutes()
-  const weekday = weekdayOf(now)
   // Scanning the day's minutes runs once per minute and set of curves, not on every render (a drag renders many).
   const dims = useMemo(() => nextDim(runningToday(curves, weekday), minute), [curves, weekday, minute])
   const next = useMemo(() => nextOn(runningToday(curves, weekday), runningToday(curves, (weekday + 1) % 7), minute), [curves, weekday, minute])
@@ -234,7 +251,7 @@ function LightStrip({ on, known, owner: o, running, curves, now, level, resuming
   let title = known ? (on ? 'Light on' : 'Light off') : 'Light'
   let sub: ReactNode = null
   if (held) {
-    title = `Held by hand until ${clock(o.manualUntil ?? '')}`
+    title = `Held by hand until ${clock(o.manualUntil ?? '', zone)}`
     sub = (
       <>
         <span className="truncate">{`then ${o.schedule !== null ? `the curve (${o.schedule}% at this hour)` : 'the curve or Autopilot'}`}</span>
@@ -272,13 +289,6 @@ function LightStrip({ on, known, owner: o, running, curves, now, level, resuming
       </div>
     </div>
   )
-}
-
-/** A manual hold's window today in minutes: from when the light was set (or midnight) until it hands back (or midnight). */
-export function holdWindow(sinceIso: string, untilIso: string, now: Date): { fromMin: number, untilMin: number } {
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const minutes = (iso: string) => Math.max(0, Math.min(1440, (Date.parse(iso) - midnight) / 60_000))
-  return { fromMin: minutes(sinceIso), untilMin: minutes(untilIso) }
 }
 
 function CurveCard({ curve: c, running, open, onOpen, onSave }: { curve: LightCurve, running: boolean, open: boolean, onOpen: (open: boolean) => void, onSave: (next: LightCurve) => void }) {
