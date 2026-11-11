@@ -7,6 +7,7 @@
  * each pod's crop, so a trainer sees exactly what the analysers see.
  */
 import { SensorId } from '../hardware/contract'
+import { daysSinceSowing } from '../scheduler/pumpPlan'
 import type { Context } from '../server/context'
 import type { PodLabel } from '../store/types'
 import { jpegSize } from '../vision/jpegSize'
@@ -65,8 +66,10 @@ export function summarize(ctx: Context, w: ExportWindow): DatasetSummary {
   }
 }
 
-/** One line of `labels.jsonl`: the label, and where its pod's crop is in the still. */
+/** One line of `labels.jsonl`: the label, the pod's plant then, and where its pod's crop is in the still. */
 export interface LabelRow extends PodLabel {
+  /** Whole days from `plantedAt` to the photo; null without a sowing date. */
+  daysSinceSowing: number | null
   /** The still's path in this archive, or null when it isn't in it. */
   image: string | null
   /** The still's size in pixels, null when it can't be read. */
@@ -96,6 +99,7 @@ async function labelRows(ctx: Context, w: ExportWindow, labels: PodLabel[], regi
     const size = sizes.get(l.captureId) ?? null
     return {
       ...l,
+      daysSinceSowing: daysSinceSowing(null, [l.plantedAt], new Date(l.ts)),
       image: w.images && size && inArchive.has(l.captureId) ? `images/${l.captureId}.jpg` : null,
       width: size?.width ?? null,
       height: size?.height ?? null,
@@ -165,12 +169,17 @@ Exported from a seedypod unit (ADR-0019). Every file covers the window in
 | \`manifest.json\` | Format version, window, unit, core version, analysers and which one is primary, row counts |
 | \`captures.jsonl\` | One still per line: \`id\`, \`camera\` (upper/lower), \`ts\`, \`bytes\`, \`image\` (path in this archive, or null) |
 | \`analyses.jsonl\` | One result per line: \`captureId\`, \`ts\`, \`camera\`, \`analyzer\`, \`version\`, \`source\` (device/remote), \`slot\`, \`metric\`, \`value\`, \`detail\`, \`artifact\` |
-| \`labels.jsonl\` | One labelled pod per line: \`captureId\`, \`ts\`, \`camera\`, \`slot\`, \`label\` (empty/sprouted/growing/ready/unhealthy), \`labelledAt\`, \`image\` (path in this archive, or null), \`width\` and \`height\` of the still, \`region\` (the pod's crop in the still's pixels: \`x\`, \`y\`, \`w\`, \`h\`; null without the still), \`box\` (the same box as fractions of the frame) |
+| \`labels.jsonl\` | One labelled pod per line: \`captureId\`, \`ts\`, \`camera\`, \`slot\`, \`label\` (see below), \`labelledAt\`, \`plant\` and \`plantedAt\` (the pod's plant and sowing date when it was labelled, or null), \`daysSinceSowing\` (whole days from \`plantedAt\` to \`ts\`, or null), \`image\` (path in this archive, or null), \`width\` and \`height\` of the still, \`region\` (the pod's crop in the still's pixels: \`x\`, \`y\`, \`w\`, \`h\`; null without the still), \`box\` (the same box as fractions of the frame) |
 | \`regions.json\` | Every pod's box per camera as fractions of the frame, \`{"upper": {"1": {"x", "y", "w", "h"}, …}, "lower": {…}}\`: the boxes the analysers score on |
 | \`telemetry.jsonl\` | One reading per line, thinned to one per 15 minutes past 90 days: \`ts\`, \`sensor\`, \`value\` (canonical units, see the HAL contract) |
 | \`pods.json\` | The 30 pods: plant, planted date, status, notes |
 | \`grow_cycles.json\` | Grow cycles with start/end and stage |
 | \`images/<id>.jpg\` | The stills, when exported with images |
+
+Labels are \`empty\` (capped, no yCube), \`seeded\` (a yCube in, nothing
+visible yet), \`sprouted\`, \`growing\`, \`ready\` and \`unhealthy\`. The
+pod-state model's classes are the same minus \`seeded\`, which came later: a
+trainer either adds it as a class or maps it onto one the model has.
 
 Pods 1–15 are seen by the upper camera, 16–30 by the lower. A pod's crop is
 \`image[region.y : region.y + region.h, region.x : region.x + region.w]\`,

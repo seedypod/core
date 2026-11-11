@@ -39,11 +39,11 @@ async function unit() {
   store.telemetry.add([{ ts: '2026-10-25T00:00:00Z', sensor: 'air_temp', value: 22.5 }, { ts: '2026-08-01T00:00:00Z', sensor: 'ph', value: 6 }])
   // Pod 1's box is calibrated; the rest keep the measured defaults.
   store.settings.update({ podRegions: { upper: { 1: { x: 0.1, y: 0.2, w: 0.5, h: 0.5 } } } })
-  const label = (captureId: string, ts: string, slot: number, label: 'empty' | 'growing' | 'ready') =>
-    store.podLabels.set({ captureId, ts, camera: slot > 15 ? 'lower' : 'upper', slot, label, labelledAt: '2026-10-31T09:00:00.000Z' })
+  const label = (captureId: string, ts: string, slot: number, label: 'empty' | 'seeded' | 'growing' | 'ready', plant: string | null = null, plantedAt: string | null = null) =>
+    store.podLabels.set({ captureId, ts, camera: slot > 15 ? 'lower' : 'upper', slot, label, labelledAt: '2026-10-31T09:00:00.000Z', plant, plantedAt })
   label('upper-0', '2026-09-01T00:00:00Z', 1, 'empty')
-  label('upper-1', '2026-10-20T00:00:00Z', 1, 'growing')
-  label('upper-1', '2026-10-20T00:00:00Z', 2, 'empty')
+  label('upper-1', '2026-10-20T00:00:00Z', 1, 'growing', 'Basil', '2026-10-06')
+  label('upper-1', '2026-10-20T00:00:00Z', 2, 'seeded', 'Kale', null)
   label('upper-2', '2026-10-30T00:00:00Z', 1, 'ready')
   label('demo-svg', '2026-10-29T00:00:00Z', 16, 'empty')
   // A still pruned since it was labelled: the label stays, without a crop.
@@ -113,20 +113,27 @@ describe('dataset export', () => {
 
     // Labels, each with its pod's crop in the still's pixels: what a classifier trains on.
     const labels = readFileSync(join(root, 'labels.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l) as Record<string, unknown>)
-    expect(labels.map(l => [l.captureId, l.slot, l.label])).toEqual([['upper-1', 1, 'growing'], ['upper-1', 2, 'empty'], ['upper-gone', 3, 'growing'], ['demo-svg', 16, 'empty'], ['upper-2', 1, 'ready']])
+    expect(labels.map(l => [l.captureId, l.slot, l.label])).toEqual([['upper-1', 1, 'growing'], ['upper-1', 2, 'seeded'], ['upper-gone', 3, 'growing'], ['demo-svg', 16, 'empty'], ['upper-2', 1, 'ready']])
+    // The plant and its age when the photo was taken, so a replant later doesn't relabel the history.
     expect(labels[0]).toEqual({
       captureId: 'upper-1', ts: '2026-10-20T00:00:00Z', camera: 'upper', slot: 1, label: 'growing', labelledAt: '2026-10-31T09:00:00.000Z',
+      plant: 'Basil', plantedAt: '2026-10-06', daysSinceSowing: 14,
       image: 'images/upper-1.jpg', width: 80, height: 60, region: { x: 8, y: 12, w: 40, h: 30 }, box: { x: 0.1, y: 0.2, w: 0.5, h: 0.5 },
     })
     const regions = JSON.parse(readFileSync(join(root, 'regions.json'), 'utf8')) as Record<'upper' | 'lower', Record<string, { x: number, y: number, w: number, h: number }>>
     expect(Object.keys(regions.upper)).toHaveLength(15)
     expect(Object.keys(regions.lower)).toHaveLength(15)
     expect(regions.upper['1']).toEqual({ x: 0.1, y: 0.2, w: 0.5, h: 0.5 })
+    expect(labels[1]).toMatchObject({ plant: 'Kale', plantedAt: null, daysSinceSowing: null })
+    expect(labels[3]).toMatchObject({ plant: null, plantedAt: null, daysSinceSowing: null })
     expect(labels[1]?.box).toEqual(regions.upper['2'])
     expect(labels[1]?.region).toEqual(cropPixels(regions.upper['2'] as { x: number, y: number, w: number, h: number }, 80, 60))
     for (const gone of [labels[2], labels[3]]) expect(gone).toMatchObject({ image: null, width: null, height: null, region: null })
     expect(labels[3]?.box).toEqual(regions.lower['16'])
-    expect(readFileSync(join(root, 'README.md'), 'utf8')).toContain('labels.jsonl')
+    const readme = readFileSync(join(root, 'README.md'), 'utf8')
+    expect(readme).toContain('labels.jsonl')
+    expect(readme).toContain('`daysSinceSowing`')
+    expect(readme).toMatch(/`seeded` \(a yCube in, nothing\s+visible yet\)/)
   })
 
   it('leaves the stills out on request and rejects a bad window', async () => {

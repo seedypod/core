@@ -208,8 +208,11 @@ export interface TankAction {
   createdAt: string
 }
 
-/** What a pod shows in a capture (#184), the classes a pod classifier is trained on. */
-export const POD_LABELS = ['empty', 'sprouted', 'growing', 'ready', 'unhealthy'] as const
+/**
+ * What a pod shows in a capture (#184), the classes a pod classifier is trained on.
+ * `empty` is a capped pod with no yCube; `seeded` has a yCube in but nothing up yet.
+ */
+export const POD_LABELS = ['empty', 'seeded', 'sprouted', 'growing', 'ready', 'unhealthy'] as const
 export type PodLabelValue = typeof POD_LABELS[number]
 
 /** The grower's label for one pod in one capture. */
@@ -221,7 +224,13 @@ export interface PodLabel {
   slot: number
   label: PodLabelValue
   labelledAt: string
+  /** The pod's plant and sowing date when it was first labelled; null when it had none. */
+  plant: string | null
+  plantedAt: string | null
 }
+
+/** Where a page of labels ends: the last row's capture time, capture and pod. */
+export interface PodLabelCursor { ts: string, captureId: string, slot: number }
 
 /** One sample of the SD card's sectors-written counter; `bytes` were written since the previous sample. */
 export interface FlashSample { ts: string, sectors: number, bytes: number }
@@ -324,13 +333,18 @@ export interface Store {
     stats(): AnalyzerStats[]
   }
   podLabels: {
-    /** Upsert on (capture, slot): relabelling a pod replaces its label. */
+    /**
+     * Upsert on (capture, slot): relabelling a pod replaces its label. The plant
+     * snapshot from the first labelling stays, unless it was null.
+     */
     set(l: PodLabel): PodLabel
     remove(captureId: string, slot: number): boolean
     /** By slot. */
     forCapture(captureId: string): PodLabel[]
     /** Labels whose capture time falls in [fromTs, toTs], oldest first, then by slot. */
     range(fromTs: string, toTs: string): PodLabel[]
+    /** Newest capture first, then by pod; `before` continues after a page's last row. */
+    list(q: { label?: PodLabelValue, camera?: 'upper' | 'lower', limit: number, before?: PodLabelCursor }): PodLabel[]
     /** How many pods carry each label. */
     counts(): Record<PodLabelValue, number>
     /** Labelled captures, newest first, with how many of their pods are labelled. */

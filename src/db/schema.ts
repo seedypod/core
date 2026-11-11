@@ -208,8 +208,11 @@ export const podLabels = sqliteTable('pod_labels', {
   ts: text().notNull(),
   camera: text({ enum: ['upper', 'lower'] }).notNull(),
   slot: integer().notNull(),
-  label: text({ enum: ['empty', 'sprouted', 'growing', 'ready', 'unhealthy'] }).notNull(),
+  label: text({ enum: ['empty', 'seeded', 'sprouted', 'growing', 'ready', 'unhealthy'] }).notNull(),
   labelledAt: text().notNull(),
+  /** The pod's plant and sowing date when it was first labelled, so its history keeps them after a replant. */
+  plant: text(),
+  plantedAt: text(),
 }, t => [
   uniqueIndex('pod_labels_key').on(t.captureId, t.slot),
   index('pod_labels_ts').on(t.ts),

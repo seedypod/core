@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, PodLabel, PodLabelValue, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, PodLabel, PodLabelCursor, PodLabelValue, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
@@ -286,8 +286,11 @@ export class MemoryStore implements Store {
 
   podLabels = {
     set: (l: PodLabel): PodLabel => {
-      this.labelRows.set(`${l.captureId}#${l.slot}`, { ...l })
-      return { ...l }
+      const k = `${l.captureId}#${l.slot}`
+      const was = this.labelRows.get(k)
+      const row = was?.plant != null ? { ...l, plant: was.plant, plantedAt: was.plantedAt } : { ...l }
+      this.labelRows.set(k, row)
+      return { ...row }
     },
     remove: (captureId: string, slot: number): boolean => this.labelRows.delete(`${captureId}#${slot}`),
     forCapture: (captureId: string): PodLabel[] =>
@@ -295,6 +298,13 @@ export class MemoryStore implements Store {
     range: (fromTs: string, toTs: string): PodLabel[] =>
       [...this.labelRows.values()].filter(l => l.ts >= fromTs && l.ts <= toTs)
         .sort((a, b) => a.ts.localeCompare(b.ts) || a.captureId.localeCompare(b.captureId) || a.slot - b.slot).map(l => ({ ...l })),
+    list: (q: { label?: PodLabelValue, camera?: 'upper' | 'lower', limit: number, before?: PodLabelCursor }): PodLabel[] => {
+      const order = (a: PodLabelCursor, b: PodLabelCursor) => b.ts.localeCompare(a.ts) || b.captureId.localeCompare(a.captureId) || a.slot - b.slot
+      const { before } = q
+      return [...this.labelRows.values()]
+        .filter(l => (!q.label || l.label === q.label) && (!q.camera || l.camera === q.camera) && (!before || order(l, before) > 0))
+        .sort(order).slice(0, q.limit).map(l => ({ ...l }))
+    },
     counts: (): Record<PodLabelValue, number> => {
       const out = Object.fromEntries(POD_LABELS.map(l => [l, 0])) as Record<PodLabelValue, number>
       for (const l of this.labelRows.values()) out[l.label]++

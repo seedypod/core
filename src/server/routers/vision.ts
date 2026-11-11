@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { POD_LABELS } from '../../store/types'
+import { daysSinceSowing } from '../../scheduler/pumpPlan'
+import { POD_LABELS, type PodLabel, type PodLabelCursor } from '../../store/types'
 import { podTrends } from '../../vision/analyze'
 import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
 import { publicProcedure, router } from '../trpc'
@@ -55,7 +56,19 @@ function regionRows(camera: Camera, own: PodRegions | undefined) {
 }
 
 const LabelValue = z.enum(POD_LABELS)
-const Label = z.object({ captureId: z.string(), ts: z.string(), camera: CameraName, slot: z.number(), label: LabelValue, labelledAt: z.string() })
+const Label = z.object({ captureId: z.string(), ts: z.string(), camera: CameraName, slot: z.number(), label: LabelValue, labelledAt: z.string(), plant: z.string().nullable(), plantedAt: z.string().nullable() })
+/** A label with the pod's age when the photo was taken and where its photo is (null once pruned). */
+const LabelEntry = Label.extend({ daysSinceSowing: z.number().nullable(), url: z.string().nullable() })
+
+/** A page cursor is the last row's `ts|captureId|slot`. */
+const cursorOf = (l: PodLabel) => `${l.ts}|${l.captureId}|${l.slot}`
+function parseCursor(c: string): PodLabelCursor {
+  const parts = c.split('|')
+  const slot = Number(parts.pop())
+  const [ts, ...id] = parts
+  if (!ts || !id.length || !Number.isInteger(slot)) throw new TRPCError({ code: 'BAD_REQUEST', message: `bad cursor ${c}` })
+  return { ts, captureId: id.join('|'), slot }
+}
 const LabelCounts = z.object(Object.fromEntries(POD_LABELS.map(l => [l, z.number()])) as Record<typeof POD_LABELS[number], z.ZodNumber>)
 
 const Point = z.object({ ts: z.string(), value: z.number(), captureId: z.string() })
@@ -117,7 +130,7 @@ export const visionRouter = router({
       }
     }),
   labels: publicProcedure
-    .meta({ openapi: { method: 'GET', path: '/vision/captures/{captureId}/labels', tags: ['vision'], summary: 'The grower\'s label for each pod in one capture (empty, sprouted, growing, ready or unhealthy)' } })
+    .meta({ openapi: { method: 'GET', path: '/vision/captures/{captureId}/labels', tags: ['vision'], summary: 'The grower\'s label for each pod in one capture (empty, seeded, sprouted, growing, ready or unhealthy), with the pod\'s plant when it was labelled' } })
     .input(z.object({ captureId: z.string() }))
     .output(z.array(Label))
     .query(({ ctx, input }) => ctx.store.podLabels.forCapture(input.captureId)),
@@ -129,16 +142,51 @@ export const visionRouter = router({
       const counts = ctx.store.podLabels.counts()
       return { counts, pods: Object.values(counts).reduce((n, c) => n + c, 0), captures: ctx.store.podLabels.captures(input?.limit ?? 50) }
     }),
+  labelList: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/labels/pods', tags: ['vision'], summary: 'Every labelled pod, newest photo first, with its plant and age then; pass next back as cursor for the following page' } })
+    .input(z.object({ label: LabelValue.optional(), camera: CameraName.optional(), limit: z.number().int().min(1).max(500).default(60), cursor: z.string().optional() }))
+    .output(z.object({ labels: z.array(LabelEntry), next: z.string().nullable() }))
+    .query(({ ctx, input }) => {
+      const rows = ctx.store.podLabels.list({ label: input.label, camera: input.camera, limit: input.limit + 1, before: input.cursor ? parseCursor(input.cursor) : undefined })
+      const page = rows.slice(0, input.limit)
+      const urls = new Map<string, string | null>()
+      const urlOf = (id: string) => {
+        if (!urls.has(id)) {
+          const c = ctx.store.captures.get(id)
+          urls.set(id, c ? (c.path.startsWith('data:') ? c.path : `/api/captures/${c.id}.jpg`) : null)
+        }
+        return urls.get(id) ?? null
+      }
+      return {
+        labels: page.map(l => ({ ...l, daysSinceSowing: daysSinceSowing(null, [l.plantedAt], new Date(l.ts)), url: urlOf(l.captureId) })),
+        next: rows.length > input.limit && page.length ? cursorOf(page[page.length - 1] as PodLabel) : null,
+      }
+    }),
   setLabel: publicProcedure
     .meta({ openapi: { method: 'PUT', path: '/vision/captures/{captureId}/labels/{slot}', tags: ['vision'], summary: 'Label one pod in a capture for training (ADR-0019); null clears the label' } })
     .input(z.object({ captureId: z.string(), slot: z.number().int().min(1).max(30), label: LabelValue.nullable() }))
     .output(z.object({ captureId: z.string(), slot: z.number(), label: LabelValue.nullable() }))
     .mutation(({ ctx, input }) => {
-      const capture = ctx.store.captures.get(input.captureId)
+      // A pruned photo's labels can still be changed or removed: they carry its time and camera.
+      const capture = ctx.store.captures.get(input.captureId) ?? ctx.store.podLabels.forCapture(input.captureId)[0]
       if (!capture) throw new TRPCError({ code: 'NOT_FOUND', message: `no capture ${input.captureId}` })
       if (cameraOf(input.slot) !== capture.camera) throw new TRPCError({ code: 'BAD_REQUEST', message: `pod ${input.slot} is not on the ${capture.camera} camera` })
       if (input.label === null) ctx.store.podLabels.remove(input.captureId, input.slot)
-      else ctx.store.podLabels.set({ captureId: capture.id, ts: capture.ts, camera: capture.camera, slot: input.slot, label: input.label, labelledAt: (ctx.now?.() ?? new Date()).toISOString() })
+      else {
+        // The pod's plant goes with the label, unless it was sown after the photo and so isn't in it.
+        const pod = ctx.store.pods.list().find(p => p.slot === input.slot)
+        const shown = pod?.plant && !(pod.plantedAt && Date.parse(pod.plantedAt) > Date.parse(capture.ts)) ? pod : null
+        ctx.store.podLabels.set({
+          captureId: input.captureId,
+          ts: capture.ts,
+          camera: capture.camera,
+          slot: input.slot,
+          label: input.label,
+          labelledAt: (ctx.now?.() ?? new Date()).toISOString(),
+          plant: shown?.plant ?? null,
+          plantedAt: shown?.plantedAt ?? null,
+        })
+      }
       ctx.events.emit({ kind: 'mutation', path: 'labels' })
       return { captureId: input.captureId, slot: input.slot, label: input.label }
     }),

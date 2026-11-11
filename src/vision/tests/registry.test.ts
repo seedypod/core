@@ -290,11 +290,19 @@ describe('model registry over REST, tRPC and MCP', () => {
     expect((await call('set_model', { action: 'reset' })).body).toMatchObject({ enabled: [expect.any(String)] })
     expect((await call('set_model', { action: 'delete', id })).body).toEqual({ removed: id })
     ctx.store.captures.add({ id: 'upper-1', camera: 'upper', ts: new Date().toISOString(), path: 'upper-1.jpg', bytes: 1 })
-    ctx.store.podLabels.set({ captureId: 'upper-1', ts: new Date().toISOString(), camera: 'upper', slot: 2, label: 'sprouted', labelledAt: new Date().toISOString() })
+    ctx.store.podLabels.set({ captureId: 'upper-1', ts: new Date().toISOString(), camera: 'upper', slot: 2, label: 'sprouted', labelledAt: new Date().toISOString(), plant: 'Basil', plantedAt: null })
+    ctx.store.podLabels.set({ captureId: 'upper-1', ts: new Date().toISOString(), camera: 'upper', slot: 3, label: 'seeded', labelledAt: new Date().toISOString(), plant: null, plantedAt: null })
     const exp = await call('export_dataset', { days: 7, images: false })
-    expect(exp.body).toMatchObject({ captures: 1, images: false, labelsPerClass: { empty: 0, sprouted: 1, growing: 0, ready: 0, unhealthy: 0 } })
-    expect((await call('list_labels', {})).body).toMatchObject({ counts: { sprouted: 1 }, pods: 1 })
-    expect((await call('list_labels', { capture_id: 'upper-1' })).body).toMatchObject([{ slot: 2, label: 'sprouted' }])
+    expect(exp.body).toMatchObject({ captures: 1, images: false, labelsPerClass: { empty: 0, seeded: 1, sprouted: 1, growing: 0, ready: 0, unhealthy: 0 } })
+    expect((await call('list_labels', {})).body).toMatchObject({ counts: { seeded: 1, sprouted: 1 }, pods: 2 })
+    expect((await call('list_labels', { capture_id: 'upper-1' })).body).toMatchObject([{ slot: 2, label: 'sprouted', plant: 'Basil' }, { slot: 3, label: 'seeded', plant: null }])
+    expect((await call('list_labels', { label: 'sprouted' })).body).toEqual({
+      labels: [expect.objectContaining({ slot: 2, plant: 'Basil', plantedAt: null, daysSinceSowing: null, url: '/api/captures/upper-1.jpg' })],
+      next: null,
+    })
+    const page = (await call('list_labels', { camera: 'upper', limit: 1 })).body as { labels: Array<{ slot: number }>, next: string }
+    expect(page.labels.map(l => l.slot)).toEqual([2])
+    expect(((await call('list_labels', { cursor: page.next })).body as { labels: Array<{ slot: number }> }).labels.map(l => l.slot)).toEqual([3])
     expect((exp.body as { path: string }).path).toMatch(/^\/api\/datasets\/export\?from=.*&images=0$/)
     await client.close()
   })
