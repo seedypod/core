@@ -266,12 +266,6 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     l.visible = false
     return l
   })
-  // A preset before it's applied: hollow bars along the day, a little taller so they read over the real runs.
-  const previewBars = Array.from({ length: 8 }, () => {
-    const l = base.line([[-0.035, 0, 0], [0.035, 0, 0], [0.035, RUN_H * 1.6, 0], [-0.035, RUN_H * 1.6, 0], [-0.035, 0, 0]], 'blue', 0.95)
-    l.visible = false
-    return l
-  })
   const GAP0 = x0 + W + 0.08
   const GAP1 = CX - R - 0.08
 
@@ -352,11 +346,6 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
       const at = data?.upcoming[i]
       l.visible = shown && at !== undefined
       if (l.visible && at !== undefined) l.position.set(GAP0 + at * (GAP1 - GAP0), 0, 0.06)
-    })
-    previewBars.forEach((l, i) => {
-      const at = data?.preview[i]
-      l.visible = shown && at !== undefined
-      if (l.visible && at !== undefined) l.position.set(x0 + at * W, 0, 0.08)
     })
     // While watering, "now" at the end of the time axis is blue like the tail.
     const last = tickLabels.length - 1

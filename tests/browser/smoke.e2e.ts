@@ -45,7 +45,7 @@ test('water: create, toggle, delete a pump cycle', async ({ page }) => {
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await main.getByRole('button', { name: 'Edit Watering' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-  await expect(main.getByTestId('pump-preset-seedlings')).toBeVisible()
+  await expect(main.getByTestId('protocol-line')).toBeVisible()
   await expect(page.getByTestId('pump-strip').getByText('No watering schedule')).toBeVisible()
 })
 

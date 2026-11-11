@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { anchor } from '../../care/knowledge'
-import { advances, dailyMinutes, daysSinceSowing, sowDate, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, appliedPreset, plantCategories, presetDays, presetSchedules, PUMP_PRESETS, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS, type PumpPreset } from '../pumpPlan'
+import { advances, dailyMinutes, daysSinceSowing, sowDate, GARDYN_WATERING_GUIDE, lightPeriods, lightWindow, presetRuns, appliedPreset, plantCategories, presetDays, presetSchedules, PUMP_PRESETS, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS, type PumpPreset } from '../pumpPlan'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const preset = (id: string) => PUMP_PRESETS.find(p => p.id === id) as PumpPreset
@@ -46,6 +46,21 @@ describe('pump presets', () => {
     expect(lightWindow([{ setpoints: [{ minute: 0, level: 0 }] }])).toBeNull()
     const day = { setpoints: [{ minute: 330, level: 0 }, { minute: 360, level: 100 }, { minute: 1260, level: 100 }, { minute: 1290, level: 0 }] }
     expect(lightWindow([day])).toEqual({ on: 331, off: 1290 })
+    // At Boost, 95 or brighter: the ramps don't count.
+    expect(lightWindow([day], 95)).toEqual({ on: 359, off: 1262 })
+  })
+
+  it('finds each stretch of light, joining one that runs over midnight', () => {
+    expect(lightPeriods([])).toEqual([])
+    // Two separate curves: morning and evening at full brightness.
+    const morning = { setpoints: [{ minute: 360, level: 100 }, { minute: 540, level: 100 }, { minute: 541, level: 0 }, { minute: 359, level: 0 }] }
+    const evening = { setpoints: [{ minute: 1080, level: 100 }, { minute: 1260, level: 100 }, { minute: 1261, level: 0 }, { minute: 1079, level: 0 }] }
+    expect(lightPeriods([morning, evening], 95)).toEqual([{ on: 360, off: 541 }, { on: 1080, off: 1261 }])
+    // On from 22:00 to 06:00: one stretch over midnight.
+    const night = { setpoints: [{ minute: 360, level: 100 }, { minute: 361, level: 0 }, { minute: 1319, level: 0 }, { minute: 1320, level: 100 }] }
+    expect(lightPeriods([night], 95)).toEqual([{ on: 1320, off: 361 }])
+    // All day.
+    expect(lightPeriods([{ setpoints: [{ minute: 0, level: 100 }] }])).toEqual([{ on: 0, off: 1440 }])
   })
 
   it('keeps fruiting runs inside a shorter light day, and the rest as they are', () => {

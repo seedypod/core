@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PUMP_PRESETS } from '@/src/scheduler/pumpPlan'
-import { asCycle, belowCutoff, cutoffPct, cycleWhen, fmtCountdown, fmtDay, fmtMinutes, fmtSpan, fmtWhen, levelAt, nextFire, nextPresetRun, nextRun, runSource, tankTrend, type PumpCycle } from '../pumpCycles'
+import { asCycle, belowCutoff, cutoffPct, cycleWhen, fmtCountdown, fmtDay, fmtMinutes, fmtSpan, fmtWhen, levelAt, nextFire, nextRun, runSource, tankTrend, type PumpCycle } from '../pumpCycles'
 
 const cycle = (id: string, minute: number, days = 127, enabled = true): PumpCycle => ({ id, kind: 'pump', name: id, enabled, days, spec: { minute, durationS: 300 } })
 // Sunday 1 Nov 2026, 12:00 local.
@@ -111,17 +110,6 @@ describe('runSource', () => {
     expect(runSource([{ scheduleId: 'morning', firedAt: '2026-11-01T08:00:00Z' }], cycles, '2026-11-01T08:01:00Z')).toBe('Morning watering')
     expect(runSource([{ scheduleId: 'morning', firedAt: '2026-11-01T08:00:00Z' }], cycles, '2026-11-01T08:05:00Z')).toBeNull()
     expect(runSource([{ scheduleId: 'light', firedAt: '2026-11-01T08:00:00Z' }], cycles, '2026-11-01T08:00:00Z')).toBeNull()
-  })
-})
-
-describe('nextPresetRun', () => {
-  it('finds a preset\'s next run as it would be applied: a weekly one on the sowing weekday', () => {
-    const germination = PUMP_PRESETS.find(p => p.id === 'germination') as typeof PUMP_PRESETS[number]
-    const young = PUMP_PRESETS.find(p => p.id === 'young') as typeof PUMP_PRESETS[number]
-    // Tuesday 10 November, 14:00 UTC; sown on a Monday.
-    const tue = new Date('2026-11-10T14:00:00Z')
-    expect(nextPresetRun(germination, null, 0, tue, 'UTC')?.toISOString()).toBe('2026-11-16T08:00:00.000Z')
-    expect(nextPresetRun(young, null, 0, tue, 'UTC')?.toISOString()).toBe('2026-11-10T16:00:00.000Z')
   })
 })
 

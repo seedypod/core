@@ -9,6 +9,7 @@ import { LineChart } from '@/src/components/ds/charts'
 import { cameraOf, podRegions, type RegionCalibration } from '@/src/vision/regions'
 import { CATALOG } from './plants/catalog'
 import { PlantModel } from './PlantModel'
+import { ProtocolCard } from './ProtocolCard'
 import { PlantThumb, podForm } from './PlantThumb'
 import { ageDays, heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
@@ -80,12 +81,17 @@ export function GrowPage() {
   const pods = trpc.grow.pods.useQuery()
   const harvest = trpc.grow.harvest.useQuery()
   const settings = trpc.settings.get.useQuery()
-  const start = trpc.grow.start.useMutation({ onSuccess: () => utils.grow.invalidate() })
-  const end = trpc.grow.end.useMutation({ onSuccess: () => utils.grow.invalidate() })
-  const setStage = trpc.grow.setStage.useMutation({ onSuccess: () => utils.grow.invalidate() })
-  const updatePod = trpc.grow.updatePod.useMutation({ onSuccess: () => utils.grow.invalidate() })
-  const markHarvested = trpc.grow.markHarvested.useMutation({ onSuccess: () => utils.grow.invalidate() })
-  const swapPods = trpc.grow.swapPods.useMutation({ onSuccess: () => utils.grow.invalidate() })
+  // The grow protocol counts from the cycle and picks its track by the pods, so it's read again with them.
+  const growChanged = () => {
+    void utils.grow.invalidate()
+    void utils.protocol.invalidate()
+  }
+  const start = trpc.grow.start.useMutation({ onSuccess: growChanged })
+  const end = trpc.grow.end.useMutation({ onSuccess: growChanged })
+  const setStage = trpc.grow.setStage.useMutation({ onSuccess: growChanged })
+  const updatePod = trpc.grow.updatePod.useMutation({ onSuccess: growChanged })
+  const markHarvested = trpc.grow.markHarvested.useMutation({ onSuccess: growChanged })
+  const swapPods = trpc.grow.swapPods.useMutation({ onSuccess: growChanged })
   // The pod whose yCube moved, while the one it swapped with is being picked.
   const [swapping, setSwapping] = useState<number | null>(null)
   const trends = trpc.vision.podTrends.useQuery()
@@ -192,6 +198,8 @@ export function GrowPage() {
               </>
             )}
       </section>
+
+      <ProtocolCard />
 
       <div className="flex flex-wrap items-start gap-5">
         <div className="min-w-0 flex-1 basis-[480px]">

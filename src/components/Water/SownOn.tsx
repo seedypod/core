@@ -10,7 +10,7 @@ const onDay = (date: string) => new Date(`${date}T12:00:00Z`)
 const daysBefore = (date: string, days: number) => new Date(onDay(date).getTime() - days * 86_400_000).toISOString().slice(0, 10)
 
 /**
- * The top of the watering presets: the day the tower was sown, with Change
+ * The grow protocol track's left end (ADR-0030): the day the tower was sown, with Change
  * to move the grow cycle's start to another day, as far back as a cycle may
  * be dated and no later than today. With no grow cycle open, once the unit
  * has said so, Start germination today instead; while that's still unknown,

@@ -33,18 +33,20 @@ test.afterEach(async ({ page }) => {
   await endCycle(page)
 })
 
-test('water: start germination today, then move the sowing day, fitting every width', async ({ page }, info) => {
+test('grow: start germination today at the protocol track\'s left end, then move the sowing day, fitting every width', async ({ page }, info) => {
   // Five widths, each measured and photographed.
   test.setTimeout(180_000)
   // From no grow cycle and no cycles, whatever earlier specs left.
   await endCycle(page)
   await clearPumpCycles(page)
-  await page.goto('/water')
+  await page.goto('/grow')
   const main = page.getByRole('main')
   const sown = main.getByTestId('sown')
   await sown.getByRole('button', { name: 'Start germination today' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Start' }).click()
-  await expect(main.getByText(/^Germination · once a week 15 min \(08:00\)$/)).toBeVisible()
+  // The cycle starts and the pump cycles go on germination: the card's stage panel says so.
+  await expect(main.getByTestId('stage-head')).toHaveText(/^Germination · day 1 of 8$/)
+  await expect(main.getByTestId('protocol').getByText(/^1 × 15 min, \w+$/)).toBeVisible()
   await expect(sown.getByTestId('sown-on')).toHaveText(/^Sown \w{3} \d{1,2} \w{3}$/)
 
   for (const width of WIDTHS) {

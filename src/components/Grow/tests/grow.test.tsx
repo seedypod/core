@@ -6,20 +6,21 @@ import { GrowPage } from '../GrowPage'
 
 const { data, calls, tower } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { start: vi.fn(), end: vi.fn(), setStage: vi.fn(), updatePod: vi.fn(), markHarvested: vi.fn(), swapPods: vi.fn() },
+  calls: { start: vi.fn(), end: vi.fn(), setStage: vi.fn(), updatePod: vi.fn(), markHarvested: vi.fn(), swapPods: vi.fn(), invalidateGrow: vi.fn(), invalidateProtocol: vi.fn() },
   tower: { props: null as null | Record<string, unknown>, unavailable: false },
 }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
-  const mutation = (name: keyof typeof calls) => ({ useMutation: () => ({ isPending: false, mutate: (i?: unknown, o?: { onSuccess?: () => void }) => {
+  const mutation = (name: keyof typeof calls) => ({ useMutation: (hook?: { onSuccess?: () => void }) => ({ isPending: false, mutate: (i?: unknown, o?: { onSuccess?: () => void }) => {
     calls[name](i)
+    hook?.onSuccess?.()
     o?.onSuccess?.()
   } }) })
   return {
     apiBase: () => '',
     trpc: {
-      useUtils: () => ({ grow: { invalidate: vi.fn() } }),
+      useUtils: () => ({ grow: { invalidate: calls.invalidateGrow }, protocol: { invalidate: calls.invalidateProtocol } }),
       grow: { current: query('grow'), pods: query('pods'), harvest: query('harvest'), start: mutation('start'), end: mutation('end'), setStage: mutation('setStage'), updatePod: mutation('updatePod'), markHarvested: mutation('markHarvested'), swapPods: mutation('swapPods') },
       settings: { get: query('settings') },
       camera: { list: query('captures') },
@@ -31,6 +32,9 @@ vi.mock('@/src/utils/trpc', () => {
 })
 
 vi.mock('@tanstack/react-router', () => ({ Link: ({ to, children, className }: { to: string, children: ReactNode, className?: string }) => <a href={to} className={className}>{children}</a> }))
+
+// The protocol card has its own tests (protocolCard.test.tsx); here it only has its place.
+vi.mock('../ProtocolCard', () => ({ ProtocolCard: () => <section data-testid="protocol" /> }))
 
 // The 3D view is covered by tower.test.ts and the browser tests; here it reports what it was given.
 vi.mock('../TowerView', () => ({
@@ -296,6 +300,9 @@ describe('Grow', () => {
     fireEvent.change(screen.getByLabelText('Cycle name'), { target: { value: ' Spring herbs ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Start cycle' }))
     expect(calls.start).toHaveBeenCalledWith({ notes: 'Spring herbs' })
+    // The grow protocol counts from the cycle, so it's read again with it.
+    expect(calls.invalidateGrow).toHaveBeenCalled()
+    expect(calls.invalidateProtocol).toHaveBeenCalled()
   })
 })
 

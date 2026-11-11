@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LightCurve } from '@/src/components/Light/curves'
 import type { PumpCycle } from '@/src/components/Water/pumpCycles'
@@ -78,18 +78,11 @@ describe('ScheduleTimeline', () => {
     expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 10 min in 2h 0m')
   })
 
-  it('dates a run more than a day off, and a weekly preview that doesn\'t run today', () => {
+  it('dates a run more than a day off', () => {
     // Germination sown on a Monday: its run is next Monday, 16 November.
     const germ = cycle('Germination', 480, 900, { days: 1 })
-    render(<ScheduleTimeline lead="water" curves={[]} cycles={[germ]} timezone="UTC" preview={{ name: 'Germination · week 1', short: 'Germination', runs: [480], durationS: 900, days: 1, next: new Date('2026-11-16T08:00:00Z') }} />)
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[germ]} timezone="UTC" />)
     expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 15 min Mon 08:00')
-    expect(screen.queryAllByTestId('mark-preview')).toHaveLength(0)
-    expect(screen.getByTestId('lane-preview-note').textContent).toBe('not today · next Mon 16 Nov')
-    cleanup()
-    // On its day it's drawn like any other run.
-    render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" preview={{ name: 'Germination · week 1', short: 'Germination', runs: [480], durationS: 900, days: 1 << TUESDAY }} />)
-    expect(screen.getAllByTestId('mark-preview')).toHaveLength(1)
-    expect(screen.queryByTestId('lane-preview-note')).toBeNull()
   })
 
   it('says when the lights come on tomorrow, and nothing with nothing next', () => {
@@ -149,16 +142,6 @@ describe('ScheduleTimeline', () => {
     unmount()
     render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" pumpRun={{ since: '2026-11-10T13:58:00Z', remainingS: null }} />)
     expect(screen.getByTestId('mark-water').getAttribute('aria-label')).toBe('Watering now · since 13:58')
-  })
-
-  it('hatches a previewed preset\'s runs in a row under the real ones', () => {
-    render(<ScheduleTimeline lead="light" curves={[day]} cycles={[cycle('Morning', 480, 600)]} timezone="UTC" preview={{ name: 'Young plants · weeks 2–3', short: 'Young', runs: [480, 960], durationS: 360 }} />)
-    expect(screen.getAllByTestId(/^lane-/).map(l => l.dataset.testid)).toEqual(['lane-light', 'lane-water', 'lane-preview'])
-    const marks = within(screen.getByTestId('lane-preview')).getAllByTestId('mark-preview')
-    expect(marks.map(m => m.getAttribute('aria-label'))).toEqual(['Preview: Young plants · weeks 2–3 · 08:00–08:06 · 6 min', 'Preview: Young plants · weeks 2–3 · 16:00–16:06 · 6 min'])
-    expect(marks[0]?.getAttribute('style')).toContain('repeating-linear-gradient')
-    expect(screen.getByTitle('Preview: Young plants · weeks 2–3').textContent).toBe('PreviewYoung')
-    expect(screen.getByText('preview')).toBeTruthy()
   })
 
   it('shows a mark\'s exact times on focus, a mouse over it or a tap, until blur, Escape or the mouse leaves', () => {
@@ -257,14 +240,12 @@ describe('ScheduleTimeline', () => {
   })
 
   it('says a run\'s days under its times in the tooltip', () => {
-    render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Germination', 480, 900, { days: 1 << TUESDAY }), cycle('Daily', 1200, 300)]} timezone="UTC" preview={{ name: 'Germination · week 1', short: 'Germination', runs: [960], durationS: 900, days: 1 << TUESDAY }} />)
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Germination', 480, 900, { days: 1 << TUESDAY }), cycle('Daily', 1200, 300)]} timezone="UTC" />)
     const [germ, daily] = screen.getAllByTestId('mark-water')
     fireEvent.focus(germ as HTMLElement)
     expect(screen.getByTestId('timeline-tip-days').textContent).toBe('Tuesdays')
     fireEvent.focus(daily as HTMLElement)
     expect(screen.getByTestId('timeline-tip-days').textContent).toBe('Every day')
-    fireEvent.focus(screen.getByTestId('mark-preview'))
-    expect(screen.getByTestId('timeline-tip-days').textContent).toBe('Tuesdays')
   })
 
   it('closes a tapped tooltip on a tap anywhere else, not on another mark', () => {
@@ -297,9 +278,9 @@ describe('ScheduleTimeline', () => {
   })
 
   it('hatches and dims the rest of the day as forecast in every lane, with the legend saying so', () => {
-    render(<ScheduleTimeline lead="water" curves={[day]} cycles={[cycle('Morning', 480, 600)]} timezone="UTC" preview={{ name: 'Young plants', short: 'Young', runs: [480, 960], durationS: 360 }} />)
+    render(<ScheduleTimeline lead="water" curves={[day]} cycles={[cycle('Morning', 480, 600)]} timezone="UTC" />)
     // 14:00: everything from 58.3% across is ahead.
-    for (const lane of ['water', 'preview', 'light']) {
+    for (const lane of ['water', 'light']) {
       const ahead = screen.getByTestId(`ahead-${lane}`)
       expect(ahead.style.left).toBe(`${(840 / 1440) * 100}%`)
       expect(ahead.style.backgroundImage).toContain('var(--forecast-hatch)')

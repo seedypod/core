@@ -63,6 +63,9 @@ describe('touchedBy', () => {
     expect(touchedBy(mutation('automations'))).toContain('light')
     expect(touchedBy(mutation('devices'))).toEqual(expect.arrayContaining(['devices', 'sensors', 'system']))
     expect(touchedBy(mutation('network'))).toContain('system')
+    // The grow protocol reads the cycle, the pods, the catalog and the pump cycles, so it's read again after any of them.
+    for (const path of ['grow', 'pods', 'catalog', 'schedules.library']) expect(touchedBy(mutation(path)), path).toContain('protocol')
+    expect(touchedBy({ kind: 'schedule', action: 'changed', id: 'follow:seedlings' })).toContain('protocol')
   })
 
   it('keeps an update\'s steps and its mutations to the update router', () => {
