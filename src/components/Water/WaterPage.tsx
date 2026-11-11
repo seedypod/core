@@ -23,7 +23,8 @@ import { asCycle, cycleWhen, fmtCountdown, fmtDay, fmtMinutes, fmtWhen, levelAt,
 import { useNow } from '@/src/components/System/useNow'
 import { useTankReserve } from './useTankReserve'
 import { DueChores } from '@/src/components/Care/ChoreItem'
-import { fmtCalendarDate, SownOn } from './SownOn'
+import { SownOn } from './SownOn'
+import { followedPreset } from '@/src/care/follow'
 import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
@@ -46,11 +47,15 @@ export function WaterPage() {
   const stop = trpc.pump.stop.useMutation({ onSuccess: () => utils.pump.invalidate() })
   const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const remove = trpc.schedules.remove.useMutation({ onSuccess: () => utils.schedules.invalidate() })
-  const growStart = trpc.grow.start.useMutation({ onSuccess: () => utils.grow.invalidate() })
-  // Moving the start re-dates germination's run on the unit, so the cycles are read again too.
-  const setStart = trpc.grow.setStart.useMutation({ onSuccess: () => {
+  // Both change the grow cycle and the pump cycles on the unit, so both are read again.
+  const growChanged = () => {
     void utils.grow.invalidate()
     void utils.schedules.invalidate()
+  }
+  const setStart = trpc.grow.setStart.useMutation({ onSuccess: growChanged })
+  const startGermination = trpc.grow.startGermination.useMutation({ onSuccess: () => {
+    growChanged()
+    setStarting(false)
   } })
   const [dur, setDur] = useState<typeof DURATIONS[number]['value']>('300')
   const [editing, setEditing] = useState<PumpCycle | null>(null)
@@ -103,33 +108,29 @@ export function WaterPage() {
    * leaves more cycles than either plan, never fewer. On failure the preview
    * and the dialog stay open with the reason.
    */
-  const replaceWith = async (preset: PumpPreset, sowOn: number, first?: () => Promise<unknown>) => {
-    const fresh = presetSchedules(preset, { enabled: true, light, weekday: sowOn })
+  const apply = async () => {
+    if (!previewing) return
+    const fresh = presetSchedules(previewing, { enabled: true, light, weekday: sowDay })
     setApplying(true)
     setApplyError(null)
     try {
-      await first?.()
       for (const sch of fresh) await upsert.mutateAsync(sch)
       for (const c of cycles) if (!fresh.some(f => f.id === c.id)) await remove.mutateAsync({ id: c.id })
       setPreview(null)
       setConfirming(false)
-      setStarting(false)
     }
     catch (e) {
-      setApplyError(`Couldn't apply ${preset.name}: ${e instanceof Error ? e.message : String(e)}`)
+      setApplyError(`Couldn't apply ${previewing.name}: ${e instanceof Error ? e.message : String(e)}`)
     }
     finally {
       setApplying(false)
     }
   }
-  const apply = async () => {
-    if (previewing) await replaceWith(previewing, sowDay)
-  }
-  // No grow cycle yet: start one today and water on germination from today's weekday, in one go.
+  // No grow cycle yet: one call on the unit starts it today and puts the cycles on germination, so a retry can't double up.
   const [starting, setStarting] = useState(false)
-  const startGermination = async () => {
-    if (germination) await replaceWith(germination, weekday, () => growStart.mutateAsync({ notes: '' }))
-  }
+  // Watering doesn't follow the cycle, so germination's weekly run keeps its day when the sowing day moves: say so.
+  const germinating = followedPreset(cycles)?.id === 'germination' ? cycles[0] : undefined
+  const stays = !cfg?.followGrowCycle && germinating && germinating.days !== 1 << sowDay ? `Follow is off: your weekly run stays on ${daysLabel(germinating.days)}` : null
   const runNow = (durationS: number) => {
     setAsked(Date.now())
     runOnce.mutate({ durationS })
@@ -251,12 +252,15 @@ export function WaterPage() {
         sowing={(
           <SownOn
             sowDate={sownOn}
-            open={!!grow.data?.cycle}
+            // Start germination today only once the unit has said there's no cycle, never while it's still being asked.
+            cycle={grow.data === undefined ? 'unknown' : grow.data.cycle ? 'open' : 'none'}
             today={today}
-            busy={setStart.isPending || applying}
-            error={setStart.error?.message ?? null}
-            onChange={startedAt => setStart.mutate({ startedAt })}
-            onStartToday={() => setStarting(true)}
+            note={stays}
+            onChange={startedAt => setStart.mutateAsync({ startedAt })}
+            onStartToday={() => {
+              startGermination.reset()
+              setStarting(true)
+            }}
           />
         )}
         light={light}
@@ -326,13 +330,13 @@ export function WaterPage() {
         icon={CalendarClock}
         footer={(
           <div className="flex gap-2">
-            <Button variant="primary" disabled={applying || growStart.isPending} onClick={() => void startGermination()}>{applying ? 'Starting…' : 'Start'}</Button>
+            <Button variant="primary" disabled={startGermination.isPending} onClick={() => startGermination.mutate()}>{startGermination.isPending ? 'Starting…' : 'Start'}</Button>
             <Button onClick={() => setStarting(false)}>Cancel</Button>
           </div>
         )}
       >
         <div className="flex flex-col gap-2 text-[13px] text-fg-2" data-testid="start-germination">
-          <p>{`A grow cycle starts today, ${fmtCalendarDate(today)}, and watering moves to ${germination?.name ?? ''}: ${fmtMinutes(germination?.durationS ?? 0)} at ${fmtClock(germination?.minutes[0] ?? 0)}, once a week on ${daysLabel(1 << weekday)}.`}</p>
+          <p>{`A grow cycle starts today, ${fmtDay(now, zone)}, and watering moves to ${germination?.name ?? ''}: ${fmtMinutes(germination?.durationS ?? 0)} at ${fmtClock(germination?.minutes[0] ?? 0)}, once a week on ${daysLabel(1 << weekday)}.`}</p>
           {cycles.length > 0 && (
             <>
               <p>These go:</p>
@@ -341,7 +345,7 @@ export function WaterPage() {
               </ul>
             </>
           )}
-          {applyError && <InlineError>{applyError}</InlineError>}
+          {startGermination.error && <InlineError>{`Couldn't start germination: ${startGermination.error.message}`}</InlineError>}
         </div>
       </Modal>
 

@@ -219,20 +219,84 @@ describe('grow cycle start date', () => {
     const { core, c } = caller()
     const store = core.ctx.store
     store.settings.update({ timezone: 'America/Los_Angeles' })
+    // The date is checked first, then whether there's a cycle to move.
+    await expect(c.grow.setStart({ startedAt: '2026-11-11' })).rejects.toThrow(/after today/)
     await expect(c.grow.setStart({ startedAt: '2026-11-09' })).rejects.toThrow(/No open grow cycle/)
-    store.pods.update(1, { plant: 'Basil', plantedAt: '2026-11-09', status: 'seeded' }, '2026-11-09T12:00:00Z')
+    // No pods planted yet: the cycle's start alone dates germination.
     await c.grow.start({ notes: '', startedAt: '2026-11-09' })
     for (const sch of presetSchedules(PUMP_PRESETS[0] as typeof PUMP_PRESETS[number], { enabled: true, weekday: 0 })) store.schedules.upsert(sch)
     // day(1) is 04:00 on Tuesday the 10th in Los Angeles: "start germination today" is the 10th there.
     const moved = await c.grow.setStart({ startedAt: '2026-11-10' })
     expect(moved.startedAt).toBe('2026-11-10T08:00:00.000Z')
     expect(store.grow.current()?.startedAt).toBe('2026-11-10T08:00:00.000Z')
-    // Follow moves the weekly run to Tuesdays.
-    expect(followGrowCycle(store, day(1))).toMatchObject({ from: 'germination', to: 'germination', days: 0 })
+    // The weekly run moves to Tuesdays at once, with a notice.
     expect(store.schedules.list().find(s => s.kind === 'pump')?.days).toBe(1 << 1)
+    expect(store.alerts.list({ activeOnly: true }).find(a => a.kind === FOLLOW_ALERT)?.detail).toMatch(/^Germination's weekly run moved to Tuesdays, the sowing weekday: day 0 since sowing\./)
+    expect(followGrowCycle(store, day(1))).toBeNull()
     await expect(c.grow.setStart({ startedAt: '2026-11-11' })).rejects.toThrow(/after today/)
     await expect(c.grow.setStart({ startedAt: '2026-06-01' })).rejects.toThrow(/more than 120 days ago/)
     await expect(c.grow.setStart({ startedAt: '2026-02-30' })).rejects.toThrow(/not a real date/)
+  })
+
+  it('leaves germination\'s weekday alone while Follow is off, and cycles that aren\'t the preset as written', async () => {
+    const { core, c } = caller()
+    const store = core.ctx.store
+    store.settings.update({ timezone: 'UTC', followGrowCycle: false })
+    await c.grow.start({ notes: '', startedAt: '2026-11-09' })
+    for (const sch of presetSchedules(PUMP_PRESETS[0] as typeof PUMP_PRESETS[number], { enabled: true, weekday: 0 })) store.schedules.upsert(sch)
+    await c.grow.setStart({ startedAt: '2026-11-10' })
+    expect(store.schedules.list().find(s => s.kind === 'pump')?.days).toBe(1)
+    store.settings.update({ followGrowCycle: true })
+    const germ = store.schedules.list().find(s => s.kind === 'pump')
+    if (!germ) throw new Error('no germination cycle')
+    store.schedules.upsert({ ...germ, enabled: false })
+    await c.grow.setStart({ startedAt: '2026-11-09' })
+    expect(store.schedules.list().find(s => s.kind === 'pump')?.days).toBe(1)
+  })
+
+  it('reads the moved cycle\'s reminders and stage from its new day', async () => {
+    const { core, c } = caller()
+    const store = core.ctx.store
+    store.settings.update({ timezone: 'UTC' })
+    await c.grow.start({ notes: '', startedAt: '2026-08-01' })
+    for (const k of ['reminder_thinning', 'reminder_root_check', 'reminder_nutrients:1', 'reminder_nutrients:2', 'reminder_nutrients:3', 'custom']) store.grow.markIssued(k)
+    await c.grow.setStage({ stage: 'harvest' })
+    // Day 15: thinning (14) and the first two nutrient top-ups (7, 14) were due; root check (21) and the third (21) wait again.
+    const moved = await c.grow.setStart({ startedAt: '2026-10-26' })
+    expect(moved.issued).toEqual(['reminder_thinning', 'reminder_nutrients:1', 'reminder_nutrients:2', 'custom'])
+    // Past the seedling days a harvest stays called.
+    expect(moved.stage).toBe('harvest')
+    // Back to the first days: germination, with nothing issued.
+    expect(await c.grow.setStart({ startedAt: '2026-11-08' })).toMatchObject({ stage: 'germination', issued: ['custom'] })
+    expect((await c.grow.setStart({ startedAt: '2026-10-30' })).stage).toBe('seedling')
+    expect((await c.grow.setStart({ startedAt: '2026-10-20' })).stage).toBe('vegetative')
+  })
+
+  it('starts germination today in one call, and a retry reuses the cycle it started', async () => {
+    const { core, c } = caller()
+    const store = core.ctx.store
+    store.settings.update({ timezone: 'UTC' })
+    store.schedules.upsert(light)
+    store.schedules.upsert({ id: 'mine', kind: 'pump', name: 'My watering', enabled: true, days: 127, spec: { minute: 450, durationS: 420 } })
+    // day(1) is Tuesday the 10th.
+    const first = await c.grow.startGermination()
+    expect(first.startedAt).toBe(day(1).toISOString())
+    const pumpsNow = () => store.schedules.list().filter(s => s.kind === 'pump')
+    expect(pumpsNow()).toEqual([expect.objectContaining({ id: 'water-germination-0800', days: 1 << 1, enabled: true, spec: { minute: 480, durationS: 900 } })])
+    expect(store.schedules.list().some(s => s.id === 'gardyn')).toBe(true)
+    const again = await c.grow.startGermination()
+    expect(again.id).toBe(first.id)
+    expect(store.grow.history()).toHaveLength(1)
+    expect(pumpsNow()).toHaveLength(1)
+  })
+
+  it('starts a new cycle for germination when the open one began on another day', async () => {
+    const { core, c } = caller()
+    core.ctx.store.settings.update({ timezone: 'UTC' })
+    const old = await c.grow.start({ notes: '', startedAt: '2026-11-01' })
+    const fresh = await c.grow.startGermination()
+    expect(fresh.id).not.toBe(old.id)
+    expect(core.ctx.store.grow.history().find(x => x.id === old.id)?.endedAt).not.toBeNull()
   })
 
   it('takes today on a unit east of UTC when moving the start, and the care engine re-runs on it', async () => {

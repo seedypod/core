@@ -2,6 +2,12 @@ import { expect, test, type Page } from '@playwright/test'
 
 const WIDTHS = [390, 768, 1024, 1280, 1440]
 
+/**
+ * pumpCycles' fmtDay, word for word: importing it here pulls in the plant
+ * catalog's JSON, which Playwright's loader can't import.
+ */
+const fmtDay = (at: Date, timezone: string) => at.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: timezone })
+
 /** End any open grow cycle, as the Grow page's End does. */
 async function endCycle(page: Page) {
   expect((await page.request.post('/api/grow/end', { headers: { 'content-type': 'application/json' } })).ok()).toBe(true)
@@ -61,5 +67,5 @@ test('water: start germination today, then move the sowing day, fitting every wi
   const yesterday = new Date(Date.parse(`${await input.inputValue()}T12:00:00Z`) - 86_400_000)
   await input.fill(yesterday.toISOString().slice(0, 10))
   await sown.getByRole('button', { name: 'Save' }).click()
-  await expect(sown.getByTestId('sown-on')).toHaveText(`Sown ${yesterday.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}`)
+  await expect(sown.getByTestId('sown-on')).toHaveText(`Sown ${fmtDay(yesterday, 'UTC')}`)
 })

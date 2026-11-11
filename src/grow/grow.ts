@@ -4,7 +4,7 @@
  * Assistant and MCP all see and acknowledge the same thing.
  */
 import type { EventBus } from '../lib/eventBus'
-import type { DeviceSettings, GrowCycle, Store } from '../store/types'
+import type { DeviceSettings, GrowCycle, GrowStage, Store } from '../store/types'
 
 export type ReminderKind = 'reminder_thinning' | 'reminder_root_check' | 'reminder_harvest' | 'reminder_nutrients' | 'reminder_sow'
 
@@ -16,6 +16,9 @@ export interface Reminder {
 }
 
 const DAY_MS = 86_400_000
+
+/** How far back a cycle may be dated, in days on the unit's calendar: past this, every reminder would fire at once. */
+export const MAX_BACKDATE_DAYS = 120
 
 export function cycleDay(cycle: GrowCycle, now: Date): number {
   return Math.floor((now.getTime() - new Date(cycle.startedAt).getTime()) / DAY_MS)
@@ -42,6 +45,29 @@ export function dueReminders(cycle: GrowCycle, settings: DeviceSettings, now: Da
     }
   }
   return out
+}
+
+/** The day of the cycle a reminder key fell due, by the settings that issue it; null for keys it doesn't know. */
+function issuedDueDay(key: string, settings: DeviceSettings): number | null {
+  const oneShot: Record<string, number> = { reminder_thinning: settings.thinningReminderDays, reminder_root_check: settings.rootCheckReminderDays, reminder_harvest: settings.harvestReminderDays }
+  if (key in oneShot) return oneShot[key] ?? null
+  const period = /^reminder_nutrients:(\d+)$/.exec(key)?.[1]
+  return period === undefined ? null : Number(period) * settings.nutrientReminderDays
+}
+
+/**
+ * A cycle moved to start on another day: the reminders it issued that aren't
+ * due yet by its new day go back to waiting, and its stage is read again
+ * from that day (germination to day 7, seedling to 13, then vegetative; a
+ * harvest already called past the seedling days stays).
+ */
+export function restarted(cycle: GrowCycle, settings: DeviceSettings, day: number): { issued: string[], stage: GrowStage } {
+  const issued = cycle.issued.filter((k) => {
+    const due = issuedDueDay(k, settings)
+    return due === null || due <= day
+  })
+  const stage: GrowStage = day < 8 ? 'germination' : day < 14 ? 'seedling' : cycle.stage === 'harvest' ? 'harvest' : 'vegetative'
+  return { issued, stage }
 }
 
 export class GrowEngine {

@@ -112,10 +112,12 @@ export class MemoryStore implements Store {
       this.cycles.push(c)
       return c
     },
-    setStart: (ts: string): GrowCycle | null => {
+    setStart: (ts: string, stage: GrowStage, issued: string[]): GrowCycle | null => {
       const c = this.grow.current()
       if (!c) return null
       c.startedAt = ts
+      c.stage = stage
+      c.issued = [...issued]
       return c
     },
     setStage: (stage: GrowStage): GrowCycle | null => {

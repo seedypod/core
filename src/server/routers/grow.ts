@@ -1,12 +1,11 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { cycleDay } from '../../grow/grow'
+import { FOLLOW_ALERT, redateGermination } from '../../care/follow'
+import { cycleDay, MAX_BACKDATE_DAYS, restarted } from '../../grow/grow'
 import { harvestOutlook } from '../../grow/harvest'
+import { presetSchedules, PUMP_PRESETS, type PumpPreset } from '../../scheduler/pumpPlan'
 import { localTime } from '../../scheduler/time'
 import { publicProcedure, router } from '../trpc'
-
-/** How far back a cycle may be dated: past this, every reminder would fire at once. */
-const MAX_BACKDATE_DAYS = 120
 
 /** Midnight at the start of `date` (YYYY-MM-DD) in `timezone`. */
 export function zonedMidnight(date: string, timezone: string): Date {
@@ -33,9 +32,9 @@ const SowDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'startedAt must be a dat
 function sowingMidnight(date: string, timezone: string, now: Date): Date {
   const today = localTime(now, timezone).date
   if (date > today) throw new TRPCError({ code: 'BAD_REQUEST', message: `startedAt ${date} is after today (${today})` })
-  const at = zonedMidnight(date, timezone)
-  if (now.getTime() - at.getTime() > MAX_BACKDATE_DAYS * 86_400_000) throw new TRPCError({ code: 'BAD_REQUEST', message: `startedAt ${date} is more than ${MAX_BACKDATE_DAYS} days ago` })
-  return at
+  // By calendar days, as the date picker counts them.
+  if ((Date.parse(today) - Date.parse(date)) / 86_400_000 > MAX_BACKDATE_DAYS) throw new TRPCError({ code: 'BAD_REQUEST', message: `startedAt ${date} is more than ${MAX_BACKDATE_DAYS} days ago` })
+  return zonedMidnight(date, timezone)
 }
 
 const Stage = z.enum(['germination', 'seedling', 'vegetative', 'harvest', 'ended'])
@@ -87,12 +86,42 @@ export const growRouter = router({
     .input(z.object({ startedAt: SowDate }))
     .output(Cycle)
     .mutation(({ ctx, input }) => {
-      if (!ctx.store.grow.current()) throw new TRPCError({ code: 'NOT_FOUND', message: 'No open grow cycle to move; start one' })
-      const at = sowingMidnight(input.startedAt, ctx.store.settings.get().timezone, (ctx.now ?? (() => new Date()))())
-      const c = ctx.store.grow.setStart(at.toISOString())
+      const { store, events } = ctx
+      const now = (ctx.now ?? (() => new Date()))()
+      const settings = store.settings.get()
+      const at = sowingMidnight(input.startedAt, settings.timezone, now)
+      const open = store.grow.current()
+      // Reminders not yet due by the new day wait again, and the stage is read from it.
+      const again = open ? restarted(open, settings, cycleDay({ ...open, startedAt: at.toISOString() }, now)) : null
+      const c = again && store.grow.setStart(at.toISOString(), again.stage, again.issued)
       if (!c) throw new TRPCError({ code: 'NOT_FOUND', message: 'No open grow cycle to move; start one' })
-      ctx.events.emit({ kind: 'mutation', path: 'grow' })
+      events.emit({ kind: 'mutation', path: 'grow' })
+      // Germination's weekly run goes with it, while watering follows the cycle.
+      const moved = redateGermination(store, now)
+      if (moved) {
+        store.alerts.raise(FOLLOW_ALERT, moved.detail, now.toISOString())
+        events.emit({ kind: 'schedule', action: 'changed', id: 'follow:germination' })
+        events.emit({ kind: 'mutation', path: `alerts.${FOLLOW_ALERT}` })
+      }
       return c
+    }),
+  startGermination: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/grow/start-germination', tags: ['grow'], summary: 'Start a grow cycle today and put the pump cycles on Germination (15 min at 08:00 once a week, on today\'s weekday), replacing the others; a retry reuses a cycle started today' } })
+    .input(z.void())
+    .output(Cycle)
+    .mutation(({ ctx }) => {
+      const { store, events } = ctx
+      const now = (ctx.now ?? (() => new Date()))()
+      const today = localTime(now, store.settings.get().timezone)
+      const open = store.grow.current()
+      // Asked again after it got part way: the cycle started today stands.
+      const cycle = open && localTime(new Date(open.startedAt), store.settings.get().timezone).date === today.date ? open : store.grow.start(now.toISOString(), '')
+      const fresh = presetSchedules(PUMP_PRESETS.find(p => p.id === 'germination') as PumpPreset, { enabled: true, weekday: today.weekday })
+      for (const s of fresh) store.schedules.upsert(s)
+      for (const s of store.schedules.list()) if (s.kind === 'pump' && !fresh.some(f => f.id === s.id)) store.schedules.remove(s.id)
+      events.emit({ kind: 'mutation', path: 'grow' })
+      events.emit({ kind: 'schedule', action: 'changed', id: 'start-germination' })
+      return cycle
     }),
   setStage: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/grow/stage', tags: ['grow'] } })

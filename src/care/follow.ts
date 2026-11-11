@@ -46,6 +46,28 @@ export function followedPreset(cycles: ReadonlyArray<Pick<Schedule, 'id' | 'enab
   return cycles.every(c => c.enabled && days(c.days) && c.spec.durationS === preset.durationS) ? preset : null
 }
 
+const redatedDetail = (want: number, days: number) => `Germination's weekly run moved to ${daysLabel(want)}, the sowing weekday: day ${days} since sowing. Turn off "Follow the grow cycle" on Water to keep a schedule as it is.`
+
+/**
+ * After the open grow cycle's start moves: if the pump cycles are the
+ * germination preset as written, its weekly run moves to the new sowing
+ * weekday, read from the cycle's start alone, so it holds with no pods
+ * planted yet. Nothing while Follow is off.
+ */
+export function redateGermination(store: Store, now: Date): FollowChange | null {
+  const settings = store.settings.get()
+  const cycle = store.grow.current()
+  if (!settings.followGrowCycle || !cycle) return null
+  const cycles = store.schedules.list().filter((s): s is Schedule & { spec: PumpSpec } => s.kind === 'pump')
+  const current = followedPreset(cycles)
+  if (current?.id !== 'germination') return null
+  const want = presetDays(current, sowWeekday(cycle.startedAt, [], settings.timezone, now))
+  if (cycles.every(c => c.days === want)) return null
+  for (const c of cycles) store.schedules.upsert({ ...c, days: want })
+  const days = daysSinceSowing(cycle.startedAt, [], now, settings.timezone) ?? 0
+  return { from: 'germination', to: 'germination', days, detail: redatedDetail(want, days) }
+}
+
 /**
  * Move the pump cycles on to the preset for the plants' age, if they follow a
  * preset and that's a step forward; keep germination's run on the sowing
@@ -74,7 +96,7 @@ export function followGrowCycle(store: Store, now: Date): FollowChange | null {
     const want = presetDays(current, sowDay)
     if (cycles.every(c => c.days === want)) return null
     for (const c of cycles) store.schedules.upsert({ ...c, days: want })
-    return { from: 'germination', to: 'germination', days, detail: `Germination's weekly run moved to ${daysLabel(want)}, the sowing weekday: day ${days} since sowing. Turn off "Follow the grow cycle" on Water to keep a schedule as it is.` }
+    return { from: 'germination', to: 'germination', days, detail: redatedDetail(want, days) }
   }
   // Only ever forward: grown plants never go back to a seedling's watering.
   if (!advances(current.id, rec.id)) return null
