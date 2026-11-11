@@ -5,6 +5,7 @@ import { cycleDay, MAX_BACKDATE_DAYS, restarted } from '../../grow/grow'
 import { harvestOutlook } from '../../grow/harvest'
 import { presetSchedules, PUMP_PRESETS, type PumpPreset } from '../../scheduler/pumpPlan'
 import { localTime } from '../../scheduler/time'
+import { swapPodRecords } from '../../vision/podOrder'
 import { publicProcedure, router } from '../trpc'
 
 /** Midnight at the start of `date` (YYYY-MM-DD) in `timezone`. */
@@ -171,9 +172,7 @@ export const growRouter = router({
       const b = pods.find(p => p.slot === input.b)
       if (!a || !b) throw new TRPCError({ code: 'NOT_FOUND', message: `no pod ${a ? input.b : input.a}` })
       if (a.slot === b.slot) return [a, b]
-      const ts = (ctx.now ?? (() => new Date()))().toISOString()
-      const holds = (p: typeof a) => ({ plant: p.plant, plantedAt: p.plantedAt, status: p.status, notes: p.notes, lastHarvestAt: p.lastHarvestAt })
-      const out = [ctx.store.pods.update(a.slot, holds(b), ts), ctx.store.pods.update(b.slot, holds(a), ts)]
+      const out = swapPodRecords(ctx.store, a.slot, b.slot, (ctx.now ?? (() => new Date()))().toISOString())
       ctx.events.emit({ kind: 'mutation', path: 'pods' })
       return out
     }),

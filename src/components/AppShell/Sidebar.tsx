@@ -2,6 +2,7 @@ import { Link, useLocation } from '@tanstack/react-router'
 import { ArrowUpRight, BookOpen, ChevronDown, ChevronRight, Droplets, FlaskConical, Sun, Thermometer } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { orderSummary } from '@/src/components/Analysis/PodOrder'
 import { ChoreItem, useNeedsChores } from '@/src/components/Care/ChoreItem'
 import { SidebarSearch } from '@/src/components/Search/CommandPalette'
 import { DOCS_BASE } from '@/src/components/Search/docsIndex'
@@ -82,11 +83,12 @@ function NeedsYou() {
   const pods = trpc.grow.pods.useQuery()
   const harvest = trpc.grow.harvest.useQuery(undefined, { refetchInterval: 10 * 60_000 })
   const { items: due, ready: dueReady } = useNeedsChores()
+  const order = trpc.vision.podOrder.useQuery().data
   const outlook = new Map((harvest.data ?? []).map(o => [o.slot, o]))
   const shown = (pods.data ?? []).map(p => ({ ...p, shown: podShown({ status: p.status, harvest: outlook.get(p.slot) ?? null }) }))
   const attention = shown.filter(p => p.shown === 'attention')
   const ready = shown.filter(p => p.shown === 'ready')
-  if (!attention.length && !ready.length && !due.length) return null
+  if (!attention.length && !ready.length && !due.length && !order) return null
   const names = ready.map(p => p.plant ?? `Pod ${p.slot}`)
   return (
     <div className="flex flex-col gap-0.5">
@@ -104,6 +106,15 @@ function NeedsYou() {
       ))}
       {ready.length > 0 && (
         <NeedRow color="var(--pod-ready)" title={`${ready.length} ready to harvest`} sub={names.length > 2 ? `${names.slice(0, 2).join(', ')}, +${names.length - 2}` : names.join(', ')} />
+      )}
+      {order && (
+        <Link to="/analysis" hash="pod-order" data-testid="needs-pod-order" className="flex gap-2.5 rounded-lg px-2.5 py-2 hover:bg-active/60">
+          <span className="mt-1.5 size-[7px] shrink-0 rounded-full" style={{ background: 'var(--pod-attention)' }} />
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="truncate text-[13px] text-fg">Pods out of order</span>
+            <span className="truncate text-xs text-fg-2">{orderSummary(order)}</span>
+          </span>
+        </Link>
       )}
       {due.map(i => <ChoreItem key={i.chore.id} chore={i.chore} alert={i.alert} compact disabled={!dueReady} />)}
     </div>

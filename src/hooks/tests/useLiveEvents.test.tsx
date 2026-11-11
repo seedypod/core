@@ -195,7 +195,7 @@ describe('useLiveEvents', () => {
     invalidated.length = 0
     act(() => live.onData(mutation('plans')))
     vi.advanceTimersByTime(BURST_MS)
-    expect(invalidated).toEqual(['planner'])
+    expect(invalidated).toEqual(['planner', 'vision'])
   })
 
   it('refetches the sensors on a reconnect, not on the first connect', () => {

@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { MemoryStore } from '../../store/memory'
 import { podvisionCodeReader } from '../nativeExecutor'
-import { DARK_STILL, PodCodeService, podCodeViews, type CodeReader, type CodesOutput } from '../podCodes'
+import { DAILY_READ_HOUR, DARK_STILL, PodCodeService, podCodeViews, type CodeReader, type CodesOutput } from '../podCodes'
 import { DEFAULT_REGIONS } from '../regions'
 
 /** podvision's answer for a camera: these slots read, everything else on it unknown. */
@@ -81,6 +81,51 @@ describe('PodCodeService (#224)', () => {
     expect(captures.capturePodId).toHaveBeenCalledTimes(2)
     await svc.readAll()
     expect(captures.capturePodId).toHaveBeenCalledTimes(4)
+  })
+
+  it('reads once a day at midday local time, and says when it has read', async () => {
+    const reader = vi.fn<CodeReader>(async () => codes({}))
+    const store = new MemoryStore(30)
+    const captures = { capturePodId: vi.fn(async () => ({ still: { ts: 't' }, bytes: new Uint8Array(4) })) }
+    const onRead = vi.fn()
+    const svc = new PodCodeService({ store, captures, reader, onRead })
+    const at = (iso: string) => svc.daily(new Date(iso), 'America/Los_Angeles')
+    expect(DAILY_READ_HOUR).toBe(12)
+    // 11:59 and 13:00 in Los Angeles: not the hour.
+    expect(await at('2026-11-11T19:59:00.000Z')).toBe(false)
+    expect(await at('2026-11-11T21:00:00.000Z')).toBe(false)
+    expect(await at('2026-11-11T20:10:00.000Z')).toBe(true)
+    expect(onRead).toHaveBeenCalledTimes(1)
+    // Once that day, again the next.
+    expect(await at('2026-11-11T20:20:00.000Z')).toBe(false)
+    expect(await at('2026-11-12T20:00:00.000Z')).toBe(true)
+    expect(captures.capturePodId).toHaveBeenCalledTimes(4)
+    expect(await new PodCodeService({ store, captures, reader: null }).daily(new Date('2026-11-13T20:00:00.000Z'), 'America/Los_Angeles')).toBe(false)
+  })
+
+  it('checks the clock on a timer only when it can read, and stops', () => {
+    vi.useFakeTimers()
+    try {
+      const reader = vi.fn<CodeReader>(async () => codes({}))
+      const store = new MemoryStore(30)
+      const captures = { capturePodId: vi.fn(async () => ({ still: { ts: 't' }, bytes: new Uint8Array(4) })) }
+      const svc = new PodCodeService({ store, captures, reader })
+      const daily = vi.spyOn(svc, 'daily')
+      svc.start(() => new Date('2026-11-11T08:00:00.000Z'), () => 'UTC')
+      vi.advanceTimersByTime(30 * 60_000)
+      expect(daily).toHaveBeenCalledTimes(3)
+      svc.stop()
+      vi.advanceTimersByTime(30 * 60_000)
+      expect(daily).toHaveBeenCalledTimes(3)
+      const off = new PodCodeService({ store, captures, reader: null })
+      const offDaily = vi.spyOn(off, 'daily')
+      off.start(() => new Date(), () => 'UTC')
+      vi.advanceTimersByTime(30 * 60_000)
+      expect(offDaily).not.toHaveBeenCalled()
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reads nothing without podvision', async () => {

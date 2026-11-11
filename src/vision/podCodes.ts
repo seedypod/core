@@ -8,8 +8,14 @@
  * This runs in the browser demo too, so podvision itself (node-only) is
  * passed in as a `CodeReader`: `podvisionCodeReader` in nativeExecutor.ts.
  */
+import { localTime } from '../scheduler/time'
 import type { PodCodePair, PodCodeRead, Store } from '../store/types'
 import { CAMERAS, podRegions, type Camera, type PodRegions } from './regions'
+
+/** The local hour of the daily read: midday, when the grow light is most likely on. */
+export const DAILY_READ_HOUR = 12
+/** How often the daily read checks the clock. */
+const DAILY_CHECK_MS = 10 * 60_000
 
 /** Darker than this (mean of R, G and B, 0–1), the still says nothing: the last reads stay. */
 export const DARK_STILL = 0.08
@@ -47,6 +53,8 @@ export interface PodCodeServiceOptions {
   /** Null where podvision isn't installed: then nothing can be read. */
   reader: CodeReader | null
   log?: (msg: string) => void
+  /** After every read, scheduled or on demand: what is out of order may have changed. */
+  onRead?: () => void
 }
 
 export interface ReadResult {
@@ -60,6 +68,8 @@ export interface ReadResult {
 
 export class PodCodeService {
   private running: Promise<ReadResult[]> | null = null
+  private lastDay: string | null = null
+  private timer: ReturnType<typeof setInterval> | null = null
 
   constructor(private readonly o: PodCodeServiceOptions) {}
 
@@ -94,11 +104,34 @@ export class PodCodeService {
           out.push({ camera, ts: null, read: 0, error })
         }
       }
+      this.o.onRead?.()
       return out
     })().finally(() => {
       this.running = null
     })
     return this.running
+  }
+
+  /** Read once a day, in DAILY_READ_HOUR local time. Resolves with whether it read. */
+  async daily(now: Date, timezone: string): Promise<boolean> {
+    if (!this.available) return false
+    const local = localTime(now, timezone)
+    if (Math.floor(local.minute / 60) !== DAILY_READ_HOUR || this.lastDay === local.date) return false
+    this.lastDay = local.date
+    await this.readAll()
+    return true
+  }
+
+  /** Check for the daily read every few minutes. */
+  start(now: () => Date, timezone: () => string): void {
+    this.stop()
+    if (!this.available) return
+    this.timer = setInterval(() => void this.daily(now(), timezone()), DAILY_CHECK_MS)
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer)
+    this.timer = null
   }
 
   /** The owner says this code is this plant. */

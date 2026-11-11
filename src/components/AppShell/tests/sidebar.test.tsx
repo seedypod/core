@@ -166,6 +166,16 @@ describe('Sidebar', () => {
     expect(thumbs[0]?.style.width).toBe('32px')
   })
 
+  it('raises one Needs you line for pods out of order, linking to the fixes (#224)', () => {
+    data.set('vision.podOrder', { slots: [{ slot: 2 }, { slot: 7 }], recordSwaps: [[2, 7]], recordsUnresolved: [], moves: [], movesUnresolved: [], plan: null, unknown: 13, key: 'k' })
+    render(<Sidebar status={online} />)
+    expect(screen.getByText('Needs you')).toBeTruthy()
+    const row = screen.getByTestId('needs-pod-order')
+    expect(row.getAttribute('href')).toBe('/analysis')
+    expect(row.textContent).toBe('Pods out of orderPods 2, 7 don\'t match their dot codes')
+    expect(screen.getAllByText('Pods out of order')).toHaveLength(1)
+  })
+
   it('says why a pod needs attention when it has no note, and hides the section when nothing needs doing', () => {
     data.set('grow.pods', [pod(9, 'attention', null), pod(2, 'harvest', 'Arugula')])
     const { rerender } = render(<Sidebar status={online} />)

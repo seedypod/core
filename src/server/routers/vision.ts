@@ -4,6 +4,7 @@ import { daysSinceSowing } from '../../scheduler/pumpPlan'
 import { localTime } from '../../scheduler/time'
 import { POD_CODE, POD_LABELS, type PodLabel, type PodLabelCursor } from '../../store/types'
 import { podCodeViews } from '../../vision/podCodes'
+import { podOrder, swapPodRecords } from '../../vision/podOrder'
 import { podTrends } from '../../vision/analyze'
 import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
 import { publicProcedure, router } from '../trpc'
@@ -20,6 +21,17 @@ const CodeView = z.object({
 })
 const CodePair = z.object({ code: z.string(), plant: z.string(), confirmedAt: z.string() })
 const CodesOut = z.object({ available: z.boolean(), pods: z.array(CodeView), pairs: z.array(CodePair) })
+const Swap = z.tuple([z.number(), z.number()])
+const OrderOut = z.object({
+  slots: z.array(z.object({ slot: z.number(), code: z.string(), tower: z.string(), record: z.string().nullable(), plan: z.string().nullable() })),
+  recordSwaps: z.array(Swap),
+  recordsUnresolved: z.array(z.number()),
+  moves: z.array(Swap),
+  movesUnresolved: z.array(z.number()),
+  plan: z.object({ id: z.string(), name: z.string() }).nullable(),
+  unknown: z.number(),
+  key: z.string(),
+})
 const ReadOut = z.array(z.object({ camera: z.enum(['upper', 'lower']), ts: z.string().nullable(), read: z.number(), error: z.string().nullable() }))
 const Trend = z.object({ slot: z.number(), green: z.number().nullable(), verdict: z.enum(['growing', 'stalled', 'declining', 'unknown']), slope: z.number(), samples: z.number(), recent: z.array(z.number()) })
 const Metric = z.object({ name: z.string(), label: z.string(), unit: z.string().optional(), description: z.string() })
@@ -215,11 +227,9 @@ export const visionRouter = router({
   readPodCodes: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/vision/pod-codes/read', tags: ['vision'], summary: 'Take a full-size pod-ID still on each camera and read its dot codes (#224); slow on a Pi Zero' } })
     .output(ReadOut)
-    .mutation(async ({ ctx }) => {
+    .mutation(({ ctx }) => {
       if (!ctx.podCodes.available) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'podvision isn\'t installed, so dot codes can\'t be read' })
-      const out = await ctx.podCodes.readAll()
-      ctx.events.emit({ kind: 'mutation', path: 'podCodes' })
-      return out
+      return ctx.podCodes.readAll()
     }),
   confirmPodCode: publicProcedure
     .meta({ openapi: { method: 'PUT', path: '/vision/pod-codes/{code}', tags: ['vision'], summary: 'Say which plant a dot code is (#224): confirms a guess or corrects it. Records and plans are left alone' } })
@@ -238,6 +248,22 @@ export const visionRouter = router({
       const forgotten = ctx.store.podCodes.forget(input.code)
       if (forgotten) ctx.events.emit({ kind: 'mutation', path: 'podCodes' })
       return { forgotten }
+    }),
+  podOrder: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/pod-order', tags: ['vision'], summary: 'Pods out of order (#224): where a confirmed dot code disagrees with the pod record or the active plan, with the record swaps that match the tower and the physical swaps that match the plan; null when all agree' } })
+    .output(OrderOut.nullable())
+    .query(({ ctx }) => podOrder(ctx.store)),
+  fixPodOrder: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/vision/pod-order/fix', tags: ['vision'], summary: 'Update the pod records to match the tower (#224): applies the record swaps shown for `key`; each plant keeps its sowing date and status' } })
+    .input(z.object({ key: z.string() }))
+    .output(z.object({ swapped: z.array(Swap), unresolved: z.array(z.number()) }))
+    .mutation(({ ctx, input }) => {
+      const order = podOrder(ctx.store)
+      if (!order || order.key !== input.key) throw new TRPCError({ code: 'CONFLICT', message: 'what\'s out of order has changed since it was shown; look again' })
+      const ts = (ctx.now?.() ?? new Date()).toISOString()
+      for (const [a, b] of order.recordSwaps) swapPodRecords(ctx.store, a, b, ts)
+      if (order.recordSwaps.length) ctx.events.emit({ kind: 'mutation', path: 'pods' })
+      return { swapped: order.recordSwaps, unresolved: order.recordsUnresolved }
     }),
   regions: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/vision/regions', tags: ['vision'], summary: 'Each pod\'s box on each camera\'s stills, as fractions of the frame: the measured defaults or the owner\'s calibration' } })
