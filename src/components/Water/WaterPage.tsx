@@ -15,7 +15,8 @@ import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { dayOn, daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { localTime, systemZone } from '@/src/scheduler/time'
-import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetDays, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
+import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetDays, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS, type PumpPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
+import { followedPreset } from '@/src/care/follow'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle, cycleWhen, fmtCountdown, fmtDay, fmtMinutes, fmtWhen, levelAt, nextPresetRun, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
@@ -81,7 +82,9 @@ export function WaterPage() {
   const today = localTime(now, zone).date
   const ranToday = (runs.data ?? []).some(r => germination && r.scheduleId.startsWith(`water-${germination.slug}-`) && localTime(new Date(r.firedAt), zone).date === today)
   const missed = germination && sown === 0 && nowMin >= (germination.minutes[0] ?? 0) && !ranToday ? germination : null
-  const applied = appliedPreset(cycles, light)
+  // Running by the same rule Follow goes by: every cycle the preset's, on, on its days, its length. Paused or trimmed, they're your own.
+  const running = followedPreset(cycles)
+  const applied = running?.id ?? null
   const previewing = PUMP_PRESETS.find(x => x.id === preview) ?? null
   const previewRuns = previewing ? presetRuns(previewing, light) : null
   const [applying, setApplying] = useState(false)
@@ -203,8 +206,18 @@ export function WaterPage() {
         </div>
       </Card>
 
-      <div id="pump-cycles" className="flex scroll-mt-6 items-center gap-3">
-        <h2 className={`${EYEBROW} flex-1`}>Pump cycles</h2>
+      <div id="pump-cycles" className="flex scroll-mt-6 flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-1 basis-[12rem] flex-wrap items-center gap-x-2 gap-y-1">
+          <h2 className={EYEBROW}>Pump cycles</h2>
+          {/* What runs now: a preset by name, or cycles of your own; nothing with none. */}
+          {cycles.length > 0 && (
+            <span className="flex items-center gap-1.5 text-[12px] text-fg-2" data-testid="pump-running">
+              <span className="text-fg-3">·</span>
+              {running && <span className="size-2 shrink-0 rounded-full bg-tank" />}
+              {running ? `${running.name} running` : 'custom cycles'}
+            </span>
+          )}
+        </div>
         <FollowToggle />
         <Button icon={Plus} onClick={() => setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })}>Add custom cycle</Button>
       </div>
@@ -237,7 +250,7 @@ export function WaterPage() {
         }}
       />
       {cycles.length > 0 && (
-        <Card className="gap-0 p-0">
+        <Card className="gap-0 p-0" data-testid="pump-cycle-list">
           {cycles.map(c => (
             <div key={c.id} className="flex flex-wrap items-center gap-4 border-b border-line px-5 py-4 last:border-0">
               <span className={cn('w-[76px] font-mono text-xl font-medium', !c.enabled && 'text-fg-3')}>{fmtClock(c.spec.minute)}</span>
@@ -619,19 +632,26 @@ function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, mis
         <SourceLink href={GARDYN_WATERING_GUIDE}>Gardyn’s guide</SourceLink>
         {`. Pick one to preview it on the chart; Apply replaces your cycles.${follow ? ' Following the grow cycle, the cycles move along these stages as the days pass.' : ''}`}
       </p>
-      <div className="grid gap-2 min-[560px]:grid-cols-2 min-[900px]:grid-cols-5">
+      {/* As many columns as fit at 13.5rem or more each, so a card never gets too narrow for its contents. */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(13.5rem,100%),1fr))] gap-2" data-testid="pump-presets">
         {PUMP_PRESETS.map((p) => {
           const runs = presetRuns(p, light)
           const mins = Math.round(p.durationS / 60)
           const mine = recommended?.id === p.id
           const next = p.weekly ? nextWeekly(p) : null
           return (
-            <div key={p.id} className={cn('flex flex-col gap-2 rounded-card border bg-surface px-3.5 py-3', previewing === p.id ? 'border-tank' : mine ? 'border-fg-3' : 'border-line')}>
-              <button type="button" data-testid={`pump-preset-${p.id}`} aria-pressed={previewing === p.id} onClick={() => onPreview(p.id)} className="flex cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left">
-                <span className="flex items-start justify-between gap-2">
-                  <span className="text-sm font-medium">{p.name}</span>
-                  {applied === p.id && <span className="shrink-0 rounded-[10px] bg-tank/15 px-2 py-0.5 font-mono text-[11px] font-medium text-tank" data-testid="pump-applied">Running</span>}
-                </span>
+            // Your cycles' preset is tinted; the one previewed has the strong border, ringed so it shows on the tint too.
+            <div
+              key={p.id}
+              data-running={applied === p.id ? 'true' : undefined}
+              className={cn(
+                'flex min-w-0 flex-col gap-2 rounded-card border px-3.5 py-3',
+                applied === p.id ? 'bg-tank/10' : 'bg-surface',
+                previewing === p.id ? 'border-tank ring-1 ring-tank' : applied === p.id ? 'border-tank/40' : mine ? 'border-fg-3' : 'border-line',
+              )}
+            >
+              <button type="button" data-testid={`pump-preset-${p.id}`} aria-pressed={previewing === p.id} onClick={() => onPreview(p.id)} className="flex min-w-0 cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left">
+                <span className="text-sm font-medium">{p.name}</span>
                 <span className="text-[12px] leading-snug text-fg-3" data-testid="pump-stage">
                   {p.stage}
                   {/* The stage the tower is at: by its day, or why without one. */}
@@ -648,7 +668,7 @@ function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, mis
                 <span className="text-[12px] leading-snug text-fg-3">{p.note}</span>
               </button>
               {p.weekly && missed}
-              <SourceLink href={p.citation.url} className="mt-auto self-end text-[12px] text-fg-3">{p.citation.section}</SourceLink>
+              <SourceLink href={p.citation.url} className="mt-auto max-w-full self-end text-right text-[12px] text-fg-3">{p.citation.section}</SourceLink>
             </div>
           )
         })}
@@ -663,12 +683,18 @@ function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, mis
   )
 }
 
-/** A source, opened in a new tab, with the arrow that says so. */
-function SourceLink({ href, className, children }: { href: string, className?: string, children: ReactNode }) {
+/** A source, opened in a new tab, with the arrow that says so: the text wraps as text does, the arrow staying with its last word. */
+function SourceLink({ href, className, children }: { href: string, className?: string, children: string }) {
+  // Everything up to and including the last space wraps as text; the last word keeps the arrow.
+  const cut = children.lastIndexOf(' ') + 1
+  const last = children.slice(cut)
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={cn('inline-flex w-fit items-center gap-0.5 underline decoration-line-2 underline-offset-2 hover:text-fg', className)}>
-      {children}
-      <ArrowUpRight size={12} aria-hidden className="shrink-0" />
+    <a href={href} target="_blank" rel="noopener noreferrer" className={cn('w-fit underline decoration-line-2 underline-offset-2 hover:text-fg', className)}>
+      {children.slice(0, cut)}
+      <span className="whitespace-nowrap">
+        {last}
+        <ArrowUpRight size={12} aria-hidden className="ml-0.5 inline-block align-[-1px]" />
+      </span>
     </a>
   )
 }

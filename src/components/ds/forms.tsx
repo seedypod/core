@@ -370,8 +370,8 @@ export function WeekdayDots({ days, summary = true, className }: {
   className?: string
 }) {
   return (
-    <span role="img" aria-label={runsOn(days)} data-testid="weekday-dots" className={cn('flex flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[11px]', className)}>
-      <span className="flex shrink-0 gap-0.5" aria-hidden>
+    <span role="img" aria-label={runsOn(days)} data-testid="weekday-dots" className={cn('flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[11px]', className)}>
+      <span className="flex min-w-0 flex-wrap gap-0.5" aria-hidden>
         {DEFAULT_DAYS.map((d, i) => (
           <span key={i} data-on={dayOn(days, i) ? 'true' : undefined} className={cn('grid size-4 place-items-center rounded-[3px] leading-none', dayOn(days, i) ? 'bg-tank/20 text-tank' : 'text-fg-3/60')}>{d}</span>
         ))}
