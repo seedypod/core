@@ -11,6 +11,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bundleEntries, collect, gzipTar, type BackupManifest, type BundleFile } from '../../src/backup/bundle'
 import { header } from '../../src/datasets/tar'
 
+// As root the helper ignores every SEEDYPOD_* override and acts on the real unit's paths.
+if (process.getuid?.() === 0) throw new Error('the restore tests must not run as root')
+
 const helper = resolve(import.meta.dirname, '../../scripts/seedypod-restore.cjs')
 const enc = new TextEncoder()
 const DB = (tag: string) => enc.encode(`SQLite format 3\0${tag}`)
@@ -31,7 +34,7 @@ beforeEach(() => {
   writeFileSync(live('mosquitto/seedypod.conf'), 'per_listener_settings true\nlistener 1883 127.0.0.1\n')
   writeFileSync(live('migrations/meta/_journal.json'), JSON.stringify({ entries: Array.from({ length: 7 }, (_, i) => ({ tag: `000${i}_x` })) }))
   const stub = join(dir, 'systemctl.mjs')
-  writeFileSync(stub, `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(join(dir, 'systemctl.log'))}, process.argv.slice(2).join(' ') + '\\n')\n`)
+  writeFileSync(stub, `import { appendFileSync, existsSync } from 'node:fs'\nif (existsSync(${JSON.stringify(join(dir, 'busy/restore'))})) appendFileSync(${JSON.stringify(join(dir, 'busy-seen'))}, 'x')\nappendFileSync(${JSON.stringify(join(dir, 'systemctl.log'))}, process.argv.slice(2).join(' ') + '\\n')\n`)
   envs = {
     SEEDYPOD_RESTORE_DB: live('data/seedypod.db'),
     SEEDYPOD_RESTORE_CAPTURES: live('data/captures'),
@@ -42,6 +45,7 @@ beforeEach(() => {
     SEEDYPOD_MOSQUITTO_PASSWD: live('mosquitto/seedypod.passwd'),
     SEEDYPOD_MOSQUITTO_CONF: live('mosquitto/seedypod.conf'),
     SEEDYPOD_RESTORE_WORK: join(dir, 'work'),
+    SEEDYPOD_BUSY_DIR: join(dir, 'busy'),
     SEEDYPOD_SYSTEMCTL: JSON.stringify([process.execPath, stub]),
     SEEDYPOD_RESTORE_DETACH: 'fork',
   }
@@ -179,6 +183,20 @@ describe('restoring', () => {
     expect(existsSync(join(dir, 'work/staging'))).toBe(false)
   })
 
+  it('marks itself busy while it works, so a USB hub reboot can\'t land mid-restore, and clears it after', async () => {
+    expect(run(await bundle()).code).toBe(0)
+    expect(existsSync(join(dir, 'busy-seen'))).toBe(true)
+    expect(existsSync(join(dir, 'busy/restore'))).toBe(false)
+  })
+
+  it('lifts its busy mark when it fails without a status to say so', async () => {
+    const p = await bundle()
+    // The work dir can't be made, so even the first status write throws.
+    writeFileSync(join(dir, 'work'), 'not a directory')
+    expect(run(p).code).toBe(1)
+    expect(existsSync(join(dir, 'busy/restore'))).toBe(false)
+  })
+
   it('undoes a wrong restore, and a second undo redoes it', async () => {
     run(await bundle())
     expect(run('--undo').code).toBe(0)
@@ -213,6 +231,7 @@ describe('restoring', () => {
     expect(read('data/seedypod.db-wal')).toBe('old wal')
     expect(read('etc/hal.toml')).toContain('fresh')
     expect(calls().slice(-2)).toEqual(['start hald', 'start seedypod-core'])
+    expect(existsSync(join(dir, 'busy/restore'))).toBe(false)
     expect(JSON.parse(readFileSync(join(dir, 'work/status.json'), 'utf8'))).toMatchObject({ state: 'failed' })
     expect(run('--undo').out).toMatchObject({ ok: false, error: 'there is no restore to undo' })
   })

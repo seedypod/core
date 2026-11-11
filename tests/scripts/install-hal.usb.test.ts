@@ -4,7 +4,7 @@
  * docs/hardware/hal.md#usb-recovery.
  */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -26,6 +26,26 @@ function install(enable = 1) {
     env: { PATH: `${dir}/bin:/usr/bin:/bin`, SEEDYPOD_LIB_ONLY: '1', SEEDYPOD_ROOT: join(dir, 'root'), STATE: dir },
   })
 }
+
+describe('the mark that holds off a USB hub reboot', () => {
+  const mark = (steps: string) => spawnSync('bash', ['-c', `set -euo pipefail; source "${script}"; SUDO=; ${steps}`], {
+    encoding: 'utf8',
+    env: { PATH: `${dir}/bin:/usr/bin:/bin`, SEEDYPOD_LIB_ONLY: '1', SEEDYPOD_ROOT: join(dir, 'root'), STATE: dir },
+  })
+  const marker = () => join(dir, 'root/run/seedypod-busy/install-hal')
+
+  it('is there while the install runs, and gone after', () => {
+    expect(mark('mark_busy install-hal').status).toBe(0)
+    expect(existsSync(marker())).toBe(true)
+    expect(mark('clear_busy install-hal').status).toBe(0)
+    expect(existsSync(marker())).toBe(false)
+  })
+
+  it('never fails an install', () => {
+    writeFileSync(join(dir, 'root'), 'not a directory')
+    expect(mark('mark_busy install-hal; clear_busy install-hal').status).toBe(0)
+  })
+})
 
 describe('install_usb_recovery', () => {
   it('runs once at boot, without holding up the boot or restarting', () => {

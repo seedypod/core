@@ -73,7 +73,7 @@ prints every key with its default; the important ones:
 | `[button]` | `debounce_ms`, `double_window_ms`, `long_press_ms`, `setup_hold_ms`, `active_low`, `pump_run_s` | 30, 400, 1000, 10000, true, 300 | |
 | `[dosing]` | `enabled` | **false** | Phase 6.3, ADR-0014: off until you turn it on. |
 | `[dosing]` | `ml_per_s`, `default_dose_ml`, `max_single_ml`, `max_daily_ml`, `max_doses_per_day` | 1, 5, 10, 30, 4 | Hard daily cap; lockout after N doses until acknowledged. |
-| `[usb_recovery]` | `enabled`, `boot_wait_s`, `attempts`, `settle_s`, `rebind_controller` | true, 90, 2, 20, **false** | See [USB recovery](#usb-recovery) |
+| `[usb_recovery]` | `enabled`, `boot_wait_s`, `reboot_attempts`, `busy_checks`, `busy_wait_s`, `attempts`, `settle_s` | true, 90, **0**, 20, 60, 0, 20 | See [USB recovery](#usb-recovery) |
 | `[ha]` | `discovery`, `prefix` | true, `homeassistant` | |
 | `[[camera]]` | `name`, `device`, `fallback`, `resolution`, `palette`, `skip_frames` | upper `/dev/seedypod/camera-upper` (fallback `/dev/video0`), lower `/dev/seedypod/camera-lower` (fallback `/dev/video2`), 1280x960, MJPEG, 15 | See [Camera names](#camera-names) |
 | `[[camera]]` | `capture_attempts`, `capture_retry_ms`, `capture_timeout_s`, `inspect_frames` | 3, 1000, 15, true | See [Stills](#stills) |
@@ -441,44 +441,71 @@ that dies part way still restarts hald on the rerun.
 
 ## USB recovery
 
-The cameras sit behind a USB hub that doesn't always enumerate at boot, on stock
-firmware too. `seedypod-usb-recover.service` runs `hald --usb-recover` once per
-boot, as root. If the bus still has nothing on it `boot_wait_s` after boot, it asks
-usbcore to re-probe the root hub up to `attempts` times, waiting `settle_s` after
-each. With `rebind_controller = true` it finishes with one rebind of the whole
-controller. Then it stops, and the unit shows as failed; there is no restart.
+The cameras sit behind a USB hub that often doesn't enumerate at boot, on stock
+firmware too. On our unit it comes up on about 1 boot in 4, independently each time.
+When it misses, the port reads SE1 (`hprt0` `0x1c00`). Usually only another boot
+clears it, but some boots connect late without one: see the
+[hardware map](pin-map.md#known-issue-usb-hub-missing-at-boot).
 
-It does nothing unless the bus is completely empty, so it can't disturb a hub that
-came up or any other USB device. It only acts on the Pi's `dwc_otg` and `dwc2`
-controllers, never in gadget mode. Wi-Fi is on SDIO, not USB.
+`seedypod-usb-recover.service` runs `hald --usb-recover` once per boot, as root. If
+the bus still has nothing on it `boot_wait_s` after boot, it can reboot to try again,
+up to `reboot_attempts` times in a row. **That is off by default**
+(`reboot_attempts = 0`): an unattended reboot is an automatic recovery, and the
+timing hasn't been proved on a unit yet (see below). Set it above 0 in `hal.toml` to
+turn it on. At 1 boot in 4, `reboot_attempts = 4` (five boots) finds the hub about 3
+times in 4. With reboots off, or once they run out, a boot that misses stops there:
+the unit stays online without cameras, the unit shows as failed, and `hald` raises
+`camera_missing` starting `USB hub:`, clearing it when the bus fills.
 
-`hald` itself is unprivileged, so it only watches. If the bus is still empty once
-the attempts must be over, it raises `camera_missing` and clears it when the bus
-fills.
+When reboots are on, the count is in `usb-reboots` in the state dir. It is written
+and synced before each reboot, and only resets when the hub is seen, so a power cut
+or a power cycle doesn't start it again. If it can't be read or written, the unit
+doesn't reboot. To allow more tries after fixing the cable,
+`sudo rm /var/lib/seedypod/usb-reboots`.
 
-`rebind_controller` is off because a hung kernel would leave the pump's GPIO as it
-was, and nobody has yet proved that the Pi's `dwc_otg` unbinds cleanly. To test on a
-unit, with the pump off, first make the bus empty without touching the controller,
-then let recovery bring it back:
+It won't reboot:
+
+- While the pump or a doser is running, or the Wi-Fi setup hotspot is up. It looks at
+  `hald`'s `/state`, and if `hald` can't say, that counts as running.
+- During an update or a restore: `install`, `install-hal` and the restore helper
+  each keep a file in `/run/seedypod-busy` while they run. It's in `/run`, so one that
+  died mid-way is cleared by the next boot and can't hold reboots for good.
+- Before an image's first boot has finished (`unit.env` is written last), or while
+  cloud-init is enabled and hasn't finished.
+
+For all of these it waits `busy_wait_s` and looks again, up to `busy_checks` times,
+which outlasts a full pump run, then leaves this boot alone. It also won't reboot:
+
+- On a unit with no cameras (`camera = []`). The stock pair is the default, so with
+  reboots on, a Pi that really has no hub reboots `reboot_attempts` times once and
+  then never again; leave `reboot_attempts = 0` on one.
+- If anything else is on the bus, so a hub that came up, or any other USB device, is
+  left alone. It only acts on the Pi's `dwc_otg` and `dwc2` controllers, never in
+  gadget mode. Wi-Fi is on SDIO, not USB.
+
+`attempts` adds root hub re-probes before any reboot. It's off by default for now. In
+a controlled series, 7 of 40 boots found the hub at 123-151 s, after re-probes at about
+90 and 111 s, and none rebooted. It isn't known yet whether the re-probes or the wait
+did it, so the defaults (`boot_wait_s = 90`, `attempts = 0`, `reboot_attempts = 0`)
+are pending that test. **Don't rebind the USB controller:** binding `dwc_otg` again
+segfaults the kernel, and a hung kernel leaves the pump's GPIO as it was.
+`rebind_controller` did that once; it now has no effect, and stays only so a
+`hal.toml` that sets it loads.
+
+To test on a unit, with the pump off, set `reboot_attempts` above 0 under
+`[usb_recovery]` in `hal.toml`, then empty the bus and run it by hand. It reboots:
 
 ```sh
 echo usb1 | sudo tee /sys/bus/usb/drivers/usb/unbind   # drops the hub and cameras
 ls /sys/bus/usb/devices                                # no 1-1 or 1-1.*: usb1 remains
 sudo hald --config /etc/seedypod/hal.toml --usb-recover
-ls /sys/bus/usb/devices                                # 1-1 and the cameras are back
+cat /var/lib/seedypod/usb-reboots                      # after it's back: gone if the hub came up
+cat /var/lib/seedypod/usb-boots                        # one character a boot, newest last
 ```
 
-What matters after the unbind is that `1-1` and everything under it are gone. The
-root hub's `1-0:1.0` entry may go too, which is fine.
-
-Before setting `rebind_controller = true`, try the rebind itself by hand, ready to
-power-cycle the unit:
-
-```sh
-C=$(basename "$(readlink -f /sys/bus/usb/devices/usb1/..)")
-D=$(readlink -f "/sys/bus/platform/devices/$C/driver")
-echo "$C" | sudo tee "$D/unbind"; sleep 1; echo "$C" | sudo tee "$D/bind"
-```
+The journal is in RAM, so the reboot takes its own log with it. These two files are
+the record: `usb-reboots` counts reboots in a row, and in `usb-boots` a `+` is a boot
+where the hub came up by itself and a `-` is one where it didn't.
 
 ## Verification status
 
