@@ -35,6 +35,8 @@ export interface TankData {
   runs: number[]
   /** Runs still to come today, as fractions of the rest of the day (0 now, 1 midnight). */
   upcoming: number[]
+  /** A preset's runs before it's applied, as fractions along the window. */
+  preview: number[]
 }
 
 export interface LightData {
@@ -168,7 +170,7 @@ export function todayData(input: {
 }
 
 /** The tank over its window (0–100%), its top-ups, the pump cutoff, where it is now, scheduled runs done and to come, and, while the pump runs, where the run began. */
-export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], marks: TankMarks, pumping?: boolean, runFrom?: number | null, runs?: number[], upcoming?: number[] }): TankData {
+export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], marks: TankMarks, pumping?: boolean, runFrom?: number | null, runs?: number[], upcoming?: number[], preview?: number[] }): TankData {
   const finite = input.levels.filter(Number.isFinite)
   const current = input.currentPct ?? finite.at(-1) ?? null
   return {
@@ -182,6 +184,7 @@ export function tankData(input: { levels: number[], topUps: number[], cutoffPct:
     runFrom: input.pumping && input.runFrom != null ? Math.max(0, Math.min(1, input.runFrom)) : null,
     runs: (input.runs ?? []).filter(r => r >= 0 && r <= 1),
     upcoming: (input.upcoming ?? []).filter(r => r > 0 && r <= 1),
+    preview: (input.preview ?? []).filter(r => r >= 0 && r <= 1),
   }
 }
 

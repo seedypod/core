@@ -10,8 +10,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { RuleInput } from '../autopilot/schema'
 import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '../scheduler/lightPlan'
-import { GARDYN_WATERING_GUIDE, presetSchedules, PUMP_PRESETS } from '../scheduler/pumpPlan'
+import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, recommendPreset, TIPS_CITATION, WATERING_TIPS } from '../scheduler/pumpPlan'
 import { SensorId } from '../hardware/contract'
+import { dayOn, weekdayOf } from '../lib/days'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
 import { Overrides } from '../server/routers/planner'
@@ -70,9 +71,28 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async () => text({ timezone: (await caller.settings.get()).timezone, presets: LIGHT_PRESETS.map(p => ({ ...p, boostHours: boostHours({ setpoints: p.setpoints }), rating: lightRating(boostHours({ setpoints: p.setpoints })) })) }))
 
   server.registerTool('pump_presets', {
-    description: `Starting points for watering: twice a day for 10 min, three times for 5 or once for 15. They are seedypod's, not Gardyn's: Gardyn doesn't publish its watering cadence (its Smart Watering adjusts it), and after sowing Gardyn waits a few days to a week before the second watering (${GARDYN_WATERING_GUIDE}). Each preset lists the pump schedules to pass to upsert_schedule, one per run time, every day; turn them on only if no pump cycle runs yet, since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
+    description: `Watering starting points by growth stage (seedlings, young plants, mature greens and herbs, large or fruiting), with each one's runs, run-length range, notes and a citation, the preset recommended for this tower (from days since sowing and whether anything planted is a fruiting crop), today's light window and the unit's timezone. These are community starting points from r/Gardyn owners, not Gardyn's: Gardyn doesn't publish a cadence (Smart Watering adjusts it) and waits a few days to a week after sowing before the second watering (${GARDYN_WATERING_GUIDE}). Check the roots and adjust: dry, brittle roots want more; roots in pooled water before the next cycle want less. Each preset lists the pump schedules to pass to upsert_schedule, one per run; applying a preset means replacing the existing pump cycles (remove_schedule them first), since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
     inputSchema: {},
-  }, async () => text({ timezone: (await caller.settings.get()).timezone, guide: GARDYN_WATERING_GUIDE, presets: PUMP_PRESETS.map(p => ({ ...p, schedules: presetSchedules(p, { enabled: true, idPrefix: `pump-${p.id}` }) })) }))
+  }, async () => {
+    const [settings, schedules, cycle, pods] = await Promise.all([caller.settings.get(), caller.schedules.list(), caller.grow.current(), caller.grow.pods()])
+    const now = (ctx.now ?? (() => new Date()))()
+    const light = lightWindow(schedules.flatMap(s => (s.kind === 'light' && s.enabled && dayOn(s.days, weekdayOf(now)) && 'setpoints' in s.spec ? [s.spec] : [])))
+    const planted = pods.filter(p => p.status !== 'empty')
+    const days = daysSinceSowing(cycle.cycle?.startedAt, planted.map(p => p.plantedAt), now)
+    return text({
+      timezone: settings.timezone,
+      guide: GARDYN_WATERING_GUIDE,
+      light,
+      daysSinceSowing: days,
+      recommended: recommendPreset(days, planted.map(p => p.plant)),
+      tips: WATERING_TIPS,
+      tipsCitation: TIPS_CITATION.url,
+      presets: PUMP_PRESETS.map((p) => {
+        const runs = presetRuns(p, light)
+        return { id: p.id, name: p.name, runs, durationS: p.durationS, range: p.range, minutesADay: dailyMinutes(runs.length, p.durationS), note: p.note, citation: p.citation.url, schedules: presetSchedules(p, { enabled: true, light }) }
+      }),
+    })
+  })
 
   server.registerTool('pods', { description: 'The 30 plant pods: slot, plant, planted date, status (empty, seeded, growing, harvest, attention) and notes.', inputSchema: {} }, async () => text(await caller.grow.pods()))
 

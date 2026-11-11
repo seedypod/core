@@ -37,19 +37,25 @@ describe('light schedules over MCP', () => {
 })
 
 describe('pump presets over MCP', () => {
-  it('offers watering starting points with their schedules, the guide and the unit\'s timezone, and the schedules upsert as they are', async () => {
+  it('offers community starting points with their runs, notes and citations, the light window and a recommendation, and they upsert as they are', async () => {
     const { client, call } = await mcp()
-    const tools = await client.listTools()
-    const tool = tools.tools.find(t => t.name === 'pump_presets')
-    expect(tool?.description).toMatch(/Gardyn doesn't publish its watering cadence/)
+    const tool = (await client.listTools()).tools.find(t => t.name === 'pump_presets')
+    expect(tool?.description).toMatch(/community starting points from r\/Gardyn owners, not Gardyn's/)
+    expect(tool?.description).toMatch(/Check the roots/)
     expect(tool?.description).toMatch(/Minutes are the unit's local time/)
-    const got = await call<{ timezone: string, guide: string, presets: Array<{ id: string, schedules: Array<{ id: string, kind: string, name: string, spec: { minute: number, durationS: number } }> }> }>('pump_presets')
+    await call('upsert_schedule', { id: 'day', kind: 'light', name: 'Day', spec: { setpoints: [{ minute: 420, level: 0 }, { minute: 450, level: 100 }, { minute: 1230, level: 100 }, { minute: 1260, level: 0 }] } })
+    const got = await call<{ timezone: string, guide: string, light: { on: number, off: number } | null, recommended: string | null, tips: string[], presets: Array<{ id: string, runs: number[], minutesADay: number, note: string, citation: string, schedules: Array<{ id: string, name: string }> }> }>('pump_presets')
     expect(got.timezone).toBe('UTC')
     expect(got.guide).toBe('https://help.mygardyn.com/en/articles/4435265')
-    expect(got.presets.map(p => [p.id, p.schedules.length])).toEqual([['twice-10', 2], ['thrice-5', 3], ['once-15', 1]])
-    for (const s of got.presets[0]?.schedules ?? []) await call('upsert_schedule', s)
+    expect(got.light).toEqual({ on: 421, off: 1260 })
+    // An empty tower has no sowing date to go by.
+    expect(got.recommended).toBeNull()
+    expect(got.tips).toHaveLength(3)
+    expect(got.presets.map(p => [p.id, p.runs.length, p.minutesADay])).toEqual([['seedlings', 1, 10], ['young', 2, 12], ['mature', 3, 18], ['fruiting', 3, 15]])
+    expect(got.presets[0]?.citation).toMatch(/knowledge\/watering\/schedules\.md#seedlings$/)
+    for (const s of got.presets[2]?.schedules ?? []) await call('upsert_schedule', s)
     const listed = await call<{ schedules: Array<{ id: string, name: string }> }>('list_schedules')
-    expect(listed.schedules.map(s => s.name)).toEqual(expect.arrayContaining(['Twice a day · 10 min (08:00)', 'Twice a day · 10 min (17:00)']))
+    expect(listed.schedules.map(s => s.id)).toEqual(expect.arrayContaining(['water-mature-0800', 'water-mature-1400', 'water-mature-2000']))
     await client.close()
   })
 })

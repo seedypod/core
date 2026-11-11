@@ -18,11 +18,11 @@ vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
   const { useEffect } = await import('react')
   return {
     ...real,
-    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, pumping: boolean, topUps: number[], runs: number[], upcoming: number[] } | null, onUnavailable?: () => void }) => {
+    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, pumping: boolean, topUps: number[], runs: number[], upcoming: number[], preview: number[] } | null, onUnavailable?: () => void }) => {
       useEffect(() => {
         if (hero.fail) onUnavailable?.()
       }, [onUnavailable])
-      return <div data-testid="tank-3d" data-state={status} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'} · ran ${data.runs.map(r => r.toFixed(2)).join(',')} · later ${data.upcoming.map(r => r.toFixed(2)).join(',')}`}</div>
+      return <div data-testid="tank-3d" data-state={status} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'} · ran ${data.runs.map(r => r.toFixed(2)).join(',')} · later ${data.upcoming.map(r => r.toFixed(2)).join(',')} · preview ${data.preview.map(r => r.toFixed(2)).join(',')}`}</div>
     },
   }
 })
@@ -51,6 +51,7 @@ vi.mock('@/src/utils/trpc', () => {
       tank: { actions: query('tankActions'), logAction: { useMutation: () => ({ mutate: vi.fn(), error: null }) }, removeAction: { useMutation: () => ({ mutate: vi.fn(), error: null }) } },
       system: { info: query('system') },
       settings: { get: query('settings') },
+      grow: { current: query('grow'), pods: query('pods') },
       schedules: { list: query('schedules'), recentRuns: query('runs'), upsert: mutation('upsert'), remove: mutation('remove') },
       telemetry: {
         history: {
@@ -235,25 +236,78 @@ describe('WaterPage: pump cycles', () => {
     expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'evening', enabled: false }))
   })
 
-  it('offers starting points with no cycle yet, and turns on the one picked, one schedule per run', () => {
-    data.set('schedules', [curve])
+  it('shows the presets with their day, total and note, marks the one for this tower, and the tips', () => {
+    // The daylight curve lights 06:00 to 21:00; the cycle began 10 days ago: young plants.
+    data.set('schedules', [{ ...curve, spec: { setpoints: [{ minute: 330, level: 0 }, { minute: 360, level: 100 }, { minute: 1260, level: 100 }, { minute: 1290, level: 0 }] } }])
+    data.set('grow', { cycle: { id: 'c', startedAt: at(12, 0, 1).toISOString(), endedAt: null, stage: 'seedling', notes: '', issued: [] }, day: 10 })
+    vi.setSystemTime(at(12, 0, 11))
     render(<WaterPage />)
-    expect(screen.getByText(/Gardyn doesn’t publish its watering cadence/)).toBeTruthy()
+    expect(screen.getByText(/Community starting points from r\/Gardyn owners, not Gardyn’s/)).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Gardyn’s guide' }).getAttribute('href')).toBe('https://help.mygardyn.com/en/articles/4435265')
-    fireEvent.click(screen.getByTestId('pump-preset-twice-10'))
-    expect(calls.upsert).toHaveBeenCalledTimes(2)
-    expect(calls.upsert).toHaveBeenNthCalledWith(1, expect.objectContaining({ kind: 'pump', name: 'Twice a day · 10 min (08:00)', enabled: true, days: 127, spec: { minute: 480, durationS: 600 } }))
-    expect(calls.upsert).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: 'Twice a day · 10 min (17:00)', spec: { minute: 1020, durationS: 600 } }))
+    const young = screen.getByTestId('pump-preset-young')
+    expect(within(young).getByText('2 × 6 min = 12 min a day')).toBeTruthy()
+    expect(within(young).getByTestId('pump-recommended').textContent).toBe('for day 10')
+    expect(screen.getAllByTestId('pump-recommended')).toHaveLength(1)
+    // Fruiting keeps to the light: 22:00 falls outside 06:00–21:00.
+    expect(within(screen.getByTestId('pump-preset-fruiting')).getByText('4 × 5 min = 20 min a day')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Young plants' }).getAttribute('href')).toMatch(/knowledge\/watering\/schedules\.md#young-plants$/)
+    expect(screen.getByTestId('watering-tips').textContent).toMatch(/Check the roots/)
+    expect(screen.getByRole('link', { name: 'Judging a schedule' })).toBeTruthy()
   })
 
-  it('adds later presets switched off, since cycles add up, from Add cycle', () => {
+  it('recommends the fruiting preset when a fruiting crop is planted', () => {
+    data.set('pods', [{ slot: 1, plant: 'Cucumber', status: 'growing', plantedAt: '2026-10-01' }, { slot: 2, plant: null, status: 'empty', plantedAt: null }])
     render(<WaterPage />)
-    expect(screen.queryByTestId('pump-preset-once-15')).toBeNull()
-    fireEvent.click(screen.getByText('Add cycle'))
-    expect(screen.getByText(/These start switched off/)).toBeTruthy()
-    fireEvent.click(screen.getByTestId('pump-preset-once-15'))
-    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ name: 'Once a day · 15 min (08:00)', enabled: false }))
-    expect(screen.queryByTestId('pump-preset-once-15')).toBeNull()
+    expect(within(screen.getByTestId('pump-preset-fruiting')).getByTestId('pump-recommended').textContent).toBe('for your fruiting plants')
+  })
+
+  it('previews a preset on the strip and the day\'s chart without saving, and applies it in place of the cycles after a confirmation', () => {
+    render(<WaterPage />)
+    fireEvent.click(screen.getByTestId('pump-preset-mature'))
+    expect(screen.getByTestId('pump-preset-mature').getAttribute('aria-pressed')).toBe('true')
+    expect(calls.upsert).not.toHaveBeenCalled()
+    const strip = within(screen.getByTestId('pump-strip'))
+    expect(strip.getByTestId('strip-preview').textContent).toBe('Preview: 3 × 6 min·Apply·Cancel')
+    fireEvent.click(strip.getByText('Apply'))
+    // Two cycles run now, so it asks first and lists what goes.
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByTestId('replaced-cycles').textContent).toBe('08:00 · Morning watering20:00 · Evening watering')
+    expect(dialog.getByText(/runs 08:00, 14:00, 20:00, 6 min each, every day/)).toBeTruthy()
+    fireEvent.click(dialog.getByText('Replace'))
+    expect(calls.remove).toHaveBeenCalledWith({ id: 'morning' })
+    expect(calls.remove).toHaveBeenCalledWith({ id: 'evening' })
+    expect(calls.upsert.mock.calls.map(c => [(c[0] as { id: string }).id, (c[0] as { name: string }).name, (c[0] as { enabled: boolean }).enabled])).toEqual([
+      ['water-mature-0800', 'Mature · 3× 6 min (08:00)', true],
+      ['water-mature-1400', 'Mature · 3× 6 min (14:00)', true],
+      ['water-mature-2000', 'Mature · 3× 6 min (20:00)', true],
+    ])
+    expect(screen.queryByTestId('strip-preview')).toBeNull()
+  })
+
+  it('applies straight away with no cycle to replace, and cancels a preview', () => {
+    data.set('schedules', [curve])
+    render(<WaterPage />)
+    fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
+    fireEvent.click(within(screen.getByTestId('pump-strip')).getByText('Cancel'))
+    expect(screen.queryByTestId('strip-preview')).toBeNull()
+    fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
+    // Clicking it again turns the preview off.
+    fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
+    expect(screen.queryByTestId('strip-preview')).toBeNull()
+    fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
+    fireEvent.click(screen.getByText('Apply'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', enabled: true }))
+    expect(calls.remove).not.toHaveBeenCalled()
+  })
+
+  it('keeps a cycle the preset re-creates rather than removing it first', () => {
+    data.set('schedules', [{ ...morning, id: 'water-mature-0800' }, evening])
+    render(<WaterPage />)
+    fireEvent.click(screen.getByTestId('pump-preset-mature'))
+    fireEvent.click(screen.getByText('Apply'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Replace'))
+    expect(calls.remove.mock.calls).toEqual([[{ id: 'evening' }]])
   })
 
   it('names the next run\'s cycle once, without a preset\'s time in its name', () => {
@@ -280,9 +334,11 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.queryByText('No watering schedule')).toBeNull()
   })
 
-  it('adds a cycle through the editor, with no Delete until it exists', () => {
+  it('adds a cycle through the editor, from Blank or Add cycle, with no Delete until it exists', () => {
     data.set('schedules', [])
     render(<WaterPage />)
+    fireEvent.click(screen.getByText('Add cycle'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Cancel'))
     fireEvent.click(screen.getByTestId('pump-preset-blank'))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).queryByText('Delete')).toBeNull()
@@ -396,10 +452,20 @@ describe('WaterPage with WebGL: the tank hero', () => {
     data.set('runs', [{ scheduleId: 'morning', key: 'm1', firedAt: at(0, 0, 2).toISOString(), result: 'ok' }, { scheduleId: 'day', key: 'd1', firedAt: at(1, 0, 2).toISOString(), result: 'ok' }])
     render(<WaterPage />)
     // Only pump cycles' runs, about half way along (1 Nov has 25 h: the clocks go back); no "later" ticks off the day's range.
-    expect(screen.getByTestId('tank-3d').textContent).toMatch(/ran 0\.52 · later $/)
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/ran 0\.52 · later {2}· preview $/)
     fireEvent.click(screen.getByRole('tab', { name: '24h' }))
     // The evening cycle at 20:00 is still to come: 8 h into the 12 h left of the day.
-    expect(screen.getByTestId('tank-3d').textContent).toMatch(/later 0\.67$/)
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/later 0\.67 · preview $/)
+  })
+
+  it('previews a preset\'s runs at their time of day on the day\'s axis, in place of today\'s runs to come', () => {
+    vi.setSystemTime(at(12, 0, 3))
+    render(<WaterPage />)
+    fireEvent.click(screen.getByTestId('pump-preset-young'))
+    // The 24 h ending at the last sample (the 3rd, 00:00, 48 h after the first): 08:00 and 16:00 on the 2nd.
+    expect(calls.history).toHaveBeenLastCalledWith({ sensor: 'water_level_pct', hours: 24, maxPoints: 300 })
+    const text = screen.getByTestId('tank-3d').textContent ?? ''
+    expect(text).toMatch(/later {2}· preview 0\.6\d,0\.8\d$/)
   })
 
   it('holds the readout\'s place while loading and says the history is loading', () => {

@@ -36,7 +36,7 @@ test('pump run is bounded and reported', async ({ page }) => {
 test('water: create, toggle, delete a pump cycle', async ({ page }) => {
   await page.goto('/water')
   const main = page.getByRole('main')
-  // With no cycle yet the starting points show; Blank opens the editor.
+  // The starting points are always there; Blank opens the editor.
   await main.getByTestId('pump-preset-blank').click()
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
   await expect(main.getByText('Watering', { exact: true })).toBeVisible()
@@ -45,7 +45,7 @@ test('water: create, toggle, delete a pump cycle', async ({ page }) => {
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await main.getByRole('button', { name: 'Edit Watering' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-  await expect(main.getByTestId('pump-preset-twice-10')).toBeVisible()
+  await expect(main.getByTestId('pump-preset-seedlings')).toBeVisible()
   await expect(page.getByTestId('pump-strip').getByText('No watering schedule')).toBeVisible()
 })
 
