@@ -181,8 +181,8 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   const step = width < 420 ? 6 : 3
   const ticks = Array.from({ length: DAY / 60 / step + 1 }, (_, i) => i * step * 60)
   const nowPct = pctOf(nowMin)
-  // An hour label gives way to the now pill when they'd touch.
-  const clear = (m: number) => (Math.abs(pctOf(m) - nowPct) / 100) * width > 44
+  // An hour label gives way to the now pill when they'd touch: by their centres, the end labels sitting inside the axis.
+  const clear = (m: number) => Math.abs((pctOf(m) - nowPct) / 100 * width + (m === 0 ? 18 : m === DAY ? -18 : 0)) > 58
   const muted = [...lightMarks, ...waterMarks].some(m => m.muted)
 
   const describe = (marks: Mark[], none: string) => (marks.length ? marks.map(m => m.title).join('; ') : none)
