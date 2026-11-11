@@ -208,6 +208,9 @@ impl Camera for SimCamera {
         };
         Ok(bytes.to_vec())
     }
+    fn capture_full(&mut self) -> Result<Vec<u8>, DeviceError> {
+        self.capture()
+    }
 }
 
 #[cfg(test)]

@@ -93,6 +93,14 @@ pub struct UvcConfig {
     pub attempt_timeout: Duration,
     /// Walk the raw frame. Off, only `fswebcam`'s output and file are checked.
     pub inspect_frames: bool,
+    /// The pod-ID still's size (#224): the sensor's full size, where the yCube
+    /// dot codes are big enough to read. Taken only when asked for.
+    pub full_resolution: String,
+    /// The marks inside a dot are two or three pixels wide at full size, so
+    /// the pod-ID still keeps more detail than the regular ones.
+    pub full_jpeg_quality: u8,
+    /// `fswebcam` decodes and re-encodes four times the pixels: 13 s on a Pi Zero W.
+    pub full_attempt_timeout: Duration,
 }
 
 impl UvcConfig {
@@ -109,6 +117,9 @@ impl UvcConfig {
             retry_delay: Duration::from_secs(1),
             attempt_timeout: Duration::from_secs(15),
             inspect_frames: true,
+            full_resolution: "2592x1944".into(),
+            full_jpeg_quality: 95,
+            full_attempt_timeout: Duration::from_secs(60),
         }
     }
 }
@@ -127,22 +138,57 @@ impl UvcConfig {
     }
 }
 
+/// Which still: the regular one, or the occasional full-size pod-ID one (#224).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shot {
+    Still,
+    Full,
+}
+
+impl Shot {
+    fn resolution(self, cfg: &UvcConfig) -> &str {
+        match self {
+            Shot::Still => &cfg.resolution,
+            Shot::Full => &cfg.full_resolution,
+        }
+    }
+
+    fn quality(self, cfg: &UvcConfig) -> u8 {
+        match self {
+            Shot::Still => cfg.jpeg_quality,
+            Shot::Full => cfg.full_jpeg_quality,
+        }
+    }
+
+    fn timeout(self, cfg: &UvcConfig) -> Duration {
+        match self {
+            Shot::Still => cfg.attempt_timeout,
+            Shot::Full => cfg.full_attempt_timeout,
+        }
+    }
+}
+
 /// The `fswebcam` argument vector for one capture from `device` into `out`,
 /// dumping the camera's own frame to `raw` when given.
 pub fn fswebcam_args(cfg: &UvcConfig, device: &Path, out: &Path, raw: Option<&Path>) -> Vec<String> {
+    shot_args(cfg, Shot::Still, device, out, raw)
+}
+
+/// [`fswebcam_args`] for either kind of still.
+pub fn shot_args(cfg: &UvcConfig, shot: Shot, device: &Path, out: &Path, raw: Option<&Path>) -> Vec<String> {
     let mut args = vec![
         "-q".into(),
         "-d".into(),
         device.display().to_string(),
         "-r".into(),
-        cfg.resolution.clone(),
+        shot.resolution(cfg).to_owned(),
         "-p".into(),
         cfg.palette.clone(),
         "-S".into(),
         cfg.skip_frames.to_string(),
         "--no-banner".into(),
         "--jpeg".into(),
-        cfg.jpeg_quality.to_string(),
+        shot.quality(cfg).to_string(),
     ];
     if let Some(raw) = raw {
         args.extend(["--dumpframe".into(), raw.display().to_string()]);
@@ -271,20 +317,26 @@ impl<R: CommandRunner> UvcCamera<R> {
     }
 
     /// One `fswebcam` run, leaving no files behind.
-    fn attempt(&mut self, device: &Path) -> Result<Vec<u8>, DeviceError> {
+    fn attempt(&mut self, device: &Path, shot: Shot) -> Result<Vec<u8>, DeviceError> {
         let (out, raw) = (self.out_path(), self.raw_path());
         let _ = std::fs::remove_file(&out);
         let _ = std::fs::remove_file(&raw);
-        let result = self.run_and_check(device, &out, &raw);
+        let result = self.run_and_check(device, &out, &raw, shot);
         let _ = std::fs::remove_file(&out);
         let _ = std::fs::remove_file(&raw);
         result
     }
 
-    fn run_and_check(&mut self, device: &Path, out: &Path, raw: &Path) -> Result<Vec<u8>, DeviceError> {
+    fn run_and_check(
+        &mut self,
+        device: &Path,
+        out: &Path,
+        raw: &Path,
+        shot: Shot,
+    ) -> Result<Vec<u8>, DeviceError> {
         let inspect = self.cfg.raw_frames();
-        let args = fswebcam_args(&self.cfg, device, out, inspect.then_some(raw));
-        let printed = self.runner.run("fswebcam", &args, self.cfg.attempt_timeout)?;
+        let args = shot_args(&self.cfg, shot, device, out, inspect.then_some(raw));
+        let printed = self.runner.run("fswebcam", &args, shot.timeout(&self.cfg))?;
         if let Some(line) = failure_line(&printed) {
             return Err(DeviceError::Other(format!("fswebcam reported: {line}")));
         }
@@ -321,7 +373,7 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
         for attempt in 1..=attempts {
             // Looked up each time: a camera that drops off the bus mid-retry is missing, not failing.
             let device = self.node()?;
-            match self.attempt(&device) {
+            match self.attempt(&device, Shot::Still) {
                 Ok(bytes) => {
                     if attempt > 1 || self.failing {
                         info!(camera = %self.name, attempt, "capture recovered");
@@ -347,6 +399,29 @@ impl<R: CommandRunner> Camera for UvcCamera<R> {
     }
     fn damaged_frames(&self) -> u32 {
         self.damaged
+    }
+    /// The pod-ID still (#224). It leaves the regular stills' state alone: a
+    /// slow or refused full-size frame doesn't make the camera look failing,
+    /// and doesn't change the damaged count core reads the link's health from.
+    fn capture_full(&mut self) -> Result<Vec<u8>, DeviceError> {
+        let attempts = self.cfg.attempts.clamp(1, 2);
+        let mut last = None;
+        for attempt in 1..=attempts {
+            let device = self.node()?;
+            match self.attempt(&device, Shot::Full) {
+                Ok(bytes) => return Ok(bytes),
+                Err(e) => {
+                    warn!(camera = %self.name, attempt, attempts, %e, "full-size capture rejected");
+                    last = Some(e);
+                }
+            }
+            if attempt < attempts {
+                thread::sleep(self.cfg.retry_delay * attempt);
+            }
+        }
+        let last = last.map(|e| e.to_string()).unwrap_or_default();
+        let kind = last.split_once(": ").map_or(last.as_str(), |(kind, _)| kind);
+        Err(DeviceError::Other(format!("no good full-size frame: {kind}")))
     }
 }
 
@@ -688,6 +763,42 @@ mod tests {
         assert!(cam.capture().is_err());
         assert!(started.elapsed() >= Duration::from_millis(90));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_full_size_still_asks_for_the_sensors_size_and_leaves_the_regular_state_alone() {
+        let dir = scratch("full");
+        let cut = GOOD_RAW.len() / 2;
+        let mut cam = camera(
+            &dir,
+            vec![torn_at(cut), good(), torn_at(cut), torn_at(cut), good()],
+        );
+        assert_eq!(cam.capture_full().unwrap().len(), 5000);
+        assert_eq!(cam.runner.calls, 2);
+        assert_eq!(cam.runner.timeout, Some(Duration::from_secs(60)));
+        assert_eq!(cam.damaged_frames(), 0);
+        // Two refused full-size frames: an error, but the next still gets all its tries.
+        assert_eq!(
+            error(cam.capture_full()),
+            "no good full-size frame: damaged frame"
+        );
+        assert_eq!(cam.runner.calls, 4);
+        assert!(cam.capture().is_ok());
+        assert_eq!(cam.runner.timeout, Some(Duration::from_secs(15)));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn full_size_args_differ_from_a_stills_only_in_size_and_quality() {
+        let cfg = UvcConfig::new("/dev/seedypod/camera-upper");
+        let (dev, out) = (Path::new("/dev/video0"), Path::new("/tmp/x.jpg"));
+        let still = shot_args(&cfg, Shot::Still, dev, out, None);
+        let full = shot_args(&cfg, Shot::Full, dev, out, None);
+        assert_eq!(still, fswebcam_args(&cfg, dev, out, None));
+        assert!(full.windows(2).any(|w| w == ["-r", "2592x1944"]));
+        assert!(full.windows(2).any(|w| w == ["--jpeg", "95"]));
+        let differ: Vec<_> = still.iter().zip(&full).filter(|(a, b)| a != b).collect();
+        assert_eq!(differ.len(), 2);
     }
 
     #[test]

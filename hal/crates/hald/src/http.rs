@@ -81,6 +81,7 @@ pub fn router(state: AppState) -> Router {
         .route("/system", get(system))
         .route("/state", get(snapshot))
         .route("/camera/{file}", get(camera))
+        .route("/camera/full/{file}", get(camera_full))
         .with_state(state)
 }
 
@@ -164,6 +165,34 @@ async fn camera(State(s): State<AppState>, Path(file): Path<String>) -> Response
             e.to_string(),
         )
             .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `/camera/full/upper.jpg`: a pod-ID still at the sensor's full size (#224).
+/// It waits its turn on the same mutex as the regular stills, but reports
+/// nothing to `camera_missing` and sends no link headers: a full-size frame
+/// that fails says nothing core's link watch should count.
+async fn camera_full(State(s): State<AppState>, Path(file): Path<String>) -> Response {
+    let Some(name) = camera_name(&file) else {
+        return (StatusCode::NOT_FOUND, "expected /camera/full/<name>.jpg").into_response();
+    };
+    let Some(cam) = s.cameras.get(name).cloned() else {
+        return (StatusCode::NOT_FOUND, format!("no camera {name:?}")).into_response();
+    };
+    let captured =
+        tokio::task::spawn_blocking(move || cam.lock().unwrap_or_else(|e| e.into_inner()).capture_full())
+            .await;
+    match captured {
+        Ok(Ok(bytes)) => (
+            [
+                (header::CONTENT_TYPE, "image/jpeg".to_owned()),
+                (header::CACHE_CONTROL, "no-store".to_owned()),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Ok(Err(e)) => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -463,6 +492,33 @@ mod tests {
         let res = camera(State(state), Path("lower.jpg".to_owned())).await;
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(res.headers()["x-seedypod-damaged-frames"], "0");
+    }
+
+    #[tokio::test]
+    async fn a_full_size_still_is_served_without_touching_camera_missing() {
+        let (app, rx, _) = app();
+        let (st, ct, body) = get_path(&app, "/camera/full/upper.jpg").await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(ct.as_deref(), Some("image/jpeg"));
+        assert_eq!(&body[..2], &[0xFF, 0xD8]);
+
+        // A camera without one says so, and the alert hears nothing either way.
+        let (st, _, body) = get_path(&app, "/camera/full/lower.jpg").await;
+        assert_eq!(st, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            String::from_utf8(body).unwrap(),
+            "lower camera has no full-size still"
+        );
+        assert!(rx.try_recv().is_err());
+
+        let (st, _, _) = get_path(&app, "/camera/full/side.jpg").await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+        let (st, _, _) = get_path(&app, "/camera/full/../upper.jpg").await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+
+        // The regular still is unchanged.
+        let (st, _, _) = get_path(&app, "/camera/upper.jpg").await;
+        assert_eq!(st, StatusCode::OK);
     }
 
     #[test]

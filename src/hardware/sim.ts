@@ -201,6 +201,10 @@ export class SimHal implements HalClient {
     return new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9])
   }
 
+  async captureFull(camera: 'upper' | 'lower'): Promise<Uint8Array> {
+    return this.captureStill(camera)
+  }
+
   subscribe(listener: (event: HalEvent) => void): Unsubscribe {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)

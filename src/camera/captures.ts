@@ -54,6 +54,14 @@ export function isWholeJpeg(b: Uint8Array): boolean {
 
 type Cam = 'upper' | 'lower'
 
+/** The latest full-size pod-ID still of a camera (#224). Kept apart from the captures. */
+export interface PodIdStill {
+  camera: Cam
+  ts: string
+  path: string
+  bytes: number
+}
+
 /**
  * The newest stored still for `camera`, without taking one. HomeKit and Home
  * Assistant show this rather than waking the camera (ADR 0027).
@@ -73,6 +81,7 @@ export class CaptureService {
   private readonly failing = new Map<Cam, string>()
   private readonly link: LinkWatch
   private timer: ReturnType<typeof setInterval> | null = null
+  private readonly podIds = new Map<Cam, PodIdStill>()
 
   constructor(private readonly o: CaptureServiceOptions) {
     this.now = o.now ?? (() => new Date())
@@ -142,6 +151,31 @@ export class CaptureService {
       await this.o.analysis?.removeArtifacts(dropped.id)
     }
     return row
+  }
+
+  /**
+   * A full-size still for reading the pods' dot codes (#224). It is not a
+   * capture: it isn't listed, scored, pruned with them or counted by the link
+   * watch, and a failure raises no alert. Only the latest per camera is kept,
+   * overwritten each time.
+   */
+  async capturePodId(camera: Cam): Promise<{ still: PodIdStill, bytes: Uint8Array }> {
+    if (!this.o.hal.captureFull) throw new Error('this hardware has no full-size stills')
+    const bytes = await this.o.hal.captureFull(camera)
+    if (bytes.byteLength < this.minBytes || !isWholeJpeg(bytes)) throw new Error(`${camera} camera returned no usable full-size image`)
+    const ts = this.now().toISOString()
+    const path = await this.o.sink.put(`podid/${camera}.jpg`, bytes)
+    const still: PodIdStill = { camera, ts, path, bytes: bytes.byteLength }
+    this.podIds.set(camera, still)
+    return { still, bytes }
+  }
+
+  /** The latest pod-ID still of `camera` taken since core started, if any. */
+  async podId(camera: Cam): Promise<{ still: PodIdStill, bytes: Uint8Array } | null> {
+    const still = this.podIds.get(camera)
+    if (!still) return null
+    const bytes = await this.o.sink.get(still.path)
+    return bytes ? { still, bytes } : null
   }
 
   async bytes(id: string): Promise<{ capture: Capture, bytes: Uint8Array } | null> {

@@ -191,6 +191,12 @@ pub struct CameraEntry {
     /// frames are being refused; damaged frames then reach the store.
     #[serde(default = "default_inspect_frames")]
     pub inspect_frames: bool,
+    /// The pod-ID still's size (#224), taken only when core asks for one.
+    #[serde(default = "default_full_resolution")]
+    pub full_resolution: String,
+    /// `fswebcam` is killed after this long on a pod-ID still.
+    #[serde(default = "default_full_capture_timeout_s")]
+    pub full_capture_timeout_s: u64,
 }
 
 fn default_resolution() -> String {
@@ -214,6 +220,12 @@ fn default_capture_timeout_s() -> u64 {
 fn default_inspect_frames() -> bool {
     true
 }
+fn default_full_resolution() -> String {
+    "2592x1944".into()
+}
+fn default_full_capture_timeout_s() -> u64 {
+    60
+}
 
 impl CameraEntry {
     fn stock(name: &str, fallback: &str) -> Self {
@@ -228,6 +240,8 @@ impl CameraEntry {
             capture_retry_ms: default_capture_retry_ms(),
             capture_timeout_s: default_capture_timeout_s(),
             inspect_frames: default_inspect_frames(),
+            full_resolution: default_full_resolution(),
+            full_capture_timeout_s: default_full_capture_timeout_s(),
         }
     }
 }
@@ -592,6 +606,9 @@ impl Config {
             if c.capture_timeout_s == 0 {
                 errs.push(format!("camera {:?}: capture_timeout_s must be ≥ 1", c.name));
             }
+            if c.full_capture_timeout_s == 0 {
+                errs.push(format!("camera {:?}: full_capture_timeout_s must be ≥ 1", c.name));
+            }
         }
         let mut addrs = std::collections::BTreeMap::new();
         for (i, s) in self.sensors().iter().enumerate() {
@@ -741,6 +758,8 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # capture_retry_ms = 1000
 # capture_timeout_s = 15
 # inspect_frames = true
+# full_resolution = "2592x1944"   # pod-ID stills only, when core asks (#224)
+# full_capture_timeout_s = 60
 # [[camera]]
 # name = "lower"
 # device = "/dev/seedypod/camera-lower"
@@ -882,6 +901,32 @@ capture_timeout_s = 0
         )
         .unwrap();
         assert!(c.validate().iter().any(|e| e.contains("capture_timeout_s")));
+    }
+
+    #[test]
+    fn a_camera_takes_full_size_pod_id_stills_by_default() {
+        let c: Config = toml::from_str(
+            r#"
+[[camera]]
+name = "upper"
+device = "/dev/video0"
+"#,
+        )
+        .unwrap();
+        assert_eq!(c.camera[0].resolution, "1280x960");
+        assert_eq!(c.camera[0].full_resolution, "2592x1944");
+        assert_eq!(c.camera[0].full_capture_timeout_s, 60);
+        assert!(c.validate().is_empty());
+        let c: Config = toml::from_str(
+            r#"
+[[camera]]
+name = "upper"
+device = "/dev/video0"
+full_capture_timeout_s = 0
+"#,
+        )
+        .unwrap();
+        assert!(c.validate().iter().any(|e| e.contains("full_capture_timeout_s")));
     }
 
     /// `install-hal --version <older>` runs an older hald on a file written by a

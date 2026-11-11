@@ -67,6 +67,18 @@ describe('phase 3 routers', () => {
     await expect(c.camera.get({ id: 'pruned' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 
+  it('takes a pod-ID still on demand without adding a capture (#224)', async () => {
+    const { c, hal } = caller()
+    await expect(c.camera.capturePodId({ camera: 'upper' })).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' })
+    const still = new Uint8Array(9000)
+    still.set([0xFF, 0xD8])
+    still.set([0xFF, 0xD9], 8998)
+    hal.captureFull = async () => still
+    const got = await c.camera.capturePodId({ camera: 'upper' })
+    expect(got).toMatchObject({ camera: 'upper', bytes: 9000, url: '/api/camera/upper/podid.jpg' })
+    expect(await c.camera.list({ limit: 10 })).toEqual([])
+  })
+
   it('telemetry history and light hours', async () => {
     const { c, store } = caller()
     store.telemetry.add([{ ts: '2026-10-31T11:00:00.000Z', sensor: 'air_temp', value: 21 }])

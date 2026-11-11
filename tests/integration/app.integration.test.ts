@@ -51,6 +51,19 @@ describe('core HTTP surface', () => {
     expect(Buffer.compare(Buffer.from(await r.arrayBuffer()), Buffer.from(byId))).toBe(0)
   })
 
+  it('serves the latest pod-ID still apart from the captures (#224)', async () => {
+    expect((await fetch(`${base}/api/camera/upper/podid.jpg`)).status).toBe(404)
+    expect((await fetch(`${base}/api/camera/side/podid.jpg`)).status).toBe(404)
+    const before = await fetch(`${base}/api/captures?camera=upper`).then(r => r.json()) as unknown[]
+    const taken = await fetch(`${base}/api/camera/upper/podid`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(r => r.json()) as { url: string, ts: string }
+    expect(taken.url).toBe('/api/camera/upper/podid.jpg')
+    const r = await fetch(`${base}${taken.url}`)
+    expect(r.status).toBe(200)
+    expect(r.headers.get('content-type')).toBe('image/jpeg')
+    expect(r.headers.get('last-modified')).toBe(new Date(taken.ts).toUTCString())
+    expect(await fetch(`${base}/api/captures?camera=upper`).then(x => x.json())).toEqual(before)
+  })
+
   it('serves the boot log as a download when hald has written one', async () => {
     expect((await fetch(`${base}/api/system/boot-log`)).status).toBe(404)
     const core = createCore({ hal, store: new MemoryStore(), events: createEventBus(), version: 'test', bootLog: async () => 't hub=1\n' })

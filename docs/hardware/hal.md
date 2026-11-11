@@ -77,6 +77,7 @@ prints every key with its default; the important ones:
 | `[ha]` | `discovery`, `prefix` | true, `homeassistant` | |
 | `[[camera]]` | `name`, `device`, `fallback`, `resolution`, `palette`, `skip_frames` | upper `/dev/seedypod/camera-upper` (fallback `/dev/video0`), lower `/dev/seedypod/camera-lower` (fallback `/dev/video2`), 1280x960, MJPEG, 15 | See [Camera names](#camera-names) |
 | `[[camera]]` | `capture_attempts`, `capture_retry_ms`, `capture_timeout_s`, `inspect_frames` | 3, 1000, 15, true | See [Stills](#stills) |
+| `[[camera]]` | `full_resolution`, `full_capture_timeout_s` | 2592x1944, 60 | See [Pod-ID stills](#pod-id-stills) |
 
 ### Device list
 
@@ -239,6 +240,7 @@ the error.
 | `GET /system` | `SystemInfo` (same payload as the `system` topic; reflects sensors added at runtime) |
 | `GET /state` | `{unitId, ts, sensors{id: Reading}, actuators{id: ActuatorState}, alerts{kind: Alert}, lightHoursTotal}` |
 | `GET /camera/<name>.jpg` | `image/jpeg`; one capture at a time per camera; `503` with the reason when the camera fails (and `camera_missing` is raised) |
+| `GET /camera/full/<name>.jpg` | `image/jpeg` at `full_resolution` (2592x1944), for reading pod dot codes (#224); waits on the same per-camera lock; `503` with the reason on failure, which raises nothing |
 
 ### Stills
 
@@ -288,6 +290,16 @@ After the last attempt `/camera/<name>.jpg` returns `503` with the reason and
 failed has produced a good frame, so one good camera can't hide the other. If
 good frames from a camera are being refused (the log says why, under `capture
 rejected`), set `inspect_frames = false` for it; damaged frames then get through.
+
+### Pod-ID stills
+
+Core asks for an occasional still at the sensor's full 2592x1944
+(`/camera/full/<name>.jpg`), where the yCube dot codes under each pod are big
+enough to read (#224). It runs the same `fswebcam` checks as a regular still, at
+`--jpeg 95`, with up to two attempts and `full_capture_timeout_s` (60) each; it
+took 13 s and 7 CPU-s on a Pi Zero W. It never changes the regular stills: their
+size, the one-try mode of a failing camera, the damaged-frame count and
+`camera_missing` all ignore it.
 
 ## Camera names
 

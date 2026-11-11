@@ -4,6 +4,7 @@ import { publicProcedure, router } from '../trpc'
 
 const Cam = z.enum(['upper', 'lower'])
 const CaptureOut = z.object({ id: z.string(), camera: Cam, ts: z.string(), path: z.string(), bytes: z.number(), url: z.string() })
+const PodIdOut = z.object({ camera: Cam, ts: z.string(), bytes: z.number(), url: z.string() })
 
 export const cameraRouter = router({
   list: publicProcedure
@@ -28,6 +29,19 @@ export const cameraRouter = router({
       try {
         const c = await ctx.captures.capture(input.camera)
         return { ...c, url: `/api/captures/${c.id}.jpg` }
+      }
+      catch (e) {
+        throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: (e as Error).message })
+      }
+    }),
+  capturePodId: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/camera/{camera}/podid', tags: ['camera'], summary: 'Take a full-size pod-ID still now (#224); not a capture, so not listed, scored or in the timelapse' } })
+    .input(z.object({ camera: Cam }))
+    .output(PodIdOut)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { still } = await ctx.captures.capturePodId(input.camera)
+        return { camera: still.camera, ts: still.ts, bytes: still.bytes, url: `/api/camera/${still.camera}/podid.jpg` }
       }
       catch (e) {
         throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: (e as Error).message })
