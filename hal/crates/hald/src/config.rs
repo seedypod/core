@@ -120,8 +120,8 @@ pub struct UsbRecovery {
     pub enabled: bool,
     /// Seconds after boot before an empty bus counts as a failure.
     pub boot_wait_s: u64,
-    /// Root hub re-probes before anything else. Off by default for now; some hubs
-    /// have connected late after them, and whether they helped is still being tested.
+    /// Root hub re-probes before anything else. Some hubs have connected late after
+    /// them; whether they helped or the wait did is still being tested.
     pub attempts: u32,
     /// Seconds to wait for the bus to fill after each re-probe.
     pub settle_s: u64,
@@ -382,7 +382,7 @@ impl Default for UsbRecovery {
         Self {
             enabled: true,
             boot_wait_s: 90,
-            attempts: 0,
+            attempts: 2,
             settle_s: 20,
             reboot_attempts: 0,
             busy_checks: 20,
@@ -724,7 +724,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # reboot_attempts = 0     # reboots in a row; 0 (the default) turns this off
 # busy_checks = 20        # waits for the pump and dosers to finish first,
 # busy_wait_s = 60        # then leaves this boot alone
-# attempts = 0            # root hub re-probes before any reboot
+# attempts = 2            # root hub re-probes before any reboot
 # settle_s = 20
 
 # Cameras get stable names from udev rules keyed on their USB port

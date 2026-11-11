@@ -73,7 +73,7 @@ prints every key with its default; the important ones:
 | `[button]` | `debounce_ms`, `double_window_ms`, `long_press_ms`, `setup_hold_ms`, `active_low`, `pump_run_s` | 30, 400, 1000, 10000, true, 300 | |
 | `[dosing]` | `enabled` | **false** | Phase 6.3, ADR-0014: off until you turn it on. |
 | `[dosing]` | `ml_per_s`, `default_dose_ml`, `max_single_ml`, `max_daily_ml`, `max_doses_per_day` | 1, 5, 10, 30, 4 | Hard daily cap; lockout after N doses until acknowledged. |
-| `[usb_recovery]` | `enabled`, `boot_wait_s`, `reboot_attempts`, `busy_checks`, `busy_wait_s`, `attempts`, `settle_s` | true, 90, **0**, 20, 60, 0, 20 | See [USB recovery](#usb-recovery) |
+| `[usb_recovery]` | `enabled`, `boot_wait_s`, `reboot_attempts`, `busy_checks`, `busy_wait_s`, `attempts`, `settle_s` | true, 90, **0**, 20, 60, 2, 20 | See [USB recovery](#usb-recovery) |
 | `[ha]` | `discovery`, `prefix` | true, `homeassistant` | |
 | `[[camera]]` | `name`, `device`, `fallback`, `resolution`, `palette`, `skip_frames` | upper `/dev/seedypod/camera-upper` (fallback `/dev/video0`), lower `/dev/seedypod/camera-lower` (fallback `/dev/video2`), 1280x960, MJPEG, 15 | See [Camera names](#camera-names) |
 | `[[camera]]` | `capture_attempts`, `capture_retry_ms`, `capture_timeout_s`, `inspect_frames` | 3, 1000, 15, true | See [Stills](#stills) |
@@ -483,10 +483,10 @@ which outlasts a full pump run, then leaves this boot alone. It also won't reboo
   left alone. It only acts on the Pi's `dwc_otg` and `dwc2` controllers, never in
   gadget mode. Wi-Fi is on SDIO, not USB.
 
-`attempts` adds root hub re-probes before any reboot. It's off by default for now. In
+`attempts` adds root hub re-probes before any reboot, 2 by default. In
 a controlled series, 7 of 40 boots found the hub at 123-151 s, after re-probes at about
 90 and 111 s, and none rebooted. It isn't known yet whether the re-probes or the wait
-did it, so the defaults (`boot_wait_s = 90`, `attempts = 0`, `reboot_attempts = 0`)
+did it, so the defaults (`boot_wait_s = 90`, `attempts = 2`, `reboot_attempts = 0`)
 are pending that test. **Don't rebind the USB controller:** binding `dwc_otg` again
 segfaults the kernel, and a hung kernel leaves the pump's GPIO as it was.
 `rebind_controller` did that once; it now has no effect, and stays only so a
