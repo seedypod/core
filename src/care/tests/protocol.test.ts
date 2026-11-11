@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { createEventBus } from '../../lib/eventBus'
 import { createMcpServer } from '../../mcp/server'
@@ -232,6 +232,63 @@ describe('grow protocols (ADR-0030)', () => {
     expect(runProtocol(store, day(23)).notices).toEqual([])
   })
 
+  it('takes only one of your own schedules as what comes after, never a built-in preset', () => {
+    const store = tower({ cycles: 'young' })
+    expect(() => setProtocolThen(store, day(15), { kind: 'schedule', scheduleId: 'preset:fruiting' })).toThrow(/one of the protocol's presets/)
+    expect(store.grow.current()).toMatchObject({ thenKind: 'stay', thenScheduleId: null })
+    // So maintenance puts its own preset on, as ever.
+    expect(runProtocol(store, day(22)).followed).toMatchObject({ to: 'mature' })
+  })
+
+  it('marks a queued switch done only once its cycles are written, so a failed write tries again', () => {
+    const store = tower({ cycles: 'young' })
+    store.scheduleLibrary.upsert(summer, 't')
+    setProtocolThen(store, day(15), { kind: 'schedule', scheduleId: 'summer' })
+    const upsert = store.schedules.upsert.bind(store.schedules)
+    const fail = vi.spyOn(store.schedules, 'upsert').mockImplementationOnce(() => {
+      throw new Error('card full')
+    })
+    expect(() => runProtocol(store, day(22))).toThrow('card full')
+    expect(store.grow.current()?.thenDoneAt).toBeNull()
+    fail.mockImplementation(upsert)
+    expect(runProtocol(store, day(22)).followed).toMatchObject({ schedule: { id: 'summer' } })
+    expect(store.grow.current()?.thenDoneAt).toBe(day(22).toISOString())
+    // Switching now: a failed write leaves Then as it was.
+    const now = tower({ cycles: 'young' })
+    now.scheduleLibrary.upsert(summer, 't')
+    vi.spyOn(now.schedules, 'upsert').mockImplementationOnce(() => {
+      throw new Error('card full')
+    })
+    expect(() => setProtocolThen(now, day(15), { kind: 'schedule', scheduleId: 'summer', when: 'now' })).toThrow('card full')
+    expect(now.grow.current()).toMatchObject({ thenKind: 'stay', thenDoneAt: null })
+  })
+
+  it('fixes the track only on watering it recognises past germination: edited, paused or no cycles leave it to the crops', () => {
+    for (const cycles of ['hand', 'none'] as const) {
+      const store = tower({ cycles })
+      runProtocol(store, day(10))
+      expect(store.grow.current()?.protocolId, cycles).toBeNull()
+      store.pods.update(2, { plant: 'Red Cherry Tomato', plantedAt: '2026-11-09', status: 'seeded' }, '2026-11-09T12:00:00Z')
+      expect(protocolState(readTower(store), day(11)).protocol.id, cycles).toBe('fruiting')
+    }
+    const paused = tower({ cycles: 'seedlings' })
+    const s = paused.schedules.list().find(x => x.id === 'water-seedlings-0800')
+    if (s) paused.schedules.upsert({ ...s, enabled: false })
+    runProtocol(paused, day(10))
+    expect(paused.grow.current()?.protocolId).toBeNull()
+    // Seedlings watering as written is past germination: fixed.
+    const seen = tower({ cycles: 'seedlings' })
+    runProtocol(seen, day(10))
+    expect(seen.grow.current()?.protocolId).toBe('greens-herbs')
+  })
+
+  it('counts a custom fruiting crop when it picks the track', () => {
+    const store = tower({ plant: 'Okra' })
+    expect(protocolState(readTower(store), day(2)).protocol.id).toBe('greens-herbs')
+    store.customPlants.upsert({ id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [2, 3], careLevel: null, size: 'large', succession: 'fast-fruiting', source: 'user' }, 't')
+    expect(protocolState(readTower(store), day(2)).protocol.id).toBe('fruiting')
+  })
+
   it('switches now when asked, or when queued in maintenance; refuses a schedule it doesn\'t have', () => {
     const store = tower({ cycles: 'seedlings' })
     store.scheduleLibrary.upsert(summer, 't')
@@ -327,6 +384,18 @@ describe('grow protocols (ADR-0030)', () => {
 })
 
 describe('your schedules (ADR-0030)', () => {
+  it('counts a saved schedule active only when each live cycle is a distinct one of its cycles, under its own id', () => {
+    const store = tower({ cycles: 'none' })
+    store.scheduleLibrary.upsert(summer, 't')
+    activateEntry(store, libraryEntry(readTower(store), 'summer', day(2)) ?? (null as never), day(2))
+    expect(activeEntryId(readTower(store))).toBe('summer')
+    // The 17:00 cycle moved to 07:00 by hand: two 07:00 runs aren't the schedule's 07:00 and 17:00.
+    const late = store.schedules.list().find(s => s.id === 'water-own-summer-1700')
+    if (late?.kind === 'pump') store.schedules.upsert({ ...late, spec: { minute: 420, durationS: 300 } })
+    expect(activeEntryId(readTower(store))).toBeNull()
+    expect(protocolReport(store, day(2)).water).toBe('edited')
+  })
+
   it('activates one: its cycles replace the pump\'s, its light preset turns the other curves off; active is what the pump runs', () => {
     const store = tower({ cycles: 'mature' })
     store.schedules.upsert({ ...light, id: 'evening', name: 'Evening', enabled: false })
@@ -420,6 +489,20 @@ describe('your schedules (ADR-0030)', () => {
 })
 
 describe('the protocol over the API, MCP and the care engine', () => {
+  it('answers an action with what the care engine did on it: Advance returns the watering it moved', async () => {
+    const store = tower()
+    const c = createCore({ hal: new SimHal({ tickMs: 0 }), store, events: createEventBus(), version: 'test', now: () => day(2) })
+    c.care.start()
+    try {
+      const caller = createCallerFactory(appRouter)(c.ctx)
+      expect(await caller.protocol.advance()).toMatchObject({ stage: 'seedlings', water: 'preset', activeScheduleId: 'preset:seedlings' })
+      expect(pumps(store)).toEqual(['water-seedlings-0800'])
+    }
+    finally {
+      c.care.stop()
+    }
+  })
+
   function core(o: Parameters<typeof tower>[0] = {}, at = 2) {
     const store = tower(o)
     const events = createEventBus()

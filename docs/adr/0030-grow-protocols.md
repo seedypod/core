@@ -89,13 +89,13 @@ that gap. The existing citation test covers protocols too.
 
 | Column | Meaning |
 |---|---|
-| `protocolId` | `null` until germination ends: chosen by the planted crops on each tick. Fixed when the first stage after germination is applied, so a tomato planted on day 30 doesn't move a greens tower to the fruiting track |
+| `protocolId` | `null` until germination ends: chosen by the planted crops (custom catalog plants included) on each tick. Fixed when the runner applies or recognises a stage after germination as written, or on Advance, so a tomato planted on day 30 doesn't move a greens tower to the fruiting track; while the watering is edited, paused or absent it stays open |
 | `shiftDays` | Days added to days-since-sowing to get the protocol day. Advance and Release change it; `0` by default |
 | `holdStageId`, `holdSince` | The held stage, or both `null` |
 | `thenKind` | `stay`, `schedule` or `remind`; `stay` by default |
 | `thenScheduleId` | The library schedule for `schedule` |
 | `thenDoneAt` | When the chosen Then fired; a new choice clears it |
-| `stageStarts` | JSON `{ stageId: date }`: the day each begun stage began, recorded when Advance or Release moves the clock |
+| `stageStarts` | JSON `{ stageId: date }`: the day each begun stage began, recorded when Advance or Release moves the clock; cleared when the sowing day moves (`grow.setStart`) |
 
 **Protocol day** = days since the grow cycle's sowing date (on the unit's
 calendar, as today) + `shiftDays`. The stage is the one whose `from`–`to`
@@ -119,7 +119,9 @@ Maintenance is ongoing, so Then is never forced. It is a choice, and it takes
 effect when it is made:
 
 - **Stay in maintenance** (default): nothing fires.
-- **Switch to my schedule**: now, or queued to start when maintenance begins.
+- **Switch to my schedule**: one of your own (a built-in preset is the
+  protocol's, not what comes after it), now, or queued to start when
+  maintenance begins.
   Queued is the only switch the runner makes on its own, and only because
   someone chose it. Picking "when maintenance begins" while already in
   maintenance switches now.
@@ -128,7 +130,8 @@ effect when it is made:
   planner's 30 days a month, ADR 0024), the latest across planted pods. With no
   catalog crop planted there is no day, and the option says so.
 
-Each fires once, recorded in `thenDoneAt`. Choosing a Then again clears it,
+Each fires once, recorded in `thenDoneAt` once its write has gone through, so a
+failed switch tries again on the next tick. Choosing a Then again clears it,
 so a switch queued after going back to the protocol fires too; choosing the
 reminder again doesn't repeat one that fired. A queued switch applies only
 over a built-in preset as written (either track's); over cycles changed by

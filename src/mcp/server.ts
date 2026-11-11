@@ -402,7 +402,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async () => text(await caller.protocol.advance()))
 
   server.registerTool('set_protocol_then', {
-    description: 'Choose what comes after the grow protocol\'s stages: stay (keep maintenance, the default; nothing fires), schedule (switch to schedule_id from list_schedule_library, when now or when maintenance begins, the default; already in maintenance it switches now), or remind (a Needs-you item at the planted crops\' first harvest, from the catalog; refused with no catalog crop). Needs an open grow cycle. Confirm with the person first.',
+    description: 'Choose what comes after the grow protocol\'s stages: stay (keep maintenance, the default; nothing fires), schedule (switch to schedule_id, one of your own from list_schedule_library, not a preset:<id>, when now or when maintenance begins, the default; already in maintenance it switches now), or remind (a Needs-you item at the planted crops\' first harvest, from the catalog; refused with no catalog crop). Needs an open grow cycle. Confirm with the person first.',
     inputSchema: { kind: z.enum(['stay', 'schedule', 'remind']), schedule_id: z.string().optional(), when: z.enum(['now', 'maintenance']).optional() },
   }, async i => text(await caller.protocol.setThen({ kind: i.kind, scheduleId: i.schedule_id, when: i.when ?? 'maintenance' })))
 

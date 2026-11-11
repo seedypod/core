@@ -9,6 +9,7 @@
  * harvest), never a date. Off with Settings → followGrowCycle.
  */
 import { LIGHT_PRESETS } from '../scheduler/lightPlan'
+import type { Catalog } from '../plants/catalog'
 import { advances, dayNumber, daysSinceSowing, plantCategories, presetDays, presetRuns, PUMP_PRESETS, sowDate, type PumpPreset, type PumpPresetId } from '../scheduler/pumpPlan'
 import { localTime } from '../scheduler/time'
 import type { GrowCycle, SavedSchedule, Store, ThenKind } from '../store/types'
@@ -108,9 +109,10 @@ export const PROTOCOLS: readonly Protocol[] = [
 
 export const findProtocol = (id: string | null | undefined) => PROTOCOLS.find(p => p.id === id) ?? null
 
-/** One protocol for the tower, by the planted crops: any fruiting crop picks Fruiting. */
-export function protocolFor(plants: ReadonlyArray<string | null>): Protocol {
-  return (plantCategories(plants).includes('fruiting') ? PROTOCOLS[1] : PROTOCOLS[0]) as Protocol
+/** One protocol for the tower, by the planted crops: any fruiting crop picks Fruiting, a custom one included when `catalog` has it. */
+export function protocolFor(plants: ReadonlyArray<string | null>, catalog?: Pick<Catalog, 'find'>): Protocol {
+  const categories = catalog ? plants.flatMap(p => (p ? catalog.find(p)?.category ?? [] : [])) : plantCategories(plants)
+  return (categories.includes('fruiting') ? PROTOCOLS[1] : PROTOCOLS[0]) as Protocol
 }
 
 const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
@@ -147,7 +149,7 @@ export interface ProtocolState {
 export function protocolState(t: Tower, now: Date): ProtocolState {
   const tz = t.settings.timezone
   const { cycle, planted: pods } = t
-  const protocol = findProtocol(cycle?.protocolId) ?? protocolFor(pods.map(p => p.plant))
+  const protocol = findProtocol(cycle?.protocolId) ?? protocolFor(pods.map(p => p.plant), t.catalog)
   const sownOn = sowDate(cycle?.startedAt, pods.map(p => p.plantedAt), tz)
   const days = pods.length ? daysSinceSowing(cycle?.startedAt, pods.map(p => p.plantedAt), now, tz) : null
   const today = localTime(now, tz).date
@@ -203,18 +205,22 @@ export function runProtocol(store: Store, now: Date): ProtocolRun {
     run.notices.push({ kind: HARVEST_ALERT, detail: `First harvest is about now, day ${days} since sowing, by the catalog. Watering stays on ${protocol.name} maintenance; switch to one of your schedules on Grow if you want a change.` })
   }
   if (!t.settings.followGrowCycle) return run
-  // Past germination the track is fixed, so a crop planted later doesn't switch it.
-  if (cycle && cycle.protocolId === null && protocol.stages.indexOf(stage) > 0) store.grow.setProtocol({ protocolId: protocol.id })
+  // The track is fixed once its watering is past germination, recognised here or moved on below, so a crop planted later doesn't switch it.
+  const fix = (s: ProtocolStage | null) => {
+    if (cycle && cycle.protocolId === null && s && protocol.stages.indexOf(s) > 0) store.grow.setProtocol({ protocolId: protocol.id })
+  }
+  fix(st.waterStage)
 
-  // A switch queued for maintenance replaces a preset's watering when maintenance begins, once.
+  // A switch queued for maintenance replaces a preset's watering when maintenance begins, once; marked done only once it's written.
   if (stage === protocol.stages.at(-1) && cycle?.thenKind === 'schedule' && cycle.thenScheduleId && !cycle.thenDoneAt) {
-    store.grow.setProtocol({ thenDoneAt: now.toISOString() })
     const entry = libraryEntry(t, cycle.thenScheduleId, now)
     if (entry && st.applied) {
       activateEntry(store, entry, now)
+      store.grow.setProtocol({ thenDoneAt: now.toISOString() })
       run.followed = { from: st.applied.id, to: null, schedule: { id: entry.id, name: entry.name }, days, detail: `Watering switched to ${entry.name}: maintenance began on day ${days}, as you chose. Use ${preset(stage.water).name} from Your schedules on Grow to go back to the protocol.` }
       return run
     }
+    store.grow.setProtocol({ thenDoneAt: now.toISOString() })
     if (entry && st.own?.id !== entry.id) {
       const why = st.own ? `another of your schedules, ${st.own.name}, is on` : st.water === 'none' ? 'there are no pump cycles' : 'the pump cycles were changed by hand'
       run.notices.push({ kind: THEN_ALERT, detail: `Maintenance began on day ${days}, but watering didn't switch to ${entry.name}: ${why}. Use it from Your schedules on Grow to switch now.` })
@@ -230,6 +236,7 @@ export function runProtocol(store: Store, now: Date): ProtocolRun {
   }
   if (!advances(water.water, stage.water)) return run
   run.followed = moveWatering(store, { cycles, from: water.water, to: preset(stage.water), days, sowDay, light: todaysLight(t.schedules, now, t.settings.timezone) })
+  fix(stage)
   return run
 }
 
@@ -404,10 +411,11 @@ export function setProtocolThen(store: Store, now: Date, then: { kind: ThenKind,
   }
   const entry = then.scheduleId ? libraryEntry(readTower(store), then.scheduleId, now) : null
   if (!entry) throw new ProtocolError(then.scheduleId ? `No schedule ${then.scheduleId} in Your schedules.` : 'Pick one of Your schedules to switch to.')
+  // What comes after the protocol is one of yours; the built-in presets are the protocol's own stages.
+  if (entry.kind !== 'own') throw new ProtocolError(`${entry.name} is one of the protocol's presets: pick one of your own schedules to switch to.`)
   const inMaintenance = st.stage !== null && st.stage === st.protocol.stages.at(-1)
   const nowToo = then.when === 'now' || inMaintenance
+  if (nowToo) activateEntry(store, entry, now)
   store.grow.setProtocol({ thenKind: 'schedule', thenScheduleId: entry.id, thenDoneAt: nowToo ? now.toISOString() : null })
-  if (!nowToo) return null
-  activateEntry(store, entry, now)
-  return entry.id
+  return nowToo ? entry.id : null
 }

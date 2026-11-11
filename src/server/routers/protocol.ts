@@ -44,17 +44,21 @@ export const ProtocolOut = z.object({
 
 const now = (ctx: Context) => (ctx.now ?? (() => new Date()))()
 
-/** Run a protocol action, refusing what it can't do, and tell the care engine the grow cycle moved. */
-function act<T>(ctx: Context, fn: () => T): T {
+/**
+ * Run a protocol action, refusing what it can't do; tell the care engine the
+ * grow cycle moved, which it acts on as the event is emitted; then report, so
+ * the answer has any watering the engine moved.
+ */
+function act(ctx: Context, fn: () => void) {
   try {
-    const out = fn()
-    ctx.events.emit({ kind: 'mutation', path: 'grow' })
-    return out
+    fn()
   }
   catch (err) {
     if (err instanceof ProtocolError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message })
     throw err
   }
+  ctx.events.emit({ kind: 'mutation', path: 'grow' })
+  return protocolReport(ctx.store, now(ctx))
 }
 
 export const protocolRouter = router({
@@ -66,25 +70,18 @@ export const protocolRouter = router({
     .meta({ openapi: { method: 'POST', path: '/protocol/hold', tags: ['grow'], summary: 'Hold the current stage: it stays until release, and later stages start that many days later' } })
     .input(z.void())
     .output(ProtocolOut)
-    .mutation(({ ctx }) => act(ctx, () => {
-      holdProtocol(ctx.store, now(ctx))
-      return protocolReport(ctx.store, now(ctx))
-    })),
+    .mutation(({ ctx }) => act(ctx, () => holdProtocol(ctx.store, now(ctx)))),
   release: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/protocol/release', tags: ['grow'], summary: 'Release a hold: the stage resumes where it was held' } })
     .input(z.void())
     .output(ProtocolOut)
-    .mutation(({ ctx }) => act(ctx, () => {
-      releaseProtocol(ctx.store, now(ctx))
-      return protocolReport(ctx.store, now(ctx))
-    })),
+    .mutation(({ ctx }) => act(ctx, () => releaseProtocol(ctx.store, now(ctx)))),
   advance: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/protocol/advance', tags: ['grow'], summary: 'Advance to the next stage now; the care engine moves the watering on. Refused in maintenance, the last stage' } })
     .input(z.void())
     .output(ProtocolOut)
     .mutation(({ ctx }) => act(ctx, () => {
       advanceProtocol(ctx.store, now(ctx))
-      return protocolReport(ctx.store, now(ctx))
     })),
   setThen: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/protocol/then', tags: ['grow'], summary: 'Choose what comes after: stay in maintenance; switch to one of Your schedules now, or when maintenance begins; or a reminder at the crops\' first harvest' } })
@@ -93,6 +90,5 @@ export const protocolRouter = router({
     .mutation(({ ctx, input }) => act(ctx, () => {
       const switched = setProtocolThen(ctx.store, now(ctx), input)
       if (switched) ctx.events.emit({ kind: 'schedule', action: 'changed', id: `library:${switched}` })
-      return protocolReport(ctx.store, now(ctx))
     })),
 })

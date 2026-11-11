@@ -66,7 +66,14 @@ export function activeOwn(t: Tower): SavedSchedule | null {
   const id = ownOf(first.id)
   const own = t.saved.find(s => s.id === id)
   if (!own || own.cycles.length !== live.length) return null
-  const asWritten = live.every(c => c.enabled && ownOf(c.id) === own.id && own.cycles.some(w => sameCycle(w, { minute: c.spec.minute, durationS: c.spec.durationS, days: c.days })))
+  // Each live cycle is one saved cycle, under the id activating it wrote, used once: two copies of one run aren't two runs.
+  const left = [...own.cycles]
+  const asWritten = live.every((c) => {
+    const i = left.findIndex(w => c.id === `${ownPrefix(own.id)}${hhmm(w.minute).replace(':', '')}` && sameCycle(w, { minute: c.spec.minute, durationS: c.spec.durationS, days: c.days }))
+    if (!c.enabled || i < 0) return false
+    left.splice(i, 1)
+    return true
+  })
   return asWritten ? own : null
 }
 
