@@ -328,4 +328,11 @@ describe('GrowPage: swapping pods', () => {
     expect(calls.swapPods).toHaveBeenCalledWith({ a: 1, b: 2 })
     expect(screen.queryByTestId('swap-banner')).toBeNull()
   })
+
+  it('names an empty pod by number alone while picking', () => {
+    render(<GrowPage />)
+    fireEvent.click(row(3))
+    fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
+    expect(screen.getByTestId('swap-banner').textContent).toContain('Pick the pod to swap pod 3 with.')
+  })
 })
