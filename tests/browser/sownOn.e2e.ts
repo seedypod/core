@@ -7,20 +7,23 @@ async function endCycle(page: Page) {
   expect((await page.request.post('/api/grow/end', { headers: { 'content-type': 'application/json' } })).ok()).toBe(true)
 }
 
-/** Delete every pump cycle the way a person does: Edit, then Delete. */
-async function deleteCycles(page: Page) {
-  const edit = page.getByTestId('pump-cycle-list').getByRole('button', { name: /^Edit / })
-  while (await edit.count()) {
-    await edit.first().click()
-    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-    await expect(page.getByRole('dialog')).toHaveCount(0)
+/**
+ * Delete every pump schedule through the API, until none is left. Not
+ * through the page: right after a load its list can still be empty, and a
+ * count taken then deletes nothing.
+ */
+async function clearPumpCycles(page: Page) {
+  for (let i = 0; i < 5; i++) {
+    const pumps = ((await (await page.request.get('/api/schedules')).json()) as Array<{ id: string, kind: string }>).filter(s => s.kind === 'pump')
+    if (!pumps.length) return
+    for (const s of pumps) expect((await page.request.delete(`/api/schedules/${encodeURIComponent(s.id)}`)).ok()).toBe(true)
   }
+  throw new Error('pump schedules keep coming back')
 }
 
 // Back to no cycles and no grow cycle whatever happened, as the other specs expect.
 test.afterEach(async ({ page }) => {
-  await page.goto('/water')
-  await deleteCycles(page)
+  await clearPumpCycles(page)
   await endCycle(page)
 })
 
@@ -29,8 +32,8 @@ test('water: start germination today, then move the sowing day, fitting every wi
   test.setTimeout(180_000)
   // From no grow cycle and no cycles, whatever earlier specs left.
   await endCycle(page)
+  await clearPumpCycles(page)
   await page.goto('/water')
-  await deleteCycles(page)
   const main = page.getByRole('main')
   const sown = main.getByTestId('sown')
   await sown.getByRole('button', { name: 'Start germination today' }).click()
