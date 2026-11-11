@@ -40,7 +40,7 @@ describe('watering follows the grow cycle', () => {
     expect(followGrowCycle(store, day(7))).toBeNull()
     const change = followGrowCycle(store, day(8))
     expect(change).toMatchObject({ from: 'germination', to: 'seedlings', days: 8 })
-    expect(change?.detail).toMatch(/^Watering moved to Seedlings · days 8–13: 1 × 10 min \(08:00\), day 8 since sowing\./)
+    expect(change?.detail).toMatch(/^Watering moved to Seedlings: 1 × 10 min \(08:00\), day 8 since sowing\./)
     expect(pumps(store)).toEqual(['water-seedlings-0800'])
     // Once moved, nothing more to do until the next stage.
     expect(followGrowCycle(store, day(13))).toBeNull()

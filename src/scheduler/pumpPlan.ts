@@ -22,6 +22,8 @@ export interface PumpPreset {
   /** The word in its cycles' ids, `water-<slug>-HHMM`. */
   slug: string
   name: string
+  /** When it's for, under the name: "Days 8–13". */
+  stage: string
   /** The stage's word in a cycle's name: "Mature · 3× 6 min (14:00)". */
   short: string
   minutes: number[]
@@ -39,11 +41,11 @@ export interface PumpPreset {
 }
 
 export const PUMP_PRESETS: readonly PumpPreset[] = [
-  { id: 'germination', slug: 'germination', name: 'Germination · week 1', short: 'Germination', minutes: [480], durationS: 900, range: { minS: 900, maxS: 900 }, note: 'Gardyn’s germination mode: one 15 min cycle on the sowing day and the next a week later, day 7, so it runs once a week on the sowing weekday.', weekly: true, from: 0, citation: cite(NOTE, 'Germination') },
-  { id: 'seedlings', slug: 'seedlings', name: 'Seedlings · days 8–13', short: 'Seedlings', minutes: [480], durationS: 600, range: { minS: 300, maxS: 900 }, note: 'Once a day after the second germination cycle, while the first leaves open.', from: 8, citation: cite(NOTE, 'Seedlings') },
-  { id: 'young', slug: 'young', name: 'Young plants · weeks 2–3', short: 'Young', minutes: [480, 960], durationS: 360, range: { minS: 300, maxS: 480 }, note: 'Start once a day for 5 min and move to two or three times as the roots grow.', from: 14, citation: cite(NOTE, 'Young plants') },
-  { id: 'mature', slug: 'mature', name: 'Mature greens & herbs · 3+ weeks', short: 'Mature', minutes: [480, 840, 1200], durationS: 360, range: { minS: 300, maxS: 480 }, note: 'Spread across the light hours.', from: 22, citation: cite(NOTE, 'Mature greens and herbs') },
-  { id: 'fruiting', slug: 'fruiting', name: 'Large or fruiting (tomatoes, cucumbers, peppers)', short: 'Fruiting', minutes: [360, 600, 840, 1080, 1320], durationS: 300, range: { minS: 300, maxS: 300 }, note: 'Every 4 hours while the lights are on.', inLight: true, from: 8, citation: cite(NOTE, 'Large or fruiting plants') },
+  { id: 'germination', slug: 'germination', name: 'Germination', stage: 'Days 0–7', short: 'Germination', minutes: [480], durationS: 900, range: { minS: 900, maxS: 900 }, note: 'Gardyn’s germination mode: one 15 min cycle on the sowing day and the next a week later, day 7, so it runs once a week on the sowing weekday.', weekly: true, from: 0, citation: cite(NOTE, 'Germination') },
+  { id: 'seedlings', slug: 'seedlings', name: 'Seedlings', stage: 'Days 8–13', short: 'Seedlings', minutes: [480], durationS: 600, range: { minS: 300, maxS: 900 }, note: 'Once a day after the second germination cycle, while the first leaves open.', from: 8, citation: cite(NOTE, 'Seedlings') },
+  { id: 'young', slug: 'young', name: 'Young plants', stage: 'Days 14–21', short: 'Young', minutes: [480, 960], durationS: 360, range: { minS: 300, maxS: 480 }, note: 'Start once a day for 5 min and move to two or three times as the roots grow.', from: 14, citation: cite(NOTE, 'Young plants') },
+  { id: 'mature', slug: 'mature', name: 'Mature greens & herbs', stage: 'Day 22 on', short: 'Mature', minutes: [480, 840, 1200], durationS: 360, range: { minS: 300, maxS: 480 }, note: 'Spread across the light hours.', from: 22, citation: cite(NOTE, 'Mature greens and herbs') },
+  { id: 'fruiting', slug: 'fruiting', name: 'Large or fruiting', stage: 'Tomatoes, cucumbers, peppers · from day 8', short: 'Fruiting', minutes: [360, 600, 840, 1080, 1320], durationS: 300, range: { minS: 300, maxS: 300 }, note: 'Every 4 hours while the lights are on.', inLight: true, from: 8, citation: cite(NOTE, 'Large or fruiting plants') },
 ]
 
 /** What to check whatever the preset, from the same note. */

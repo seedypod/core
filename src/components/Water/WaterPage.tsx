@@ -1,6 +1,6 @@
 import { withUnit } from '@/src/lib/sensorMeta'
 import { toDisplay } from '@/src/lib/units'
-import { CalendarClock, MoreHorizontal, Play, Plus, Square } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, MoreHorizontal, Play, Plus, Square } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, Card, GhostIcon, InlineError, Skeleton } from '@/src/components/ds/core'
@@ -618,7 +618,7 @@ function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, mis
     <Card dashed className="gap-3">
       <p className="text-[13px] text-fg-2 text-pretty">
         {'Germination is Gardyn’s germination mode, a 15 min run on the sowing day and a week later. After it, community starting points from r/Gardyn owners, not Gardyn’s: Gardyn doesn’t publish a watering cadence (its Smart Watering adjusts it). '}
-        <a href={GARDYN_WATERING_GUIDE} target="_blank" rel="noopener noreferrer" className="underline decoration-line-2 underline-offset-2 hover:text-fg">Gardyn’s guide</a>
+        <SourceLink href={GARDYN_WATERING_GUIDE}>Gardyn’s guide</SourceLink>
         {`. Pick one to preview it on the chart; Apply replaces your cycles.${follow ? ' Following the grow cycle, the cycles move along these stages as the days pass.' : ''}`}
       </p>
       <div className="grid gap-2 min-[560px]:grid-cols-2 min-[900px]:grid-cols-5">
@@ -626,32 +626,31 @@ function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, mis
           const runs = presetRuns(p, light)
           const mins = Math.round(p.durationS / 60)
           const mine = recommended?.id === p.id
-          const path = follow && sown !== null
           const next = p.weekly ? nextWeekly(p) : null
           return (
             <div key={p.id} className={cn('flex flex-col gap-2 rounded-card border bg-surface px-3.5 py-3', previewing === p.id ? 'border-tank' : mine ? 'border-fg-3' : 'border-line')}>
               <button type="button" data-testid={`pump-preset-${p.id}`} aria-pressed={previewing === p.id} onClick={() => onPreview(p.id)} className="flex cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left">
-                <span className="flex items-baseline justify-between gap-2">
+                <span className="flex items-start justify-between gap-2">
                   <span className="text-sm font-medium">{p.name}</span>
+                  {applied === p.id && <span className="shrink-0 rounded-[10px] bg-tank/15 px-2 py-0.5 font-mono text-[11px] font-medium text-tank" data-testid="pump-applied">Running</span>}
                 </span>
-                {(mine || applied === p.id || path) && (
-                  <span className="flex flex-wrap gap-1.5">
-                    {applied === p.id && <span className="w-fit rounded-[10px] bg-tank/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-tank" data-testid="pump-applied">your cycles</span>}
-                    {path
-                      ? mine
-                        ? <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-stage" title={`Recommended: ${recommended?.why ?? ''}`}>{`day ${sown} · this stage`}</span>
-                        : <span className="w-fit rounded-[10px] border border-line-2 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-fg-3" data-testid="pump-stage">{p.id === 'fruiting' ? `fruiting crops · from day ${p.from}` : `from day ${p.from}`}</span>
-                      : mine && recommended && <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-recommended" title={`Recommended: ${recommended.why}`}>{`recommended · ${recommended.why}`}</span>}
-                  </span>
-                )}
+                <span className="text-[12px] leading-snug text-fg-3" data-testid="pump-stage">
+                  {p.stage}
+                  {/* The stage the tower is at: by its day, or why without one. */}
+                  {mine && recommended && <span className="font-medium text-pod-ok" title={`Recommended: ${recommended.why}`} data-testid="pump-today">{` · ${sown !== null ? `today is day ${sown}` : recommended.why}`}</span>}
+                </span>
                 <WeekdayDots days={presetDays(p, sowDay)} />
                 <DayStrip runs={runs} light={light} />
-                <span className="font-mono text-[11px] text-fg-2">{p.weekly ? `${runs.length} × ${mins} min once a week` : `${runs.length} × ${mins} min = ${dailyMinutes(runs.length, p.durationS)} min a day`}</span>
+                {/* Breaks before the total, never inside it. */}
+                <span className="font-mono text-[11px] text-fg-2" data-testid="pump-total">
+                  {`${runs.length} × ${mins} min `}
+                  <span className="whitespace-nowrap">{p.weekly ? 'once a week' : `= ${dailyMinutes(runs.length, p.durationS)} min a day`}</span>
+                </span>
                 {next && <span className="font-mono text-[11px] text-fg-2" data-testid="pump-next">{`next: ${next}`}</span>}
                 <span className="text-[12px] leading-snug text-fg-3">{p.note}</span>
               </button>
               {p.weekly && missed}
-              <a href={p.citation.url} target="_blank" rel="noopener noreferrer" className="w-fit text-[12px] text-fg-3 underline decoration-line-2 underline-offset-2 hover:text-fg">{p.citation.section}</a>
+              <SourceLink href={p.citation.url} className="mt-auto self-end text-[12px] text-fg-3">{p.citation.section}</SourceLink>
             </div>
           )
         })}
@@ -659,10 +658,20 @@ function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, mis
       <ul className="flex list-disc flex-col gap-1 pl-4 text-[12px] leading-snug text-fg-3" data-testid="watering-tips">
         {WATERING_TIPS.map(tip => <li key={tip}>{tip}</li>)}
         <li className="list-none">
-          <a href={TIPS_CITATION.url} target="_blank" rel="noopener noreferrer" className="underline decoration-line-2 underline-offset-2 hover:text-fg">{TIPS_CITATION.section}</a>
+          <SourceLink href={TIPS_CITATION.url}>{TIPS_CITATION.section}</SourceLink>
         </li>
       </ul>
     </Card>
+  )
+}
+
+/** A source, opened in a new tab, with the arrow that says so. */
+function SourceLink({ href, className, children }: { href: string, className?: string, children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={cn('inline-flex w-fit items-center gap-0.5 underline decoration-line-2 underline-offset-2 hover:text-fg', className)}>
+      {children}
+      <ArrowUpRight size={12} aria-hidden className="shrink-0" />
+    </a>
   )
 }
 
