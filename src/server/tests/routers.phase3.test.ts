@@ -63,6 +63,8 @@ describe('phase 3 routers', () => {
     const cap = await c.camera.capture({ camera: 'lower' })
     expect(cap.url).toMatch(/^\/api\/captures\/lower-.*\.jpg$/)
     expect(await c.camera.list({ camera: 'lower', limit: 10 })).toHaveLength(1)
+    expect(await c.camera.get({ id: cap.id })).toEqual(cap)
+    await expect(c.camera.get({ id: 'pruned' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 
   it('telemetry history and light hours', async () => {

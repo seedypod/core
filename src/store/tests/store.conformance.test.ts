@@ -9,7 +9,7 @@ import { createEventBus } from '../../lib/eventBus'
 import { Recorder } from '../../telemetry/recorder'
 import { MemoryStore } from '../memory'
 import { defaultMigrationsFolder, MAX_HELD_TELEMETRY, SqliteStore } from '../sqlite'
-import type { AnalysisRow, Store, TelemetryPoint } from '../types'
+import type { AnalysisRow, PodLabel, PodLabelValue, Store, TelemetryPoint } from '../types'
 
 const impls: [string, () => Store][] = [
   ['MemoryStore', () => new MemoryStore(30)],
@@ -332,9 +332,9 @@ for (const [name, make] of impls) {
 
     it('pod labels upsert per capture and pod, clear, range by capture time and count', () => {
       store = make()
-      const at = (captureId: string, ts: string, slot: number, label: 'empty' | 'sprouted' | 'growing' | 'ready' | 'unhealthy') =>
-        store.podLabels.set({ captureId, ts, camera: slot > 15 ? 'lower' : 'upper', slot, label, labelledAt: '2026-11-09T00:00:00.000Z' })
-      expect(store.podLabels.counts()).toEqual({ empty: 0, sprouted: 0, growing: 0, ready: 0, unhealthy: 0 })
+      const at = (captureId: string, ts: string, slot: number, label: PodLabelValue) =>
+        store.podLabels.set({ captureId, ts, camera: slot > 15 ? 'lower' : 'upper', slot, label, labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null })
+      expect(store.podLabels.counts()).toEqual({ empty: 0, seeded: 0, sprouted: 0, growing: 0, ready: 0, unhealthy: 0 })
       expect(store.podLabels.captures()).toEqual([])
       at('upper-b', '2026-11-02T00:00:00.000Z', 4, 'sprouted')
       at('upper-b', '2026-11-02T00:00:00.000Z', 2, 'empty')
@@ -343,7 +343,7 @@ for (const [name, make] of impls) {
       expect(store.podLabels.forCapture('upper-b').map(l => [l.slot, l.label])).toEqual([[2, 'empty'], [4, 'unhealthy']])
       expect(store.podLabels.range('2026-11-01T00:00:00.000Z', '2026-11-03T00:00:00.000Z').map(l => `${l.captureId}:${l.slot}`)).toEqual(['lower-a:16', 'upper-b:2', 'upper-b:4'])
       expect(store.podLabels.range('2026-11-02T00:00:00.000Z', '2026-11-03T00:00:00.000Z')).toHaveLength(2)
-      expect(store.podLabels.counts()).toEqual({ empty: 1, sprouted: 0, growing: 0, ready: 1, unhealthy: 1 })
+      expect(store.podLabels.counts()).toEqual({ empty: 1, seeded: 0, sprouted: 0, growing: 0, ready: 1, unhealthy: 1 })
       expect(store.podLabels.captures()).toEqual([
         { captureId: 'upper-b', ts: '2026-11-02T00:00:00.000Z', camera: 'upper', pods: 2 },
         { captureId: 'lower-a', ts: '2026-11-01T00:00:00.000Z', camera: 'lower', pods: 1 },
@@ -351,7 +351,61 @@ for (const [name, make] of impls) {
       expect(store.podLabels.captures(1)).toHaveLength(1)
       expect(store.podLabels.remove('upper-b', 2)).toBe(true)
       expect(store.podLabels.remove('upper-b', 2)).toBe(false)
-      expect(store.podLabels.forCapture('upper-b')).toEqual([{ captureId: 'upper-b', ts: '2026-11-02T00:00:00.000Z', camera: 'upper', slot: 4, label: 'unhealthy', labelledAt: '2026-11-09T00:00:00.000Z' }])
+      expect(store.podLabels.forCapture('upper-b')).toEqual([{ captureId: 'upper-b', ts: '2026-11-02T00:00:00.000Z', camera: 'upper', slot: 4, label: 'unhealthy', labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null }])
+    })
+
+    it('pod labels keep the plant from the first labelling, unless it had none', () => {
+      store = make()
+      const set = (label: PodLabelValue, plant: string | null, plantedAt: string | null) =>
+        store.podLabels.set({ captureId: 'upper-a', ts: '2026-11-02T00:00:00.000Z', camera: 'upper', slot: 3, label, labelledAt: '2026-11-09T00:00:00.000Z', plant, plantedAt })
+      expect(set('seeded', null, null)).toMatchObject({ label: 'seeded', plant: null, plantedAt: null })
+      // A label set before the pod had a plant takes the plant on its next labelling.
+      expect(set('sprouted', 'Basil', '2026-10-30')).toMatchObject({ label: 'sprouted', plant: 'Basil', plantedAt: '2026-10-30' })
+      // Relabelling after a replant keeps the plant that was in the photo.
+      expect(set('growing', 'Kale', '2026-11-08')).toMatchObject({ label: 'growing', plant: 'Basil', plantedAt: '2026-10-30' })
+      expect(store.podLabels.forCapture('upper-a')).toMatchObject([{ label: 'growing', plant: 'Basil', plantedAt: '2026-10-30' }])
+      expect(store.podLabels.counts()).toMatchObject({ seeded: 0, growing: 1 })
+      // Clearing it forgets the snapshot, so a new label takes the pod as it is now.
+      expect(store.podLabels.remove('upper-a', 3)).toBe(true)
+      expect(set('seeded', 'Kale', '2026-11-08')).toMatchObject({ plant: 'Kale', plantedAt: '2026-11-08' })
+      expect(store.podLabels.counts()).toMatchObject({ seeded: 1, growing: 0 })
+    })
+
+    it('pod labels list in code-unit order, as SQLite compares text', () => {
+      store = make()
+      const at = (captureId: string, slot: number) =>
+        store.podLabels.set({ captureId, ts: '2026-11-02T00:00:00.000Z', camera: 'upper', slot, label: 'seeded', labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null })
+      // 'a' sorts after 'B' by code unit, before it by locale.
+      at('upper-B', 1)
+      at('upper-a', 1)
+      at('upper-a', 2)
+      const keys = (ls: PodLabel[]) => ls.map(l => `${l.captureId}:${l.slot}`)
+      expect(keys(store.podLabels.list({ limit: 10 }))).toEqual(['upper-a:1', 'upper-a:2', 'upper-B:1'])
+      expect(keys(store.podLabels.list({ limit: 10, before: { ts: '2026-11-02T00:00:00.000Z', captureId: 'upper-a', slot: 2 } }))).toEqual(['upper-B:1'])
+    })
+
+    it('pod labels list newest photo first, by pod, filtered and paged', () => {
+      store = make()
+      const at = (captureId: string, ts: string, slot: number, label: PodLabelValue) =>
+        store.podLabels.set({ captureId, ts, camera: slot > 15 ? 'lower' : 'upper', slot, label, labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null })
+      at('upper-a', '2026-11-01T00:00:00.000Z', 1, 'seeded')
+      at('upper-b', '2026-11-02T00:00:00.000Z', 5, 'growing')
+      at('upper-b', '2026-11-02T00:00:00.000Z', 2, 'seeded')
+      at('lower-b', '2026-11-02T00:00:00.000Z', 16, 'seeded')
+      at('lower-c', '2026-11-03T00:00:00.000Z', 20, 'ready')
+      const keys = (ls: PodLabel[]) => ls.map(l => `${l.captureId}:${l.slot}`)
+      expect(keys(store.podLabels.list({ limit: 10 }))).toEqual(['lower-c:20', 'upper-b:2', 'upper-b:5', 'lower-b:16', 'upper-a:1'])
+      expect(keys(store.podLabels.list({ label: 'seeded', limit: 10 }))).toEqual(['upper-b:2', 'lower-b:16', 'upper-a:1'])
+      expect(keys(store.podLabels.list({ camera: 'lower', limit: 10 }))).toEqual(['lower-c:20', 'lower-b:16'])
+      expect(keys(store.podLabels.list({ label: 'seeded', camera: 'upper', limit: 10 }))).toEqual(['upper-b:2', 'upper-a:1'])
+      // Pages pick up after the last row, within a capture, across captures at one time, and across times.
+      const first = store.podLabels.list({ limit: 2 })
+      expect(keys(first)).toEqual(['lower-c:20', 'upper-b:2'])
+      const last = first.at(-1) as PodLabel
+      const second = store.podLabels.list({ limit: 2, before: { ts: last.ts, captureId: last.captureId, slot: last.slot } })
+      expect(keys(second)).toEqual(['upper-b:5', 'lower-b:16'])
+      expect(keys(store.podLabels.list({ limit: 2, before: { ts: '2026-11-02T00:00:00.000Z', captureId: 'lower-b', slot: 16 } }))).toEqual(['upper-a:1'])
+      expect(store.podLabels.list({ limit: 2, before: { ts: '2026-11-01T00:00:00.000Z', captureId: 'upper-a', slot: 1 } })).toEqual([])
     })
   })
 }
@@ -381,6 +435,31 @@ describe('SqliteStore on disk', () => {
       // A capture pruned before the migration still lands on the camera its slot implies.
       expect(store.analyses.forCapture('pruned-long-ago')).toMatchObject([{ camera: 'upper', slot: 3 }])
       expect(store.settings.get().primaryAnalyzer).toBe('green-threshold')
+      store.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('adds the plant snapshot to labels made before it, empty', () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    try {
+      // A database at migration 0016, with a label in it.
+      const url = join(root, 'old.db')
+      const journal = JSON.parse(readFileSync(join(defaultMigrationsFolder(), 'meta/_journal.json'), 'utf8')) as { entries: { tag: string }[] }
+      const old = join(root, 'migrations-0016')
+      cpSync(defaultMigrationsFolder(), old, { recursive: true })
+      writeFileSync(join(old, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.filter(e => e.tag < '0017') }))
+      const db = new Database(url)
+      migrate(drizzle(db), { migrationsFolder: old })
+      db.prepare('INSERT INTO pod_labels (captureId, ts, camera, slot, label, labelledAt) VALUES (?, ?, ?, ?, ?, ?)').run('upper-1', '2026-11-01T00:00:00.000Z', 'upper', 2, 'growing', '2026-11-09T00:00:00.000Z')
+      db.close()
+      const store = new SqliteStore({ url })
+      expect(store.podLabels.forCapture('upper-1')).toEqual([{ captureId: 'upper-1', ts: '2026-11-01T00:00:00.000Z', camera: 'upper', slot: 2, label: 'growing', labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null }])
+      // Relabelling it fills the snapshot in.
+      store.podLabels.set({ captureId: 'upper-1', ts: '2026-11-01T00:00:00.000Z', camera: 'upper', slot: 2, label: 'seeded', labelledAt: '2026-11-10T00:00:00.000Z', plant: 'Basil', plantedAt: '2026-10-31' })
+      expect(store.podLabels.forCapture('upper-1')).toMatchObject([{ label: 'seeded', plant: 'Basil', plantedAt: '2026-10-31' }])
       store.close()
     }
     finally {

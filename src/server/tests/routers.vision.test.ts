@@ -88,7 +88,7 @@ describe('vision router (ADR-0019)', () => {
     expect(cmp.compare).toHaveLength(2)
     expect(cmp.compare[0]?.points).toHaveLength(2)
     expect(body).toMatchObject({ labels: { pods: 0, captures: [] } })
-    ctx.store.podLabels.set({ captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', camera: 'upper', slot: 2, label: 'sprouted', labelledAt: '2026-01-03T00:00:00Z' })
+    ctx.store.podLabels.set({ captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', camera: 'upper', slot: 2, label: 'sprouted', labelledAt: '2026-01-03T00:00:00Z', plant: null, plantedAt: null })
     const labelled = await client.callTool({ name: 'list_analyses', arguments: {} })
     const after = JSON.parse((labelled.content as Array<{ text: string }>)[0]?.text ?? '{}') as { labels: { counts: Record<string, number>, captures: unknown[] } }
     expect(after.labels.counts.sprouted).toBe(1)
@@ -142,11 +142,11 @@ describe('vision router (ADR-0019)', () => {
     await c.vision.setLabel({ captureId: 'upper-0', slot: 3, label: 'growing' })
     expect(seen.filter(p => p === 'labels')).toHaveLength(4)
     expect(await c.vision.labels({ captureId: 'upper-0' })).toEqual([
-      { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', camera: 'upper', slot: 1, label: 'empty', labelledAt: now.toISOString() },
-      { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', camera: 'upper', slot: 3, label: 'growing', labelledAt: now.toISOString() },
+      { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', camera: 'upper', slot: 1, label: 'empty', labelledAt: now.toISOString(), plant: null, plantedAt: null },
+      { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', camera: 'upper', slot: 3, label: 'growing', labelledAt: now.toISOString(), plant: null, plantedAt: null },
     ])
     expect(await c.vision.labelStats()).toEqual({
-      counts: { empty: 2, sprouted: 0, growing: 1, ready: 0, unhealthy: 0 },
+      counts: { empty: 2, seeded: 0, sprouted: 0, growing: 1, ready: 0, unhealthy: 0 },
       pods: 3,
       captures: [{ captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', camera: 'upper', pods: 1 }, { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', camera: 'upper', pods: 2 }],
     })
@@ -156,5 +156,73 @@ describe('vision router (ADR-0019)', () => {
     expect((await c.vision.labels({ captureId: 'upper-0' })).map(l => l.slot)).toEqual([3])
     await expect(c.vision.setLabel({ captureId: 'nope', slot: 1, label: 'ready' })).rejects.toThrow(/no capture nope/)
     await expect(c.vision.setLabel({ captureId: 'upper-0', slot: 16, label: 'ready' })).rejects.toThrow(/pod 16 is not on the upper camera/)
+  })
+
+  it('keeps a sown pod\'s plant with each label, but not a planned one or one sown after the photo\'s day', async () => {
+    const { c, ctx } = await scored(2)
+    const sow = (slot: number, plant: string, plantedAt: string | null, status: 'empty' | 'seeded' | 'growing') => ctx.store.pods.update(slot, { plant, plantedAt, status }, '2025-12-20T00:00:00Z')
+    sow(3, 'Basil', '2025-12-20', 'growing')
+    sow(4, 'Kale', '2026-01-02', 'seeded')
+    // Planned by the planner, not sown: a plant but no date, or a date on a pod still empty.
+    sow(5, 'Mint', null, 'seeded')
+    sow(6, 'Thyme', '2025-12-25', 'empty')
+    for (const slot of [3, 4, 5, 6, 7]) await c.vision.setLabel({ captureId: 'upper-0', slot, label: 'seeded' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 4, label: 'seeded' })
+    expect((await c.vision.labels({ captureId: 'upper-0' })).map(l => [l.slot, l.plant, l.plantedAt])).toEqual([[3, 'Basil', '2025-12-20'], [4, null, null], [5, null, null], [6, null, null], [7, null, null]])
+    // Sown the day the photo was taken counts as in it.
+    expect(await c.vision.labels({ captureId: 'upper-1' })).toMatchObject([{ slot: 4, plant: 'Kale', plantedAt: '2026-01-02' }])
+    // The photo's day is the unit's: 00:00 UTC on the 2nd is still the 1st in Los Angeles.
+    ctx.store.settings.update({ timezone: 'America/Los_Angeles' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 4, label: null })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 4, label: 'seeded' })
+    expect(await c.vision.labels({ captureId: 'upper-1' })).toMatchObject([{ slot: 4, plant: null, plantedAt: null }])
+    ctx.store.settings.update({ timezone: 'UTC' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 4, label: 'growing' })
+    // A replant later doesn't rewrite what was in the photo.
+    sow(3, 'Dill', '2026-02-01', 'seeded')
+    await c.vision.setLabel({ captureId: 'upper-0', slot: 3, label: 'sprouted' })
+    const { labels } = await c.vision.labelList({ camera: 'upper', limit: 10 })
+    expect(labels.find(l => l.captureId === 'upper-0' && l.slot === 3)).toMatchObject({ label: 'sprouted', plant: 'Basil', daysSinceSowing: 12, url: '/api/captures/upper-0.jpg' })
+    expect(labels.find(l => l.captureId === 'upper-1' && l.slot === 4)).toMatchObject({ plant: 'Kale', daysSinceSowing: 0 })
+    expect(labels.find(l => l.slot === 5)?.daysSinceSowing).toBeNull()
+  })
+
+  it('lists every label newest first, filtered by label and camera, a page at a time', async () => {
+    const { c, ctx } = await scored(3)
+    ctx.store.captures.add({ id: 'lower-0', camera: 'lower', ts: '2026-01-02T00:00:00Z', path: 'data:image/svg+xml;utf8,<svg/>', bytes: 1 })
+    await c.vision.setLabel({ captureId: 'upper-0', slot: 1, label: 'empty' })
+    await c.vision.setLabel({ captureId: 'upper-2', slot: 2, label: 'seeded' })
+    await c.vision.setLabel({ captureId: 'upper-2', slot: 1, label: 'seeded' })
+    await c.vision.setLabel({ captureId: 'lower-0', slot: 20, label: 'seeded' })
+    // A label outlives its photo.
+    ctx.store.podLabels.set({ captureId: 'upper-gone', ts: '2025-12-01T00:00:00Z', camera: 'upper', slot: 7, label: 'ready', labelledAt: '2026-01-05T00:00:00Z', plant: null, plantedAt: null })
+    const key = (r: { labels: Array<{ captureId: string, slot: number }> }) => r.labels.map(l => `${l.captureId}:${l.slot}`)
+
+    const all = await c.vision.labelList({ limit: 60 })
+    expect(key(all)).toEqual(['upper-2:1', 'upper-2:2', 'lower-0:20', 'upper-0:1', 'upper-gone:7'])
+    expect(all.next).toBeNull()
+    expect(all.labels.map(l => l.url)).toEqual(['/api/captures/upper-2.jpg', '/api/captures/upper-2.jpg', 'data:image/svg+xml;utf8,<svg/>', '/api/captures/upper-0.jpg', null])
+    expect(key(await c.vision.labelList({ label: 'seeded', limit: 60 }))).toEqual(['upper-2:1', 'upper-2:2', 'lower-0:20'])
+    expect(key(await c.vision.labelList({ label: 'seeded', camera: 'lower', limit: 60 }))).toEqual(['lower-0:20'])
+
+    const one = await c.vision.labelList({ limit: 2 })
+    expect(key(one)).toEqual(['upper-2:1', 'upper-2:2'])
+    expect(one.next).toBe('2026-01-03T00:00:00Z|upper-2|2')
+    const two = await c.vision.labelList({ limit: 2, cursor: one.next as string })
+    expect(key(two)).toEqual(['lower-0:20', 'upper-0:1'])
+    const three = await c.vision.labelList({ limit: 2, cursor: two.next as string })
+    expect(key(three)).toEqual(['upper-gone:7'])
+    expect(three.next).toBeNull()
+    // A full last page says there is no more.
+    expect((await c.vision.labelList({ limit: 5 })).next).toBeNull()
+    await expect(c.vision.labelList({ limit: 2, cursor: 'nonsense' })).rejects.toThrow(/bad cursor/)
+    await expect(c.vision.labelList({ limit: 2, cursor: '2026-01-01|x|y' })).rejects.toThrow(/bad cursor/)
+
+    // A pruned photo's label can still be changed, and removed.
+    await c.vision.setLabel({ captureId: 'upper-gone', slot: 7, label: 'unhealthy' })
+    expect(await c.vision.labels({ captureId: 'upper-gone' })).toMatchObject([{ slot: 7, label: 'unhealthy', ts: '2025-12-01T00:00:00Z', camera: 'upper' }])
+    await expect(c.vision.setLabel({ captureId: 'upper-gone', slot: 20, label: 'ready' })).rejects.toThrow(/pod 20 is not on the upper camera/)
+    await c.vision.setLabel({ captureId: 'upper-gone', slot: 7, label: null })
+    await expect(c.vision.setLabel({ captureId: 'upper-gone', slot: 7, label: 'ready' })).rejects.toThrow(/no capture upper-gone/)
   })
 })

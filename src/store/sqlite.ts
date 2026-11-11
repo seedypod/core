@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { and, asc, desc, eq, gte, lt, lte, notInArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, lt, lte, notInArray, or, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -9,7 +9,7 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PodLabel, PodLabelValue, PumpSpec, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PodLabel, PodLabelCursor, PodLabelValue, PumpSpec, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
@@ -345,13 +345,18 @@ export class SqliteStore implements Store {
   }
 
   podLabels = {
-    set: (l: PodLabel): PodLabel => {
-      this.db.insert(t.podLabels).values(l).onConflictDoUpdate({
-        target: [t.podLabels.captureId, t.podLabels.slot],
-        set: { label: l.label, labelledAt: l.labelledAt, ts: l.ts, camera: l.camera },
-      }).run()
-      return { ...l }
-    },
+    set: (l: PodLabel): PodLabel => rowToLabel(this.db.insert(t.podLabels).values(l).onConflictDoUpdate({
+      target: [t.podLabels.captureId, t.podLabels.slot],
+      // The right-hand sides read the row as it was, so a kept snapshot keeps its date too.
+      set: {
+        label: l.label,
+        labelledAt: l.labelledAt,
+        ts: l.ts,
+        camera: l.camera,
+        plant: sql`coalesce(${t.podLabels.plant}, excluded.plant)`,
+        plantedAt: sql`CASE WHEN ${t.podLabels.plant} IS NULL THEN excluded.plantedAt ELSE ${t.podLabels.plantedAt} END`,
+      },
+    }).returning().get() as typeof t.podLabels.$inferSelect),
     remove: (captureId: string, slot: number): boolean =>
       this.db.delete(t.podLabels).where(and(eq(t.podLabels.captureId, captureId), eq(t.podLabels.slot, slot))).run().changes > 0,
     forCapture: (captureId: string): PodLabel[] =>
@@ -359,6 +364,14 @@ export class SqliteStore implements Store {
     range: (fromTs: string, toTs: string): PodLabel[] =>
       this.db.select().from(t.podLabels).where(and(gte(t.podLabels.ts, fromTs), lte(t.podLabels.ts, toTs)))
         .orderBy(asc(t.podLabels.ts), asc(t.podLabels.captureId), asc(t.podLabels.slot)).all().map(rowToLabel),
+    list: (q: { label?: PodLabelValue, camera?: 'upper' | 'lower', limit: number, before?: PodLabelCursor }): PodLabel[] => {
+      const b = q.before
+      return this.db.select().from(t.podLabels).where(and(
+        q.label ? eq(t.podLabels.label, q.label) : undefined,
+        q.camera ? eq(t.podLabels.camera, q.camera) : undefined,
+        b ? or(lt(t.podLabels.ts, b.ts), and(eq(t.podLabels.ts, b.ts), or(lt(t.podLabels.captureId, b.captureId), and(eq(t.podLabels.captureId, b.captureId), gt(t.podLabels.slot, b.slot))))) : undefined,
+      )).orderBy(desc(t.podLabels.ts), desc(t.podLabels.captureId), asc(t.podLabels.slot)).limit(q.limit).all().map(rowToLabel)
+    },
     counts: (): Record<PodLabelValue, number> => {
       const out = Object.fromEntries(POD_LABELS.map(l => [l, 0])) as Record<PodLabelValue, number>
       for (const r of this.db.select({ label: t.podLabels.label, n: sql<number>`count(*)` }).from(t.podLabels).groupBy(t.podLabels.label).all()) out[r.label] = r.n
@@ -466,7 +479,7 @@ function rowToAnalysis(r: typeof t.analysisResults.$inferSelect): AnalysisRow {
 }
 
 function rowToLabel(r: typeof t.podLabels.$inferSelect): PodLabel {
-  return { captureId: r.captureId, ts: r.ts, camera: r.camera, slot: r.slot, label: r.label, labelledAt: r.labelledAt }
+  return { captureId: r.captureId, ts: r.ts, camera: r.camera, slot: r.slot, label: r.label, labelledAt: r.labelledAt, plant: r.plant, plantedAt: r.plantedAt }
 }
 
 function automationColumns(r: Partial<Omit<AutomationRule, 'id'>>) {

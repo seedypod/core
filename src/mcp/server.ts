@@ -18,8 +18,8 @@ import { appRouter } from '../server/routers/app'
 import { Overrides } from '../server/routers/planner'
 import { TankActionKind, TankUnit } from '../server/routers/tank'
 import { createCallerFactory } from '../server/trpc'
+import { POD_LABELS } from '../store/types'
 import { fetchLanModel } from '../vision/modelFetch'
-import { POD_STATES } from '../vision/podState'
 
 const createCaller = createCallerFactory(appRouter)
 
@@ -126,7 +126,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.camera.list({ camera: i.camera, limit: i.limit ?? 10 })))
 
   server.registerTool('list_analyses', {
-    description: 'Camera analysers and what they have produced: every on-device analyser (id, version, metrics it emits, which one is primary for pod_health) plus any off-device worker that posted results, with row and capture counts and time span, and the analysis queue status. labels: the grower\'s pod labels for training (empty, sprouted, growing, ready, unhealthy): how many pods carry each, and the labelled captures newest first with how many pods each has labelled. Pass slot to also get that pod\'s series from every analyser@version side by side, to see which ones agree. Read-only: choosing the primary analyser, re-running analysers and labelling pods are done in the app.',
+    description: 'Camera analysers and what they have produced: every on-device analyser (id, version, metrics it emits, which one is primary for pod_health) plus any off-device worker that posted results, with row and capture counts and time span, and the analysis queue status. labels: the grower\'s pod labels for training (empty, seeded, sprouted, growing, ready, unhealthy): how many pods carry each, and the labelled captures newest first with how many pods each has labelled. Pass slot to also get that pod\'s series from every analyser@version side by side, to see which ones agree. Read-only: choosing the primary analyser, re-running analysers and labelling pods are done in the app.',
     inputSchema: { slot: z.number().int().min(1).max(30).optional(), metric: z.string().optional() },
   }, async (i) => {
     const analyzers = await caller.vision.analyzers()
@@ -150,15 +150,25 @@ export function createMcpServer(ctx: Context): McpServer {
     const images = i.images ?? true
     const summary = await caller.datasets.summary({ from: from.toISOString(), to: to.toISOString(), images })
     const path = `/api/datasets/export?${new URLSearchParams({ from: summary.from, to: summary.to, images: images ? '1' : '0' }).toString()}`
-    const labelsPerClass = Object.fromEntries(POD_STATES.map(c => [c, 0]))
+    const labelsPerClass = Object.fromEntries(POD_LABELS.map(c => [c, 0]))
     for (const l of ctx.store.podLabels.range(summary.from, summary.to)) labelsPerClass[l.label] = (labelsPerClass[l.label] ?? 0) + 1
     return text({ path, ...summary, labelsPerClass })
   })
 
   server.registerTool('list_labels', {
-    description: 'The grower\'s pod labels (empty, sprouted, growing, ready, unhealthy), the training data for pod-state models: how many pods carry each label and the labelled captures, newest first. With capture_id, that capture\'s label for each pod. Labels are set in the app\'s Analysis screen.',
-    inputSchema: { capture_id: z.string().optional(), limit: z.number().int().min(1).max(500).optional() },
-  }, async i => text(i.capture_id ? await caller.vision.labels({ captureId: i.capture_id }) : await caller.vision.labelStats({ limit: i.limit ?? 50 })))
+    description: 'The grower\'s pod labels, the training data for pod-state models. Labels: empty (capped, no yCube), seeded (yCube in, nothing visible yet), sprouted, growing, ready, unhealthy. With no arguments: how many pods carry each label and the labelled captures, newest first. With capture_id: that capture\'s label for each pod, all of them in one list; capture_id wins over label, camera, limit and cursor, which are then ignored. With label and/or camera (upper or lower): the labelled pods themselves, newest photo first, each with the pod\'s plant and plantedAt when it was labelled, daysSinceSowing at the photo and the photo\'s url (null once pruned); pass next back as cursor for the next page. Read-only: labelling, relabelling and clearing a label (Analysis → Label pods, tap again or use Clear, or All labels → Remove) are done in the app.',
+    inputSchema: {
+      capture_id: z.string().optional(),
+      label: z.enum(POD_LABELS).optional(),
+      camera: z.enum(['upper', 'lower']).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+      cursor: z.string().optional(),
+    },
+  }, async (i) => {
+    if (i.capture_id) return text(await caller.vision.labels({ captureId: i.capture_id }))
+    if (i.label || i.camera || i.cursor) return text(await caller.vision.labelList({ label: i.label, camera: i.camera, limit: i.limit ?? 50, cursor: i.cursor }))
+    return text(await caller.vision.labelStats({ limit: i.limit ?? 50 }))
+  })
 
   server.registerTool('list_automations', {
     description: 'Autopilot rules (WHEN trigger / IF conditions / THEN actions, as JSON), whether each is enabled or in dry-run, its last run, the kill switch, which source owns the light (manual hold, Autopilot or schedule), and the latest audit-log entries. Read-only: creating, arming or disabling rules changes what the unit does unattended, so that is done in the app.',
