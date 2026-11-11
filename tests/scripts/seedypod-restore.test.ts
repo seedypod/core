@@ -11,6 +11,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bundleEntries, collect, gzipTar, type BackupManifest, type BundleFile } from '../../src/backup/bundle'
 import { header } from '../../src/datasets/tar'
 
+// As root the helper ignores every SEEDYPOD_* override and acts on the real unit's paths.
+if (process.getuid?.() === 0) throw new Error('the restore tests must not run as root')
+
 const helper = resolve(import.meta.dirname, '../../scripts/seedypod-restore.cjs')
 const enc = new TextEncoder()
 const DB = (tag: string) => enc.encode(`SQLite format 3\0${tag}`)
