@@ -1,0 +1,212 @@
+[
+ {
+  "file": "upper-2026-11-10-pod1.jpg",
+  "camera": "upper",
+  "slot": 1,
+  "box": {
+   "x": 42.3,
+   "y": -100.5,
+   "w": 252.7,
+   "h": 252.7
+  },
+  "expected": "ooh|",
+  "confirmed": false,
+  "note": "Chives (label printed on the cup)"
+ },
+ {
+  "file": "upper-2026-11-10-pod2.jpg",
+  "camera": "upper",
+  "slot": 2,
+  "box": {
+   "x": 64.2,
+   "y": -157.3,
+   "w": 394.8,
+   "h": 394.8
+  },
+  "expected": "o|hh",
+  "confirmed": false,
+  "note": "Thyme (label printed on the cup)"
+ },
+ {
+  "file": "upper-2026-11-10-pod6.jpg",
+  "camera": "upper",
+  "slot": 6,
+  "box": {
+   "x": 53.6,
+   "y": -130.0,
+   "w": 326.3,
+   "h": 326.4
+  },
+  "expected": "oo||",
+  "confirmed": false,
+  "note": "Green Bok Choy (label printed on the cup); issue #224 read it as open, open, bar, bar, solid"
+ },
+ {
+  "file": "upper-2026-11-10-pod8.jpg",
+  "camera": "upper",
+  "slot": 8,
+  "box": {
+   "x": 44.3,
+   "y": -105.2,
+   "w": 263.3,
+   "h": 263.2
+  },
+  "expected": "o||o",
+  "confirmed": false,
+  "note": "Oregano (label printed on the cup)"
+ },
+ {
+  "file": "upper-2026-11-10-pod9.jpg",
+  "camera": "upper",
+  "slot": 9,
+  "box": {
+   "x": 43.8,
+   "y": -105.1,
+   "w": 263.3,
+   "h": 263.2
+  },
+  "expected": null,
+  "confirmed": false,
+  "note": "Kale (label printed on the cup); dots about 12 px and at a steep angle, two look solid: must stay unknown"
+ },
+ {
+  "file": "upper-2026-11-11-pod1.jpg",
+  "camera": "upper",
+  "slot": 1,
+  "box": {
+   "x": 42.3,
+   "y": -100.5,
+   "w": 252.7,
+   "h": 252.7
+  },
+  "expected": "ooh|",
+  "confirmed": false,
+  "note": "Chives (label printed on the cup)"
+ },
+ {
+  "file": "upper-2026-11-11-pod2.jpg",
+  "camera": "upper",
+  "slot": 2,
+  "box": {
+   "x": 64.2,
+   "y": -157.3,
+   "w": 394.8,
+   "h": 394.8
+  },
+  "expected": "o|hh",
+  "confirmed": false,
+  "note": "Thyme (label printed on the cup)"
+ },
+ {
+  "file": "upper-2026-11-11-pod3.jpg",
+  "camera": "upper",
+  "slot": 3,
+  "box": {
+   "x": 63.8,
+   "y": -157.6,
+   "w": 394.8,
+   "h": 394.8
+  },
+  "expected": null,
+  "confirmed": false,
+  "note": "side stub, dots edge-on"
+ },
+ {
+  "file": "upper-2026-11-11-pod5.jpg",
+  "camera": "upper",
+  "slot": 5,
+  "box": {
+   "x": 37.4,
+   "y": -88.3,
+   "w": 221.1,
+   "h": 221.2
+  },
+  "expected": null,
+  "confirmed": false,
+  "note": "side stub, dots edge-on"
+ },
+ {
+  "file": "upper-2026-11-11-pod6.jpg",
+  "camera": "upper",
+  "slot": 6,
+  "box": {
+   "x": 53.6,
+   "y": -130.0,
+   "w": 326.3,
+   "h": 326.4
+  },
+  "expected": "oo||",
+  "confirmed": false,
+  "note": "Green Bok Choy (label printed on the cup); issue #224 read it as open, open, bar, bar, solid"
+ },
+ {
+  "file": "upper-2026-11-11-pod7.jpg",
+  "camera": "upper",
+  "slot": 7,
+  "box": {
+   "x": 37.2,
+   "y": -87.9,
+   "w": 221.1,
+   "h": 221.2
+  },
+  "expected": null,
+  "confirmed": false,
+  "note": "dots faint and small; readable by eye only in part"
+ },
+ {
+  "file": "upper-2026-11-11-pod8.jpg",
+  "camera": "upper",
+  "slot": 8,
+  "box": {
+   "x": 44.3,
+   "y": -105.2,
+   "w": 263.3,
+   "h": 263.2
+  },
+  "expected": "o||o",
+  "confirmed": false,
+  "note": "Oregano (label printed on the cup)"
+ },
+ {
+  "file": "upper-2026-11-11-pod9.jpg",
+  "camera": "upper",
+  "slot": 9,
+  "box": {
+   "x": 43.8,
+   "y": -105.1,
+   "w": 263.3,
+   "h": 263.2
+  },
+  "expected": null,
+  "confirmed": false,
+  "note": "Kale (label printed on the cup); dots about 12 px and at a steep angle, two look solid: must stay unknown"
+ },
+ {
+  "file": "lower-2026-11-11-pod16.jpg",
+  "camera": "lower",
+  "slot": 16,
+  "box": {
+   "x": 63.9,
+   "y": -157.3,
+   "w": 394.8,
+   "h": 394.8
+  },
+  "expected": null,
+  "confirmed": false,
+  "note": "lower camera: dots vertical and washed out"
+ },
+ {
+  "file": "lower-2026-11-11-pod22.jpg",
+  "camera": "lower",
+  "slot": 22,
+  "box": {
+   "x": 39.8,
+   "y": -94.1,
+   "w": 236.9,
+   "h": 237.0
+  },
+  "expected": null,
+  "confirmed": false,
+  "note": "lower camera: dots vertical and washed out"
+ }
+]

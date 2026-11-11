@@ -99,6 +99,40 @@ fn scores_a_still_from_stdin_or_a_path() {
 }
 
 #[test]
+fn reads_dot_codes_from_a_pod_id_still() {
+    let still = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/fixtures/dotcodes/upper-2026-11-10-pod6.jpg"
+    );
+    let bytes = std::fs::read(still).unwrap();
+    // The crop is 432 × 314; pod 6's box in it, as fractions.
+    let pods = serde_json::json!({ "6": { "x": 53.6 / 432.0, "y": -130.0 / 314.0, "w": 326.3 / 432.0, "h": 326.4 / 314.0 } }).to_string();
+    for (args, stdin) in [
+        (
+            vec!["--codes", "--pods", pods.as_str(), "--image", still],
+            &b""[..],
+        ),
+        (vec!["--codes", "--pods", pods.as_str()], &bytes[..]),
+    ] {
+        let o = podvision(&args, stdin);
+        assert!(o.status.success(), "{}", stderr(&o));
+        let out: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+        assert_eq!(
+            (out["width"].as_u64(), out["damaged"].as_bool()),
+            (Some(432), Some(false))
+        );
+        assert_eq!(out["pods"][0]["slot"], 6);
+        assert_eq!(out["pods"][0]["code"], "oo||");
+        assert_eq!(out["pods"][0]["dots"].as_array().unwrap().len(), 5);
+    }
+    // Codes or models, not both; and one or the other.
+    let o = podvision(&["--codes", "--pods", &pods, "--model", "a=b"], b"");
+    assert_eq!(o.status.code(), Some(2));
+    let o = podvision(&["--pods", &pods], b"");
+    assert_eq!(o.status.code(), Some(2));
+}
+
+#[test]
 fn says_its_version() {
     let o = podvision(&["--version"], b"");
     assert!(o.status.success());

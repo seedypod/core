@@ -7,6 +7,7 @@
 //! fallback, and both read the same `seedypod-cnn` weights files.
 
 pub mod cnn;
+pub mod dotcode;
 pub mod image;
 
 #[cfg(test)]
@@ -19,6 +20,7 @@ use anyhow::Result;
 use serde::Serialize;
 
 use cnn::{argmax, softmax, Model};
+use dotcode::DotCode;
 use image::{brightness, crop_input, decode, has_zero_filled_rows, Rect, Scale};
 
 /// Core's zero-fill check steps 4 rows at full size (`ROW_STRIDE`).
@@ -139,6 +141,61 @@ pub fn run(
     })
 }
 
+/// What `--codes` prints: each pod's yCube dot code (#224).
+#[derive(Debug, Serialize)]
+pub struct CodesResponse {
+    pub width: usize,
+    pub height: usize,
+    pub brightness: f64,
+    /// Rows of zero fill: a damaged frame, so nothing was read.
+    pub damaged: bool,
+    pub pods: Vec<PodCode>,
+    pub ms: CodesTiming,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PodCode {
+    pub slot: u32,
+    #[serde(flatten)]
+    pub read: DotCode,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CodesTiming {
+    pub decode: u64,
+    pub read: u64,
+}
+
+/// Read every pod's dot code from a full-size pod-ID still, decoded at full size.
+pub fn read_codes(bytes: &[u8], pods: &BTreeMap<u32, Rect>) -> Result<CodesResponse> {
+    let started = Instant::now();
+    let d = decode(bytes, Scale::Fixed(1), pods, &[])?;
+    let decoded = started.elapsed();
+    let img = &d.image;
+    let damaged = has_zero_filled_rows(img, ROW_STRIDE);
+    let pods = if damaged {
+        Vec::new()
+    } else {
+        pods.iter()
+            .map(|(slot, r)| PodCode {
+                slot: *slot,
+                read: dotcode::read(img, &r.to_pixels(img.width, img.height)),
+            })
+            .collect()
+    };
+    Ok(CodesResponse {
+        width: d.width,
+        height: d.height,
+        brightness: brightness(img),
+        damaged,
+        pods,
+        ms: CodesTiming {
+            decode: decoded.as_millis() as u64,
+            read: (started.elapsed() - decoded).as_millis() as u64,
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,5 +267,54 @@ mod tests {
         };
         let r = run(&ppm(&img), &fractions(&f), &models, Scale::Auto).unwrap();
         assert!(r.damaged && r.models.is_empty());
+    }
+
+    #[test]
+    fn reads_codes_per_pod_and_nothing_from_a_damaged_frame() {
+        let still = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/dotcodes/upper-2026-11-11-pod6.jpg"
+        ))
+        .unwrap();
+        let d = decode(&still, Scale::Fixed(1), &BTreeMap::new(), &[]).unwrap();
+        let (w, h) = (d.width as f64, d.height as f64);
+        // pod 6's box in this crop, and a box over empty plastic.
+        let pods = BTreeMap::from([
+            (
+                6,
+                Rect {
+                    x: 53.6 / w,
+                    y: -130.0 / h,
+                    w: 326.3 / w,
+                    h: 326.4 / h,
+                },
+            ),
+            (
+                7,
+                Rect {
+                    x: 0.0,
+                    y: 0.6,
+                    w: 0.2,
+                    h: 0.2,
+                },
+            ),
+        ]);
+        let r = read_codes(&still, &pods).unwrap();
+        assert_eq!((r.width, r.height, r.damaged), (d.width, d.height, false));
+        assert_eq!(r.pods.len(), 2);
+        assert_eq!(r.pods[0].read.code.as_deref(), Some("oo||"));
+        assert_eq!(r.pods[1].read.code, None);
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["pods"][0]["slot"], 6);
+        assert_eq!(json["pods"][0]["code"], "oo||");
+        assert_eq!(json["pods"][1]["code"], serde_json::Value::Null);
+
+        let img = image::Rgb {
+            width: 16,
+            height: 16,
+            data: [0, 135, 0].repeat(256),
+        };
+        let r = read_codes(&ppm(&img), &pods).unwrap();
+        assert!(r.damaged && r.pods.is_empty());
     }
 }

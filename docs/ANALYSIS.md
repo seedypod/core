@@ -286,6 +286,45 @@ pod's crop stays at least as large as the model's 64×64 input there. The
 smallest default box is about 65 px across at 1280×960, so with the default
 regions it decodes at full size.
 
+### Dot codes
+
+Each Gardyn yCube has five dots in a line below its opening: four rings, each
+open or marked with a bar, a slanted bar or a half fill, then a solid dot that
+ends the code ([#224](https://github.com/seedypod/core/issues/224)). Gardyn
+doesn't publish what the codes mean, so core learns which code is which plant
+from the owner's confirmations. At 1280×960 the dots are a few pixels across;
+on a full-size pod-ID still (2592×1944, [hal.md](hardware/hal.md#pod-id-stills))
+they are 12–22 px on the nearer pods.
+
+`podvision --codes --pods '{…}' --image still.jpg` reads them. For each pod box
+(widened a little and lengthened downwards, since the dots sit near the bottom)
+it keeps what is darker than its surroundings, finds the one run of exactly
+five similar blobs evenly spaced along a line, and takes the solid end as the
+end of the code. It reads each ring's inside in coordinates scaled to the dot's
+own width and height, measured against the line of dots rather than the
+frame, because every pod faces the camera at its own angle:
+
+| Symbol | Mark | What it measures |
+|---|---|---|
+| `o` | open | the centre is light |
+| `\|` | bar | a dark bar through the centre, square to the line (within 25°) |
+| `/` | slanted bar | the same at 35–55° to the line |
+| `h` | half filled | the dark part's centre sits off the dot's centre |
+
+The code is the four marks from the far end to the one beside the solid dot,
+for example `oo||` for open, open, bar, bar. Every step has a margin and the
+confidence is the smallest one. Below 0.5 there is no code: a pod that is too
+small, too steep, or has a mark that is none of these (a bar along the line,
+two solid dots) comes back unknown, never as a guess. The output gives each
+pod's `code` (or `null`), `confidence`, and the five dots' centres.
+
+The test crops are in `hal/crates/podvision/fixtures/dotcodes` with
+`cases.json`: what each pod reads as by eye, and `confirmed: false` until the
+owner confirms it. A half fill comes in at least two orientations (split along
+the line and across it, pod 2 has both); the reader gives both as `h`. If two
+plants ever turn out to share a code, the orientation is the first thing to
+split on.
+
 ### Weights file
 
 The model ships with core as `models/pod-state.json`, so every release and the
