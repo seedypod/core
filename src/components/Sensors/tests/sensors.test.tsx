@@ -225,7 +225,7 @@ describe('SensorsPage with WebGL', () => {
   it('says it is loading, then that nothing was recorded', () => {
     history.data = undefined as unknown as typeof history.data
     render(<SensorsPage />)
-    expect(screen.getByText('loading …')).toBeTruthy()
+    expect(screen.getByTestId('loading-line')).toBeTruthy()
     expect(screen.getByTestId('ridge').getAttribute('data-state')).toBe('loading')
     cleanup()
     history.data = []

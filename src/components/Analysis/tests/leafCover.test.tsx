@@ -42,7 +42,7 @@ describe('LeafCover', () => {
   it('says it is loading until both requests answer', () => {
     q.trends.data = undefined
     render(<LeafCover capturedAt={null} />)
-    expect(screen.getByText('loading …')).toBeTruthy()
+    expect(screen.getByTestId('loading-line')).toBeTruthy()
   })
 
   it('offers Retry when the pods fail to load', () => {

@@ -713,7 +713,7 @@ describe('WaterPage with WebGL: the tank hero', () => {
     data.delete('sensors')
     state.historyLoading = true
     render(<WaterPage />)
-    expect(screen.getByText('loading …')).toBeTruthy()
+    expect(screen.getByTestId('loading-line')).toBeTruthy()
     expect(screen.getByText('100%').className).toContain('animate-pulse')
     expect(screen.getByTestId('tank-3d').getAttribute('data-state')).toBe('loading')
     // No scene, so no hatching to describe yet.
