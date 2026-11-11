@@ -1,29 +1,32 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext } from '@playwright/test'
 
 const WIDTHS = [390, 768, 1024, 1280, 1440]
 
-/** Delete every pump cycle the way a person does: Edit, then Delete. */
-async function deleteCycles(page: Page) {
-  const edit = page.getByTestId('pump-cycle-list').getByRole('button', { name: /^Edit / })
-  while (await edit.count()) {
-    await edit.first().click()
-    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-    await expect(page.getByRole('dialog')).toHaveCount(0)
+/**
+ * Delete every pump schedule through the API, until none is left. Not
+ * through the page: right after a load its list can still be empty, and a
+ * count taken then deletes nothing.
+ */
+async function clearPumpCycles(request: APIRequestContext) {
+  for (let i = 0; i < 5; i++) {
+    const pumps = ((await (await request.get('/api/schedules')).json()) as Array<{ id: string, kind: string }>).filter(s => s.kind === 'pump')
+    if (!pumps.length) return
+    for (const s of pumps) expect((await request.delete(`/api/schedules/${encodeURIComponent(s.id)}`)).ok()).toBe(true)
   }
+  throw new Error('pump schedules keep coming back')
 }
 
 // Back to no cycles whatever happened, as the other specs expect.
-test.afterEach(async ({ page }) => {
-  await page.goto('/water')
-  await deleteCycles(page)
+test.afterEach(async ({ request }) => {
+  await clearPumpCycles(request)
 })
 
 test('water: the preset cards fit at every width, nothing clipped or overflowing', async ({ page }, info) => {
   // Five widths, each measured and photographed.
   test.setTimeout(120_000)
-  await page.goto('/water')
   // From no cycles, whatever earlier specs left.
-  await deleteCycles(page)
+  await clearPumpCycles(page.request)
+  await page.goto('/water')
   const main = page.getByRole('main')
   // A running preset (tinted) and another previewed (ringed), so both states are measured.
   await main.getByTestId('pump-preset-seedlings').click()
