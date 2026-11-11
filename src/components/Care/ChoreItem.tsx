@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
-import { Check, X } from 'lucide-react'
+import { Check, ChevronRight, TriangleAlert, X } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { alertActions } from '@/src/components/Alerts/AlertsPage'
 import { CareSummary } from '@/src/components/Care/CareSummary'
@@ -19,35 +19,50 @@ const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] te
 /** The alert a reading raises for this chore, if it has one (ADR-0029). */
 const alertKind = (id: ChoreRow['id']): string | undefined => CHORE_ALERTS[id as keyof typeof CHORE_ALERTS]
 
-/**
- * The chores that are due, each with its open alert when a reading raised one.
- * One the person skipped stays off until the engine raises it again: a due
- * reading with no open alert may have been skipped, and only then is the
- * history asked whether its last alert was.
- */
-export function useNeedsChores(): Array<{ chore: ChoreRow, alert: AlertRow | undefined }> {
-  const chores = trpc.care.chores.useQuery(undefined, { refetchInterval: 5 * 60_000 })
+/** Each chore's open alert, and whether the open alerts have loaded: until then Done can't tell which way to go. */
+export function useChoreAlerts(): { ready: boolean, alertOf: (c: Pick<ChoreRow, 'id'>) => AlertRow | undefined } {
   const open = trpc.alerts.list.useQuery({ activeOnly: true })
-  const due = (chores.data ?? []).filter(c => c.state === 'due')
-  const alertOf = (c: ChoreRow) => (open.data ?? []).find(a => a.kind === alertKind(c.id))
-  const unraised = due.some(c => c.basis === 'reading' && alertKind(c.id) && !alertOf(c))
-  const history = trpc.alerts.list.useQuery({ activeOnly: false }, { enabled: unraised })
-  const skipped = (c: ChoreRow) => {
-    const last = alertOf(c) ? undefined : history.data?.find(a => a.kind === alertKind(c.id))
-    return !!last?.dismissedAt && !last.active
+  return { ready: open.data !== undefined, alertOf: c => open.data?.find(a => a.kind === alertKind(c.id)) }
+}
+
+/**
+ * The chores, less any the person skipped, and the due ones among them, each
+ * with its open alert when a reading raised one. A skipped chore stays off
+ * until the engine raises it again: a due reading with no open alert may have
+ * been skipped, and only for those is the alert's last row asked for. Calendar
+ * chores have no alert, so old history never hides one. `ready` once the open
+ * alerts and those last rows are in.
+ */
+export function useNeedsChores(): { items: Array<{ chore: ChoreRow, alert: AlertRow | undefined }>, chores: ChoreRow[], ready: boolean } {
+  const list = trpc.care.chores.useQuery(undefined, { refetchInterval: 5 * 60_000 })
+  const { ready, alertOf } = useChoreAlerts()
+  const all = list.data ?? []
+  const unraised = ready ? all.flatMap(c => (c.state === 'due' && c.basis === 'reading' && !alertOf(c) ? [{ chore: c, kind: alertKind(c.id) }] : [])).filter((u): u is { chore: ChoreRow, kind: string } => !!u.kind) : []
+  const last = trpc.useQueries(t => unraised.map(u => t.alerts.list({ activeOnly: false, kind: u.kind, limit: 1 })))
+  const hidden = new Set(unraised.filter((_, i) => {
+    const row = last[i]?.data?.[0]
+    return !!row?.dismissedAt && !row.active
+  }).map(u => u.chore.id))
+  const chores = all.filter(c => !hidden.has(c.id))
+  return {
+    items: chores.filter(c => c.state === 'due').map(c => ({ chore: c, alert: alertOf(c) })),
+    chores,
+    ready: ready && last.every(q => q.data !== undefined),
   }
-  return due.filter(c => !skipped(c)).map(c => ({ chore: c, alert: alertOf(c) }))
 }
 
 /**
  * Done and Skip, as Alerts does them: with an open alert, Done acknowledges it
  * (which logs the chore in the tank log) and Skip dismisses it; without one,
- * Done logs the tank action itself, as the Chores list does, and can be undone.
+ * Done logs the tank action itself and can be undone. "Marked done" only once
+ * something was logged: an alert already cleared by the time Done lands logs
+ * nothing, so the lists just refetch.
  */
 export function useChoreActions() {
   const utils = trpc.useUtils()
   const { show } = useToast()
   const doing = useRef<Pick<ChoreRow, 'id' | 'title'> | null>(null)
+  const [skippedId, setSkippedId] = useState<number | null>(null)
   const refresh = () => {
     void utils.tank.invalidate()
     void utils.care.invalidate()
@@ -64,13 +79,19 @@ export function useChoreActions() {
     },
   })
   const ack = trpc.alerts.acknowledge.useMutation({
-    onSuccess: () => {
+    onSuccess: (row) => {
       void utils.alerts.invalidate()
       refresh()
-      marked()
+      // The router clears an open alert as it acknowledges it, both at the same instant, and only then logs the chore.
+      if (row?.acknowledgedAt && row.clearedAt === row.acknowledgedAt) marked()
     },
   })
-  const dismiss = trpc.alerts.dismiss.useMutation({ onSuccess: () => utils.alerts.invalidate() })
+  const dismiss = trpc.alerts.dismiss.useMutation({
+    onSuccess: (row) => {
+      if (row) setSkippedId(row.id)
+      void utils.alerts.invalidate()
+    },
+  })
   return {
     done: (c: Pick<ChoreRow, 'id' | 'title' | 'doneKind'>, alert?: Pick<AlertRow, 'id'>) => {
       doing.current = c
@@ -79,25 +100,22 @@ export function useChoreActions() {
     },
     skip: (alert: Pick<AlertRow, 'id'>) => dismiss.mutate({ id: alert.id }),
     pending: log.isPending || ack.isPending || dismiss.isPending,
-    skipped: dismiss.isSuccess,
+    /** The alert last skipped from here; a new one for the same chore shows it again. */
+    skippedId,
     error: log.error ?? ack.error ?? dismiss.error,
   }
 }
 
 /**
  * A due chore with Done, and Skip when an alert can be skipped: the sidebar's
- * Needs you (`compact`) and the Water page share it, so both read and act the same.
+ * Needs you (`compact`) and the Water page share it, so both read and act the
+ * same. `disabled` until it's known whether the chore has an alert.
  */
-export function ChoreItem({ chore: c, alert, compact = false }: { chore: ChoreRow, alert?: AlertRow, compact?: boolean }) {
+export function ChoreItem({ chore: c, alert, compact = false, disabled = false }: { chore: ChoreRow, alert?: AlertRow, compact?: boolean, disabled?: boolean }) {
   const actions = useChoreActions()
-  if (actions.skipped) return null
+  if (actions.skippedId !== null && (!alert || alert.id === actions.skippedId)) return null
   const labels = alertActions(alertKind(c.id) ?? `chore_${c.id}`)
-  const buttons = (
-    <div className="flex flex-wrap gap-1.5">
-      <Button size="sm" variant={compact ? 'secondary' : 'primary'} icon={Check} disabled={actions.pending} onClick={() => actions.done(c, alert)}>{labels.resolve}</Button>
-      {alert && labels.skip && <Button size="sm" icon={X} className="text-fg-2" title="Close it without logging it as done" disabled={actions.pending} onClick={() => actions.skip(alert)}>{labels.skip}</Button>}
-    </div>
-  )
+  const busy = disabled || actions.pending
   return (
     <div
       data-testid={`needs-chore-${c.id}`}
@@ -112,20 +130,28 @@ export function ChoreItem({ chore: c, alert, compact = false }: { chore: ChoreRo
           </span>
           <span className={cn('text-fg-2', compact ? 'truncate text-xs' : 'text-[13px] leading-snug text-pretty')}>{c.reason}</span>
         </Link>
-        {buttons}
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="sm" variant={compact ? 'secondary' : 'primary'} icon={Check} disabled={busy} onClick={() => actions.done(c, alert)}>{labels.resolve}</Button>
+          {alert && labels.skip && <Button size="sm" icon={X} className="text-fg-2" title="Close it without logging it as done" disabled={busy} onClick={() => actions.skip(alert)}>{labels.skip}</Button>}
+        </div>
         {actions.error && <span className="text-xs text-danger">{actions.error.message}</span>}
       </div>
     </div>
   )
 }
 
-/** Water's line into Care: the due chores to act on there, else what Care has for now. */
+/**
+ * Water's line into Care: the due chores to act on there, and the setup issues
+ * still pointed at; else Care's one line, which counts only the chores not skipped.
+ */
 export function DueChores() {
-  const items = useNeedsChores()
+  const { items, chores, ready } = useNeedsChores()
+  const setup = trpc.care.setup.useQuery(undefined, { refetchInterval: 5 * 60_000 })
+  const issues = setup.data?.issues.length ?? 0
   if (!items.length) {
     return (
       <Card className="py-3">
-        <CareSummary />
+        <CareSummary chores={chores} />
       </Card>
     )
   }
@@ -133,7 +159,14 @@ export function DueChores() {
     <div className="flex flex-col gap-2.5">
       <h2 className={EYEBROW}>Needs you</h2>
       <Card className="gap-0 p-0" data-testid="due-chores">
-        {items.map(i => <ChoreItem key={i.chore.id} chore={i.chore} alert={i.alert} />)}
+        {items.map(i => <ChoreItem key={i.chore.id} chore={i.chore} alert={i.alert} disabled={!ready} />)}
+        {issues > 0 && (
+          <Link to="/care" data-testid="due-chores-setup" className="flex items-center gap-2 px-5 py-3 text-[13px] text-fg-2 hover:text-fg">
+            <TriangleAlert size={15} strokeWidth={1.75} className="shrink-0 text-pod-attention" />
+            <span className="min-w-0 flex-1 truncate">{`${issues} setup issue${issues > 1 ? 's' : ''}`}</span>
+            <ChevronRight size={14} className="shrink-0 text-fg-3" />
+          </Link>
+        )}
       </Card>
     </div>
   )

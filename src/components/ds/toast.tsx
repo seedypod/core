@@ -105,61 +105,63 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
   const value = useMemo(() => ({ show }), [show])
   const entry = state.current
   const close = () => dispatch({ type: 'expire' })
+  const urgent = !!entry?.notice.urgent
+  const toast = entry && (
+    <div
+      key={entry.key}
+      data-testid="toast"
+      data-toast={entry.notice.id}
+      data-leaving={state.leaving || undefined}
+      onMouseEnter={() => setPausedKey(entry.key)}
+      onMouseLeave={() => setPausedKey(null)}
+      onFocus={() => setPausedKey(entry.key)}
+      onBlur={() => setPausedKey(null)}
+      tabIndex={-1}
+      className={cn(
+        'pointer-events-auto relative flex max-w-[440px] items-center gap-2.5 overflow-hidden rounded-[10px] border border-line-2 bg-active px-4 py-3 text-[14px] text-fg shadow-[var(--shadow-dialog)] outline-none',
+        state.leaving ? 'lp-toast-out' : 'lp-toast-in',
+      )}
+    >
+      <entry.notice.icon size={17} className={cn('shrink-0', NOTICE_TEXT[entry.notice.tone])} />
+      <div className="min-w-0 flex-1">
+        <p>{entry.notice.title}</p>
+        {entry.notice.detail && <p className="text-[13px] text-fg-2">{entry.notice.detail}</p>}
+      </div>
+      {entry.notice.action && (
+        <button
+          type="button"
+          data-testid="toast-action"
+          onClick={() => {
+            entry.notice.action?.onClick()
+            close()
+          }}
+          className="shrink-0 cursor-pointer rounded-ctl border-0 bg-transparent px-2 py-1 text-[13px] font-medium text-fg underline underline-offset-2 hover:bg-line"
+        >
+          {entry.notice.action.label}
+        </button>
+      )}
+      <button type="button" aria-label="Dismiss" onClick={close} className="-mr-1.5 shrink-0 cursor-pointer rounded-ctl border-0 bg-transparent p-1 text-fg-3 hover:bg-line hover:text-fg">
+        <X size={15} />
+      </button>
+      <span
+        aria-hidden
+        data-testid="toast-countdown"
+        className={cn('lp-toast-countdown absolute inset-x-0 bottom-0 h-[2px] origin-left', NOTICE_BAR[entry.notice.tone])}
+        style={{ animationDuration: `${duration}ms`, animationPlayState: paused || state.leaving ? 'paused' : 'running' }}
+      />
+    </div>
+  )
 
   return (
     <ToastContext.Provider value={value}>
       {children}
       <div
-        role={entry?.notice.urgent ? 'alert' : 'status'}
-        aria-live={entry?.notice.urgent ? 'assertive' : 'polite'}
         data-testid="toast-region"
-        className="pointer-events-none fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom,0px))] z-50 flex justify-center px-4 min-[900px]:bottom-6 min-[900px]:left-[244px]"
+        className="pointer-events-none fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom,0px))] z-50 flex flex-col px-4 min-[900px]:bottom-6 min-[900px]:left-[244px]"
       >
-        {entry && (
-          <div
-            key={entry.key}
-            data-testid="toast"
-            data-toast={entry.notice.id}
-            data-leaving={state.leaving || undefined}
-            onMouseEnter={() => setPausedKey(entry.key)}
-            onMouseLeave={() => setPausedKey(null)}
-            onFocus={() => setPausedKey(entry.key)}
-            onBlur={() => setPausedKey(null)}
-            tabIndex={-1}
-            className={cn(
-              'pointer-events-auto relative flex max-w-[440px] items-center gap-2.5 overflow-hidden rounded-[10px] border border-line-2 bg-active px-4 py-3 text-[14px] text-fg shadow-[var(--shadow-dialog)] outline-none',
-              state.leaving ? 'lp-toast-out' : 'lp-toast-in',
-            )}
-          >
-            <entry.notice.icon size={17} className={cn('shrink-0', NOTICE_TEXT[entry.notice.tone])} />
-            <div className="min-w-0 flex-1">
-              <p>{entry.notice.title}</p>
-              {entry.notice.detail && <p className="text-[13px] text-fg-2">{entry.notice.detail}</p>}
-            </div>
-            {entry.notice.action && (
-              <button
-                type="button"
-                data-testid="toast-action"
-                onClick={() => {
-                  entry.notice.action?.onClick()
-                  close()
-                }}
-                className="shrink-0 cursor-pointer rounded-ctl border-0 bg-transparent px-2 py-1 text-[13px] font-medium text-fg underline underline-offset-2 hover:bg-line"
-              >
-                {entry.notice.action.label}
-              </button>
-            )}
-            <button type="button" aria-label="Dismiss" onClick={close} className="-mr-1.5 shrink-0 cursor-pointer rounded-ctl border-0 bg-transparent p-1 text-fg-3 hover:bg-line hover:text-fg">
-              <X size={15} />
-            </button>
-            <span
-              aria-hidden
-              data-testid="toast-countdown"
-              className={cn('lp-toast-countdown absolute inset-x-0 bottom-0 h-[2px] origin-left', NOTICE_BAR[entry.notice.tone])}
-              style={{ animationDuration: `${duration}ms`, animationPlayState: paused || state.leaving ? 'paused' : 'running' }}
-            />
-          </div>
-        )}
+        {/* Both live regions stay mounted, so a toast lands in one that is already listening at its politeness. */}
+        <div role="status" aria-live="polite" className="flex w-full justify-center">{!urgent && toast}</div>
+        <div role="alert" aria-live="assertive" className="flex w-full justify-center">{urgent && toast}</div>
       </div>
     </ToastContext.Provider>
   )

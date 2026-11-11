@@ -81,7 +81,7 @@ function Readings() {
 function NeedsYou() {
   const pods = trpc.grow.pods.useQuery()
   const harvest = trpc.grow.harvest.useQuery(undefined, { refetchInterval: 10 * 60_000 })
-  const due = useNeedsChores()
+  const { items: due, ready: dueReady } = useNeedsChores()
   const outlook = new Map((harvest.data ?? []).map(o => [o.slot, o]))
   const shown = (pods.data ?? []).map(p => ({ ...p, shown: podShown({ status: p.status, harvest: outlook.get(p.slot) ?? null }) }))
   const attention = shown.filter(p => p.shown === 'attention')
@@ -105,7 +105,7 @@ function NeedsYou() {
       {ready.length > 0 && (
         <NeedRow color="var(--pod-ready)" title={`${ready.length} ready to harvest`} sub={names.length > 2 ? `${names.slice(0, 2).join(', ')}, +${names.length - 2}` : names.join(', ')} />
       )}
-      {due.map(i => <ChoreItem key={i.chore.id} chore={i.chore} alert={i.alert} compact />)}
+      {due.map(i => <ChoreItem key={i.chore.id} chore={i.chore} alert={i.alert} compact disabled={!dueReady} />)}
     </div>
   )
 }

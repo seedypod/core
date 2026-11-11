@@ -6,7 +6,7 @@ import { useLiveEvents } from '@/src/hooks/useLiveEvents'
 import { setUnitSystem, systemFor } from '@/src/lib/units'
 import { trpc } from '@/src/utils/trpc'
 
-/** The live event stream, and the snackbars it raises; the kiosk has no toast region, so it shows none. */
+/** The live event stream, and the snackbars it raises (none on the kiosk). */
 function Live() {
   useLiveEvents(useSnackbars())
   return null
@@ -17,20 +17,17 @@ function Root() {
   // Every page formats through the display units; a change remounts them so none keeps the old ones.
   const units = systemFor(trpc.settings.get.useQuery().data?.temperatureUnit)
   setUnitSystem(units)
-  if (pathname.startsWith('/kiosk')) {
-    return (
-      <>
-        <Live />
-        <Outlet key={units} />
-      </>
-    )
-  }
+  // One provider over both branches keeps Live in place, so the event stream outlives a move to or from the kiosk.
   return (
     <ToastProvider>
       <Live />
-      <AppShell key={units}>
-        <Outlet />
-      </AppShell>
+      {pathname.startsWith('/kiosk')
+        ? <Outlet key={units} />
+        : (
+            <AppShell key={units}>
+              <Outlet />
+            </AppShell>
+          )}
     </ToastProvider>
   )
 }

@@ -126,15 +126,23 @@ describe('ToastProvider', () => {
     expect(shown()).toBeNull()
   })
 
-  it('announces politely, and an urgent one as an alert', () => {
+  it('keeps a polite and an assertive region mounted, and puts each toast in its own', () => {
     mount(1000)
+    const status = screen.getByRole('status')
+    const alert = screen.getByRole('alert')
+    expect(status.getAttribute('aria-live')).toBe('polite')
+    expect(alert.getAttribute('aria-live')).toBe('assertive')
+    expect(status.textContent).toBe('')
+    expect(alert.textContent).toBe('')
     act(() => show(note('a', { detail: 'all good' })))
-    expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite')
-    expect(screen.getByRole('status').textContent).toContain('all good')
+    expect(status.textContent).toContain('all good')
+    expect(alert.textContent).toBe('')
     runOut(1000)
     act(() => show(note('pump', { tone: 'danger', icon: Waves, urgent: true, title: 'Pump stopped: dry-run' })))
-    expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive')
-    expect(screen.getByRole('alert').textContent).toContain('Pump stopped: dry-run')
+    // The same elements as before: neither region was swapped out to change its politeness.
+    expect(screen.getByRole('alert')).toBe(alert)
+    expect(alert.textContent).toContain('Pump stopped: dry-run')
+    expect(status.textContent).toBe('')
   })
 
   it('does nothing outside a provider', () => {

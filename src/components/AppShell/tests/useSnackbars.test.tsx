@@ -47,6 +47,10 @@ describe('present', () => {
     expect(present(snack, '/alerts', vi.fn())).toBeNull()
   })
 
+  it('shows nothing on the kiosk', () => {
+    expect(present(snack, '/kiosk', vi.fn())).toBeNull()
+  })
+
   it('marks an ok snack as a success', () => {
     expect(present({ ...snack, tone: 'ok' }, '/', vi.fn())?.kind).toBe('success')
   })
@@ -65,7 +69,7 @@ describe('useSnackbars', () => {
     const { result } = renderHook(() => useSnackbars())
     const since = new Date().toISOString()
     act(() => {
-      result.current({ kind: 'mutation', path: 'actuators.pump' })
+      result.current({ kind: 'mutation', path: 'actuators.pump.on' })
       result.current({ kind: 'hal', event: { type: 'actuator', id: 'pump', state: { on: true, level: 30, since, fault: null, remainingS: 0 } } })
       result.current({ kind: 'hal', event: { type: 'actuator', id: 'pump', state: { on: false, level: 30, since, fault: null, remainingS: null } } })
       result.current({ kind: 'mutation', path: 'tank' })

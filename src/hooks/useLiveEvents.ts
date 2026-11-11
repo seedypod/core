@@ -20,6 +20,7 @@ const TOUCHES = new Map<string, readonly Area[]>([
   ['actuators', ['light', 'pump']],
   ['actuators.light', ['light']],
   ['actuators.pump', ['pump']],
+  ['actuators.pump.on', ['pump']],
   // Acknowledging a fault re-enables its actuator.
   ['alerts', ['alerts', 'light', 'pump', 'system']],
   ['analyses', ['vision', 'grow', 'datasets']],

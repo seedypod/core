@@ -68,29 +68,33 @@ export function newAlertSnacks(prev: ReadonlyArray<{ id: number }> | undefined, 
 
 /** A run that ends within this of its planned end ran its course; earlier, someone stopped it. */
 const END_SLACK_MS = 2_000
-/** A pump command and the run it started arrive in either order, this close together. */
+/** A start command and the run it started arrive in either order, this close together. */
 const MANUAL_WINDOW_MS = 10_000
 
 /**
- * Watches the pump for a manual run (one a person or agent started, so a
- * `actuators.pump` mutation comes with it) running its course, which says
+ * Watches the pump for a manual run (one a person or agent started, so an
+ * `actuators.pump.on` command comes with it) running its course, which says
  * "Watering finished". Scheduled runs finish quietly, a run stopped early was
- * stopped by whoever is looking, and a fault is the alert's snack.
+ * stopped by whoever is looking, and a fault is the alert's snack. A run is
+ * known by its `since`: an on-state with another one is a new run (an off
+ * missed while the stream was down), and a start command counts once.
  */
 export function pumpWatch(now: () => number = Date.now) {
-  let run: { startedAt: number, endsAt: number | null, plannedS: number, manual: boolean } | null = null
+  let run: { since: string, startedAt: number, endsAt: number | null, plannedS: number, manual: boolean } | null = null
   let commandedAt = Number.NEGATIVE_INFINITY
   return (e: CoreEvent): Snack | null => {
-    if (e.kind === 'mutation' && e.path === 'actuators.pump') {
-      if (run && now() - run.startedAt <= MANUAL_WINDOW_MS) run.manual = true
-      else if (!run) commandedAt = now()
+    if (e.kind === 'mutation' && e.path === 'actuators.pump.on') {
+      if (run && !run.manual && now() - run.startedAt <= MANUAL_WINDOW_MS) run.manual = true
+      else commandedAt = now()
       return null
     }
     if (e.kind !== 'hal' || e.event.type !== 'actuator' || e.event.id !== 'pump') return null
     const s = e.event.state
     if (s.on) {
-      // Re-sent states of the same run keep its start and end.
-      run ??= { startedAt: now(), endsAt: s.remainingS === null ? null : Date.parse(s.since) + s.remainingS * 1000, plannedS: s.remainingS ?? 0, manual: now() - commandedAt <= MANUAL_WINDOW_MS }
+      // Re-sent states of the same run keep its start, end and whether it was manual.
+      if (run?.since === s.since) return null
+      run = { since: s.since, startedAt: now(), endsAt: s.remainingS === null ? null : Date.parse(s.since) + s.remainingS * 1000, plannedS: s.remainingS ?? 0, manual: now() - commandedAt <= MANUAL_WINDOW_MS }
+      commandedAt = Number.NEGATIVE_INFINITY
       return null
     }
     const ended = run

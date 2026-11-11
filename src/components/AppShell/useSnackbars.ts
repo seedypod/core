@@ -5,9 +5,10 @@ import type { CoreEvent } from '@/src/lib/eventBus'
 import { trpc } from '@/src/utils/trpc'
 import { followSnack, newAlertSnacks, pumpWatch, type Snack } from './snacks'
 
-/** A snack as the toast shows it here: nothing on the page that already shows it, and no View on the page it would open. */
+/** A snack as the toast shows it here: nothing on the kiosk or on the page that already shows it, and no View on the page it would open. */
 export function present(s: Snack, pathname: string, go: (to: string) => void): ToastNotice | null {
-  if (s.shownOn && pathname.startsWith(s.shownOn)) return null
+  // The kiosk is a wall display with no shell: it never shows a toast.
+  if (pathname.startsWith('/kiosk') || (s.shownOn && pathname.startsWith(s.shownOn))) return null
   const view = s.view && !pathname.startsWith(s.view.to) ? s.view : undefined
   return {
     id: s.id,

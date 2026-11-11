@@ -63,6 +63,28 @@ describe('routers', () => {
     expect(seen).toContain('actuators.light')
   })
 
+  it('pump commands say whether they start the pump, so a Stop is never taken for a run someone started', async () => {
+    const { c, events } = caller()
+    const seen: string[] = []
+    events.subscribe(e => e.kind === 'mutation' && seen.push(e.path))
+    await c.pump.runOnce({ durationS: 60 })
+    await c.pump.stop()
+    await c.pump.set({ level: 20 })
+    await c.pump.set({ on: false })
+    expect(seen).toEqual(['actuators.pump.on', 'actuators.pump', 'actuators.pump.on', 'actuators.pump'])
+  })
+
+  it('alerts.list narrows to one kind and the newest few, newest first', async () => {
+    const { c, store } = caller()
+    store.alerts.raise('chore_feed', 'a', '2026-11-01T00:00:00Z')
+    store.alerts.clear('chore_feed', '2026-11-02T00:00:00Z')
+    store.alerts.raise('chore_feed', 'b', '2026-11-03T00:00:00Z')
+    store.alerts.raise('chore_thin', 'c', '2026-11-04T00:00:00Z')
+    expect((await c.alerts.list({ activeOnly: false, kind: 'chore_feed', limit: 1 })).map(a => a.detail)).toEqual(['b'])
+    expect((await c.alerts.list({ activeOnly: false, kind: 'chore_feed' })).map(a => a.detail)).toEqual(['b', 'a'])
+    expect((await c.alerts.list({ activeOnly: false })).length).toBeGreaterThanOrEqual(3)
+  })
+
   it('pump.runOnce maps a HAL refusal to PRECONDITION_FAILED', async () => {
     const { c, hal } = caller()
     await c.pump.runOnce({ durationS: 900, level: 30 })

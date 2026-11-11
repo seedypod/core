@@ -5,7 +5,7 @@ import { alertSnack, followSnack, newAlertSnacks, pumpWatch } from '../snacks'
 const T0 = Date.parse('2026-11-11T08:00:00Z')
 const at = (s: number) => new Date(T0 + s * 1000).toISOString()
 const pump = (on: boolean, since: number, remainingS: number | null, fault: string | null = null): CoreEvent => ({ kind: 'hal', event: { type: 'actuator', id: 'pump', state: { on, level: 30, since: at(since), fault, remainingS } } })
-const command: CoreEvent = { kind: 'mutation', path: 'actuators.pump' }
+const command: CoreEvent = { kind: 'mutation', path: 'actuators.pump.on' }
 
 /** A watch on a clock the test moves, fed events in order; the snacks it returned. */
 function watch() {
@@ -127,6 +127,29 @@ describe('pumpWatch', () => {
     w(200, command)
     w(200, pump(true, 200, 300))
     expect(w(500, pump(false, 500, null, 'dry-run'))).toBeNull()
+  })
+
+  it('takes an on-state with another start for a new run, so a missed off leaves nothing behind', () => {
+    const w = watch()
+    w(0, command)
+    w(0, pump(true, 0, 300))
+    // Its off went missing (the stream dropped); a scheduled run starts much later.
+    w(1000, pump(true, 1000, 300))
+    expect(w(1300, pump(false, 1300, null))).toBeNull()
+  })
+
+  it('counts a start command once, and never a Stop', () => {
+    const w = watch()
+    w(0, command)
+    w(0, pump(true, 0, 60))
+    expect(w(60, pump(false, 60, null))?.title).toBe('Watering finished')
+    // A scheduled run right after: the command was spent on the last one.
+    w(62, pump(true, 62, 60))
+    expect(w(122, pump(false, 122, null))).toBeNull()
+    // A Stop's mutation, late after its off, doesn't make the next scheduled run manual.
+    w(200, { kind: 'mutation', path: 'actuators.pump' })
+    w(201, pump(true, 201, 30))
+    expect(w(231, pump(false, 231, null))).toBeNull()
   })
 
   it('says nothing for an unbounded run, an off with no run seen, or anything not the pump', () => {

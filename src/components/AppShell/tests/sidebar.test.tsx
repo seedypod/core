@@ -20,6 +20,7 @@ vi.mock('@/src/utils/trpc', () => {
       if (k === 'useQuery') return proc(prefix).useQuery
       if (k === 'useMutation') return mutation
       if (k === 'useUtils') return () => router('')
+      if (k === 'useQueries') return () => []
       if (k === 'invalidate') return () => {}
       return router(prefix ? `${prefix}.${k}` : k)
     },
