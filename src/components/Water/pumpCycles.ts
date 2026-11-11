@@ -73,6 +73,18 @@ export function cutoffPct(waterLowCm: number | null | undefined, fullCm: number 
   return Math.round(Math.max(0, Math.min(100, ((emptyCm - waterLowCm) / (emptyCm - fullCm)) * 100)))
 }
 
+/**
+ * Whether the HAL would refuse to start the pump for want of water: the
+ * sensor's distance at or past `waterLowCm`. Without a distance in cm, the
+ * level against the unrounded cutoff. False when the calibration is unknown.
+ */
+export function belowCutoff(o: { distance?: { value: number, unit: string }, levelPct?: number, waterLowCm: number | null | undefined, fullCm: number | undefined, emptyCm: number | undefined }): boolean {
+  const { waterLowCm, fullCm, emptyCm } = o
+  if (waterLowCm == null || fullCm === undefined || emptyCm === undefined || emptyCm <= fullCm) return false
+  if (o.distance?.unit === 'cm') return o.distance.value >= waterLowCm
+  return o.levelPct !== undefined && o.levelPct <= ((emptyCm - waterLowCm) / (emptyCm - fullCm)) * 100
+}
+
 /** A rise this big between samples is a top-up, not sensor noise. */
 const TOP_UP_PCT = 8
 

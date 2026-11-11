@@ -50,6 +50,9 @@ describe('Sidebar', () => {
 
   it('hatches the tank\'s meter under the pump cutoff once the cutoff and calibration are known', () => {
     data.set('sensors.latest', { water_level_pct: { value: 71, unit: '%' } })
+    // A payload without limits (an older daemon) draws no band, and doesn't throw.
+    data.set('system.info', { system: { caps: { sensors: [] } } })
+    data.set('settings.get', { waterFullCm: 5, waterEmptyCm: 20 })
     render(<Sidebar status={online} />)
     expect(screen.queryByTestId('meter-reserve')).toBeNull()
     cleanup()
@@ -57,6 +60,13 @@ describe('Sidebar', () => {
     data.set('settings.get', { waterFullCm: 5, waterEmptyCm: 20 })
     render(<Sidebar status={online} />)
     expect(screen.getByTestId('meter-reserve').style.width).toBe('27%')
+    expect(screen.getByTestId('meter-reserve').className).toContain('rounded-l-full')
+    cleanup()
+    // A cutoff at full: the band is the whole bar, rounded both ends.
+    data.set('system.info', { system: { caps: { sensors: [] }, limits: { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 5 } } })
+    render(<Sidebar status={online} />)
+    expect(screen.getByTestId('meter-reserve').className).toContain('rounded-full')
+    expect(screen.getByTestId('meter-reserve').className).not.toContain('rounded-l-full')
   })
 
   it('says the tank is watering while the pump runs', () => {
@@ -120,10 +130,10 @@ describe('Sidebar', () => {
 
   it('adds a water line for installed water-quality probes only', () => {
     data.set('sensors.latest', { ph: { value: 6.1, unit: 'pH' }, ec: { value: 1.4, unit: 'mS/cm' } })
-    data.set('system.info', { system: { caps: { sensors: ['air_temp', 'ph', 'ec'] }, limits: { waterLowCm: null } } })
+    data.set('system.info', { system: { caps: { sensors: ['air_temp', 'ph', 'ec'] } } })
     const { rerender } = render(<Sidebar status={online} />)
     expect(screen.getByText('pH 6.1 · EC 1.4 mS/cm').closest('a')?.getAttribute('href')).toBe('/sensors')
-    data.set('system.info', { system: { caps: { sensors: ['air_temp'] }, limits: { waterLowCm: null } } })
+    data.set('system.info', { system: { caps: { sensors: ['air_temp'] } } })
     rerender(<Sidebar status={online} />)
     expect(screen.queryByText(/^pH /)).toBeNull()
   })

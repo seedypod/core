@@ -18,11 +18,11 @@ vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
   const { useEffect } = await import('react')
   return {
     ...real,
-    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, pumping: boolean, topUps: number[], runs: number[], upcoming: number[], preview: number[] } | null, onUnavailable?: () => void }) => {
+    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, low: boolean, pumping: boolean, topUps: number[], runs: number[], upcoming: number[], preview: number[] } | null, onUnavailable?: () => void }) => {
       useEffect(() => {
         if (hero.fail) onUnavailable?.()
       }, [onUnavailable])
-      return <div data-testid="tank-3d" data-state={status} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'} · ran ${data.runs.map(r => r.toFixed(2)).join(',')} · later ${data.upcoming.map(r => r.toFixed(2)).join(',')} · preview ${data.preview.map(r => r.toFixed(2)).join(',')}`}</div>
+      return <div data-testid="tank-3d" data-state={status} data-low={data ? String(data.low) : undefined} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'} · ran ${data.runs.map(r => r.toFixed(2)).join(',')} · later ${data.upcoming.map(r => r.toFixed(2)).join(',')} · preview ${data.preview.map(r => r.toFixed(2)).join(',')}`}</div>
     },
   }
 })
@@ -256,11 +256,43 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.queryByTestId('tank-in-reserve')).toBeNull()
   })
 
-  it('says the pump won\'t start once the level is down in the hatched reserve', () => {
-    data.set('sensors', { ...(data.get('sensors') as object), water_level_pct: { value: 27, unit: '%' } })
+  it('says the pump won\'t start once the distance is past the HAL\'s waterLowCm, whatever the rounded level says', () => {
+    // 28% rounds above the 27% cutoff, but the sensor reads 16 cm: the HAL refuses.
+    data.set('sensors', { ...(data.get('sensors') as object), water_level_pct: { value: 28, unit: '%' }, water_distance: { value: 16, unit: 'cm' } })
     render(<WaterPage />)
     expect(screen.getByTestId('tank-in-reserve').textContent).toBe('Below the pump cutoff · the pump won\'t start')
     expect(screen.getByRole('meter', { name: 'Tank level' }).firstElementChild?.className).toContain('opacity-60')
+    cleanup()
+    // 27% equals the rounded cutoff, but 15.9 cm is short of 16: the pump still starts.
+    data.set('sensors', { ...(data.get('sensors') as object), water_level_pct: { value: 27, unit: '%' }, water_distance: { value: 15.9, unit: 'cm' } })
+    render(<WaterPage />)
+    expect(screen.queryByTestId('tank-in-reserve')).toBeNull()
+    expect(screen.getByRole('meter', { name: 'Tank level' }).firstElementChild?.className).not.toContain('opacity-60')
+  })
+
+  it('falls back to the unrounded level against the unrounded cutoff without a distance', () => {
+    const rest = { ...(data.get('sensors') as Record<string, unknown>) }
+    delete rest.water_distance
+    // 26.8% rounds to the 27% cutoff, but is over the true 26.67%.
+    data.set('sensors', { ...rest, water_level_pct: { value: 26.8, unit: '%' } })
+    render(<WaterPage />)
+    expect(screen.queryByTestId('tank-in-reserve')).toBeNull()
+    cleanup()
+    data.set('sensors', { ...rest, water_level_pct: { value: 26.5, unit: '%' } })
+    render(<WaterPage />)
+    expect(screen.getByTestId('tank-in-reserve')).toBeTruthy()
+  })
+
+  it('draws no reserve when the cutoff is at empty', () => {
+    // waterLowCm at the empty mark: cutoff 0%, nothing under it to hatch, even with the sensor past it.
+    data.set('settings', { waterFullCm: 5, waterEmptyCm: 16, tankCapacityL: 19 })
+    data.set('sensors', { ...(data.get('sensors') as object), water_distance: { value: 17, unit: 'cm' } })
+    render(<WaterPage />)
+    expect(screen.queryByTestId('tank-reserve')).toBeNull()
+    expect(screen.queryByTestId('chart-band')).toBeNull()
+    expect(screen.queryByText(/unusable · below pump cutoff/)).toBeNull()
+    expect(screen.queryByTestId('tank-in-reserve')).toBeNull()
+    expect(screen.getByRole('meter', { name: 'Tank level' }).getAttribute('aria-description')).toBeNull()
   })
 })
 
@@ -588,6 +620,20 @@ describe('WaterPage with WebGL: the tank hero', () => {
     expect(screen.getByText('loading …')).toBeTruthy()
     expect(screen.getByText('100%').className).toContain('animate-pulse')
     expect(screen.getByTestId('tank-3d').getAttribute('data-state')).toBe('loading')
+    // No scene, so no hatching to describe yet.
+    expect(screen.getByTestId('tank-3d').getAttribute('aria-label')).not.toMatch(/hatched/)
+    expect(screen.queryByText(/unusable · below pump cutoff/)).toBeNull()
+  })
+
+  it('hands the scene the same "won\'t start" the readout shows', () => {
+    expect(screen.queryByTestId('tank-3d')).toBeNull()
+    render(<WaterPage />)
+    expect(screen.getByTestId('tank-3d').getAttribute('data-low')).toBe('false')
+    cleanup()
+    data.set('sensors', { ...(data.get('sensors') as object), water_level_pct: { value: 28, unit: '%' }, water_distance: { value: 16.4, unit: 'cm' } })
+    render(<WaterPage />)
+    expect(screen.getByTestId('tank-3d').getAttribute('data-low')).toBe('true')
+    expect(screen.getByTestId('tank-in-reserve')).toBeTruthy()
   })
 
   it('goes back to the flat meter and history chart when the 3D tank can\'t run', () => {

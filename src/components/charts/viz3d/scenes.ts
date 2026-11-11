@@ -172,7 +172,7 @@ const NARROW_PX = 560
  * come hollow, after now). While the pump runs, the water this run drew down
  * is a blue tail into the glass, the last x label turns blue, and bubbles rise.
  * The water under the cutoff, which the pump won't draw, is hatched across
- * the chart and round the front of the glass; at or under it, the water
+ * the chart and right round the glass; at or under it, the water
  * dims and "now" turns amber.
  */
 export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> {
@@ -207,18 +207,20 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
   const linkGeo = new T.BufferGeometry().setFromPoints([new T.Vector3(x0 + W, 0, 0), new T.Vector3(CX - R, 0, 0)])
   const link = new T.Line(linkGeo, new T.LineBasicMaterial({ transparent: true }))
   base.root.add(link)
-  // The reserve under the cutoff: strokes behind the history, and wrapped round the front of the glass (stronger, to read over the water), rebuilt when the cutoff moves.
+  // The reserve under the cutoff: strokes behind the history, and wrapped right round the glass (stronger, to read over the water) so a spin never hides them, rebuilt when the cutoff moves.
   const reserve = base.segments([], 'reserve', 0.55)
   const glassReserve = base.segments([], 'reserve', 0.8)
   reserve.renderOrder = 1
   glassReserve.renderOrder = 1
   let reserveAt: number | null = null
+  // Whether "now" is inked amber, for the water under the cutoff.
+  let nowLow = false
   function hatchReserve(cut: number) {
     const chart = hatch(x0, x0 + W, 0, cut, 0.16).map(([a, b]) => [[a[0], a[1], -0.03], [b[0], b[1], -0.03]] as [[number, number, number], [number, number, number]])
-    // Across the glass, each stroke in short pieces, set onto the cylinder's front so it curves with it.
-    const front = (x: number, y: number): [number, number, number] => [x, y, Math.sqrt(Math.max(0, R * R - (x - CX) ** 2))]
-    const glassy = hatch(CX - R, CX + R, 0, cut, 0.12).flatMap(([a, b]) => Array.from({ length: 6 }, (_, i) => {
-      const at = (k: number) => front(a[0] + (b[0] - a[0]) * k / 6, a[1] + (b[1] - a[1]) * k / 6)
+    // The glass's wall unrolled: hatched along its circumference, then each stroke in short pieces wrapped back onto the cylinder.
+    const wall = (s: number, y: number): [number, number, number] => [CX + R * Math.sin(s / R), y, R * Math.cos(s / R)]
+    const glassy = hatch(0, 2 * Math.PI * R, 0, cut, 0.12).flatMap(([a, b]) => Array.from({ length: 6 }, (_, i) => {
+      const at = (k: number) => wall(a[0] + (b[0] - a[0]) * k / 6, a[1] + (b[1] - a[1]) * k / 6)
       return [at(i), at(i + 1)] as [[number, number, number], [number, number, number]]
     }))
     reserve.geometry.dispose()
@@ -292,7 +294,7 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     const e = shown ? pointEase(f.p, 119, 120) : 0
     const cur = data?.current ?? LOW
     // At or under the cutoff the pump won't start: the water left is all reserve, so it dims under denser hatching and "now" turns amber.
-    const low = shown && data?.current != null && data.cutoff != null && data.current <= data.cutoff
+    const low = shown && !!data?.low && data.cutoff !== null
     const h = Math.max(0.02, lerp(LOW, shown ? cur : LOW, e) * H)
     water.scale.set(1, h, 1)
     water.position.set(CX, h / 2, 0)
@@ -337,6 +339,8 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     mark('full', shown ? H : null, words?.full ?? null)
     mark('now', shown && data?.current != null ? h : null, words?.now ?? null)
     marks.now.label.setInk(low ? 'amber' : 'fg1')
+    if (low !== nowLow) base.tint(marks.now.tick.material, low ? 'amber' : 'fg1')
+    nowLow = low
     mark('cutoff', cut, words?.cutoff ?? null)
     mark('empty', shown ? 0 : null, words?.empty ?? null)
     ranBars.forEach((m, i) => {

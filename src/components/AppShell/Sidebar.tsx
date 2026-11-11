@@ -11,7 +11,7 @@ import type { Reading, SensorId } from '@/src/hardware/contract'
 import { formatReading, SENSOR_META, withUnit } from '@/src/lib/sensorMeta'
 import { toDisplay } from '@/src/lib/units'
 import { checkSummary, STATE_TEXT, worstState } from '@/src/components/System/checkState'
-import { cutoffPct } from '@/src/components/Water/pumpCycles'
+import { useTankReserve } from '@/src/components/Water/useTankReserve'
 import { trpc } from '@/src/utils/trpc'
 import { NAV_GROUPS, navItems, type NavItem } from './navItems'
 
@@ -43,7 +43,7 @@ function Meter({ to, icon: Icon, label, value, pct, readings, fill = 'bg-meter',
       {pct !== null && (
         <span className="relative h-[3px] rounded-full bg-line">
           <span className={cn('block h-full rounded-full', fill)} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
-          {reserve !== null && <span aria-hidden data-testid="meter-reserve" className="tank-reserve absolute inset-y-0 left-0 rounded-l-full" style={{ width: `${reserve}%` }} />}
+          {reserve !== null && <span aria-hidden data-testid="meter-reserve" className={cn('tank-reserve absolute inset-y-0 left-0', reserve >= 100 ? 'rounded-full' : 'rounded-l-full')} style={{ width: `${reserve}%` }} />}
         </span>
       )}
       {readings && <ReadingFlag readings={readings} className="text-right" />}
@@ -62,9 +62,8 @@ function Readings() {
   const air = [s.air_temp, s.humidity].filter((r): r is Reading => !!r).map(r => toDisplay(r.value, r.unit)).map(r => withUnit(Math.round(r.value), r.unit)).join(' · ')
   // Water-quality probes are optional, so the line shows only for those installed.
   const system = trpc.system.info.useQuery()
-  const settings = trpc.settings.get.useQuery()
   // The water under the pump cutoff, which the pump won't draw.
-  const reserve = cutoffPct(system.data?.system?.limits.waterLowCm, settings.data?.waterFullCm, settings.data?.waterEmptyCm)
+  const { cutoff: reserve } = useTankReserve(s)
   const quality = (system.data?.system?.caps.sensors ?? []).filter(id => SENSOR_META[id].group === 'water-quality')
   const water = quality.map(id => `${SENSOR_META[id].label} ${formatReading(s[id])}`).join(' · ')
   return (

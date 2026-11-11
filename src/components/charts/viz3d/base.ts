@@ -160,9 +160,12 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
 
   // ── Materials that follow the theme ────────────────────────────────────
   const tinted: Array<{ material: THREE.Material & { color: THREE.Color }, ink: Ink }> = []
+  /** Colours a material with an ink and keeps it in step with the theme; again on the same material, re-inks it. */
   const tint = <M extends THREE.Material & { color: THREE.Color }>(material: M, ink: Ink): M => {
     material.color.copy(inks[ink])
-    tinted.push({ material, ink })
+    const had = tinted.find(t => t.material === material)
+    if (had) had.ink = ink
+    else tinted.push({ material, ink })
     return material
   }
 
