@@ -57,7 +57,7 @@ export function setupReport(store: Store, snap: HalSnapshot): SetupReport {
       issues.push({ id: 'water_sensor_absent', alert: 'setup_water_sensor', title: 'Tank sensor not answering', detail: `No tank level sensor is answering${device?.detail ? ` (${device.detail})` : ''}, so the unit can't tell when the tank runs low.`, fix: 'Check the level sensor\'s cable; Sensors lists it.' })
     }
     else if (reading?.quality === 'suspect') {
-      issues.push({ id: 'water_sensor_suspect', alert: 'setup_water_sensor', title: 'Tank level suspect', detail: 'The tank level reads suspect: fewer than half its samples answered, so top-offs aren\'t advised from it.', fix: 'Check nothing blocks the level sensor and its cable is seated; Sensors shows the reading.' })
+      issues.push({ id: 'water_sensor_suspect', alert: 'setup_water_sensor', title: 'Tank level suspect', detail: 'The tank level reads suspect: its pings disagreed or too few came back, so top-offs aren\'t advised from it.', fix: 'Check nothing blocks the level sensor and its cable is seated; Sensors shows the reading.' })
     }
   }
   const summary = issues.length

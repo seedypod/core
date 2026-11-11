@@ -11,6 +11,7 @@ import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
 import type { Store, TankActionKind } from '../store/types'
 import { chores, type Chore, type ChoreId } from './chores'
+import { FOLLOW_ALERT, followGrowCycle, type FollowChange } from './follow'
 import { SETUP_ALERTS, setupReport, type SetupReport } from './setup'
 
 const TICK_MS = 15 * 60_000
@@ -37,11 +38,17 @@ export class CareEngine {
     return (this.deps.now ?? (() => new Date()))()
   }
 
-  /** Raise, refresh or clear each setup and chore alert to match the unit. Writes only on a change. */
-  tick(): { setup: SetupReport, chores: Chore[] } {
-    const { store, hal } = this.deps
+  /** Move watering on with the grow cycle, then raise, refresh or clear each setup and chore alert to match the unit. Writes only on a change. */
+  tick(): { setup: SetupReport, chores: Chore[], followed: FollowChange | null } {
+    const { store, hal, events } = this.deps
     const snap = hal.snapshot()
     const now = this.now()
+    const followed = followGrowCycle(store, now)
+    if (followed) {
+      store.alerts.raise(FOLLOW_ALERT, followed.detail, now.toISOString())
+      events.emit({ kind: 'schedule', action: 'changed', id: `follow:${followed.to}` })
+      events.emit({ kind: 'mutation', path: `alerts.${FOLLOW_ALERT}` })
+    }
     const setup = setupReport(store, snap)
     const list = chores(store, snap, now)
     const rows = store.alerts.list()
@@ -51,7 +58,7 @@ export class CareEngine {
       // A chore's detail carries the reading, so it changes every sample: held in memory, and dismissal goes by kind.
       this.sync(rows, kind, c?.state === 'due' && c.basis === 'reading' ? c.reason : null, true)
     }
-    return { setup, chores: list }
+    return { setup, chores: list, followed }
   }
 
   private sync(rows: ReturnType<Store['alerts']['list']>, kind: string, detail: string | null, live: boolean): void {

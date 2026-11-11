@@ -32,11 +32,15 @@ export const growRouter = router({
       return { cycle, day: cycle ? cycleDay(cycle, (ctx.now ?? (() => new Date()))()) : null }
     }),
   start: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/grow/start', tags: ['grow'], summary: 'Start a new grow cycle (ends any open one)' } })
-    .input(z.object({ notes: z.string().default('') }))
+    .meta({ openapi: { method: 'POST', path: '/grow/start', tags: ['grow'], summary: 'Start a new grow cycle (ends any open one); startedAt backdates it to the sowing day' } })
+    .input(z.object({ notes: z.string().default(''), startedAt: z.string().refine(s => Number.isFinite(Date.parse(s)), 'startedAt must be a date').optional() }))
     .output(Cycle)
     .mutation(({ ctx, input }) => {
-      const c = ctx.store.grow.start((ctx.now ?? (() => new Date()))().toISOString(), input.notes)
+      const now = (ctx.now ?? (() => new Date()))()
+      // A cycle that started before seedypod knew of it (the pods were sown first), never one in the future.
+      const at = input.startedAt ? new Date(input.startedAt) : now
+      if (at.getTime() > now.getTime()) throw new TRPCError({ code: 'BAD_REQUEST', message: 'startedAt is in the future' })
+      const c = ctx.store.grow.start(at.toISOString(), input.notes)
       ctx.events.emit({ kind: 'mutation', path: 'grow' })
       return c
     }),
