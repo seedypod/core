@@ -161,7 +161,7 @@ describe('podsData', () => {
   it('puts each pod in its tower column as the tower does: slots across the columns, then down', () => {
     const pods = Array.from({ length: 30 }, (_, i) => ({ slot: 30 - i, empty: (30 - i) === 7, cover: (30 - i) === 5 ? null : (30 - i) === 6 ? 1.4 : (30 - i) / 100 }))
     const d = podsData(pods)
-    expect(d.towers.map(t => t.label)).toEqual(['Tower A', 'Tower B', 'Tower C'])
+    expect(d.towers.map(t => t.label)).toEqual(['Tower 1', 'Tower 2', 'Tower 3'])
     expect(d.towers.map(t => t.pods.length)).toEqual([10, 10, 10])
     // Column A is slots 1, 4, 7, …, 28, top to bottom.
     expect(d.towers[0]?.pods.slice(0, 4)).toEqual([0.01, 0.04, null, 0.1])
@@ -173,7 +173,7 @@ describe('podsData', () => {
 
   it('makes a Studio\'s 16 pods two columns of 8, and holes for missing slots', () => {
     const studio = podsData(Array.from({ length: 16 }, (_, i) => ({ slot: i + 1, empty: false, cover: 0.5 })))
-    expect(studio.towers.map(t => [t.label, t.pods.length])).toEqual([['Tower A', 8], ['Tower B', 8]])
+    expect(studio.towers.map(t => [t.label, t.pods.length])).toEqual([['Tower 1', 8], ['Tower 2', 8]])
     expect(podsData([]).towers).toEqual([])
     // Slot 9 of 9 sits in column A's fifth row; the slots not listed are empty.
     const gap = podsData([{ slot: 1, empty: false, cover: 0.2 }, { slot: 9, empty: false, cover: 0.3 }])

@@ -109,7 +109,7 @@ const TODAY: TodayData = {
 }
 const TANK: TankData = { levels: ramp(120, i => 0.8 - (i % 40) / 100), topUps: [40 / 119, 80 / 119], cutoff: 0.3, current: 0.4, ticks: ramp(5, k => ({ at: k / 4, label: ['Mon', 'Tue', 'Thu', 'Sat', 'Sun'][k] as string })), marks: { full: 'full · 2 in', now: 'now · 5.1 in', cutoff: 'cutoff 27% · 6.3 in', empty: 'empty · 7.9 in' }, pumping: true, runFrom: 0.9, runs: [0.2, 0.5, 0.8], upcoming: [0.3, 0.7], preview: [0.33, 0.58, 0.83] }
 const LIGHT: LightData = { planned: ramp(97, i => (i > 28 && i < 84 ? 0.9 : 0)), actual: ramp(97, i => (i < 60 ? (i > 28 ? 0.9 : 0) : Number.NaN)), hold: { from: 0.55, until: 0.65 }, now: 0.62, nowLevel: 0.45, nowTime: '14:52', boost: 0.95, ticks: DAY_TICKS }
-const PODS: PodsData = { towers: ['A', 'B', 'C'].map((l, t) => ({ label: `Tower ${l}`, pods: ramp(10, k => ((t * 10 + k) % 4 === 0 ? null : ((t * 10 + k) % 10) / 10)) })) }
+const PODS: PodsData = { towers: ['1', '2', '3'].map((l, t) => ({ label: `Tower ${l}`, pods: ramp(10, k => ((t * 10 + k) % 4 === 0 ? null : ((t * 10 + k) % 10) / 10)) })) }
 const SENSORS: SensorsData = {
   series: ['Air temperature', 'Humidity', 'Board temperature', 'Distance to water', 'Tank', 'Pump voltage', 'Pump current', 'Pump power'].map((label, k) => ({ key: `s${k}`, label, group: k < 3 ? 'environment' : k < 5 ? 'water' : 'pump', values: ramp(100, i => 0.5 + 0.4 * Math.sin(i / 8 + k)), current: '25.9 °C' })),
   ticks: [{ at: 0, label: '−24h' }, { at: 0.5, label: '−12h' }, { at: 1, label: 'now' }],
@@ -267,21 +267,52 @@ describe('scenes sized by their data', () => {
     return n
   }
 
-  it('draws a Studio as two columns of 8, and back to three for a Home', () => {
+  it('draws a Studio as two wire towers of 8, a leaf only on a measured pod, and back to three of 10 for a Home', () => {
     const el = sized(600, 2.4)
     const viz = createPodsViz(el, env)
-    viz.setData({ towers: [{ label: 'Tower A', pods: Array(8).fill(0.4) }, { label: 'Tower B', pods: Array(8).fill(null) }] })
+    viz.setData({ towers: [{ label: 'Tower 1', pods: Array(8).fill(0.4) }, { label: 'Tower 2', pods: Array(8).fill(null) }] })
     advance(16)
     advance(700, 3)
     // Two tower labels, no third.
     expect(visibleSprites()).toBe(2)
     const { scene } = sceneOf()
-    const spheres = () => scene.getObjectsByProperty('type', 'Mesh').filter(m => (m as THREE.Mesh).geometry instanceof THREE.SphereGeometry && m.visible && m.parent?.visible)
-    expect(spheres()).toHaveLength(16)
+    const shown = (o: THREE.Object3D) => {
+      for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false
+      return true
+    }
+    const meshes = (kind: new (...a: never[]) => THREE.BufferGeometry) => scene.getObjectsByProperty('type', 'Mesh').filter(m => (m as THREE.Mesh).geometry instanceof kind && shown(m))
+    const stubs = () => meshes(THREE.CylinderGeometry).filter(m => ((m as THREE.Mesh).geometry as THREE.CylinderGeometry).parameters.radiusTop === 0.09)
+    const leaves = () => meshes(THREE.IcosahedronGeometry)
+    const columns = () => meshes(THREE.CylinderGeometry).filter(m => ((m as THREE.Mesh).geometry as THREE.CylinderGeometry).parameters.radiusTop === 0.2)
+    expect(columns()).toHaveLength(2)
+    expect(stubs()).toHaveLength(16)
+    // The empty tower's pods are bare stubs; the other's leaves are 0.05 + 0.4 × 0.3 across, off the stub.
+    expect(leaves()).toHaveLength(8)
+    expect(leaves()[0]?.parent?.scale.x).toBeCloseTo(0.17)
+    expect(leaves()[0]?.parent?.position.x).toBeCloseTo(0.69)
     viz.setData(PODS)
     advance(700, 3)
     expect(visibleSprites()).toBe(3)
-    expect(spheres()).toHaveLength(30)
+    expect(columns()).toHaveLength(3)
+    expect(stubs()).toHaveLength(30)
+    expect(leaves()).toHaveLength(22)
+    viz.dispose()
+  })
+
+  it('pulses the leaves in turn while loading, grey, and turns them green with the data', () => {
+    const el = sized(600, 2.4)
+    const viz = createPodsViz(el, env)
+    advance(16, 3)
+    const { scene } = sceneOf()
+    const leafLines = () => scene.getObjectsByProperty('type', 'LineSegments').filter(l => (l as THREE.LineSegments).geometry instanceof THREE.WireframeGeometry) as THREE.LineSegments[]
+    const scales = leafLines().slice(0, 3).map(l => l.parent?.scale.x ?? 0)
+    for (const s of scales) expect(s).toBeGreaterThanOrEqual(0.04 - 1e-6)
+    expect(new Set(scales.map(s => s.toFixed(4))).size).toBeGreaterThan(1)
+    const grey = ((leafLines()[0] as THREE.LineSegments).material as THREE.LineBasicMaterial).color.clone()
+    viz.setData({ towers: [{ label: 'Tower 1', pods: Array(10).fill(0.5) }] })
+    advance(700, 4)
+    const green = ((leafLines()[0] as THREE.LineSegments).material as THREE.LineBasicMaterial).color
+    expect(green.equals(grey)).toBe(false)
     viz.dispose()
   })
 

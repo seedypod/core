@@ -230,7 +230,7 @@ export function podsData(pods: ReadonlyArray<{ slot: number, empty: boolean, cov
   // Sized for the highest slot, so a list with gaps still lands each pod where the tower has it.
   const places = podPlaces(Math.max(pods.length, ...pods.map(p => p.slot)))
   const columns = Math.max(0, ...places.map(p => p.column + 1))
-  const towers: PodsData['towers'] = Array.from({ length: columns }, (_, c) => ({ label: `Tower ${String.fromCharCode(65 + c)}`, pods: places.filter(p => p.column === c).map(() => null) }))
+  const towers: PodsData['towers'] = Array.from({ length: columns }, (_, c) => ({ label: `Tower ${c + 1}`, pods: places.filter(p => p.column === c).map(() => null) }))
   for (const p of pods) {
     const place = places.find(pl => pl.slot === p.slot)
     const tower = place && towers[place.column]

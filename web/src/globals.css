@@ -166,6 +166,9 @@
   --pod-ready: var(--lp-amber);
   --pod-attention: var(--lp-red);
   --pod-empty: var(--lp-clay);
+  /* The 3D leaf-cover chart's column edges and pod stubs. */
+  --viz-edge: #5a5446;
+  --viz-stub: #4a4638;
   --text-status: #d9cfbb;
   --temp-off-bg: linear-gradient(180deg, #1d1b15, #17150f);
 
@@ -233,6 +236,8 @@
   --lp-humidity: #3f7489;
   --lp-clay: #b3aa96;
   --lp-meter: #6b6455;
+  --viz-edge: #a39a86;
+  --viz-stub: #c4bba8;
   --text-status: #4a4538;
   --temp-off-bg: linear-gradient(180deg, #f5f1e8, #ebe5d8);
   --status-ok-border: #c9d9bd;

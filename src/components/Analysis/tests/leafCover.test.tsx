@@ -24,14 +24,15 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('LeafCover', () => {
-  it('counts the pods measured, with the photo\'s time, and without WebGL draws a bar per pod', () => {
+  it('says what the spheres mean, shows the latest frame\'s time, and without WebGL draws a bar per pod', () => {
     render(<LeafCover capturedAt="2026-11-10T08:00:00Z" />)
     const card = screen.getByRole('region', { name: 'Leaf cover per pod' })
     // Pod 1 is empty (as are 6, 11, …), so its reading doesn't count.
-    expect(card.textContent).toMatch(/3 of 30 pods measured · photo /)
+    expect(within(card).getByText('Sphere size is leaf cover from the latest frame. Grey pods are empty.')).toBeTruthy()
+    expect(within(card).getByTestId('leaf-cover-frame').textContent).toBeTruthy()
     const flat = within(card).getByTestId('leaf-cover-flat')
-    expect(within(flat).getByText('TOWER A')).toBeTruthy()
-    expect(within(flat).getByText('TOWER C')).toBeTruthy()
+    expect(within(flat).getByText('TOWER 1')).toBeTruthy()
+    expect(within(flat).getByText('TOWER 3')).toBeTruthy()
     expect(within(flat).getByText('42%')).toBeTruthy()
     expect(within(flat).getByText('90%')).toBeTruthy()
     expect(within(flat).queryByText('50%')).toBeNull()
