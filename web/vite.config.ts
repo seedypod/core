@@ -25,7 +25,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+      // API_TARGET=http://seedypod.local points the UI at a real unit instead of a local core.
+      '/api': { target: process.env.API_TARGET ?? 'http://127.0.0.1:3000', changeOrigin: !!process.env.API_TARGET },
     },
   },
 })

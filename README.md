@@ -77,6 +77,7 @@ git lfs pull             # in a clone made without LFS
 ```sh
 pnpm install
 pnpm dev                 # core on :3000, web on :5173
+API_TARGET=http://seedypod.local pnpm dev:web   # the web UI against a real unit
 pnpm test                # Vitest
 pnpm hal:test            # cargo test
 pnpm lint && pnpm tsc
