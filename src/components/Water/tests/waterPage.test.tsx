@@ -366,7 +366,7 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.getByTestId('pump-preset-mature').getAttribute('aria-pressed')).toBe('true')
     expect(calls.upsert).not.toHaveBeenCalled()
     // The day's timeline draws the preset hatched under the real runs.
-    expect(within(screen.getByTestId('lane-preview')).getAllByTestId('mark-preview').map(m => m.textContent)).toEqual(['6 min', '6 min', '6 min'])
+    expect(within(screen.getByTestId('lane-preview')).getAllByTestId('label-preview').map(l => l.textContent)).toEqual(['6 min', '6 min', '6 min'])
     const strip = within(screen.getByTestId('pump-strip'))
     expect(strip.getByTestId('strip-preview').textContent).toBe('Preview: 3 × 6 min·Apply·Cancel')
     fireEvent.click(strip.getByText('Apply'))

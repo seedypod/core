@@ -292,6 +292,24 @@ function Row({ id, name, sub, title, marks, nowPct, note, width, active, onActiv
   // By time, and today's runs over the muted ones where they meet.
   const sorted = [...marks].sort((a, b) => a.start - b.start || Number(!!b.muted) - Number(!!a.muted))
   const open = sorted.find((m, i) => `${id}-${i}` === active)
+  const placed = sorted.map((m, i) => {
+    const run = m.kind !== 'light' && m.kind !== 'hold'
+    // A run is as wide as its length, or its label if the gap to the next run allows, and never under MIN_PX.
+    // A run at the same minute doesn't count as the next: the one on top keeps its label.
+    const next = sorted.slice(i + 1).find(n => n.kind === m.kind && n.start > m.start)
+    const gapPx = next ? (next.start - m.start) * pxPerMin - 2 : (DAY - m.start) * pxPerMin
+    const labelPx = m.label.length * 7.4 + 12
+    const lengthPx = (m.end - m.start) * pxPerMin
+    const widthPx = run ? Math.min(Math.max(lengthPx, Math.min(labelPx, gapPx), MIN_PX), width) : lengthPx
+    // Kept inside the lane at 24:00.
+    return { m, key: `${id}-${i}`, widthPx, fits: widthPx >= labelPx, leftPx: Math.min(m.start * pxPerMin, width - widthPx) }
+  })
+  // The labels sit in a layer of their own, so one under a mark drawn over it would show through: hide it, as the mark used to.
+  const raised = (m: Mark) => m.kind === 'run' || m.kind === 'hold' || (m.kind === 'water' && !m.muted)
+  const covered = (i: number) => {
+    const p = placed[i] as typeof placed[number]
+    return placed.some((o, j) => j !== i && (Number(raised(o.m)) - Number(raised(p.m)) || j - i) > 0 && o.leftPx < p.leftPx + p.widthPx && o.leftPx + o.widthPx > p.leftPx)
+  }
   // The tooltip as wide as its text (wrapping past the lane and its label column), kept inside them.
   const tipMax = width + LABEL_W + 8
   const tipW = open ? Math.min(open.title.length * 6.7 + 14, tipMax) : 0
@@ -304,57 +322,57 @@ function Row({ id, name, sub, title, marks, nowPct, note, width, active, onActiv
       </div>
       <div ref={laneRef} className={cn('relative rounded-[2px] bg-active/60', id === 'preview' && 'border border-dashed border-tank/40')} style={{ height: LANE_H }} data-testid={`lane-${id}`}>
         {note && <span className="absolute inset-y-0 left-1.5 font-mono text-[11px] leading-[20px] text-fg-3" data-testid={`lane-${id}-note`}>{note}</span>}
-        {sorted.map((m, i) => {
-          const key = `${id}-${i}`
-          const run = m.kind !== 'light' && m.kind !== 'hold'
-          // A run is as wide as its length, or its label if the gap to the next run allows, and never under MIN_PX.
-          // A run at the same minute doesn't count as the next: the one on top keeps its label.
-          const next = sorted.slice(i + 1).find(n => n.kind === m.kind && n.start > m.start)
-          const gapPx = next ? (next.start - m.start) * pxPerMin - 2 : (DAY - m.start) * pxPerMin
-          const labelPx = m.label.length * 7.4 + 12
-          const lengthPx = (m.end - m.start) * pxPerMin
-          const widthPx = run ? Math.min(Math.max(lengthPx, Math.min(labelPx, gapPx), MIN_PX), width) : lengthPx
-          const fits = widthPx >= labelPx
-          // Kept inside the lane at 24:00.
-          const leftPx = Math.min(m.start * pxPerMin, width - widthPx)
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-label={m.title}
-              aria-describedby={active === key ? `${key}-tip` : undefined}
-              data-testid={`mark-${id}`}
-              data-kind={m.kind}
-              data-muted={m.muted ? 'true' : undefined}
-              data-timeline-mark=""
-              // A mouse shows the times while over a mark; a tap or focus until another mark, a blur or Escape.
-              onPointerEnter={e => e.pointerType === 'mouse' && onActive(key)}
-              onPointerLeave={e => e.pointerType === 'mouse' && onActive(null)}
-              onFocus={() => onActive(key)}
-              onBlur={() => onActive(null)}
-              onClick={() => onActive(key)}
-              onKeyDown={e => e.key === 'Escape' && onActive(null)}
-              className={cn(
-                'absolute inset-y-0 cursor-default overflow-hidden whitespace-nowrap rounded-[2px] px-1 text-left font-mono text-[11px] leading-[22px] text-fg outline-none focus-visible:ring-2 focus-visible:ring-fg',
-                m.kind === 'water' && (m.muted ? 'bg-fg-3/40 text-fg-2' : 'z-[1] bg-tank/60'),
-                m.kind === 'run' && 'z-[1] bg-tank ring-2 ring-tank/50 text-inverse motion-safe:animate-pulse',
-                m.kind === 'preview' && 'border border-dashed border-tank/70 text-fg-2',
-                m.kind === 'hold' && 'z-[1] border border-hold bg-hold/25 leading-5',
-                m.kind === 'light' && m.muted && 'text-fg-2',
-              )}
-              style={{
-                left: `${(leftPx / (width || 1)) * 100}%`,
-                width: `${(widthPx / (width || 1)) * 100}%`,
-                ...(m.kind === 'preview' ? HATCH : {}),
-                ...(m.kind === 'light' ? { background: m.from === m.to ? LIGHT_MIX(m.from ?? 0, m.muted) : `linear-gradient(to right, ${LIGHT_MIX(m.from ?? 0, m.muted)}, ${LIGHT_MIX(m.to ?? 0, m.muted)})` } : {}),
-              }}
-            >
-              <span className={cn(!fits && 'invisible')}>{m.label}</span>
-            </button>
-          )
-        })}
+        {placed.map(({ m, key, leftPx, widthPx }) => (
+          <button
+            key={key}
+            type="button"
+            aria-label={m.title}
+            aria-describedby={active === key ? `${key}-tip` : undefined}
+            data-testid={`mark-${id}`}
+            data-kind={m.kind}
+            data-muted={m.muted ? 'true' : undefined}
+            data-timeline-mark=""
+            // A mouse shows the times while over a mark; a tap or focus until another mark, a blur or Escape.
+            onPointerEnter={e => e.pointerType === 'mouse' && onActive(key)}
+            onPointerLeave={e => e.pointerType === 'mouse' && onActive(null)}
+            onFocus={() => onActive(key)}
+            onBlur={() => onActive(null)}
+            onClick={() => onActive(key)}
+            onKeyDown={e => e.key === 'Escape' && onActive(null)}
+            className={cn(
+              'absolute inset-y-0 cursor-default overflow-hidden rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-fg',
+              m.kind === 'water' && (m.muted ? 'bg-fg-3/40' : 'z-[1] bg-tank/60'),
+              m.kind === 'run' && 'z-[1] bg-tank ring-2 ring-tank/50 motion-safe:animate-pulse',
+              m.kind === 'preview' && 'border border-dashed border-tank/70',
+              m.kind === 'hold' && 'z-[1] border border-hold bg-hold/25',
+            )}
+            style={{
+              left: `${(leftPx / (width || 1)) * 100}%`,
+              width: `${(widthPx / (width || 1)) * 100}%`,
+              ...(m.kind === 'preview' ? HATCH : {}),
+              ...(m.kind === 'light' ? { background: m.from === m.to ? LIGHT_MIX(m.from ?? 0, m.muted) : `linear-gradient(to right, ${LIGHT_MIX(m.from ?? 0, m.muted)}, ${LIGHT_MIX(m.to ?? 0, m.muted)})` } : {}),
+            }}
+          />
+        ))}
         {/* Over the marks, so a block ahead reads dimmer and a run going now solid up to now, hatched after. */}
         <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-[1] rounded-r-[2px]" style={{ left: `${nowPct}%`, ...AHEAD }} data-testid={`ahead-${id}`} />
+        {/* The labels over the forecast, undimmed, so they keep their contrast; the marks' names are their aria-labels. */}
+        {placed.map((p, i) => ({ ...p, hidden: !p.fits || covered(i) })).filter(p => p.m.label).map(({ m, key, leftPx, widthPx, hidden }) => (
+          <span
+            key={key}
+            aria-hidden
+            data-testid={`label-${id}`}
+            className={cn(
+              'pointer-events-none absolute inset-y-0 z-[2] overflow-hidden whitespace-nowrap px-1 font-mono text-[11px] leading-[22px] text-fg',
+              (m.muted || m.kind === 'preview') && 'text-fg-2',
+              m.kind === 'run' && 'text-inverse',
+              hidden && 'invisible',
+            )}
+            style={{ left: `${(leftPx / (width || 1)) * 100}%`, width: `${(widthPx / (width || 1)) * 100}%` }}
+          >
+            {m.label}
+          </span>
+        ))}
         {open && (
           <span
             role="tooltip"
