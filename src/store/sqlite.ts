@@ -148,6 +148,10 @@ export class SqliteStore implements Store {
       const row = this.db.insert(t.growCycles).values({ id: `cycle-${count + 1}`, startedAt: ts, stage: 'germination', notes, issued: '[]' }).returning().get()
       return rowToCycle(row)
     },
+    setStart: (ts: string, stage: GrowStage, issued: string[]): GrowCycle | null => {
+      const r = this.db.update(t.growCycles).set({ startedAt: ts, stage, issued: JSON.stringify(issued) }).where(sql`${t.growCycles.endedAt} IS NULL`).returning().get()
+      return r ? rowToCycle(r) : null
+    },
     setStage: (stage: GrowStage): GrowCycle | null => {
       const r = this.db.update(t.growCycles).set({ stage }).where(sql`${t.growCycles.endedAt} IS NULL`).returning().get()
       return r ? rowToCycle(r) : null

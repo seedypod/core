@@ -15,7 +15,7 @@ import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { dayOn, daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { localTime, systemZone } from '@/src/scheduler/time'
-import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetDays, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS, type PumpPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
+import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetDays, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, sowDate, sowWeekday, TIPS_CITATION, WATERING_TIPS, type PumpPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
 import { followedPreset } from '@/src/care/follow'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { trpc } from '@/src/utils/trpc'
@@ -23,6 +23,7 @@ import { asCycle, cycleWhen, fmtCountdown, fmtDay, fmtMinutes, fmtWhen, levelAt,
 import { useNow } from '@/src/components/System/useNow'
 import { useTankReserve } from './useTankReserve'
 import { DueChores } from '@/src/components/Care/ChoreItem'
+import { SownOn } from './SownOn'
 import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
@@ -45,6 +46,16 @@ export function WaterPage() {
   const stop = trpc.pump.stop.useMutation({ onSuccess: () => utils.pump.invalidate() })
   const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const remove = trpc.schedules.remove.useMutation({ onSuccess: () => utils.schedules.invalidate() })
+  // Both change the grow cycle and the pump cycles on the unit, so both are read again.
+  const growChanged = () => {
+    void utils.grow.invalidate()
+    void utils.schedules.invalidate()
+  }
+  const setStart = trpc.grow.setStart.useMutation({ onSuccess: growChanged })
+  const startGermination = trpc.grow.startGermination.useMutation({ onSuccess: () => {
+    growChanged()
+    setStarting(false)
+  } })
   const [dur, setDur] = useState<typeof DURATIONS[number]['value']>('300')
   const [editing, setEditing] = useState<PumpCycle | null>(null)
   // A preset shown on the chart and the strip before it's applied, and the confirmation before it replaces the cycles.
@@ -75,12 +86,15 @@ export function WaterPage() {
   const planted = (pods.data ?? []).filter(x => x.status !== 'empty')
   const sown = daysSinceSowing(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), now, zone)
   const recommended = recommendedPreset(sown, plantCategories(planted.map(x => x.plant)))
+  const sownOn = sowDate(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), zone)
   // Germination's weekly run falls on the weekday it was sown.
   const sowDay = sowWeekday(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), zone, now)
   // Sown today and germination's run time has gone by with no run yet: the first watering is still owed.
   const germination = PUMP_PRESETS.find(x => x.weekly) ?? null
   const today = localTime(now, zone).date
-  const ranToday = (runs.data ?? []).some(r => germination && r.scheduleId.startsWith(`water-${germination.slug}-`) && localTime(new Date(r.firedAt), zone).date === today)
+  // A run before the open cycle began was for the last sowing, not this one.
+  const cycleStart = grow.data?.cycle ? Date.parse(grow.data.cycle.startedAt) : null
+  const ranToday = (runs.data ?? []).some(r => germination && r.scheduleId.startsWith(`water-${germination.slug}-`) && localTime(new Date(r.firedAt), zone).date === today && (cycleStart === null || Date.parse(r.firedAt) >= cycleStart))
   const missed = germination && sown === 0 && nowMin >= (germination.minutes[0] ?? 0) && !ranToday ? germination : null
   // Running by the same rule Follow goes by: every cycle the preset's, on, on its days, its length. Paused or trimmed, they're your own.
   const running = followedPreset(cycles)
@@ -113,6 +127,11 @@ export function WaterPage() {
       setApplying(false)
     }
   }
+  // No grow cycle yet: one call on the unit starts it today and puts the cycles on germination, so a retry can't double up.
+  const [starting, setStarting] = useState(false)
+  // Watering doesn't follow the cycle, so germination's weekly run keeps its day when the sowing day moves: say so.
+  const germinating = running?.id === 'germination' ? cycles[0] : undefined
+  const stays = !cfg?.followGrowCycle && germinating && germinating.days !== 1 << sowDay ? `Follow is off: your weekly run stays on ${daysLabel(germinating.days)}` : null
   const runNow = (durationS: number) => {
     setAsked(Date.now())
     runOnce.mutate({ durationS })
@@ -231,6 +250,20 @@ export function WaterPage() {
       />
       {applyError && !confirming && <InlineError>{applyError}</InlineError>}
       <PumpPresets
+        sowing={(
+          <SownOn
+            sowDate={sownOn}
+            // Start germination today only once the unit has said there's no cycle, never while it's still being asked.
+            cycle={grow.data === undefined ? 'unknown' : grow.data.cycle ? 'open' : 'none'}
+            today={today}
+            note={stays}
+            onChange={startedAt => setStart.mutateAsync({ startedAt })}
+            onStartToday={() => {
+              startGermination.reset()
+              setStarting(true)
+            }}
+          />
+        )}
         light={light}
         recommended={recommended}
         sown={sown}
@@ -290,6 +323,35 @@ export function WaterPage() {
           })}
         </Card>
       </div>
+
+      <Modal
+        open={starting && !!germination}
+        // Not dismissed mid-call: it closes itself when the unit answers, or stays to say why not.
+        onClose={() => {
+          if (!startGermination.isPending) setStarting(false)
+        }}
+        title="Start germination today?"
+        icon={CalendarClock}
+        footer={(
+          <div className="flex gap-2">
+            <Button variant="primary" disabled={startGermination.isPending} onClick={() => startGermination.mutate()}>{startGermination.isPending ? 'Starting…' : 'Start'}</Button>
+            <Button disabled={startGermination.isPending} onClick={() => setStarting(false)}>Cancel</Button>
+          </div>
+        )}
+      >
+        <div className="flex flex-col gap-2 text-[13px] text-fg-2" data-testid="start-germination">
+          <p>{`A grow cycle starts today, ${fmtDay(now, zone)}, and watering moves to ${germination?.name ?? ''}: ${fmtMinutes(germination?.durationS ?? 0)} at ${fmtClock(germination?.minutes[0] ?? 0)}, once a week on ${daysLabel(1 << weekday)}.`}</p>
+          {cycles.length > 0 && (
+            <>
+              <p>These go:</p>
+              <ul className="flex flex-col gap-1 font-mono text-[12px]">
+                {cycles.map(c => <li key={c.id}>{`${fmtClock(c.spec.minute)} · ${c.name}`}</li>)}
+              </ul>
+            </>
+          )}
+          {startGermination.error && <InlineError>{`Couldn't start germination: ${startGermination.error.message}`}</InlineError>}
+        </div>
+      </Modal>
 
       <Modal
         open={confirming && !!previewing}
@@ -608,7 +670,9 @@ function MissedRun({ preset, busy, onRun }: { preset: PumpPreset, busy: boolean,
   )
 }
 
-function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, missed, applied, previewing, onPreview }: {
+function PumpPresets({ sowing, light, recommended, sown, sowDay, follow, nextWeekly, missed, applied, previewing, onPreview }: {
+  /** When it was sown, with Change, or Start germination today. */
+  sowing: ReactNode
   light: { on: number, off: number } | null
   recommended: { id: PumpPresetId, why: string } | null
   sown: number | null
@@ -627,6 +691,7 @@ function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, mis
 }) {
   return (
     <Card dashed className="gap-3">
+      {sowing}
       <p className="text-[13px] text-fg-2 text-pretty">
         {'Germination is Gardyn’s germination mode, a 15 min run on the sowing day and a week later. After it, community starting points from r/Gardyn owners, not Gardyn’s: Gardyn doesn’t publish a watering cadence (its Smart Watering adjusts it). '}
         <SourceLink href={GARDYN_WATERING_GUIDE}>Gardyn’s guide</SourceLink>

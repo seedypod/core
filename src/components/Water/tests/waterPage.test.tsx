@@ -6,9 +6,9 @@ import { editorLengths, START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { updateSettings: vi.fn(), runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
+  calls: { updateSettings: vi.fn(), runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), startGermination: vi.fn(), setStart: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
   pumpSuccess: new Map<string, (s: unknown) => void>(),
-  state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string }, failOn: null as null | string, order: [] as string[] },
+  state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string }, failOn: null as null | string, order: [] as string[], startError: null as null | { message: string }, startPending: false },
 }))
 
 // The hero's 3D tank as a stub showing what it was handed, or giving up as a browser without WebGL would.
@@ -33,12 +33,13 @@ vi.mock('@/src/components/Care/ChoreItem', () => ({ DueChores: () => <div data-t
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
-  const mutation = (name: 'runOnce' | 'stop' | 'upsert' | 'remove') => ({
+  const mutation = (name: 'runOnce' | 'stop' | 'upsert' | 'remove' | 'startGermination' | 'setStart') => ({
     useMutation: (o: { onSuccess: (s: unknown) => void }) => {
       pumpSuccess.set(name, o.onSuccess)
       return {
-        isPending: false,
-        error: name === 'runOnce' ? state.runError : null,
+        isPending: name === 'startGermination' && state.startPending,
+        error: name === 'runOnce' ? state.runError : name === 'startGermination' ? state.startError : null,
+        reset: vi.fn(),
         mutate: (i?: unknown) => calls[name](i),
         mutateAsync: async (i?: unknown) => {
           calls[name](i)
@@ -51,7 +52,7 @@ vi.mock('@/src/utils/trpc', () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() } }),
+      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() }, grow: { invalidate: vi.fn() } }),
       alerts: { list: query('alerts'), acknowledge: { useMutation: (o: { onSuccess: () => void }) => ({ isPending: false, error: state.ackError, mutate: (i: unknown) => {
         calls.ack(i)
         o.onSuccess()
@@ -65,7 +66,7 @@ vi.mock('@/src/utils/trpc', () => {
         calls.updateSettings(i)
         o?.onSuccess?.()
       } }) } },
-      grow: { current: query('grow'), pods: query('pods') },
+      grow: { current: query('grow'), pods: query('pods'), startGermination: mutation('startGermination'), setStart: mutation('setStart') },
       schedules: { list: query('schedules'), recentRuns: query('runs'), upsert: mutation('upsert'), remove: mutation('remove') },
       telemetry: {
         history: {
@@ -90,7 +91,7 @@ beforeEach(() => {
   vi.setSystemTime(at(12))
   data.clear()
   for (const f of Object.values(calls)) f.mockReset()
-  Object.assign(state, { runError: null, historyLoading: false, historyError: null, failOn: null, order: [] })
+  Object.assign(state, { runError: null, historyLoading: false, historyError: null, failOn: null, order: [], startError: null, startPending: false })
   data.set('pump', idle)
   data.set('sensors', { water_level_pct: { value: 71, unit: '%' }, water_distance: { value: 9.4, unit: 'cm' }, pump_w: { value: 0, unit: 'W' }, pump_a: { value: 0, unit: 'A' }, pump_v: { value: 12.3, unit: 'V' } })
   data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16 } } })
@@ -540,8 +541,19 @@ describe('WaterPage: pump cycles', () => {
     expect(within(screen.getByRole('dialog')).getByTestId('pump-missed')).toBeTruthy()
     expect(within(screen.getByRole('dialog')).getByText(/15 min each, once a week, on Sundays/)).toBeTruthy()
     cleanup()
-    // Once today's germination run has happened, or before 08:00, there's nothing to ask.
+    // Today's 08:00 run came before this cycle began at 09:00: it was for the last sowing, so it still asks.
     data.set('runs', [{ scheduleId: 'water-germination-0800', key: 'g', firedAt: at(8).toISOString(), result: 'ok' }])
+    render(<WaterPage />)
+    expect(screen.getByTestId('pump-missed')).toBeTruthy()
+    cleanup()
+    // Once this cycle's run has happened today, or before 08:00, there's nothing to ask.
+    data.set('grow', { cycle: { id: 'c', startedAt: at(0).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+    render(<WaterPage />)
+    expect(screen.queryByTestId('pump-missed')).toBeNull()
+    cleanup()
+    // With no cycle open, any germination run today counts.
+    data.set('grow', { cycle: null, day: null })
+    data.set('pods', [{ slot: 1, plant: 'Basil', status: 'seeded', plantedAt: '2026-11-01' }])
     render(<WaterPage />)
     expect(screen.queryByTestId('pump-missed')).toBeNull()
     cleanup()
@@ -550,6 +562,77 @@ describe('WaterPage: pump cycles', () => {
     data.set('grow', { cycle: { id: 'c', startedAt: at(6).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
     render(<WaterPage />)
     expect(screen.queryByTestId('pump-missed')).toBeNull()
+  })
+
+  it('says when the tower was sown, and moves the start to another day', () => {
+    // Sown on Sunday the 1st, in this zone; today is the 1st too.
+    data.set('grow', { cycle: { id: 'c', startedAt: at(0, 0, 1).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+    render(<WaterPage />)
+    const track = within(screen.getByTestId('sown'))
+    expect(track.getByTestId('sown-on').textContent).toBe('Sown Sun 1 Nov')
+    fireEvent.click(track.getByText('Change'))
+    const input = track.getByLabelText(/Sown on/) as HTMLInputElement
+    // It opens on the sowing day, not today.
+    expect(input.value).toBe('2026-11-01')
+    expect(input.max).toBe('2026-11-01')
+    fireEvent.change(input, { target: { value: '2026-10-30' } })
+    fireEvent.click(track.getByRole('button', { name: 'Save' }))
+    expect(calls.setStart).toHaveBeenCalledWith({ startedAt: '2026-10-30' })
+  })
+
+  it('says the weekly run stays put when Follow is off and the sowing day isn\'t its day', () => {
+    // Sown on Sunday the 1st; germination runs on Mondays.
+    data.set('grow', { cycle: { id: 'c', startedAt: at(0, 0, 1).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+    data.set('schedules', [{ ...morning, id: 'water-germination-0800', name: 'Germination · once a week 15 min (08:00)', days: 1, spec: { minute: 480, durationS: 900 } }])
+    data.set('settings', { waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19, followGrowCycle: false })
+    render(<WaterPage />)
+    expect(screen.getByTestId('sown-note').textContent).toBe('Follow is off: your weekly run stays on Mondays')
+    cleanup()
+    // With Follow on, the unit moves it, so nothing to say.
+    data.set('settings', { waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19, followGrowCycle: true })
+    render(<WaterPage />)
+    expect(screen.queryByTestId('sown-note')).toBeNull()
+  })
+
+  it('starts germination today in one go on the unit when there is no grow cycle, after a confirmation', async () => {
+    // Not while the grow cycle is still being asked for.
+    data.delete('grow')
+    render(<WaterPage />)
+    expect(within(screen.getByTestId('sown')).queryByRole('button')).toBeNull()
+    cleanup()
+    data.set('grow', { cycle: null, day: null })
+    render(<WaterPage />)
+    fireEvent.click(within(screen.getByTestId('sown')).getByRole('button', { name: 'Start germination today' }))
+    const dialog = within(screen.getByRole('dialog'))
+    // Today is Sunday the 1st: the weekly run is on Sundays, and the cycles there now go.
+    expect(dialog.getByTestId('start-germination').textContent).toMatch(/^A grow cycle starts today, Sun 1 Nov, and watering moves to Germination: 15 min at 08:00, once a week on Sundays\.These go:/)
+    fireEvent.click(dialog.getByRole('button', { name: 'Start' }))
+    // One call: the unit starts the cycle and writes the cycles together.
+    expect(calls.startGermination).toHaveBeenCalledTimes(1)
+    expect(calls.upsert).not.toHaveBeenCalled()
+    act(() => pumpSuccess.get('startGermination')?.({}))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('holds the start dialog open while the unit is starting germination', () => {
+    data.set('grow', { cycle: null, day: null })
+    state.startPending = true
+    render(<WaterPage />)
+    fireEvent.click(within(screen.getByTestId('sown')).getByRole('button', { name: 'Start germination today' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect((dialog.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((dialog.getByRole('button', { name: 'Starting…' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('says in the dialog, and only there, why germination couldn\'t start', () => {
+    data.set('grow', { cycle: null, day: null })
+    state.startError = { message: 'the unit said no' }
+    render(<WaterPage />)
+    fireEvent.click(within(screen.getByTestId('sown')).getByRole('button', { name: 'Start germination today' }))
+    expect(within(screen.getByRole('dialog')).getByText('Couldn\'t start germination: the unit said no')).toBeTruthy()
+    expect(screen.getAllByText(/the unit said no/)).toHaveLength(1)
   })
 
   it('reads the stages as a path while watering follows the grow cycle: the one it\'s at now, the rest from their day', () => {

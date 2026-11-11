@@ -369,10 +369,14 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.grow.markHarvested(i)))
 
   server.registerTool('grow_cycle', {
-    description: 'Manage the grow cycle: action start (optionally with notes, and started_at YYYY-MM-DD to backdate it to the day the pods were sown; not in the future), stage (germination|seedling|vegetative|harvest), or end. With "follow the grow cycle" on (the default), watering moves to each growth stage\'s preset as the days since the cycle started pass.',
-    inputSchema: { action: z.enum(['start', 'stage', 'end']), stage: z.enum(['germination', 'seedling', 'vegetative', 'harvest']).optional(), notes: z.string().optional(), started_at: z.string().optional() },
+    description: 'Manage the grow cycle: action start (optionally with notes, and started_at YYYY-MM-DD to backdate it to the day the pods were sown; not in the future), set_start (started_at YYYY-MM-DD: move the open cycle to another sowing day, e.g. today; reminders not yet due by then wait again and the stage is read from the new day; with followGrowCycle on, germination\'s weekly run moves to the new weekday, and with it off it stays), stage (germination|seedling|vegetative|harvest), or end. With "follow the grow cycle" on (the default), watering moves to each growth stage\'s preset as the days since the cycle started pass.',
+    inputSchema: { action: z.enum(['start', 'set_start', 'stage', 'end']), stage: z.enum(['germination', 'seedling', 'vegetative', 'harvest']).optional(), notes: z.string().optional(), started_at: z.string().optional() },
   }, async (i) => {
     if (i.action === 'start') return text(await caller.grow.start({ notes: i.notes ?? '', startedAt: i.started_at }))
+    if (i.action === 'set_start') {
+      if (!i.started_at) throw new Error('set_start needs started_at, YYYY-MM-DD')
+      return text(await caller.grow.setStart({ startedAt: i.started_at }))
+    }
     if (i.action === 'stage') return text(await caller.grow.setStage({ stage: i.stage ?? 'germination' }))
     return text(await caller.grow.end())
   })
