@@ -157,10 +157,12 @@ describe('grow protocols (ADR-0030)', () => {
     expect(() => advanceProtocol(store, day(2))).toThrow(/last stage and ongoing/)
     expect(() => advanceProtocol(tower({ cycle: false }), day(2))).toThrow(/No grow cycle is open/)
     expect(() => holdProtocol(new MemoryStore(30), day(2))).toThrow(/No grow cycle is open/)
+    // A cycle with nothing marked planted yet still counts from its start.
     const bare = new MemoryStore(30)
     bare.grow.start(day(0).toISOString())
-    expect(() => holdProtocol(bare, day(2))).toThrow(/Nothing is planted/)
-    expect(() => advanceProtocol(bare, day(2))).toThrow(/Nothing is planted/)
+    holdProtocol(bare, day(2))
+    expect(bare.grow.current()?.holdStageId).toBe('germination')
+    expect(advanceProtocol(bare, day(2)).id).toBe('seedlings')
   })
 
   it('keeps the days begun stages ran when Advance and Release move the clock', () => {
@@ -181,17 +183,16 @@ describe('grow protocols (ADR-0030)', () => {
     expect(protocolReport(ahead, day(3)).stages.at(-1)).toMatchObject({ state: 'current', startsOn: '2026-11-12' })
   })
 
-  it('offers Advance only where the server takes it: an open cycle, something planted, a stage to go to', () => {
+  it('offers Advance only where the server takes it: an open cycle and a stage to go to', () => {
     expect(protocolReport(tower(), day(2)).canAdvance).toBe(true)
     expect(protocolReport(tower({ cycles: 'mature' }), day(30)).canAdvance).toBe(false)
     expect(protocolReport(tower({ cycle: false }), day(2)).canAdvance).toBe(false)
-    // Held, then everything emptied: a stage is held but nothing is planted.
+    // Everything emptied under an open cycle: it still counts from the cycle, but moves no watering.
     const emptied = tower()
-    holdProtocol(emptied, day(2))
     emptied.pods.update(1, { plant: null, plantedAt: null, status: 'empty' }, day(3).toISOString())
-    const r = protocolReport(emptied, day(3))
-    expect(r).toMatchObject({ stage: 'germination', daysSinceSowing: null, canAdvance: false })
-    expect(() => advanceProtocol(emptied, day(3))).toThrow(/Nothing is planted/)
+    expect(protocolReport(emptied, day(8))).toMatchObject({ stage: 'seedlings', daysSinceSowing: 8, canAdvance: true })
+    expect(runProtocol(emptied, day(8)).followed).toBeNull()
+    expect(pumps(emptied)).toEqual(['water-germination-0800'])
   })
 
   it('stays in maintenance by default: nothing fires once it is reached', () => {

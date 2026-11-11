@@ -151,7 +151,8 @@ export function protocolState(t: Tower, now: Date): ProtocolState {
   const { cycle, planted: pods } = t
   const protocol = findProtocol(cycle?.protocolId) ?? protocolFor(pods.map(p => p.plant), t.catalog)
   const sownOn = sowDate(cycle?.startedAt, pods.map(p => p.plantedAt), tz)
-  const days = pods.length ? daysSinceSowing(cycle?.startedAt, pods.map(p => p.plantedAt), now, tz) : null
+  // An open cycle counts from its start, pods planted or not, so germination started today reads as day 0.
+  const days = cycle || pods.length ? daysSinceSowing(cycle?.startedAt, pods.map(p => p.plantedAt), now, tz) : null
   const today = localTime(now, tz).date
   const heldDays = cycle?.holdSince ? Math.max(0, dayNumber(today) - dayNumber(localTime(new Date(cycle.holdSince), tz).date)) : 0
   const day = days === null ? null : Math.max(0, days + (cycle?.shiftDays ?? 0) - heldDays)
@@ -204,7 +205,8 @@ export function runProtocol(store: Store, now: Date): ProtocolRun {
     store.grow.setProtocol({ thenDoneAt: now.toISOString() })
     run.notices.push({ kind: HARVEST_ALERT, detail: `First harvest is about now, day ${days} since sowing, by the catalog. Watering stays on ${protocol.name} maintenance; switch to one of your schedules on Grow if you want a change.` })
   }
-  if (!t.settings.followGrowCycle) return run
+  // Watering moves only for a tower with something planted, as Follow always did.
+  if (!t.settings.followGrowCycle || !t.planted.length) return run
   // The track is fixed once its watering is past germination, recognised here or moved on below, so a crop planted later doesn't switch it.
   const fix = (s: ProtocolStage | null) => {
     if (cycle && cycle.protocolId === null && s && protocol.stages.indexOf(s) > 0) store.grow.setProtocol({ protocolId: protocol.id })
@@ -369,7 +371,7 @@ function openState(store: Store, now: Date): ProtocolState & { cycle: GrowCycle,
 export function holdProtocol(store: Store, now: Date): void {
   const st = openState(store, now)
   if (st.cycle.holdStageId) return
-  if (!st.stage) throw new ProtocolError('Nothing is planted, so there is no stage to hold.')
+  if (!st.stage) throw new ProtocolError('No sowing day yet, so there is no stage to hold.')
   store.grow.setProtocol({ holdStageId: st.stage.id, holdSince: now.toISOString() })
 }
 
@@ -384,7 +386,7 @@ export function releaseProtocol(store: Store, now: Date): void {
 export function advanceProtocol(store: Store, now: Date): ProtocolStage {
   const st = openState(store, now)
   const { protocol, stage, daysSinceSowing: days, cycle } = st
-  if (!stage || days === null) throw new ProtocolError('Nothing is planted, so there is no stage to advance from.')
+  if (!stage || days === null) throw new ProtocolError('No sowing day yet, so there is no stage to advance from.')
   const next = protocol.stages[protocol.stages.indexOf(stage) + 1]
   if (!next) throw new ProtocolError(`${stage.name} is the last stage and ongoing: there is nothing to advance to.`)
   const stageStarts = { ...begun(st, st.today), ...cycle.stageStarts, [next.id]: st.today }

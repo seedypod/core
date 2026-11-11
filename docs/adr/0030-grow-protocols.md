@@ -109,7 +109,10 @@ pod. `protocol.current` lists each planted pod sown later than that with its
 `daysBehind`, so the Grow page can say "6 days younger than the protocol".
 Watering is per tower, so those pods get the tower's stage.
 
-With no open grow cycle, the runner still runs as today: protocol by crops,
+An open cycle counts from its start even before any pod is marked planted, so
+germination started today reads as day 0; the runner moves watering only for a
+tower with something planted, as Follow always did. With no open grow cycle,
+the runner still runs as today: protocol by crops,
 counted from the earliest pod's date, no hold, Then `stay`. Hold, Advance and
 Then need an open cycle, and say so.
 
