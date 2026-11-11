@@ -6,7 +6,7 @@ import { GrowPage } from '../GrowPage'
 
 const { data, calls, tower } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { start: vi.fn(), end: vi.fn(), setStage: vi.fn(), updatePod: vi.fn(), markHarvested: vi.fn() },
+  calls: { start: vi.fn(), end: vi.fn(), setStage: vi.fn(), updatePod: vi.fn(), markHarvested: vi.fn(), swapPods: vi.fn() },
   tower: { props: null as null | Record<string, unknown>, unavailable: false },
 }))
 
@@ -20,7 +20,7 @@ vi.mock('@/src/utils/trpc', () => {
     apiBase: () => '',
     trpc: {
       useUtils: () => ({ grow: { invalidate: vi.fn() } }),
-      grow: { current: query('grow'), pods: query('pods'), harvest: query('harvest'), start: mutation('start'), end: mutation('end'), setStage: mutation('setStage'), updatePod: mutation('updatePod'), markHarvested: mutation('markHarvested') },
+      grow: { current: query('grow'), pods: query('pods'), harvest: query('harvest'), start: mutation('start'), end: mutation('end'), setStage: mutation('setStage'), updatePod: mutation('updatePod'), markHarvested: mutation('markHarvested'), swapPods: mutation('swapPods') },
       settings: { get: query('settings') },
       camera: { list: query('captures') },
       vision: { podTrends: query('trends'), regions: query('regions') },
@@ -70,7 +70,7 @@ describe('Grow', () => {
     const basil = screen.getByRole('button', { name: '1 Basil' })
     expect(basil.textContent).toBe('1Basil42%')
     expect(screen.getByRole('button', { name: '3 empty' }).textContent).toBe('3Empty · plant')
-    expect(screen.getByText('Click a pod in the list to see and edit it.')).toBeTruthy()
+    expect(screen.getByText('Click a pod in the list to see and edit it. Drag one onto another to swap them after moving their yCubes.')).toBeTruthy()
     fireEvent.click(basil)
     expect(basil.getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('complementary', { name: 'Pod 1' })).toBeTruthy()
@@ -296,5 +296,43 @@ describe('Grow', () => {
     fireEvent.change(screen.getByLabelText('Cycle name'), { target: { value: ' Spring herbs ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Start cycle' }))
     expect(calls.start).toHaveBeenCalledWith({ notes: 'Spring herbs' })
+  })
+})
+
+describe('GrowPage: swapping pods', () => {
+  const row = (slot: number) => screen.getByRole('button', { name: new RegExp(`^${slot} `) })
+
+  it('swaps two pods by dragging one row onto another', () => {
+    render(<GrowPage />)
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (k: string, v: string) => data.set(k, v), getData: (k: string) => data.get(k) ?? '' }
+    fireEvent.dragStart(row(1), { dataTransfer })
+    fireEvent.dragOver(row(3), { dataTransfer })
+    fireEvent.drop(row(3), { dataTransfer })
+    expect(calls.swapPods).toHaveBeenCalledWith({ a: 1, b: 3 })
+    // Dropped on itself: nothing.
+    fireEvent.dragStart(row(2), { dataTransfer })
+    fireEvent.drop(row(2), { dataTransfer })
+    expect(calls.swapPods).toHaveBeenCalledTimes(1)
+  })
+
+  it('swaps from the pod panel by picking the other pod, on the tower too, and can cancel', () => {
+    render(<GrowPage />)
+    fireEvent.click(row(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
+    expect(screen.getByTestId('swap-banner').textContent).toContain('Pick the pod to swap pod 1 (Basil) with.')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByTestId('swap-banner')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
+    fireEvent.click(row(2))
+    expect(calls.swapPods).toHaveBeenCalledWith({ a: 1, b: 2 })
+    expect(screen.queryByTestId('swap-banner')).toBeNull()
+  })
+
+  it('names an empty pod by number alone while picking', () => {
+    render(<GrowPage />)
+    fireEvent.click(row(3))
+    fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
+    expect(screen.getByTestId('swap-banner').textContent).toContain('Pick the pod to swap pod 3 with.')
   })
 })

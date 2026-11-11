@@ -1,3 +1,4 @@
+import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { cycleDay } from '../../grow/grow'
 import { harvestOutlook } from '../../grow/harvest'
@@ -74,6 +75,22 @@ export const growRouter = router({
       const p = ctx.store.pods.update(slot, patch, (ctx.now ?? (() => new Date()))().toISOString())
       ctx.events.emit({ kind: 'mutation', path: 'pods' })
       return p
+    }),
+  swapPods: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/pods/swap', tags: ['grow'], summary: 'Swap what two pods hold (plant, sow date, status, notes, last cut), after moving their yCubes; camera history stays with each pod position' } })
+    .input(z.object({ a: z.number().int().min(1).max(60), b: z.number().int().min(1).max(60) }))
+    .output(z.array(PodOut))
+    .mutation(({ ctx, input }) => {
+      const pods = ctx.store.pods.list()
+      const a = pods.find(p => p.slot === input.a)
+      const b = pods.find(p => p.slot === input.b)
+      if (!a || !b) throw new TRPCError({ code: 'NOT_FOUND', message: `no pod ${a ? input.b : input.a}` })
+      if (a.slot === b.slot) return [a, b]
+      const ts = (ctx.now ?? (() => new Date()))().toISOString()
+      const holds = (p: typeof a) => ({ plant: p.plant, plantedAt: p.plantedAt, status: p.status, notes: p.notes, lastHarvestAt: p.lastHarvestAt })
+      const out = [ctx.store.pods.update(a.slot, holds(b), ts), ctx.store.pods.update(b.slot, holds(a), ts)]
+      ctx.events.emit({ kind: 'mutation', path: 'pods' })
+      return out
     }),
   harvest: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/harvest', tags: ['grow'], summary: 'Harvest outlook per planted pod: ready, soon or growing, from leaf cover and any plant profile (ADR-0022)' } })
