@@ -75,6 +75,12 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
   const counter = useRef(0)
   const remaining = useRef(duration)
   const shownKey = useRef<number | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+  // Focus inside the toast, and where it came from: a toast that goes takes its focus with it.
+  const focused = useRef(false)
+  const returnTo = useRef<HTMLElement | null>(null)
+  // The toast whose action has run: once only, even during its exit.
+  const acted = useRef<number | null>(null)
 
   const show = useCallback((notice: ToastNotice) => {
     counter.current += 1
@@ -86,7 +92,12 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
   useEffect(() => {
     if (key === null) return
     if (state.leaving) {
-      const t = setTimeout(() => dispatch({ type: 'next' }), TOAST_ANIMATION_MS)
+      // Whether it has focus as it goes, in case its removal blurs it first.
+      if (box.current?.contains(document.activeElement)) focused.current = true
+      const t = setTimeout(() => {
+        if (box.current?.contains(document.activeElement)) focused.current = true
+        dispatch({ type: 'next' })
+      }, TOAST_ANIMATION_MS)
       return () => clearTimeout(t)
     }
     if (shownKey.current !== key) {
@@ -102,6 +113,19 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
     }
   }, [key, state.leaving, paused, duration])
 
+  // The toast that had focus went (dismissed, or replaced): focus moves to the next one's button, else back where it was.
+  useEffect(() => {
+    if (!focused.current || box.current?.contains(document.activeElement)) return
+    const next = box.current?.querySelector<HTMLElement>('[data-toast-focus]')
+    if (next) {
+      next.focus()
+      return
+    }
+    focused.current = false
+    if (returnTo.current?.isConnected) returnTo.current.focus()
+    returnTo.current = null
+  }, [key])
+
   const value = useMemo(() => ({ show }), [show])
   const entry = state.current
   const close = () => dispatch({ type: 'expire' })
@@ -109,13 +133,24 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
   const toast = entry && (
     <div
       key={entry.key}
+      ref={box}
       data-testid="toast"
       data-toast={entry.notice.id}
       data-leaving={state.leaving || undefined}
       onMouseEnter={() => setPausedKey(entry.key)}
       onMouseLeave={() => setPausedKey(null)}
-      onFocus={() => setPausedKey(entry.key)}
-      onBlur={() => setPausedKey(null)}
+      onFocus={(e) => {
+        if (!focused.current && e.relatedTarget instanceof HTMLElement && !box.current?.contains(e.relatedTarget)) returnTo.current = e.relatedTarget
+        focused.current = true
+        setPausedKey(entry.key)
+      }}
+      onBlur={(e) => {
+        // Moving within the toast keeps it paused; leaving it for the page lets it run.
+        if (box.current?.contains(e.relatedTarget as Node | null)) return
+        focused.current = false
+        returnTo.current = null
+        setPausedKey(null)
+      }}
       tabIndex={-1}
       className={cn(
         'pointer-events-auto relative flex max-w-[440px] items-center gap-2.5 overflow-hidden rounded-[10px] border border-line-2 bg-active px-4 py-3 text-[14px] text-fg shadow-[var(--shadow-dialog)] outline-none',
@@ -131,7 +166,10 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
         <button
           type="button"
           data-testid="toast-action"
+          data-toast-focus
           onClick={() => {
+            if (state.leaving || acted.current === entry.key) return
+            acted.current = entry.key
             entry.notice.action?.onClick()
             close()
           }}
@@ -140,7 +178,7 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
           {entry.notice.action.label}
         </button>
       )}
-      <button type="button" aria-label="Dismiss" onClick={close} className="-mr-1.5 shrink-0 cursor-pointer rounded-ctl border-0 bg-transparent p-1 text-fg-3 hover:bg-line hover:text-fg">
+      <button type="button" aria-label="Dismiss" data-toast-focus={entry.notice.action ? undefined : true} onClick={close} className="-mr-1.5 shrink-0 cursor-pointer rounded-ctl border-0 bg-transparent p-1 text-fg-3 hover:bg-line hover:text-fg">
         <X size={15} />
       </button>
       <span

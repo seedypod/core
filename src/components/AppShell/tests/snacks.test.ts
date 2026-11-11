@@ -38,30 +38,30 @@ describe('followSnack', () => {
 
 describe('alertSnack', () => {
   it('says why the pump stopped, urgently, quiet on Water where the strip shows it', () => {
-    expect(alertSnack({ kind: 'pump_fault', detail: 'pump: dry-run' })).toMatchObject({ id: 'pump', title: 'Pump stopped: dry-run', urgent: true, tone: 'danger', view: { to: '/water' }, shownOn: '/water' })
-    expect(alertSnack({ kind: 'pump_fault', detail: 'pump stopped: tank ran dry' })?.title).toBe('Pump stopped: tank ran dry')
-    expect(alertSnack({ kind: 'pump_fault', detail: '' })?.title).toBe('Pump stopped: fault')
-    expect(alertSnack({ kind: 'water_low', detail: 'tank low' })).toMatchObject({ id: 'pump', title: 'Pump off: water low', urgent: true, shownOn: '/water' })
+    expect(alertSnack({ id: 1, kind: 'pump_fault', detail: 'pump: dry-run' })).toMatchObject({ id: 'pump', title: 'Pump stopped: dry-run', urgent: true, tone: 'danger', view: { to: '/water' }, shownOn: '/water' })
+    expect(alertSnack({ id: 1, kind: 'pump_fault', detail: 'pump stopped: tank ran dry' })?.title).toBe('Pump stopped: tank ran dry')
+    expect(alertSnack({ id: 1, kind: 'pump_fault', detail: '' })?.title).toBe('Pump stopped: fault')
+    expect(alertSnack({ id: 1, kind: 'water_low', detail: 'tank low' })).toMatchObject({ id: 'pump', title: 'Pump off: water low', urgent: true, shownOn: '/water' })
   })
 
   it('says the outputs are off on an over-temperature trip', () => {
-    expect(alertSnack({ kind: 'over_temp', detail: 'pcb 71.2 °C' })).toMatchObject({ title: 'Outputs off: board over temperature', detail: 'pcb 71.2 °C', urgent: true, view: { to: '/sensors' } })
-    expect(alertSnack({ kind: 'over_temp', detail: '' })?.detail).toBeUndefined()
+    expect(alertSnack({ id: 1, kind: 'over_temp', detail: 'pcb 71.2 °C' })).toMatchObject({ title: 'Outputs off: board over temperature', detail: 'pcb 71.2 °C', urgent: true, view: { to: '/sensors' } })
+    expect(alertSnack({ id: 1, kind: 'over_temp', detail: '' })?.detail).toBeUndefined()
   })
 
   it('names other alerts as Alerts does, quiet on Alerts', () => {
-    expect(alertSnack({ kind: 'light_fault', detail: 'driver open' })).toMatchObject({ id: 'alert:light_fault', title: 'Light fault', detail: 'driver open', urgent: true, view: { to: '/light' }, shownOn: '/alerts' })
-    expect(alertSnack({ kind: 'setup_pump_schedule', detail: 'Pods planted, no pump schedule on.' })).toMatchObject({ title: 'No pump schedule', urgent: false, tone: 'warn' })
-    expect(alertSnack({ kind: 'mirror_failed', detail: '' })).toMatchObject({ title: 'Off-device copy failed', detail: undefined })
+    expect(alertSnack({ id: 1, kind: 'light_fault', detail: 'driver open' })).toMatchObject({ id: 'alert:light_fault:1', title: 'Light fault', detail: 'driver open', urgent: true, view: { to: '/light' }, shownOn: '/alerts' })
+    expect(alertSnack({ id: 1, kind: 'setup_pump_schedule', detail: 'Pods planted, no pump schedule on.' })).toMatchObject({ title: 'No pump schedule', urgent: false, tone: 'warn' })
+    expect(alertSnack({ id: 1, kind: 'mirror_failed', detail: '' })).toMatchObject({ title: 'Off-device copy failed', detail: undefined })
     // An Autopilot notice has no label: its detail names the rule.
-    expect(alertSnack({ kind: 'autopilot_7', detail: 'Tank under half: notify' })).toMatchObject({ title: 'Tank under half: notify', detail: undefined, view: undefined })
-    expect(alertSnack({ kind: 'autopilot_7', detail: '' })?.title).toBe('autopilot_7')
+    expect(alertSnack({ id: 1, kind: 'autopilot_7', detail: 'Tank under half: notify' })).toMatchObject({ title: 'Tank under half: notify', detail: undefined, view: undefined })
+    expect(alertSnack({ id: 1, kind: 'autopilot_7', detail: '' })?.title).toBe('autopilot_7')
   })
 
   it('leaves reminders and chores to Needs you, and Follow to its event', () => {
-    expect(alertSnack({ kind: 'chore_top_off', detail: 'Tank at 40%' })).toBeNull()
-    expect(alertSnack({ kind: 'reminder_thinning', detail: '' })).toBeNull()
-    expect(alertSnack({ kind: 'watering_followed', detail: 'Watering moved to Seedlings' })).toBeNull()
+    expect(alertSnack({ id: 1, kind: 'chore_top_off', detail: 'Tank at 40%' })).toBeNull()
+    expect(alertSnack({ id: 1, kind: 'reminder_thinning', detail: '' })).toBeNull()
+    expect(alertSnack({ id: 1, kind: 'watering_followed', detail: 'Watering moved to Seedlings' })).toBeNull()
   })
 })
 
@@ -77,6 +77,11 @@ describe('newAlertSnacks', () => {
     const after = [a(1, 'light_fault'), a(2, 'over_temp')]
     expect(newAlertSnacks(before, after).map(s => s.title)).toEqual(['Outputs off: board over temperature'])
     expect(newAlertSnacks(after, after)).toEqual([])
+  })
+
+  it('gives each alert its own toast, so two of a kind both get said, and the pump\'s one', () => {
+    expect(newAlertSnacks([], [a(5, 'autopilot_1', 'Tank low: notify'), a(6, 'autopilot_1', 'Tank low: notify')]).map(s => s.id)).toEqual(['alert:autopilot_1:5', 'alert:autopilot_1:6'])
+    expect(newAlertSnacks([], [a(7, 'pump_fault', 'pump: dry-run')]).map(s => s.id)).toEqual(['pump'])
   })
 
   it('says the pump fault alone when a dry run raises water low with it', () => {
@@ -136,6 +141,25 @@ describe('pumpWatch', () => {
     // Its off went missing (the stream dropped); a scheduled run starts much later.
     w(1000, pump(true, 1000, 300))
     expect(w(1300, pump(false, 1300, null))).toBeNull()
+  })
+
+  it('takes Run again while watering for an extension: same start, the new end, not stopped early', () => {
+    const w = watch()
+    w(0, command)
+    w(0, pump(true, 0, 60))
+    w(30, command)
+    w(30, pump(true, 30, 300))
+    // Past the first run's end, short of the second's: still running, nothing said.
+    expect(w(90, pump(true, 30, 240))).toBeNull()
+    expect(w(330, pump(false, 330, null))).toMatchObject({ title: 'Watering finished', detail: '6 min run' })
+  })
+
+  it('takes an extension commanded after its state arrives as manual too', () => {
+    const w = watch()
+    w(0, pump(true, 0, 60))
+    w(30, pump(true, 30, 120))
+    w(30.5, command)
+    expect(w(150, pump(false, 150, null))?.title).toBe('Watering finished')
   })
 
   it('counts a start command once, and never a Stop', () => {

@@ -117,6 +117,66 @@ describe('ToastProvider', () => {
     expect(shown()).toBeNull()
   })
 
+  it('runs its action once, even when clicked again as it leaves', () => {
+    const undo = vi.fn()
+    mount()
+    act(() => show(note('a', { action: { label: 'Undo', onClick: undo } })))
+    const button = screen.getByRole('button', { name: 'Undo' })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    pass(TOAST_ANIMATION_MS / 2)
+    fireEvent.click(button)
+    expect(undo).toHaveBeenCalledOnce()
+  })
+
+  it('hands focus to the next toast when the one holding it goes, and keeps that one up while focused', () => {
+    mount(1000)
+    act(() => {
+      show(note('a'))
+      show(note('b', { action: { label: 'View', onClick: () => {} } }))
+    })
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).focus())
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    pass(TOAST_ANIMATION_MS)
+    expect(shown()).toBe('b')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'View' }))
+    pass(5000)
+    expect(screen.getByTestId('toast').dataset.leaving).toBeUndefined()
+  })
+
+  it('gives focus back where it came from when the last toast goes', () => {
+    render(
+      <ToastProvider duration={1000}>
+        <button type="button">page</button>
+        <Grab />
+      </ToastProvider>,
+    )
+    const page = screen.getByRole('button', { name: 'page' })
+    act(() => page.focus())
+    act(() => show(note('a', { action: { label: 'Undo', onClick: () => {} } })))
+    act(() => screen.getByRole('button', { name: 'Undo' }).focus())
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    pass(TOAST_ANIMATION_MS)
+    expect(shown()).toBeNull()
+    expect(document.activeElement).toBe(page)
+  })
+
+  it('leaves focus alone when it had moved off the toast', () => {
+    render(
+      <ToastProvider duration={1000}>
+        <button type="button">page</button>
+        <button type="button">elsewhere</button>
+        <Grab />
+      </ToastProvider>,
+    )
+    act(() => screen.getByRole('button', { name: 'page' }).focus())
+    act(() => show(note('a')))
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).focus())
+    act(() => screen.getByRole('button', { name: 'elsewhere' }).focus())
+    runOut(1000)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'elsewhere' }))
+  })
+
   it('has no action button without an action, and an X that dismisses it', () => {
     mount()
     act(() => show(note('a')))

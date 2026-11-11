@@ -53,7 +53,7 @@ export function Chores() {
               )}
             </div>
             {(c.state === 'due' || c.state === 'soon') && (
-              <Button icon={Check} className="px-3 py-[7px]" disabled={!ready || actions.pending} onClick={() => actions.done(c, alertOf(c))}>Done</Button>
+              <Button icon={Check} className="px-3 py-[7px]" disabled={!ready || actions.busy(c.id)} onClick={() => actions.done(c, alertOf(c))}>Done</Button>
             )}
           </div>
         ))}

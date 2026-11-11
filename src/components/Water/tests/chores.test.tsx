@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { byUrgency, Chores, type ChoreRow } from '../Chores'
 
@@ -11,18 +11,23 @@ const { data, calls, state } = vi.hoisted(() => ({
 
 vi.mock('@/src/utils/trpc', () => {
   const mutation = (call: (i: unknown) => void) => ({
-    useMutation: (o: { onSuccess: (r?: unknown) => void }) => ({
+    useMutation: (o?: { onSuccess?: (r?: unknown) => void }) => ({
       isPending: false,
       error: state.error,
       mutate: (i: unknown) => {
         call(i)
-        o.onSuccess()
+        o?.onSuccess?.()
+      },
+      mutateAsync: async (i: unknown) => {
+        call(i)
+        if (state.error) throw new Error(state.error.message)
+        return { id: 1 }
       },
     }),
   })
   return {
     trpc: {
-      useUtils: () => ({ tank: { invalidate: calls.invalidateTank }, care: { invalidate: calls.invalidateCare }, alerts: { invalidate: vi.fn() } }),
+      useUtils: () => ({ tank: { invalidate: calls.invalidateTank }, care: { invalidate: calls.invalidateCare }, alerts: { invalidate: vi.fn() }, client: {} }),
       care: { chores: { useQuery: () => ({ data: data.get('chores') }) } },
       alerts: { list: { useQuery: () => ({ data: data.get('alerts') }) }, acknowledge: mutation(i => calls.acknowledge(i)), dismiss: mutation(() => {}) },
       tank: { logAction: mutation(i => calls.logAction(i)), removeAction: mutation(() => {}) },
@@ -60,16 +65,18 @@ describe('Chores', () => {
     expect(screen.getAllByTestId(/^chore-/).map(e => e.dataset.testid)).toEqual(['chore-feed', 'chore-clean'])
   })
 
-  it('logs a due or soon chore as done in the tank log', () => {
+  it('logs a due or soon chore as done in the tank log', async () => {
     data.set('chores', [chore('top_off', 'soon'), chore('thin', 'due')])
     render(<Chores />)
-    fireEvent.click(within(screen.getByTestId('chore-top_off')).getByRole('button', { name: 'Done' }))
+    await act(async () => {
+      fireEvent.click(within(screen.getByTestId('chore-top_off')).getByRole('button', { name: 'Done' }))
+    })
     expect(calls.logAction).toHaveBeenCalledWith({ kind: 'top_off', note: '' })
     expect(calls.invalidateTank).toHaveBeenCalled()
     expect(calls.invalidateCare).toHaveBeenCalled()
   })
 
-  it('acknowledges a chore\'s open alert for Done, as Alerts and Needs you do, and waits for the alerts to load', () => {
+  it('acknowledges a chore\'s open alert for Done, as Alerts and Needs you do, and waits for the alerts to load', async () => {
     data.set('chores', [chore('top_off', 'due', { basis: 'reading' })])
     data.delete('alerts')
     render(<Chores />)
@@ -77,7 +84,9 @@ describe('Chores', () => {
     cleanup()
     data.set('alerts', [{ id: 7, kind: 'chore_top_off', active: true }])
     render(<Chores />)
-    fireEvent.click(within(screen.getByTestId('chore-top_off')).getByRole('button', { name: 'Done' }))
+    await act(async () => {
+      fireEvent.click(within(screen.getByTestId('chore-top_off')).getByRole('button', { name: 'Done' }))
+    })
     expect(calls.acknowledge).toHaveBeenCalledWith({ id: 7 })
     expect(calls.logAction).not.toHaveBeenCalled()
   })

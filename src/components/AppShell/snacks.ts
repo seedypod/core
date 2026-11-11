@@ -38,13 +38,17 @@ export function followSnack(e: CoreEvent): Snack | null {
 /** Why the pump stopped, from hald's "pump: dry-run" or the sim's "pump stopped: tank ran dry". */
 const pumpReason = (detail: string) => detail.replace(/^pump(?: stopped)?:\s*/i, '').trim() || 'fault'
 
-/** A newly raised alert as a snack; reminders and chores are needs-you items, not news, and Follow has its own. */
-export function alertSnack(a: { kind: string, detail: string }): Snack | null {
+/**
+ * A newly raised alert as a snack; reminders and chores are needs-you items,
+ * not news, and Follow has its own. Each alert is its own toast, so two of a
+ * kind both get said; the pump's share one, the latest saying why it's off.
+ */
+export function alertSnack(a: { id: number, kind: string, detail: string }): Snack | null {
   if (categoryOf(a.kind) === 'reminder' || a.kind === 'watering_followed') return null
   const view = alertView(a.kind)
   const go = view ? { to: view.to, label: 'View' } : undefined
   const hardware = categoryOf(a.kind) === 'hardware'
-  const base = { id: `alert:${a.kind}`, urgent: hardware, tone: hardware ? 'danger' as const : 'warn' as const, view: go, shownOn: '/alerts' }
+  const base = { id: `alert:${a.kind}:${a.id}`, urgent: hardware, tone: hardware ? 'danger' as const : 'warn' as const, view: go, shownOn: '/alerts' }
   if (a.kind === 'pump_fault') return { ...base, id: 'pump', icon: Waves, title: `Pump stopped: ${pumpReason(a.detail)}`, shownOn: '/water' }
   if (a.kind === 'water_low') return { ...base, id: 'pump', icon: Droplets, title: 'Pump off: water low', detail: 'It stays off until the tank is filled.', shownOn: '/water' }
   if (a.kind === 'over_temp') return { ...base, icon: Thermometer, title: 'Outputs off: board over temperature', detail: a.detail || undefined }
@@ -75,16 +79,18 @@ const MANUAL_WINDOW_MS = 10_000
  * Watches the pump for a manual run (one a person or agent started, so an
  * `actuators.pump.on` command comes with it) running its course, which says
  * "Watering finished". Scheduled runs finish quietly, a run stopped early was
- * stopped by whoever is looking, and a fault is the alert's snack. A run is
- * known by its `since`: an on-state with another one is a new run (an off
- * missed while the stream was down), and a start command counts once.
+ * stopped by whoever is looking, and a fault is the alert's snack. An on-state
+ * with a new `since` before the run's planned end extends it (Run again while
+ * watering): same start, the new end. One after the planned end is a new run,
+ * as when an off went missing while the stream was down. A start command counts once.
  */
 export function pumpWatch(now: () => number = Date.now) {
-  let run: { since: string, startedAt: number, endsAt: number | null, plannedS: number, manual: boolean } | null = null
+  // `changedAt`: when its latest start or extension arrived, which a command can trail.
+  let run: { start: string, since: string, changedAt: number, endsAt: number | null, manual: boolean } | null = null
   let commandedAt = Number.NEGATIVE_INFINITY
   return (e: CoreEvent): Snack | null => {
     if (e.kind === 'mutation' && e.path === 'actuators.pump.on') {
-      if (run && !run.manual && now() - run.startedAt <= MANUAL_WINDOW_MS) run.manual = true
+      if (run && !run.manual && now() - run.changedAt <= MANUAL_WINDOW_MS) run.manual = true
       else commandedAt = now()
       return null
     }
@@ -93,14 +99,17 @@ export function pumpWatch(now: () => number = Date.now) {
     if (s.on) {
       // Re-sent states of the same run keep its start, end and whether it was manual.
       if (run?.since === s.since) return null
-      run = { since: s.since, startedAt: now(), endsAt: s.remainingS === null ? null : Date.parse(s.since) + s.remainingS * 1000, plannedS: s.remainingS ?? 0, manual: now() - commandedAt <= MANUAL_WINDOW_MS }
+      const endsAt = s.remainingS === null ? null : Date.parse(s.since) + s.remainingS * 1000
+      const commanded = now() - commandedAt <= MANUAL_WINDOW_MS
       commandedAt = Number.NEGATIVE_INFINITY
+      if (run && (run.endsAt === null || Date.parse(s.since) < run.endsAt)) run = { ...run, since: s.since, changedAt: now(), endsAt, manual: run.manual || commanded }
+      else run = { start: s.since, since: s.since, changedAt: now(), endsAt, manual: commanded }
       return null
     }
     const ended = run
     run = null
     if (!ended?.manual || s.fault || ended.endsAt === null || Date.parse(s.since) < ended.endsAt - END_SLACK_MS) return null
-    const secs = ended.plannedS
+    const secs = Math.round((ended.endsAt - Date.parse(ended.start)) / 1000)
     return { id: 'pump-run', tone: 'ok', icon: CheckCircle2, title: 'Watering finished', detail: secs < 60 ? `${secs} s run` : `${Math.round(secs / 60)} min run`, view: { to: '/water', label: 'View' } }
   }
 }

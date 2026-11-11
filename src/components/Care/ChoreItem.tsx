@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { Check, ChevronRight, TriangleAlert, X } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
-import { useRef, useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import { cn } from '@/lib/utils'
 import { alertActions } from '@/src/components/Alerts/AlertsPage'
 import { CareSummary } from '@/src/components/Care/CareSummary'
@@ -52,54 +52,96 @@ export function useNeedsChores(): { items: Array<{ chore: ChoreRow, alert: Alert
 }
 
 /**
+ * The chores being marked done anywhere on the page, from Done until the lists
+ * have refetched: the sidebar, Water and Care can each show the same chore, and
+ * none may log it twice.
+ */
+const completing = (() => {
+  const ids = new Set<string>()
+  const listeners = new Set<() => void>()
+  let version = 0
+  const changed = () => {
+    version += 1
+    for (const l of listeners) l()
+  }
+  return {
+    has: (id: string) => ids.has(id),
+    start: (id: string) => {
+      if (ids.has(id)) return false
+      ids.add(id)
+      changed()
+      return true
+    },
+    end: (id: string) => {
+      if (ids.delete(id)) changed()
+    },
+    subscribe: (l: () => void) => {
+      listeners.add(l)
+      return () => {
+        listeners.delete(l)
+      }
+    },
+    version: () => version,
+  }
+})()
+
+/**
  * Done and Skip, as Alerts does them: with an open alert, Done acknowledges it
  * (which logs the chore in the tank log) and Skip dismisses it; without one,
  * Done logs the tank action itself and can be undone. "Marked done" only once
  * something was logged: an alert already cleared by the time Done lands logs
- * nothing, so the lists just refetch.
+ * nothing, so the lists just refetch. A chore stays busy everywhere until the
+ * refetch is in, so a row that hasn't caught up can't log it again. Undo and
+ * its Retry go through the plain client, so they work after the row is gone.
  */
 export function useChoreActions() {
   const utils = trpc.useUtils()
   const { show } = useToast()
-  const doing = useRef<Pick<ChoreRow, 'id' | 'title'> | null>(null)
   const [skippedId, setSkippedId] = useState<number | null>(null)
-  const refresh = () => {
-    void utils.tank.invalidate()
-    void utils.care.invalidate()
-  }
-  const marked = (undo?: () => void) => {
-    const c = doing.current
-    if (c) show({ id: `chore-done:${c.id}`, kind: 'success', tone: 'ok', icon: Check, title: `Marked done: ${c.title}`, action: undo && { label: 'Undo', onClick: undo } })
-  }
-  const undo = trpc.tank.removeAction.useMutation({ onSuccess: refresh })
-  const log = trpc.tank.logAction.useMutation({
-    onSuccess: (row) => {
-      refresh()
-      marked(() => undo.mutate({ id: row.id }))
-    },
-  })
-  const ack = trpc.alerts.acknowledge.useMutation({
-    onSuccess: (row) => {
-      void utils.alerts.invalidate()
-      refresh()
-      // The router clears an open alert as it acknowledges it, both at the same instant, and only then logs the chore.
-      if (row?.acknowledgedAt && row.clearedAt === row.acknowledgedAt) marked()
-    },
-  })
+  useSyncExternalStore(completing.subscribe, completing.version)
+  const log = trpc.tank.logAction.useMutation()
+  const ack = trpc.alerts.acknowledge.useMutation()
   const dismiss = trpc.alerts.dismiss.useMutation({
     onSuccess: (row) => {
       if (row) setSkippedId(row.id)
       void utils.alerts.invalidate()
     },
   })
+  const settle = () => Promise.all([utils.tank.invalidate(), utils.care.invalidate(), utils.alerts.invalidate()])
+  const marked = (c: Pick<ChoreRow, 'id' | 'title'>, undo?: () => void) => show({ id: `chore-done:${c.id}`, kind: 'success', tone: 'ok', icon: Check, title: `Marked done: ${c.title}`, action: undo && { label: 'Undo', onClick: undo } })
+  const undo = (c: Pick<ChoreRow, 'id' | 'title'>, id: number) => {
+    utils.client.tank.removeAction.mutate({ id })
+      .then(settle)
+      .catch((e: Error) => show({ id: `chore-undo:${c.id}`, kind: 'info', tone: 'danger', icon: TriangleAlert, title: `Couldn't undo: ${c.title}`, detail: e.message, action: { label: 'Retry', onClick: () => undo(c, id) } }))
+  }
+  const complete = async (c: Pick<ChoreRow, 'id' | 'title' | 'doneKind'>, alert?: Pick<AlertRow, 'id'>) => {
+    if (!completing.start(c.id)) return
+    try {
+      if (alert) {
+        const row = await ack.mutateAsync({ id: alert.id })
+        // The router clears an open alert as it acknowledges it, both at the same instant, and only then logs the chore.
+        if (row?.acknowledgedAt && row.clearedAt === row.acknowledgedAt) marked(c)
+      }
+      else {
+        const row = await log.mutateAsync({ kind: c.doneKind, note: '' })
+        marked(c, () => undo(c, row.id))
+      }
+      await settle()
+    }
+    catch {
+      // The mutation's error says why, under the row.
+    }
+    finally {
+      completing.end(c.id)
+    }
+  }
   return {
     done: (c: Pick<ChoreRow, 'id' | 'title' | 'doneKind'>, alert?: Pick<AlertRow, 'id'>) => {
-      doing.current = c
-      if (alert) ack.mutate({ id: alert.id })
-      else log.mutate({ kind: c.doneKind, note: '' })
+      void complete(c, alert)
     },
     skip: (alert: Pick<AlertRow, 'id'>) => dismiss.mutate({ id: alert.id }),
-    pending: log.isPending || ack.isPending || dismiss.isPending,
+    /** This chore is being marked done here or in another row, or a Skip is in flight. */
+    busy: (id: string) => completing.has(id) || dismiss.isPending,
     /** The alert last skipped from here; a new one for the same chore shows it again. */
     skippedId,
     error: log.error ?? ack.error ?? dismiss.error,
@@ -115,7 +157,7 @@ export function ChoreItem({ chore: c, alert, compact = false, disabled = false }
   const actions = useChoreActions()
   if (actions.skippedId !== null && (!alert || alert.id === actions.skippedId)) return null
   const labels = alertActions(alertKind(c.id) ?? `chore_${c.id}`)
-  const busy = disabled || actions.pending
+  const busy = disabled || actions.busy(c.id)
   return (
     <div
       data-testid={`needs-chore-${c.id}`}
