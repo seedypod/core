@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LightCurve } from '@/src/components/Light/curves'
@@ -56,12 +58,13 @@ describe('ScheduleTimeline', () => {
   it('draws the light as steps with their level and ramps, and the pump runs with their length', () => {
     render(<ScheduleTimeline lead="light" curves={[day]} cycles={water} timezone="UTC" />)
     const lights = screen.getAllByTestId('mark-light')
-    expect(lights.map(m => m.textContent)).toEqual(['', '100%', ''])
+    // The labels are a layer of their own, over the forecast; the ramps have none.
+    expect(screen.getAllByTestId('label-light').map(l => l.textContent)).toEqual(['100%'])
     expect(lights[0]?.getAttribute('aria-label')).toBe('Light 0% → 100% · 05:31–06:00')
     expect(lights[1]?.getAttribute('aria-label')).toBe('Light 100% · 06:00–21:01')
     expect(lights[0]?.getAttribute('style')).toContain('linear-gradient')
     const runs = screen.getAllByTestId('mark-water')
-    expect(runs.map(m => m.textContent)).toEqual(['10 min', '5 min', '10 min', '5 min'])
+    expect(screen.getAllByTestId('label-water').map(l => l.textContent)).toEqual(['10 min', '5 min', '10 min', '5 min'])
     expect(runs[0]?.getAttribute('aria-label')).toBe('Morning · 08:00–08:10 · 10 min')
   })
 
@@ -127,7 +130,7 @@ describe('ScheduleTimeline', () => {
   it('outlines a manual hold over the light, clipped to today', () => {
     render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" hold={{ since: '2026-11-10T13:30:00Z', until: '2026-11-10T14:30:00Z', level: 40 }} />)
     const hold = screen.getAllByTestId('mark-light').find(m => m.dataset.kind === 'hold')
-    expect(hold?.textContent).toBe('hold 40%')
+    expect(screen.getAllByTestId('label-light').map(l => l.textContent)).toContain('hold 40%')
     expect(hold?.getAttribute('aria-label')).toBe('Held by hand at 40% · 13:30–14:30')
     expect(screen.getByText('manual hold')).toBeTruthy()
     // The hold, not the curve it overrides, is what changes next.
@@ -204,10 +207,10 @@ describe('ScheduleTimeline', () => {
     const axis = container.querySelector('[aria-hidden].relative.h-5')
     // 12:00 and 18:00 sit under the now pill at 14:00.
     expect(axis?.textContent).toBe('00:0006:0024:00now 14:00')
-    const [a, b] = screen.getAllByTestId('mark-water')
+    const [a, b] = screen.getAllByTestId('label-water')
     // Ten minutes apart on 300 px: the first run's label would run into the second.
-    expect(a?.querySelector('span')?.className).toContain('invisible')
-    expect(b?.querySelector('span')?.className).not.toContain('invisible')
+    expect(a?.className).toContain('invisible')
+    expect(b?.className).not.toContain('invisible')
     width.mockRestore()
   })
 
@@ -246,7 +249,11 @@ describe('ScheduleTimeline', () => {
     expect(under?.dataset.muted).toBe('true')
     expect(over?.dataset.muted).toBeUndefined()
     expect(over?.className).toContain('z-[1]')
-    expect(over?.querySelector('span')?.className).not.toContain('invisible')
+    // Only the run on top shows its label; the one under it would show through the label layer.
+    const [hid, shown] = screen.getAllByTestId('label-water')
+    expect(hid?.className).toContain('invisible')
+    expect(shown?.className).not.toContain('invisible')
+    expect(shown?.textContent).toBe('10 min')
   })
 
   it('says a run\'s days under its times in the tooltip', () => {
@@ -287,5 +294,59 @@ describe('ScheduleTimeline', () => {
     // Germination's run on Mondays, seen on a Tuesday.
     render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Germination', 480, 900, { days: 1 })]} timezone="UTC" />)
     expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 15 min Mon 08:00')
+  })
+
+  it('hatches and dims the rest of the day as forecast in every lane, with the legend saying so', () => {
+    render(<ScheduleTimeline lead="water" curves={[day]} cycles={[cycle('Morning', 480, 600)]} timezone="UTC" preview={{ name: 'Young plants', short: 'Young', runs: [480, 960], durationS: 360 }} />)
+    // 14:00: everything from 58.3% across is ahead.
+    for (const lane of ['water', 'preview', 'light']) {
+      const ahead = screen.getByTestId(`ahead-${lane}`)
+      expect(ahead.style.left).toBe(`${(840 / 1440) * 100}%`)
+      expect(ahead.style.backgroundImage).toContain('var(--forecast-hatch)')
+      expect(ahead.style.backgroundImage).toContain('var(--forecast-dim)')
+      expect(ahead.getAttribute('aria-hidden')).toBe('true')
+    }
+    expect(screen.getByTestId('legend-ahead').textContent).toBe('ahead')
+  })
+
+  it('keeps the labels above the forecast, undimmed, and out of the way of the pointer and screen readers', () => {
+    render(<ScheduleTimeline lead="water" curves={[day]} cycles={[cycle('Evening', 1200, 600)]} timezone="UTC" />)
+    for (const lane of ['water', 'light']) {
+      const ahead = screen.getByTestId(`ahead-${lane}`)
+      for (const label of screen.getAllByTestId(`label-${lane}`)) {
+        // Drawn after the forecast, a layer up.
+        expect(ahead.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(label.className).toContain('z-[2]')
+        expect(ahead.className).toContain('z-[1]')
+        expect(label.className).toContain('pointer-events-none')
+        expect(label.getAttribute('aria-hidden')).toBe('true')
+      }
+    }
+    // The 20:00 run is ahead of now, its label still full strength.
+    const evening = screen.getAllByTestId('label-water')[0] as HTMLElement
+    expect(evening.textContent).toBe('10 min')
+    expect(evening.className).toContain('text-fg')
+    expect(evening.className).not.toMatch(/opacity|text-fg-3/)
+  })
+
+  it('lays the forecast over a run going now, so it reads solid up to now and hatched after', () => {
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" pumpRun={{ since: '2026-11-10T13:55:00Z', remainingS: 600 }} />)
+    const run = screen.getByTestId('mark-water')
+    const ahead = screen.getByTestId('ahead-water')
+    // The run starts before now and ends after; the forecast starts at now and is drawn over it.
+    expect(Number.parseFloat(run.style.left)).toBeLessThan(Number.parseFloat(ahead.style.left))
+    expect(run.compareDocumentPosition(ahead) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(ahead.className).toContain('z-[1]')
+    expect(ahead.className).toContain('pointer-events-none')
+  })
+})
+
+describe('forecast tokens', () => {
+  it('defines the hatch and the dim for the dark and the light theme', () => {
+    // Under jsdom the module's URL isn't a file one; vitest runs from the repo root.
+    const css = readFileSync(join(process.cwd(), 'web/src/globals.css'), 'utf8')
+    const blocks = [...css.matchAll(/(:root|\[data-theme="light"\]) \{([^}]*)\}/g)].filter(m => m[2]?.includes('--forecast-hatch'))
+    expect(blocks.map(m => m[1])).toEqual([':root', '[data-theme="light"]'])
+    for (const m of blocks) expect(m[2]).toContain('--forecast-dim')
   })
 })
