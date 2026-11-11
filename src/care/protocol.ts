@@ -207,7 +207,7 @@ export function runProtocol(store: Store, now: Date): ProtocolRun {
     run.notices.push({ kind, detail })
   }
   if (cycle?.thenKind === 'remind' && !cycle.thenDoneAt && st.harvestDay !== null && days >= st.harvestDay) {
-    notify(HARVEST_ALERT, `First harvest is about now, day ${days} since sowing, by the catalog. Watering stays on ${protocol.name} maintenance; switch to one of your schedules on Grow if you want a change.`)
+    notify(HARVEST_ALERT, `First harvest is about now, day ${days} since sowing, by the catalog. Watering stays on ${protocol.name} maintenance; choose what comes after in the Then slot on Grow if you want a change.`)
     store.grow.setProtocol({ thenDoneAt: now.toISOString() })
   }
   // Watering moves only for a tower with something planted, as Follow always did.
@@ -224,12 +224,12 @@ export function runProtocol(store: Store, now: Date): ProtocolRun {
     if (entry && st.applied) {
       activateEntry(store, entry, now)
       store.grow.setProtocol({ thenDoneAt: now.toISOString() })
-      run.followed = { from: st.applied.id, to: null, schedule: { id: entry.id, name: entry.name }, days, detail: `Watering switched to ${entry.name}: maintenance began on day ${days}, as you chose. Use ${preset(stage.water).name} from Your schedules on Grow to go back to the protocol.` }
+      run.followed = { from: st.applied.id, to: null, schedule: { id: entry.id, name: entry.name }, days, detail: `Watering switched to ${entry.name}: maintenance began on day ${days}, as you chose. Back to ${preset(stage.water).name} on Grow hands watering back to the protocol.` }
       return run
     }
     if (entry && st.own?.id !== entry.id) {
       const why = st.own ? `another of your schedules, ${st.own.name}, is on` : st.water === 'none' ? 'there are no pump cycles' : 'the pump cycles were changed by hand'
-      notify(THEN_ALERT, `Maintenance began on day ${days}, but watering didn't switch to ${entry.name}: ${why}. Use it from Your schedules on Grow to switch now.`)
+      notify(THEN_ALERT, `Maintenance began on day ${days}, but watering didn't switch to ${entry.name}: ${why}. Choose it again in the Then slot on Grow to switch now.`)
     }
     store.grow.setProtocol({ thenDoneAt: now.toISOString() })
   }

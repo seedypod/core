@@ -33,6 +33,9 @@ export function whereWords(r: ProtocolReport): string {
   const length = stage.to === null ? null : stage.to - stage.from + 1
   const at = `${stage.name}, day ${r.dayInStage + 1}${length === null ? '' : ` of ${length}`}`
   if (r.hold) return `${at} · held${r.hold.days ? ` ${r.hold.days} d` : ''}`
+  // A change is only promised when the protocol is the one watering.
+  if (r.water === 'none') return `${at} · not watering yet`
+  if (!r.following || r.water !== 'preset') return `${at} · watering stays as it is`
   const next = nextStage(r)
   return next?.startsOn ? `${at} · ${next.name} starts ${plainDay(next.startsOn)}` : `${at} · ongoing`
 }

@@ -10,30 +10,34 @@ import { ProtocolCard } from '../ProtocolCard'
 
 const { data, calls, state, success } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { hold: vi.fn(), release: vi.fn(), advance: vi.fn(), setThen: vi.fn(), activate: vi.fn(), setStart: vi.fn(), startGermination: vi.fn() },
-  state: { startPending: false, startError: null as null | { message: string } },
+  calls: { hold: vi.fn(), release: vi.fn(), advance: vi.fn(), setThen: vi.fn(), activate: vi.fn(), setStart: vi.fn(), startGermination: vi.fn(), create: vi.fn(), update: vi.fn() },
+  state: { startPending: false, startError: null as null | { message: string }, fail: null as null | string },
   success: new Map<string, () => void>(),
 }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
-  const mutation = (name: keyof typeof calls) => ({ useMutation: (o?: { onSuccess?: () => void }) => {
+  const mutation = (name: keyof typeof calls) => ({ useMutation: (o?: { onSuccess?: () => void, onError?: (e: { message: string }) => void }) => {
     if (o?.onSuccess) success.set(name, o.onSuccess)
     return {
       isPending: name === 'startGermination' && state.startPending,
       error: name === 'startGermination' ? state.startError : null,
+      isSuccess: false,
       reset: vi.fn(),
-      mutate: (i?: unknown) => calls[name](i),
+      mutate: (i?: unknown) => {
+        calls[name](i)
+        if (state.fail === name) o?.onError?.({ message: `${name}: the unit said no` })
+      },
       mutateAsync: async (i?: unknown) => calls[name](i),
     }
   } })
   return {
     trpc: {
-      useUtils: () => ({ protocol: { invalidate: vi.fn() }, schedules: { invalidate: vi.fn() }, grow: { invalidate: vi.fn() } }),
+      useUtils: () => ({ protocol: { invalidate: vi.fn() }, schedules: { invalidate: vi.fn() }, grow: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() } }),
       grow: { setStart: mutation('setStart'), startGermination: mutation('startGermination') },
       protocol: { current: query('protocol'), hold: mutation('hold'), release: mutation('release'), advance: mutation('advance'), setThen: mutation('setThen') },
-      schedules: { list: query('schedules'), library: { list: query('library'), activate: mutation('activate') } },
-      settings: { get: query('settings') },
+      schedules: { list: query('schedules'), library: { list: query('library'), activate: mutation('activate'), create: mutation('create') } },
+      settings: { get: query('settings'), update: mutation('update') },
     },
   }
 })
@@ -72,7 +76,7 @@ beforeEach(() => {
   data.clear()
   data.set('settings', { timezone: 'UTC' })
   for (const f of Object.values(calls)) f.mockReset()
-  Object.assign(state, { startPending: false, startError: null })
+  Object.assign(state, { startPending: false, startError: null, fail: null })
 })
 afterEach(cleanup)
 
@@ -174,6 +178,19 @@ describe('ProtocolCard', () => {
     expect(chosen.getByText('Water · Summer')).toBeTruthy()
   })
 
+  it('switches to the schedule that\'s there once the list arrives after the panel opened', () => {
+    const { r, store } = report()
+    data.set('protocol', r)
+    data.set('schedules', store.schedules.list())
+    const { rerender } = render(<ProtocolCard />)
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    expect(screen.queryByRole('button', { name: 'Switch now' })).toBeNull()
+    data.set('library', [{ ...summer, kind: 'own', lastUsedAt: null, active: false, readOnly: false }])
+    rerender(<ProtocolCard />)
+    fireEvent.click(screen.getByRole('button', { name: 'Switch now' }))
+    expect(calls.setThen).toHaveBeenLastCalledWith({ kind: 'schedule', scheduleId: 'summer', when: 'now' })
+  })
+
   it('can\'t remind with no catalog crop, or switch with no schedule of your own', () => {
     const { r, store } = report()
     data.set('protocol', { ...r, then: { ...r.then, harvestDay: null, harvestOn: null } })
@@ -185,6 +202,79 @@ describe('ProtocolCard', () => {
     expect((panel.getByRole('radio', { name: /Remind me at first harvest/ }) as HTMLInputElement).disabled).toBe(true)
     expect((panel.getByRole('radio', { name: /Switch to my schedule/ }) as HTMLInputElement).disabled).toBe(true)
     expect(panel.getByText('Save a schedule of your own first.')).toBeTruthy()
+  })
+})
+
+describe('ProtocolCard: putting the protocol\'s watering on', () => {
+  it('starts the stage\'s watering when there are no pump cycles, and says so rather than promise a change', () => {
+    show({ cycles: 'none' })
+    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 3 of 8 · not watering yet')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Germination watering' }))
+    expect(calls.activate).toHaveBeenCalledWith({ id: 'preset:germination' })
+  })
+
+  it('replaces cycles changed by hand only after a confirmation that offers to keep them as a schedule first', () => {
+    show({ cycles: 'hand' })
+    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 3 of 8 · watering stays as it is')
+    fireEvent.click(screen.getByRole('button', { name: 'Use Germination watering (replaces your cycles)' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText('07:30 · Mine')).toBeTruthy()
+    fireEvent.change(dialog.getByLabelText('Keep them first as'), { target: { value: 'Spring' } })
+    fireEvent.click(dialog.getByRole('button', { name: 'Save current cycles as a schedule' }))
+    expect(calls.create).toHaveBeenCalledWith({ name: 'Spring', cycles: [{ minute: 450, durationS: 420, days: 127 }] })
+    expect(calls.activate).not.toHaveBeenCalled()
+    fireEvent.click(dialog.getByRole('button', { name: 'Use Germination watering' }))
+    expect(calls.activate).toHaveBeenCalledWith({ id: 'preset:germination' })
+  })
+
+  it('turns Follow on, and puts the stage\'s watering on, when Follow is off', () => {
+    // Day 10 is seedlings, but with Follow off the pump is still on germination.
+    show({ follow: false, at: 10 })
+    expect(screen.getByTestId('protocol-where').textContent).toBe('Seedlings, day 3 of 6 · watering stays as it is')
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on Follow' }))
+    expect(calls.update).toHaveBeenCalledWith({ followGrowCycle: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Use Seedlings watering' }))
+    expect(calls.activate).toHaveBeenCalledWith({ id: 'preset:seedlings' })
+    cleanup()
+    // On the stage's own preset already, there's nothing to put on.
+    show({ follow: false, cycles: 'seedlings', at: 10 })
+    expect(screen.queryByRole('button', { name: 'Use Seedlings watering' })).toBeNull()
+  })
+
+  it('says the last action that failed, and clears it on the next', () => {
+    show({ cycles: 'none' })
+    state.fail = 'activate'
+    fireEvent.click(screen.getByRole('button', { name: 'Start Germination watering' }))
+    expect(screen.getByText('activate: the unit said no')).toBeTruthy()
+    state.fail = 'hold'
+    fireEvent.click(screen.getByRole('button', { name: 'Hold at this stage' }))
+    expect(screen.queryByText('activate: the unit said no')).toBeNull()
+    expect(screen.getByText('hold: the unit said no')).toBeTruthy()
+    state.fail = null
+    fireEvent.click(screen.getByRole('button', { name: 'Start Germination watering' }))
+    expect(screen.queryByText(/the unit said no/)).toBeNull()
+  })
+})
+
+describe('ProtocolCard: light and the tips', () => {
+  it('gives Boost in each of its stretches, and says where a light preset comes from', () => {
+    const { r, store } = report({ then: { thenKind: 'schedule', thenScheduleId: 'away' } })
+    const curve = (on: number, off: number) => ({ id: `c${on}`, kind: 'light' as const, name: 'c', enabled: true, days: 127, spec: { setpoints: [{ minute: on - 1, level: 0 }, { minute: on, level: 100 }, { minute: off, level: 100 }, { minute: off + 1, level: 0 }] }, createdAt: '', updatedAt: '' })
+    data.set('protocol', r)
+    data.set('schedules', [...store.schedules.list().filter(s => s.kind === 'pump'), curve(360, 540), curve(1080, 1260)])
+    data.set('library', [{ ...summer, id: 'away', name: 'Away', lightPresetId: 'day-14h', kind: 'own', lastUsedAt: null, active: false, readOnly: false }])
+    render(<ProtocolCard />)
+    const panel = within(screen.getByTestId('stage-panel'))
+    expect(panel.getByText('6 h · 06:00–09:00, 18:00–21:00')).toBeTruthy()
+    expect(panel.getByText('Unchanged: the protocol leaves your light curves as they are.')).toBeTruthy()
+    // How to judge any watering, with its note and Gardyn's guide.
+    const tips = within(screen.getByTestId('watering-tips'))
+    expect(tips.getByText(/^Check the roots/)).toBeTruthy()
+    expect(tips.getByRole('link', { name: 'Gardyn’s guide' }).getAttribute('href')).toBe('https://help.mygardyn.com/en/articles/4435265')
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    const chosen = within(screen.getByTestId('then-schedule'))
+    expect(chosen.getByText('Short day · 14 h')).toBeTruthy()
+    expect(chosen.getByText('From your schedule.')).toBeTruthy()
   })
 })
 
@@ -260,6 +350,7 @@ describe('ProtocolLine', () => {
   it('says when it isn\'t moving the water, and nothing before the report comes', () => {
     const cases: Array<[Parameters<typeof report>[0], string]> = [
       [{ follow: false }, 'Not following Greens & herbs · the cycles stay as they are'],
+      [{ cycles: 'none' }, 'Not watering yet · Start Germination watering'],
       [{ cycles: 'hand' }, 'Following Greens & herbs · Germination, day 3 · cycles changed by hand, left as they are'],
       [{ cycles: 'summer', at: 10 }, 'Following Greens & herbs · Seedlings, day 3 · on your schedule'],
       [{ cycles: 'mature', at: 30 }, 'Following Greens & herbs · Maintenance, day 9 · ongoing'],

@@ -44,8 +44,13 @@ export function WaterPage() {
   const [asked, setAsked] = useState<number | null>(null)
   const runOnce = trpc.pump.runOnce.useMutation({ onSuccess: () => utils.pump.invalidate(), onError: () => setAsked(null) })
   const stop = trpc.pump.stop.useMutation({ onSuccess: () => utils.pump.invalidate() })
-  const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
-  const remove = trpc.schedules.remove.useMutation({ onSuccess: () => utils.schedules.invalidate() })
+  // The grow protocol reads the pump cycles (whose watering it is), so its line here is read again with them.
+  const cyclesChanged = () => {
+    void utils.schedules.invalidate()
+    void utils.protocol.invalidate()
+  }
+  const upsert = trpc.schedules.upsert.useMutation({ onSuccess: cyclesChanged })
+  const remove = trpc.schedules.remove.useMutation({ onSuccess: cyclesChanged })
   const [dur, setDur] = useState<typeof DURATIONS[number]['value']>('300')
   const [editing, setEditing] = useState<PumpCycle | null>(null)
   const [hours, setHours] = useState<Hours>('168')
@@ -747,7 +752,10 @@ function NotStarted({ asked, onGiveUp, children }: { asked: number, onGiveUp: ()
 function FollowToggle() {
   const utils = trpc.useUtils()
   const settings = trpc.settings.get.useQuery()
-  const update = trpc.settings.update.useMutation({ onSuccess: () => utils.settings.invalidate() })
+  const update = trpc.settings.update.useMutation({ onSuccess: () => {
+    void utils.settings.invalidate()
+    void utils.protocol.invalidate()
+  } })
   const on = settings.data?.followGrowCycle ?? false
   return (
     <span className="flex items-center gap-2 text-[13px] text-fg-2" title="As the plants age, move the cycles on to the next stage's preset, never back. Cycles you set by hand are left alone. While on, germination's weekly run keeps to the sowing weekday.">

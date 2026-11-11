@@ -59,17 +59,43 @@ export const TIPS_CITATION = cite(NOTE, 'Judging a schedule')
 /** "08:00" for minute 480. */
 export const hhmm = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
 
-/** When the light is on today, from the first lit minute to the last, across the running curves; null if it never is. */
-export function lightWindow(specs: readonly LightSpec[]): { on: number, off: number } | null {
+/** Whether any running curve has the light on at minute `m`: at all, or at `min` or brighter. */
+const litAt = (specs: readonly LightSpec[], m: number, min?: number) => specs.some(s => (min === undefined ? (lightLevelAt(s, m) ?? 0) > 0 : (lightLevelAt(s, m) ?? 0) >= min))
+
+/** When the light is on today, from the first lit minute to the last, across the running curves; null if it never is. With `min`, only at that level or brighter. */
+export function lightWindow(specs: readonly LightSpec[], min?: number): { on: number, off: number } | null {
   let on: number | null = null
   let off: number | null = null
   for (let m = 0; m < 1440; m++) {
-    if (specs.some(s => (lightLevelAt(s, m) ?? 0) > 0)) {
+    if (litAt(specs, m, min)) {
       on ??= m
       off = m + 1
     }
   }
   return on === null || off === null ? null : { on, off }
+}
+
+/**
+ * Each stretch of the day the light is on, at `min` or brighter if given, in
+ * order: one that runs over midnight is one stretch, `off` before `on`
+ * ("22:00–06:00"). Empty if it never is; the whole day as 0–1440.
+ */
+export function lightPeriods(specs: readonly LightSpec[], min?: number): Array<{ on: number, off: number }> {
+  const out: Array<{ on: number, off: number }> = []
+  let start: number | null = null
+  for (let m = 0; m <= 1440; m++) {
+    const lit = m < 1440 && litAt(specs, m, min)
+    if (lit && start === null) start = m
+    if (!lit && start !== null) {
+      out.push({ on: start, off: m })
+      start = null
+    }
+  }
+  const first = out[0]
+  const last = out.at(-1)
+  // Lit at midnight from both sides: the evening stretch runs on into the morning one.
+  if (first && last && first !== last && first.on === 0 && last.off === 1440) return [...out.slice(1, -1), { on: last.on, off: first.off }]
+  return out
 }
 
 /** A preset's run times, kept inside the light window when it asks to be (and some runs fit). */

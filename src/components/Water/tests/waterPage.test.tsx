@@ -6,7 +6,7 @@ import { editorLengths, START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { updateSettings: vi.fn(), runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
+  calls: { updateSettings: vi.fn(), runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn(), invalidateProtocol: vi.fn() },
   pumpSuccess: new Map<string, (s: unknown) => void>(),
   state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string }, failOn: null as null | string, order: [] as string[] },
 }))
@@ -18,11 +18,11 @@ vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
   const { useEffect } = await import('react')
   return {
     ...real,
-    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, low: boolean, pumping: boolean, topUps: number[], runs: number[], upcoming: number[], preview: number[] } | null, onUnavailable?: () => void }) => {
+    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, low: boolean, pumping: boolean, topUps: number[], runs: number[], upcoming: number[] } | null, onUnavailable?: () => void }) => {
       useEffect(() => {
         if (hero.fail) onUnavailable?.()
       }, [onUnavailable])
-      return <div data-testid="tank-3d" data-state={status} data-low={data ? String(data.low) : undefined} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'} · ran ${data.runs.map(r => r.toFixed(2)).join(',')} · later ${data.upcoming.map(r => r.toFixed(2)).join(',')} · preview ${data.preview.map(r => r.toFixed(2)).join(',')}`}</div>
+      return <div data-testid="tank-3d" data-state={status} data-low={data ? String(data.low) : undefined} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'} · ran ${data.runs.map(r => r.toFixed(2)).join(',')} · later ${data.upcoming.map(r => r.toFixed(2)).join(',')}`}</div>
     },
   }
 })
@@ -54,7 +54,7 @@ vi.mock('@/src/utils/trpc', () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() }, grow: { invalidate: vi.fn() } }),
+      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() }, grow: { invalidate: vi.fn() }, protocol: { invalidate: calls.invalidateProtocol } }),
       alerts: { list: query('alerts'), acknowledge: { useMutation: (o: { onSuccess: () => void }) => ({ isPending: false, error: state.ackError, mutate: (i: unknown) => {
         calls.ack(i)
         o.onSuccess()
@@ -335,6 +335,9 @@ describe('WaterPage: pump cycles', () => {
     expect(within(evening).getByText('Every day')).toBeTruthy()
     fireEvent.click(screen.getByRole('switch', { name: 'Enable Evening watering' }))
     expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'evening', enabled: false }))
+    // The protocol reads the pump cycles: whose watering it is, so its line is read again.
+    act(() => pumpSuccess.get('upsert')?.({}))
+    expect(calls.invalidateProtocol).toHaveBeenCalled()
   })
 
   it('marks the preset the cycles already are', () => {
@@ -557,10 +560,10 @@ describe('WaterPage with WebGL: the tank hero', () => {
     // Only pump cycles' runs; no "later" ticks off the day's range.
     // The history spans 48 h from its first sample; the run is the 2nd's local midnight, 24 or 25 h in.
     const along = ((at(0, 0, 2).getTime() - at(0).getTime()) / (48 * 3_600_000)).toFixed(2)
-    expect(screen.getByTestId('tank-3d').textContent).toContain(`ran ${along} · later  · preview `)
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(new RegExp(`ran ${along} · later $`))
     fireEvent.click(screen.getByRole('tab', { name: '24h' }))
     // The evening cycle at 20:00 is still to come: 8 h into the 12 h left of the day.
-    expect(screen.getByTestId('tank-3d').textContent).toMatch(/later 0\.67 · preview $/)
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/later 0\.67$/)
   })
 
   it('holds the readout\'s place while loading and says the history is loading', () => {
@@ -601,5 +604,7 @@ describe('WaterPage with WebGL: the tank hero', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(toggle)
     expect(calls.updateSettings).toHaveBeenCalledWith({ followGrowCycle: false })
+    // The protocol's line reads Follow, so it's read again.
+    expect(calls.invalidateProtocol).toHaveBeenCalled()
   })
 })

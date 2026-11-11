@@ -1,18 +1,18 @@
-import { FastForward, Pause, Play, Sprout } from 'lucide-react'
+import { Droplets, FastForward, Pause, Play, Sprout } from 'lucide-react'
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, InlineError } from '@/src/components/ds/core'
-import { WeekdayDots } from '@/src/components/ds/forms'
+import { TextField, WeekdayDots } from '@/src/components/ds/forms'
 import { Modal } from '@/src/components/ds/feedback'
 import { fmtClock } from '@/src/components/charts/format'
-import { asCurve, levelAt, runningToday, type LightCurve } from '@/src/components/Light/curves'
+import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { DayStrip, SourceLink } from '@/src/components/Water/DayStrip'
 import { asCycle, fmtDay, fmtMinutes } from '@/src/components/Water/pumpCycles'
 import { SownOn } from '@/src/components/Water/SownOn'
 import { followedPreset } from '@/src/care/follow'
 import { daysLabel } from '@/src/lib/days'
 import { BOOST_LEVEL, LIGHT_PRESETS } from '@/src/scheduler/lightPlan'
-import { dailyMinutes, lightWindow, PUMP_PRESETS, type PumpPreset } from '@/src/scheduler/pumpPlan'
+import { dailyMinutes, GARDYN_WATERING_GUIDE, lightPeriods, lightWindow, PUMP_PRESETS, TIPS_CITATION, WATERING_TIPS, type PumpPreset } from '@/src/scheduler/pumpPlan'
 import { localTime, systemZone } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
 import { nextStage, plainDay, stageDays, waterWords, whereWords, type ProtocolReport, type ProtocolStageView } from './protocolWords'
@@ -22,23 +22,16 @@ const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] te
 const ONGOING_FLEX = 14
 
 type Light = { on: number, off: number } | null
+type Period = NonNullable<Light>
 const GERMINATION = PUMP_PRESETS.find(p => p.id === 'germination') as PumpPreset
 type Picked = ProtocolStageView['id'] | 'then'
 
-const hoursOf = (l: NonNullable<Light>) => Math.round((l.off - l.on) / 30) / 2
-
-/** When today's curves hold the light at Boost, Gardyn's full brightness, from the first such minute to the last, to the quarter hour. */
-function boostWindow(curves: LightCurve[]): Light {
-  let on: number | null = null
-  let off: number | null = null
-  for (let m = 0; m < 1440; m++) {
-    if (curves.some(c => levelAt(c.spec, m) >= BOOST_LEVEL)) {
-      on ??= m
-      off = m + 1
-    }
-  }
-  const quarter = (m: number) => Math.round(m / 15) * 15
-  return on === null || off === null ? null : { on: quarter(on), off: quarter(off) }
+const quarter = (m: number) => (Math.round(m / 15) * 15) % 1440
+/** "15 h · 06:00–21:00"; over midnight "8 h · 22:00–06:00"; in two stretches "6 h · 06:00–09:00, 18:00–21:00". */
+function boostWords(periods: Period[]): string | null {
+  if (!periods.length) return null
+  const minutes = periods.reduce((t, p) => t + (p.off > p.on ? p.off - p.on : p.off + 1440 - p.on), 0)
+  return `${Math.round(minutes / 30) / 2} h · ${periods.map(p => `${fmtClock(quarter(p.on))}–${fmtClock(quarter(p.off))}`).join(', ')}`
 }
 const short = (w: { runs: number[], durationS: number, weekly: boolean }) => `${w.runs.length}×${Math.round(w.durationS / 60)} min${w.weekly ? ' wk' : ''}`
 
@@ -56,15 +49,26 @@ export function ProtocolCard() {
   const library = trpc.schedules.library.list.useQuery()
   const schedules = trpc.schedules.list.useQuery()
   const settings = trpc.settings.get.useQuery()
+  // The last action that failed, said once; the next action clears it.
+  const [lastError, setLastError] = useState<string | null>(null)
+  const failed = (e: { message: string }) => setLastError(e.message)
   const changed = () => {
     void utils.protocol.invalidate()
     void utils.schedules.invalidate()
   }
-  const hold = trpc.protocol.hold.useMutation({ onSuccess: changed })
-  const release = trpc.protocol.release.useMutation({ onSuccess: changed })
-  const advance = trpc.protocol.advance.useMutation({ onSuccess: changed })
-  const setThen = trpc.protocol.setThen.useMutation({ onSuccess: changed })
-  const activate = trpc.schedules.library.activate.useMutation({ onSuccess: changed })
+  const hold = trpc.protocol.hold.useMutation({ onSuccess: changed, onError: failed })
+  const release = trpc.protocol.release.useMutation({ onSuccess: changed, onError: failed })
+  const advance = trpc.protocol.advance.useMutation({ onSuccess: changed, onError: failed })
+  const setThen = trpc.protocol.setThen.useMutation({ onSuccess: changed, onError: failed })
+  const activate = trpc.schedules.library.activate.useMutation({ onSuccess: () => {
+    changed()
+    setApplying(false)
+  }, onError: failed })
+  const save = trpc.schedules.library.create.useMutation({ onSuccess: changed })
+  const follow = trpc.settings.update.useMutation({ onSuccess: () => {
+    void utils.settings.invalidate()
+    changed()
+  }, onError: failed })
   // Moving the sowing day or starting germination changes the grow cycle and the pump cycles on the unit.
   const growChanged = () => {
     void utils.grow.invalidate()
@@ -76,6 +80,14 @@ export function ProtocolCard() {
     setStarting(false)
   } })
   const [starting, setStarting] = useState(false)
+  // Confirming the stage's watering over cycles changed by hand, with the name to keep those under.
+  const [applying, setApplying] = useState(false)
+  const [keepAs, setKeepAs] = useState('My cycles')
+  /** Clears the last error, then acts. */
+  const act = (fn: () => void) => {
+    setLastError(null)
+    fn()
+  }
   const [picked, setPicked] = useState<Picked | null>(null)
   const [hovered, setHovered] = useState<Picked | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -84,9 +96,12 @@ export function ProtocolCard() {
   const curves = useMemo(() => (schedules.data ?? []).flatMap(x => asCurve(x) ?? []), [schedules.data])
   const now = new Date()
   const unitNow = localTime(now, zone)
-  const running = runningToday(curves, unitNow.weekday)
-  const light = lightWindow(running.map(c => c.spec))
-  const boost = boostWindow(running)
+  // Each weekday's light, worked out once per set of curves: its window for the day strips, and its Boost stretches in words.
+  const lightByDay = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map((d) => {
+    const specs = runningToday(curves, d).map(c => c.spec)
+    return { light: lightWindow(specs), boost: boostWords(lightPeriods(specs, BOOST_LEVEL)) }
+  }), [curves])
+  const { light, boost } = lightByDay[unitNow.weekday] ?? { light: null, boost: null }
   const today = unitNow.date
   const cycles = (schedules.data ?? []).flatMap(x => asCycle(x) ?? [])
 
@@ -102,7 +117,9 @@ export function ProtocolCard() {
   const sowDay = r.sownOn ? (new Date(`${r.sownOn}T00:00:00Z`).getUTCDay() + 6) % 7 : null
   const germinating = followedPreset(cycles)?.id === 'germination' ? cycles[0] : undefined
   const stays = !r.following && germinating && sowDay !== null && germinating.days !== 1 << sowDay ? `Follow is off: your weekly run stays on ${daysLabel(germinating.days)}` : null
-  const error = hold.error ?? release.error ?? advance.error ?? setThen.error ?? activate.error
+  // The stage's watering, to put on the pump when the protocol isn't the one watering.
+  const stageWatering = current ? { id: `preset:${current.water.presetId}`, label: `${current.name} watering` } : null
+  const useStage = () => stageWatering && act(() => activate.mutate({ id: stageWatering.id }))
   const summary = (id: Picked) => {
     if (id === 'then') return `Then · ${thenLabel(r, thenEntry)}`
     const s = r.stages.find(x => x.id === id)
@@ -120,22 +137,47 @@ export function ProtocolCard() {
         </div>
         {r.hold
           ? <Button icon={Play} disabled={release.isPending} onClick={() => release.mutate()}>Release hold</Button>
-          : <Button icon={Pause} disabled={noCycle || !current || hold.isPending} onClick={() => hold.mutate()}>Hold at this stage</Button>}
-        <Button icon={FastForward} disabled={!r.canAdvance || advance.isPending} title={r.canAdvance ? undefined : current?.to === null ? 'Maintenance is the last stage and ongoing' : 'Needs an open cycle and planted pods'} onClick={() => setConfirming(true)}>Advance now</Button>
+          : <Button icon={Pause} disabled={noCycle || !current || hold.isPending} onClick={() => act(() => hold.mutate())}>Hold at this stage</Button>}
+        <Button icon={FastForward} disabled={!r.canAdvance || advance.isPending} title={r.canAdvance ? undefined : current?.to === null ? 'Maintenance is the last stage and ongoing' : 'Needs an open cycle'} onClick={() => setConfirming(true)}>Advance now</Button>
       </div>
 
-      {(!r.following || noCycle || r.water === 'edited' || r.water === 'schedule' || error) && (
-        <div className="flex flex-col gap-1.5 border-b border-line px-5 py-3 text-[13px] text-fg-2" data-testid="protocol-notes">
-          {!r.following && <p>Follow the grow cycle is off on Water, so the protocol changes no watering; the first-harvest reminder still comes.</p>}
-          {noCycle && <p>Start a cycle to hold, advance or choose what comes after; the stages count from the earliest pod for now.</p>}
-          {r.water === 'edited' && <p>The pump cycles were changed by hand, so the protocol leaves them as they are.</p>}
-          {r.water === 'schedule' && (
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>{`On your schedule${(library.data ?? []).find(e => e.id === r.activeScheduleId)?.name ? ` ${(library.data ?? []).find(e => e.id === r.activeScheduleId)?.name}` : ''}: the protocol’s watering waits.`}</span>
-              {current && <Button size="sm" disabled={activate.isPending} onClick={() => activate.mutate({ id: `preset:${current.water.presetId}` })}>{`Back to ${current.water.name}`}</Button>}
-            </p>
+      {(!r.following || noCycle || r.water !== 'preset' || lastError) && (
+        <div className="flex flex-col gap-2 border-b border-line px-5 py-3 text-[13px] text-fg-2" data-testid="protocol-notes">
+          {!r.following && (
+            <Note text="Follow the grow cycle is off, so the protocol changes no watering; the first-harvest reminder still comes.">
+              <Button size="sm" disabled={follow.isPending} onClick={() => act(() => follow.mutate({ followGrowCycle: true }))}>Turn on Follow</Button>
+              {/* On a preset that isn't this stage's: put the stage's on. Cycles changed by hand, none or a schedule have their own way below. */}
+              {stageWatering && r.water === 'preset' && r.activeScheduleId !== stageWatering.id && <Button size="sm" disabled={activate.isPending} onClick={useStage}>{`Use ${stageWatering.label}`}</Button>}
+            </Note>
           )}
-          {error && <InlineError>{error.message}</InlineError>}
+          {noCycle && <p>Start a cycle to hold, advance or choose what comes after; the stages count from the earliest pod for now.</p>}
+          {r.water === 'none' && stageWatering && (
+            <Note text="Not watering yet: there are no pump cycles.">
+              <Button size="sm" variant="primary" icon={Droplets} disabled={activate.isPending} onClick={useStage}>{`Start ${stageWatering.label}`}</Button>
+            </Note>
+          )}
+          {r.water === 'edited' && (
+            <Note text="The pump cycles were changed by hand, so the protocol leaves them as they are.">
+              {stageWatering && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setLastError(null)
+                    save.reset()
+                    setApplying(true)
+                  }}
+                >
+                  {`Use ${stageWatering.label} (replaces your cycles)`}
+                </Button>
+              )}
+            </Note>
+          )}
+          {r.water === 'schedule' && (
+            <Note text={`On your schedule${(library.data ?? []).find(e => e.id === r.activeScheduleId)?.name ? ` ${(library.data ?? []).find(e => e.id === r.activeScheduleId)?.name}` : ''}: the protocol’s watering waits.`}>
+              {current && <Button size="sm" disabled={activate.isPending} onClick={useStage}>{`Back to ${current.water.name}`}</Button>}
+            </Note>
+          )}
+          {lastError && <InlineError>{lastError}</InlineError>}
         </div>
       )}
 
@@ -206,7 +248,7 @@ export function ProtocolCard() {
       </div>
 
       {shown === 'then'
-        ? <ThenPanel r={r} own={own} thenEntry={thenEntry} light={light} boost={boost} busy={setThen.isPending} onSet={v => setThen.mutate(v)} />
+        ? <ThenPanel r={r} own={own} thenEntry={thenEntry} light={light} boost={boost} busy={setThen.isPending} onSet={v => act(() => setThen.mutate(v))} />
         : <StagePanel stage={r.stages.find(s => s.id === shown) ?? null} r={r} light={light} boost={boost} />}
 
       <Modal
@@ -220,7 +262,7 @@ export function ProtocolCard() {
               variant="primary"
               disabled={advance.isPending}
               onClick={() => {
-                advance.mutate()
+                act(() => advance.mutate())
                 setConfirming(false)
                 setPicked(null)
               }}
@@ -232,6 +274,42 @@ export function ProtocolCard() {
         )}
       >
         <p className="text-[13px] text-fg-2">{next?.change ? `${next.change} Later stages move up to match; the protocol never goes back a stage.` : 'Later stages move up to match; the protocol never goes back a stage.'}</p>
+      </Modal>
+
+      <Modal
+        open={applying && !!stageWatering}
+        onClose={() => setApplying(false)}
+        title={`Use ${stageWatering?.label ?? ''}?`}
+        icon={Droplets}
+        footer={(
+          <div className="flex gap-2">
+            <Button variant="primary" disabled={activate.isPending} onClick={useStage}>{activate.isPending ? 'Replacing…' : `Use ${stageWatering?.label ?? ''}`}</Button>
+            <Button onClick={() => setApplying(false)}>Cancel</Button>
+          </div>
+        )}
+      >
+        <div className="flex flex-col gap-2.5 text-[13px] text-fg-2" data-testid="apply-stage">
+          <p>These go:</p>
+          <ul className="flex flex-col gap-1 font-mono text-[12px]">
+            {cycles.map(c => <li key={c.id}>{`${fmtClock(c.spec.minute)} · ${c.name}`}</li>)}
+          </ul>
+          {save.isSuccess
+            ? <p data-testid="kept">{`Kept as ${save.data.name} in Your schedules.`}</p>
+            : (
+                <form
+                  className="flex flex-wrap items-end gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    save.mutate({ name: keepAs.trim(), cycles: cycles.map(c => ({ minute: c.spec.minute, durationS: c.spec.durationS, days: c.days })) })
+                  }}
+                >
+                  <TextField label="Keep them first as" mono={false} value={keepAs} onChange={setKeepAs} className="w-48" />
+                  <Button type="submit" disabled={save.isPending || !keepAs.trim()}>Save current cycles as a schedule</Button>
+                </form>
+              )}
+          {save.error && <InlineError>{`Couldn't save them: ${save.error.message}`}</InlineError>}
+          {lastError && <InlineError>{lastError}</InlineError>}
+        </div>
       </Modal>
 
       <Modal
@@ -273,6 +351,16 @@ function thenLabel(r: ProtocolReport, entry: { name: string, cycles: Array<{ dur
   return 'stay in maintenance'
 }
 
+/** A note above the track with what can be done about it. */
+function Note({ text, children }: { text: string, children?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <span>{text}</span>
+      {children}
+    </div>
+  )
+}
+
 /** One of the panel's four columns. */
 function Column({ title, children }: { title: string, children: ReactNode }) {
   return (
@@ -283,18 +371,21 @@ function Column({ title, children }: { title: string, children: ReactNode }) {
   )
 }
 
-/** The light at full brightness today, or the preset a stage or schedule sets. */
-function LightColumn({ boost, presetName }: { boost: Light, presetName: string | null }) {
+/** The light at full brightness today, or the preset a stage or one of your schedules sets, saying which. */
+function LightColumn({ boost, presetName, source }: { boost: string | null, presetName: string | null, source: 'stage' | 'schedule' }) {
+  const caption = presetName
+    ? (source === 'stage' ? 'Set by this stage.' : 'From your schedule.')
+    : (source === 'stage' ? 'Unchanged: the protocol leaves your light curves as they are.' : 'Unchanged: this schedule leaves your light curves as they are.')
   return (
     <Column title="Light">
-      <span className="text-sm font-medium">{presetName ?? (boost ? `${hoursOf(boost)} h · ${fmtClock(boost.on)}–${fmtClock(boost.off)}` : 'No light at full brightness today')}</span>
-      <span className="text-[12px] leading-snug text-fg-2">{presetName ? 'Set by this stage.' : 'Unchanged: the protocol leaves your light curves as they are.'}</span>
+      <span className="text-sm font-medium">{presetName ?? boost ?? 'No light at full brightness today'}</span>
+      <span className="text-[12px] leading-snug text-fg-2">{caption}</span>
     </Column>
   )
 }
 
 /** What a stage sets, with where each comes from; a later stage says when it starts and what changes. */
-function StagePanel({ stage: s, r, light, boost }: { stage: ProtocolStageView | null, r: ProtocolReport, light: Light, boost: Light }) {
+function StagePanel({ stage: s, r, light, boost }: { stage: ProtocolStageView | null, r: ProtocolReport, light: Light, boost: string | null }) {
   if (!s) return null
   const length = s.to === null ? null : s.to - s.from + 1
   const head = s.state === 'current'
@@ -317,7 +408,7 @@ function StagePanel({ stage: s, r, light, boost }: { stage: ProtocolStageView | 
           </span>
           <SourceLink href={s.water.citation.url} className="text-[12px] text-fg-3">{s.water.citation.section}</SourceLink>
         </Column>
-        <LightColumn boost={boost} presetName={s.light?.name ?? null} />
+        <LightColumn boost={boost} presetName={s.light?.name ?? null} source="stage" />
         <Column title="Feed">
           <span className="text-[13px] leading-snug">{s.feed.text}</span>
           <SourceLink href={s.feed.citation.url} className="text-[12px] text-fg-3">{s.feed.citation.section}</SourceLink>
@@ -337,6 +428,14 @@ function StagePanel({ stage: s, r, light, boost }: { stage: ProtocolStageView | 
         <span>{s.rationale}</span>
         <SourceLink href={s.citation.url} className="text-fg-3">{s.citation.section}</SourceLink>
       </p>
+      {/* How to judge any watering, from the same note; Gardyn publishes only germination's. */}
+      <ul className="flex list-disc flex-col gap-1 border-t border-line py-3 pl-9 pr-5 text-[12px] leading-snug text-fg-3" data-testid="watering-tips">
+        {WATERING_TIPS.map(tip => <li key={tip}>{tip}</li>)}
+        <li className="flex list-none flex-wrap gap-x-3">
+          <SourceLink href={TIPS_CITATION.url}>{TIPS_CITATION.section}</SourceLink>
+          <SourceLink href={GARDYN_WATERING_GUIDE}>Gardyn’s guide</SourceLink>
+        </li>
+      </ul>
     </div>
   )
 }
@@ -349,15 +448,16 @@ function ThenPanel({ r, own, thenEntry, light, boost, busy, onSet }: {
   own: Own[]
   thenEntry: Own | null
   light: Light
-  boost: Light
+  boost: string | null
   busy: boolean
   onSet: (v: { kind: 'stay' | 'schedule' | 'remind', scheduleId?: string, when: 'now' | 'maintenance' }) => void
 }) {
   const last = r.stages.at(-1)
-  const [choice, setChoice] = useState<string>(r.then.scheduleId ?? own[0]?.id ?? '')
+  const [choice, setChoice] = useState<string | null>(null)
+  // The schedule picked, else Then's, else the first: whatever the list holds when it arrives or changes, so Switch always has one.
+  const pickedSchedule = own.find(e => e.id === choice) ?? own.find(e => e.id === r.then.scheduleId) ?? own[0] ?? null
   const disabled = r.cycleId === null || busy
   const inMaintenance = r.stage === last?.id
-  const pickedSchedule = own.find(e => e.id === choice) ?? null
   const shown = r.then.kind === 'schedule' ? thenEntry : null
   const option = (kind: 'stay' | 'schedule' | 'remind', title: string, sub: ReactNode, extra?: ReactNode, off = false) => (
     <label className={cn('flex cursor-pointer items-start gap-2.5 rounded-[10px] border px-3.5 py-3', r.then.kind === kind ? 'border-pod-ok/60 bg-pod-ok/5' : 'border-line', (disabled || off) && 'cursor-default opacity-60')}>
@@ -383,23 +483,23 @@ function ThenPanel({ r, own, thenEntry, light, boost, busy, onSet }: {
           After the stages
           <span className="ml-2 font-mono text-[12px] font-normal text-fg-3">{last ? `${last.name} is ongoing; nothing changes unless you choose` : ''}</span>
         </legend>
-        <div className="grid grid-cols-1 gap-2.5 min-[720px]:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2.5 min-[1000px]:grid-cols-3">
           {option('stay', 'Stay in maintenance', last ? `${waterWords(last.water)}, for as long as the plants grow.` : 'Keep the last stage.')}
           {option(
             'schedule',
             'Switch to my schedule',
             own.length ? (inMaintenance ? 'Maintenance has begun, so this switches now.' : 'When maintenance begins, or now.') : 'Save a schedule of your own first.',
             own.length > 0 && (
-              <span className="flex flex-wrap items-center gap-2">
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
                 <select
                   aria-label="Schedule to switch to"
-                  value={choice}
+                  value={pickedSchedule?.id ?? ''}
                   disabled={disabled}
                   onChange={(e) => {
                     setChoice(e.target.value)
                     if (r.then.kind === 'schedule') onSet({ kind: 'schedule', scheduleId: e.target.value, when: 'maintenance' })
                   }}
-                  className="rounded-[6px] border border-line-2 bg-bg px-2 py-1 font-mono text-[12px]"
+                  className="min-w-0 max-w-full rounded-[6px] border border-line-2 bg-bg px-2 py-1 font-mono text-[12px]"
                 >
                   {own.map(e => <option key={e.id} value={e.id}>{`${e.name} · ${e.cycles.length}×${Math.round((e.cycles[0]?.durationS ?? 0) / 60)} min`}</option>)}
                 </select>
@@ -420,7 +520,7 @@ function ThenPanel({ r, own, thenEntry, light, boost, busy, onSet }: {
             <DayStrip runs={shown.cycles.map(c => c.minute)} light={light} />
             <span className="font-mono text-[11px] text-fg-2">{shown.cycles.map(c => fmtClock(c.minute)).join(', ')}</span>
           </Column>
-          <LightColumn boost={boost} presetName={LIGHT_PRESETS.find(p => p.id === shown.lightPresetId)?.name ?? null} />
+          <LightColumn boost={boost} presetName={LIGHT_PRESETS.find(p => p.id === shown.lightPresetId)?.name ?? null} source="schedule" />
         </div>
       )}
     </div>

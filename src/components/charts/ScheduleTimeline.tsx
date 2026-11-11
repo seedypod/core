@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { Card } from '@/src/components/ds/core'
 import { fmtClock } from '@/src/components/charts/format'
 import { holdWindow, mergedAt, nextDim, nextOn, runningToday, type LightCurve } from '@/src/components/Light/curves'
-import { fmtDay, fmtMinutes, nextRun, type PumpCycle } from '@/src/components/Water/pumpCycles'
+import { fmtMinutes, nextRun, type PumpCycle } from '@/src/components/Water/pumpCycles'
 import { fmtIn } from '@/src/components/System/statusData'
 import { useNow } from '@/src/components/System/useNow'
 import { dayOn, daysLabel } from '@/src/lib/days'
@@ -22,10 +22,6 @@ const PILL_W = 72
 /** The rest of today, read as forecast: a grey hatch over a wash that dims what's under it. */
 export const AHEAD: CSSProperties = {
   backgroundImage: 'repeating-linear-gradient(135deg, var(--forecast-hatch) 0 1px, transparent 1px 6px), linear-gradient(var(--forecast-dim), var(--forecast-dim))',
-}
-
-export const HATCH: CSSProperties = {
-  backgroundImage: 'repeating-linear-gradient(135deg, color-mix(in srgb, var(--tank-fill) 55%, transparent) 0 1px, transparent 1px 6px)',
 }
 
 /** A stretch of the day the light holds a level (`from === to`) or ramps between two. */
@@ -65,7 +61,7 @@ interface Mark {
   label: string
   /** The tooltip and the screen reader's name: what it is and exactly when. */
   title: string
-  kind: 'light' | 'water' | 'preview' | 'run' | 'hold'
+  kind: 'light' | 'water' | 'run' | 'hold'
   muted?: boolean
   /** A run's days, said under its times in the tooltip. */
   days?: number
@@ -105,21 +101,18 @@ export interface ScheduleTimelineProps {
   hold?: { since: string, until: string, level: number } | null
   /** The pump running now. */
   pumpRun?: { since: string, remainingS: number | null } | null
-  /** A preset on show before it's applied: its runs as a hatched row under the real ones, on the days in `days` (every day without), and when they next come round. */
-  preview?: { name: string, short: string, runs: number[], durationS: number, days?: number, next?: Date | null } | null
 }
 
 /**
  * Today on the unit's clock, midnight to midnight, in the style of
  * sleepypod's Tonight card: a Light row of steps with their level written in
- * and ramps as gradients, a Water row of pump runs with their length, and
- * a preset's runs hatched under them while it's previewed. Schedules off or
+ * and ramps as gradients, and a Water row of pump runs with their length. Schedules off or
  * not running today are muted; a manual hold is outlined and a run going now
  * ringed. A now line crosses the rows, and the rest of the day past it is
  * hatched and dimmed as forecast. The header says what's next, and each mark
  * has its exact times on hover, tap or focus.
  */
-export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun, preview }: ScheduleTimelineProps) {
+export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun }: ScheduleTimelineProps) {
   const nowMs = useNow(30_000)
   const now = new Date(nowMs)
   const zone = timezone ?? systemZone()
@@ -149,10 +142,6 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
     const until = pumpRun.remainingS === null ? nowMin : nowMin + pumpRun.remainingS / 60
     waterMarks.push(...clipToDay({ start: from, end: Math.max(until, from + 1), label: 'now', title: `Watering now · since ${fmtClock(Math.round(from))}${pumpRun.remainingS === null ? '' : `, ${fmtMinutes(pumpRun.remainingS)} left`}`, kind: 'run' }))
   }
-  // A weekly preset runs only on its day: elsewhere its row says when it next does.
-  const previewToday = !preview?.days || dayOn(preview.days, weekday)
-  const previewMarks = preview ? (previewToday ? preview.runs.flatMap(m => clipToDay(runMark(m, preview.durationS, `Preview: ${preview.name}`, 'preview', false, preview.days ?? 127))) : []) : null
-  const previewNext = !previewToday ? preview?.next ?? null : null
 
   // What's next, by the same helpers as the pages' strips and subtitles, so they all agree.
   const clock = (iso: string) => fmtClock(localTime(new Date(iso), zone).minute)
@@ -200,7 +189,6 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
     { id: 'water', name: 'Water', marks: waterMarks },
   ]
   if (lead === 'water') rows.reverse()
-  if (previewMarks && preview) rows.splice(rows.findIndex(r => r.id === 'water') + 1, 0, { id: 'preview', name: 'Preview', marks: previewMarks })
 
   const step = width < 420 ? 6 : 3
   const ticks = Array.from({ length: DAY / 60 / step + 1 }, (_, i) => i * step * 60)
@@ -234,12 +222,6 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
               manual hold
             </span>
           )}
-          {preview && (
-            <span className="flex items-center gap-1.5">
-              <span className="h-2 w-3.5 rounded-[2px] border border-dashed border-tank/70" style={HATCH} />
-              preview
-            </span>
-          )}
         </div>
       </div>
 
@@ -249,7 +231,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
           {ticks.map(t => <span key={t} className="absolute inset-y-0 w-px bg-grid" style={{ left: `${pctOf(t)}%` }} />)}
         </div>
         {rows.map((r, i) => (
-          <Row key={r.id} id={r.id} name={r.name} sub={r.id === 'preview' ? preview?.short : undefined} title={r.id === 'preview' ? `Preview: ${preview?.name ?? ''}` : undefined} marks={r.marks} nowPct={nowPct} note={r.id === 'preview' && previewNext ? `not today · next ${fmtDay(previewNext, zone)}` : undefined} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
+          <Row key={r.id} id={r.id} name={r.name} marks={r.marks} nowPct={nowPct} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
         ))}
 
         <span />
@@ -273,16 +255,12 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   )
 }
 
-function Row({ id, name, sub, title, marks, nowPct, note, width, active, onActive, laneRef }: {
+function Row({ id, name, marks, nowPct, width, active, onActive, laneRef }: {
   id: string
   name: string
-  sub?: string
-  title?: string
   marks: Mark[]
   /** Where now is across the lane: what's right of it is still ahead. */
   nowPct: number
-  /** Written in an empty lane. */
-  note?: string
   width: number
   active: string | null
   onActive: (key: string | null) => void
@@ -316,12 +294,10 @@ function Row({ id, name, sub, title, marks, nowPct, note, width, active, onActiv
   const tipLeft = open ? Math.max(-(LABEL_W + 8), Math.min(width - tipW, ((open.start + open.end) / 2) * pxPerMin - tipW / 2)) : 0
   return (
     <>
-      <div className="flex min-w-0 flex-col leading-tight" title={title}>
+      <div className="flex min-w-0 flex-col leading-tight">
         <span className="truncate text-[13px]">{name}</span>
-        {sub && <span className="truncate font-mono text-[11px] text-fg-3">{sub}</span>}
       </div>
-      <div ref={laneRef} className={cn('relative rounded-[2px] bg-active/60', id === 'preview' && 'border border-dashed border-tank/40')} style={{ height: LANE_H }} data-testid={`lane-${id}`}>
-        {note && <span className="absolute inset-y-0 left-1.5 font-mono text-[11px] leading-[20px] text-fg-3" data-testid={`lane-${id}-note`}>{note}</span>}
+      <div ref={laneRef} className="relative rounded-[2px] bg-active/60" style={{ height: LANE_H }} data-testid={`lane-${id}`}>
         {placed.map(({ m, key, leftPx, widthPx }) => (
           <button
             key={key}
@@ -343,13 +319,11 @@ function Row({ id, name, sub, title, marks, nowPct, note, width, active, onActiv
               'absolute inset-y-0 cursor-default overflow-hidden rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-fg',
               m.kind === 'water' && (m.muted ? 'bg-fg-3/40' : 'z-[1] bg-tank/60'),
               m.kind === 'run' && 'z-[1] bg-tank ring-2 ring-tank/50 motion-safe:animate-pulse',
-              m.kind === 'preview' && 'border border-dashed border-tank/70',
               m.kind === 'hold' && 'z-[1] border border-hold bg-hold/25',
             )}
             style={{
               left: `${(leftPx / (width || 1)) * 100}%`,
               width: `${(widthPx / (width || 1)) * 100}%`,
-              ...(m.kind === 'preview' ? HATCH : {}),
               ...(m.kind === 'light' ? { background: m.from === m.to ? LIGHT_MIX(m.from ?? 0, m.muted) : `linear-gradient(to right, ${LIGHT_MIX(m.from ?? 0, m.muted)}, ${LIGHT_MIX(m.to ?? 0, m.muted)})` } : {}),
             }}
           />
@@ -364,7 +338,7 @@ function Row({ id, name, sub, title, marks, nowPct, note, width, active, onActiv
             data-testid={`label-${id}`}
             className={cn(
               'pointer-events-none absolute inset-y-0 z-[2] overflow-hidden whitespace-nowrap px-1 font-mono text-[11px] leading-[22px] text-fg',
-              (m.muted || m.kind === 'preview') && 'text-fg-2',
+              m.muted && 'text-fg-2',
               m.kind === 'run' && 'text-inverse',
               hidden && 'invisible',
             )}

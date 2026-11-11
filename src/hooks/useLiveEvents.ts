@@ -28,18 +28,21 @@ const TOUCHES = new Map<string, readonly Area[]>([
   ['automations', ['automations', 'light']],
   ['backup', ['backup', 'system']],
   ['captures', ['camera', 'vision', 'alerts', 'datasets']],
-  ['catalog', ['planner']],
+  // A custom fruiting crop can pick the grow protocol's track.
+  ['catalog', ['planner', 'protocol']],
   ['devices', ['devices', 'sensors', 'system']],
-  ['grow', ['grow', 'planner', 'vision', 'alerts']],
+  ['grow', ['grow', 'planner', 'vision', 'alerts', 'protocol']],
   ['homekit', ['homekit', 'system']],
   // Pod labels for training: the Analysis tagger and the export's counts.
   ['labels', ['vision', 'datasets']],
   ['network', ['network', 'system']],
   ['plans', ['planner']],
   ['plants', ['plants', 'grow']],
-  ['pods', ['grow', 'planner', 'vision']],
+  ['pods', ['grow', 'planner', 'vision', 'protocol']],
   // Pod boxes on the stills: the Analysis overlay and the Grow crops.
   ['regions', ['vision']],
+  // Your schedules: the library and which of them the grow protocol sees on the pump.
+  ['schedules', ['schedules', 'protocol']],
   ['sensors', ['sensors', 'devices']],
   ['update', ['update']],
 ])
@@ -47,7 +50,8 @@ const TOUCHES = new Map<string, readonly Area[]>([
 /** What an event makes stale. */
 export function touchedBy(e: CoreEvent): readonly Area[] | 'all' {
   if (e.kind === 'mutation') return TOUCHES.get(e.path) ?? TOUCHES.get(e.path.replace(/\..*/, '')) ?? 'all'
-  if (e.kind === 'schedule') return ['schedules', 'light']
+  // A changed schedule changes whose watering the grow protocol sees; one firing doesn't.
+  if (e.kind === 'schedule') return e.action === 'changed' ? ['schedules', 'light', 'protocol'] : ['schedules', 'light']
   if (e.kind === 'update') return ['update']
   switch (e.event.type) {
     // Carries its reading, so the cache takes the value and nothing needs fetching.
