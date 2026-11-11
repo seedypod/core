@@ -132,6 +132,20 @@ describe('WaterPage: tank and pump', () => {
     expect(strip.getByRole('button', { name: 'Run' }).getAttribute('title')).toBe('Up to 15 min per run at 30% duty. Won\'t start below 16 cm of water.')
   })
 
+  it('finds the next run on the unit\'s clock, not the browser\'s', () => {
+    // 12:00 UTC is 21:00 in Tokyo: the evening run there has gone, so the morning's is next.
+    vi.setSystemTime(new Date('2026-11-01T12:00:00Z'))
+    data.set('settings', { waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19, timezone: 'Asia/Tokyo' })
+    render(<WaterPage />)
+    expect(screen.getByText('pump idle · next run 08:00')).toBeTruthy()
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 5 min in 11h 0m')
+    cleanup()
+    data.set('settings', { waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19, timezone: 'UTC' })
+    render(<WaterPage />)
+    expect(screen.getByText('pump idle · next run 20:00')).toBeTruthy()
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 5 min in 8h 0m')
+  })
+
   it('runs the pump for the chosen length, and turns the strip into the run with a countdown and Stop', () => {
     render(<WaterPage />)
     const chips = within(screen.getByRole('radiogroup', { name: 'Run length' }))

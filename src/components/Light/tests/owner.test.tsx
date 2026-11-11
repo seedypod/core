@@ -51,6 +51,29 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('LightPage: who controls the light', () => {
+  it('reads now and today on the unit\'s clock, so the strip and the timeline agree', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    // 20:00 UTC: still last night in UTC, but 05:00 the next morning in Tokyo.
+    vi.setSystemTime(new Date('2026-11-10T20:00:00Z'))
+    data.set('light', { on: false, level: 0, since: '2026-11-10T12:00:00Z', fault: null, remainingS: null })
+    data.set('schedules', [daylight])
+    try {
+      data.set('settings', { timezone: 'Asia/Tokyo' })
+      render(<LightPage />)
+      expect(within(screen.getByTestId('light-strip')).getByText('Next on 06:01 (Daylight curve)')).toBeTruthy()
+      expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights on at 06:01')
+      cleanup()
+      data.set('settings', { timezone: 'UTC' })
+      render(<LightPage />)
+      expect(within(screen.getByTestId('light-strip')).getByText('Next on tomorrow 06:01 (Daylight curve)')).toBeTruthy()
+      // In UTC the curve is still ramping down from 19:00, though the lamp was switched off.
+      expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights dim at 20:01')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('outlines the hand\'s hold on today\'s timeline, light row first', () => {
     const minutes = (n: number) => new Date(Date.now() + n * 60_000).toISOString()
     data.set('light', { on: true, level: 60, since: minutes(-1), fault: null, remainingS: null })

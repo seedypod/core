@@ -1,4 +1,5 @@
 import { dayOn } from '@/src/lib/days'
+import { localTime, systemZone } from '@/src/scheduler/time'
 
 export interface Setpoint { minute: number, level: number }
 export interface LightCurve { id: string, kind: 'light', name: string, enabled: boolean, days: number, spec: { setpoints: Setpoint[] } }
@@ -83,4 +84,11 @@ export function nextDim(curves: LightCurve[], nowMin: number): number | null {
   if (level === 0) return null
   for (let m = start + 1; m < 1440; m++) if (mergedAt(curves, m) < level) return m
   return null
+}
+
+/** A manual hold's window today in minutes of the unit's day: from when the light was set (or midnight) until it hands back (or midnight). */
+export function holdWindow(sinceIso: string, untilIso: string, now: Date, timezone = systemZone()): { fromMin: number, untilMin: number } {
+  const nowMin = localTime(now, timezone).minute + (now.getTime() % 60_000) / 60_000
+  const minutes = (iso: string) => Math.max(0, Math.min(1440, nowMin + (Date.parse(iso) - now.getTime()) / 60_000))
+  return { fromMin: minutes(sinceIso), untilMin: minutes(untilIso) }
 }

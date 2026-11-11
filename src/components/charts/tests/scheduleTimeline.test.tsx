@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LightCurve } from '@/src/components/Light/curves'
 import type { PumpCycle } from '@/src/components/Water/pumpCycles'
-import { lightSegments, nextLight, nextWater, ScheduleTimeline } from '../ScheduleTimeline'
+import { lightSegments, ScheduleTimeline } from '../ScheduleTimeline'
 
 // Tuesday 10 November 2026, 14:00 on a unit set to UTC: weekday 1 in the schedules' mask.
 const NOW = new Date('2026-11-10T14:00:00Z')
@@ -50,28 +50,6 @@ describe('lightSegments', () => {
   })
 })
 
-describe('nextLight', () => {
-  const segs = lightSegments([day])
-  it('finds the next step that changes the level today', () => {
-    expect(nextLight(segs, segs, 840)).toEqual({ minute: 1290, level: 0, tomorrow: false })
-    expect(nextLight(segs, segs, 180)).toEqual({ minute: 360, level: 100, tomorrow: false })
-  })
-
-  it('looks to tomorrow\'s first lit step once today is done, and gives up with none', () => {
-    expect(nextLight(segs, segs, 1320)).toEqual({ minute: 360, level: 100, tomorrow: true })
-    expect(nextLight(segs, [], 1320)).toBeNull()
-  })
-})
-
-describe('nextWater', () => {
-  it('finds the next enabled run today, else tomorrow\'s first, with the minutes until it', () => {
-    const cycles = [cycle('a', 480, 600), cycle('b', 960, 600), cycle('off', 900, 60, { enabled: false })]
-    expect(nextWater(cycles, TUESDAY, 840)).toEqual({ minute: 960, durationS: 600, inMin: 120 })
-    expect(nextWater(cycles, TUESDAY, 1000)).toEqual({ minute: 480, durationS: 600, inMin: 920 })
-    expect(nextWater([cycle('tue', 480, 60, { days: 1 << TUESDAY })], TUESDAY, 1000)).toBeNull()
-  })
-})
-
 describe('ScheduleTimeline', () => {
   const water = [cycle('Morning', 480, 600), cycle('Afternoon', 960, 600), cycle('Paused', 1200, 300, { enabled: false }), cycle('Weekend', 600, 300, { days: NOT_TUESDAY })]
 
@@ -90,7 +68,7 @@ describe('ScheduleTimeline', () => {
   it('puts the page\'s own row first and says what it does next', () => {
     const { unmount } = render(<ScheduleTimeline lead="light" curves={[day]} cycles={water} timezone="UTC" />)
     expect(screen.getAllByTestId(/^lane-/).map(l => l.dataset.testid)).toEqual(['lane-light', 'lane-water'])
-    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights off at 21:30')
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights dim at 21:01')
     unmount()
     render(<ScheduleTimeline lead="water" curves={[day]} cycles={water} timezone="UTC" />)
     expect(screen.getAllByTestId(/^lane-/).map(l => l.dataset.testid)).toEqual(['lane-water', 'lane-light'])
@@ -100,7 +78,7 @@ describe('ScheduleTimeline', () => {
   it('says when the lights come on tomorrow, and nothing with nothing next', () => {
     vi.setSystemTime(new Date('2026-11-10T22:00:00Z'))
     const { unmount } = render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" />)
-    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights 100% tomorrow 06:00')
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights on tomorrow 05:31')
     unmount()
     render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" />)
     expect(screen.queryByTestId('timeline-next')).toBeNull()
@@ -126,7 +104,7 @@ describe('ScheduleTimeline', () => {
     expect(screen.getAllByTestId('mark-light').every(m => m.dataset.muted === 'true')).toBe(true)
     expect(screen.getAllByTestId('mark-light')[1]?.getAttribute('aria-label')).toBe('Light 100% · 06:00–21:01 · not running today')
     // Nothing runs today, so nothing's next until tomorrow, which this curve skips too.
-    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights 100% tomorrow 06:00')
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights on tomorrow 05:31')
     unmount()
     render(<ScheduleTimeline lead="light" curves={[day]} cycles={[cycle('Morning', 480, 600)]} timezone="UTC" />)
     expect(screen.queryByTestId('legend-muted')).toBeNull()
@@ -138,6 +116,8 @@ describe('ScheduleTimeline', () => {
     expect(hold?.textContent).toBe('hold 40%')
     expect(hold?.getAttribute('aria-label')).toBe('Held by hand at 40% · 13:30–14:30')
     expect(screen.getByText('manual hold')).toBeTruthy()
+    // The hold, not the curve it overrides, is what changes next.
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Held at 40% until 14:30')
     cleanup()
     // A hold already over draws nothing.
     render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" hold={{ since: '2026-11-10T12:00:00Z', until: '2026-11-09T12:30:00Z', level: 40 }} />)
@@ -192,7 +172,7 @@ describe('ScheduleTimeline', () => {
     expect(container.querySelector('[aria-hidden].relative.h-5')?.textContent).toBe('00:0003:0006:0009:0012:0015:0018:0021:00now 23:10')
   })
 
-  it('thins the hours to every six on a phone, and hides a run\'s label it has no room for', () => {
+  const phone = () => {
     vi.stubGlobal('ResizeObserver', class {
       constructor(private cb: () => void) {}
       observe() {
@@ -201,7 +181,11 @@ describe('ScheduleTimeline', () => {
 
       disconnect() {}
     })
-    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300)
+    return vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300)
+  }
+
+  it('thins the hours to every six on a phone, and hides a run\'s label it has no room for', () => {
+    const width = phone()
     const { container } = render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('a', 480, 600), cycle('b', 490, 600)]} timezone="UTC" />)
     const axis = container.querySelector('[aria-hidden].relative.h-5')
     // 12:00 and 18:00 sit under the now pill at 14:00.
@@ -211,5 +195,72 @@ describe('ScheduleTimeline', () => {
     expect(a?.querySelector('span')?.className).toContain('invisible')
     expect(b?.querySelector('span')?.className).not.toContain('invisible')
     width.mockRestore()
+  })
+
+  it('keeps the now pill and a tooltip inside the card on a phone, at either end of the day', () => {
+    const width = phone()
+    vi.setSystemTime(new Date('2026-11-10T23:58:00Z'))
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('A long-named late watering cycle', 1430, 600)]} timezone="UTC" />)
+    const pill = screen.getByTestId('timeline-now-label')
+    // 300 px of lane, a 72 px pill: no further right than 228 px.
+    expect(pill.style.left).toBe('228px')
+    fireEvent.click(screen.getAllByTestId('mark-water')[0] as HTMLElement)
+    const tip = screen.getByRole('tooltip')
+    const left = Number.parseFloat(tip.style.left)
+    const w = Number.parseFloat(tip.style.width)
+    // It may reach over the row labels, never past the lane's right edge or the card's left.
+    expect(left).toBeGreaterThanOrEqual(-72)
+    expect(left + w).toBeLessThanOrEqual(300)
+    cleanup()
+    vi.setSystemTime(new Date('2026-11-10T00:02:00Z'))
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" />)
+    expect(screen.getByTestId('timeline-now-label').style.left).toBe('0px')
+    width.mockRestore()
+  })
+
+  it('draws a run past midnight to 24:00 and its tail from 00:00, both with its true times', () => {
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Late', 1435, 900)]} timezone="UTC" />)
+    const marks = screen.getAllByTestId('mark-water')
+    expect(marks.map(m => m.getAttribute('aria-label'))).toEqual(['Late · 23:55–00:10 · 15 min', 'Late · 23:55–00:10 · 15 min'])
+    expect(marks[0]?.style.left).toBe('0%')
+    expect(Number.parseFloat(marks[1]?.style.left ?? '') + Number.parseFloat(marks[1]?.style.width ?? '')).toBeCloseTo(100)
+  })
+
+  it('paints today\'s run over a muted one at the same minute, label and all', () => {
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('On', 480, 600), cycle('Off', 480, 300, { enabled: false })]} timezone="UTC" />)
+    const [under, over] = screen.getAllByTestId('mark-water')
+    expect(under?.dataset.muted).toBe('true')
+    expect(over?.dataset.muted).toBeUndefined()
+    expect(over?.className).toContain('z-[1]')
+    expect(over?.querySelector('span')?.className).not.toContain('invisible')
+  })
+
+  it('closes a tapped tooltip on a tap anywhere else, not on another mark', () => {
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Morning', 480, 600), cycle('Evening', 1200, 600)]} timezone="UTC" />)
+    const [morning, evening] = screen.getAllByTestId('mark-water')
+    if (!morning || !evening) throw new Error('no marks')
+    fireEvent.click(morning)
+    // Pressing another mark leaves it to that mark's click.
+    fireEvent.pointerDown(evening)
+    expect(screen.getByRole('tooltip').textContent).toBe('Morning · 08:00–08:10 · 10 min')
+    fireEvent.click(evening)
+    expect(screen.getByRole('tooltip').textContent).toBe('Evening · 20:00–20:10 · 10 min')
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('says when the light starts coming on, where its ramp begins, and a weekly run by its day', () => {
+    vi.setSystemTime(new Date('2026-11-10T03:00:00Z'))
+    const { unmount } = render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" />)
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Lights on at 05:31')
+    unmount()
+    // A light on all day doesn't dim, so there's nothing next.
+    const always = curve('always', [{ minute: 0, level: 80 }])
+    const { unmount: gone } = render(<ScheduleTimeline lead="light" curves={[always]} cycles={[]} timezone="UTC" />)
+    expect(screen.queryByTestId('timeline-next')).toBeNull()
+    gone()
+    // Germination's run on Mondays, seen on a Tuesday.
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Germination', 480, 900, { days: 1 })]} timezone="UTC" />)
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 15 min Mon 08:00')
   })
 })

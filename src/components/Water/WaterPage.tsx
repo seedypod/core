@@ -1,7 +1,7 @@
 import { withUnit } from '@/src/lib/sensorMeta'
 import { toDisplay } from '@/src/lib/units'
 import { CalendarClock, MoreHorizontal, Play, Plus, Square } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, Card, GhostIcon, InlineError, Skeleton } from '@/src/components/ds/core'
 import { LineChart } from '@/src/components/ds/charts'
@@ -13,7 +13,8 @@ import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from 
 import { tankData, type TankMarks } from '@/src/components/charts/viz3d/shape'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
-import { dayOn, daysLabel, daysToList, listToDays, weekdayOf } from '@/src/lib/days'
+import { dayOn, daysLabel, daysToList, listToDays } from '@/src/lib/days'
+import { localTime, systemZone } from '@/src/scheduler/time'
 import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, SOAK_NOTE, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { trpc } from '@/src/utils/trpc'
@@ -60,10 +61,16 @@ export function WaterPage() {
   const tank = s.water_level_pct && Math.round(s.water_level_pct.value)
   // The one place "in the reserve" is decided, for the readout, the meter and the scene alike.
   const { cutoff, low } = useTankReserve(s)
-  const cycles = (schedules.data ?? []).flatMap(x => asCycle(x) ?? []).sort((a, b) => a.spec.minute - b.spec.minute)
+  const cycles = useMemo(() => (schedules.data ?? []).flatMap(x => asCycle(x) ?? []).sort((a, b) => a.spec.minute - b.spec.minute), [schedules.data])
+  const curves = useMemo(() => (schedules.data ?? []).flatMap(x => asCurve(x) ?? []), [schedules.data])
   const now = new Date()
-  const next = nextRun(cycles, now)
-  const light = lightWindow(runningToday((schedules.data ?? []).flatMap(x => asCurve(x) ?? []), weekdayOf(now)).map(c => c.spec))
+  // The cycles run on the unit's clock, so today and now are its, not this browser's.
+  const zone = cfg?.timezone ?? systemZone()
+  const { minute: nowMin, weekday } = localTime(now, zone)
+  // Each weekday's light window, worked out once per set of curves.
+  const lightByDay = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map(d => lightWindow(runningToday(curves, d).map(c => c.spec))), [curves])
+  const light = lightByDay[weekday] ?? null
+  const next = nextRun(cycles, now, zone)
   const planted = (pods.data ?? []).filter(x => x.status !== 'empty')
   const sown = daysSinceSowing(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), now)
   const recommended = recommendedPreset(sown, plantCategories(planted.map(x => x.plant)))
@@ -173,8 +180,8 @@ export function WaterPage() {
                   current={s.water_level_pct?.value ?? null}
                   run={p?.on ? { since: p.since } : null}
                   ran={(runs.data ?? []).filter(r => cycles.some(c => c.id === r.scheduleId)).map(r => r.firedAt)}
-                  nowMin={now.getHours() * 60 + now.getMinutes()}
-                  later={cycles.filter(c => c.enabled && dayOn(c.days, weekdayOf(now)) && c.spec.minute > now.getHours() * 60 + now.getMinutes()).map(c => c.spec.minute)}
+                  nowMin={nowMin}
+                  later={cycles.filter(c => c.enabled && dayOn(c.days, weekday) && c.spec.minute > nowMin).map(c => c.spec.minute)}
                   marks={{
                     full: `full · ${cfg ? withUnit(cfg.waterFullCm, 'cm') : '—'}`,
                     now: `now · ${fmt(s.water_distance)}`,
@@ -195,7 +202,7 @@ export function WaterPage() {
       </div>
       <ScheduleTimeline
         lead="water"
-        curves={(schedules.data ?? []).flatMap(x => asCurve(x) ?? [])}
+        curves={curves}
         cycles={cycles}
         timezone={cfg?.timezone}
         pumpRun={p?.on ? { since: p.since, remainingS: p.remainingS } : null}
@@ -223,7 +230,7 @@ export function WaterPage() {
                 <span className={cn('text-sm font-medium', !c.enabled && 'text-fg-2')}>{c.name}</span>
                 <span className="text-[12px] text-fg-3">{[fmtMinutes(c.spec.durationS) + (c.spec.level ? ` at ${c.spec.level}%` : ''), daysLabel(c.days)].join(' · ')}</span>
               </button>
-              <span className="font-mono text-[11px] text-fg-3">{cycleWhen(c, lastRun(c.id), now)}</span>
+              <span className="font-mono text-[11px] text-fg-3">{cycleWhen(c, lastRun(c.id), now, zone)}</span>
               <Toggle on={c.enabled} size="md" label={`Enable ${c.name}`} onChange={enabled => upsert.mutate({ ...c, enabled })} />
               <GhostIcon icon={MoreHorizontal} label={`Edit ${c.name}`} className="text-fg-3" onClick={() => setEditing(c)} />
             </div>

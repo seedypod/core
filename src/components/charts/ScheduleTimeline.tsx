@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
 import { Card } from '@/src/components/ds/core'
 import { fmtClock } from '@/src/components/charts/format'
-import { mergedAt, runningToday, type LightCurve } from '@/src/components/Light/curves'
-import { fmtMinutes, type PumpCycle } from '@/src/components/Water/pumpCycles'
+import { holdWindow, mergedAt, nextDim, nextOn, runningToday, type LightCurve } from '@/src/components/Light/curves'
+import { fmtMinutes, nextRun, type PumpCycle } from '@/src/components/Water/pumpCycles'
 import { fmtIn } from '@/src/components/System/statusData'
 import { useNow } from '@/src/components/System/useNow'
 import { dayOn } from '@/src/lib/days'
-import { localTime } from '@/src/scheduler/time'
+import { localTime, systemZone } from '@/src/scheduler/time'
 
 const DAY = 1440
 /** A level held this long is a step; shorter runs of one level are a ramp's rounding. */
@@ -16,6 +16,8 @@ const RAMP_MIN = 10
 const MIN_PX = 6
 const LANE_H = 22
 const LABEL_W = 64
+/** The now pill's width, "now 14:05" at 11 px, to keep it inside the axis at either end. */
+const PILL_W = 72
 
 export const HATCH: CSSProperties = {
   backgroundImage: 'repeating-linear-gradient(135deg, color-mix(in srgb, var(--tank-fill) 55%, transparent) 0 1px, transparent 1px 6px)',
@@ -50,24 +52,7 @@ export function lightSegments(curves: LightCurve[]): Segment[] {
   return out.map(({ ramp, ...s }) => (ramp ? { ...s, from: levels[Math.max(0, s.start - 1)] as number, to: levels[Math.min(DAY - 1, s.end)] as number } : s))
 }
 
-/** When the light next changes after `nowMin` and to what: today's steps, else tomorrow's first lit one. */
-export function nextLight(today: Segment[], tomorrow: Segment[], nowMin: number): { minute: number, level: number, tomorrow: boolean } | null {
-  const current = today.find(s => nowMin >= s.start && nowMin < s.end)
-  const held = current && current.from === current.to ? current.from : null
-  const step = today.find(s => s.start > nowMin && s.from === s.to && s.from !== held)
-  if (step) return { minute: step.start, level: step.from, tomorrow: false }
-  const first = tomorrow.find(s => s.from === s.to && s.from > 0)
-  return first ? { minute: first.start, level: first.from, tomorrow: true } : null
-}
-
-/** The next pump run after `nowMin`, today or tomorrow, and the minutes until it. */
-export function nextWater(cycles: PumpCycle[], weekday: number, nowMin: number): { minute: number, durationS: number, inMin: number } | null {
-  const on = (day: number) => cycles.filter(c => c.enabled && dayOn(c.days, day)).sort((a, b) => a.spec.minute - b.spec.minute)
-  const today = on(weekday).find(c => c.spec.minute > nowMin)
-  if (today) return { minute: today.spec.minute, durationS: today.spec.durationS, inMin: today.spec.minute - nowMin }
-  const tomorrow = on((weekday + 1) % 7)[0]
-  return tomorrow ? { minute: tomorrow.spec.minute, durationS: tomorrow.spec.durationS, inMin: DAY - nowMin + tomorrow.spec.minute } : null
-}
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 interface Mark {
   start: number
@@ -81,7 +66,8 @@ interface Mark {
   to?: number
 }
 
-const span = (a: number, b: number) => `${fmtClock(Math.round(a))}–${b >= DAY ? '24:00' : fmtClock(Math.round(b))}`
+/** "08:00–08:10"; a run past midnight ends on the next day's clock, "23:55–00:10". */
+const span = (a: number, b: number) => `${fmtClock(Math.round(a))}–${Math.round(b) === DAY ? '24:00' : fmtClock(Math.round(b) % DAY)}`
 const pctOf = (m: number) => (Math.max(0, Math.min(DAY, m)) / DAY) * 100
 const LIGHT_MIX = (level: number, muted?: boolean) => `color-mix(in srgb, var(${muted ? '--text-3' : '--accent-light'}) ${Math.round(15 + level * 0.55)}%, transparent)`
 
@@ -94,6 +80,11 @@ function lightMark(s: Segment, muted: boolean): Mark {
 
 function runMark(minute: number, durationS: number, title: string, kind: Mark['kind'], muted?: boolean): Mark {
   return { start: minute, end: minute + durationS / 60, label: fmtMinutes(durationS), title: `${title} · ${span(minute, minute + durationS / 60)} · ${fmtMinutes(durationS)}`, kind, muted }
+}
+
+/** A mark past midnight, drawn to 24:00 with its tail from 00:00; the title keeps its true times. */
+function clipToDay(m: Mark): Mark[] {
+  return m.end > DAY ? [{ ...m, end: DAY }, { ...m, start: 0, end: m.end - DAY }] : [m]
 }
 
 export interface ScheduleTimelineProps {
@@ -123,7 +114,7 @@ export interface ScheduleTimelineProps {
 export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun, preview }: ScheduleTimelineProps) {
   const nowMs = useNow(30_000)
   const now = new Date(nowMs)
-  const zone = timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  const zone = timezone ?? systemZone()
   const lt = localTime(now, zone)
   const nowMin = lt.minute + now.getSeconds() / 60
   const weekday = lt.weekday
@@ -131,34 +122,46 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   const minuteOf = (iso: string) => nowMin + (Date.parse(iso) - nowMs) / 60_000
 
   const running = useMemo(() => runningToday(curves, weekday), [curves, weekday])
-  const tomorrowCurves = useMemo(() => runningToday(curves, (weekday + 1) % 7), [curves, weekday])
   // With nothing running today, the curves there are show muted.
   const lightMuted = running.length === 0
   const segments = useMemo(() => lightSegments(lightMuted ? curves : running), [curves, running, lightMuted])
-  const tomorrowSegments = useMemo(() => lightSegments(tomorrowCurves), [tomorrowCurves])
 
   const lightMarks: Mark[] = segments.filter(s => s.from > 0 || s.to > 0).map(s => lightMark(s, lightMuted))
-  if (hold) {
-    const from = Math.max(0, minuteOf(hold.since))
-    const until = Math.min(DAY, minuteOf(hold.until))
-    if (until > from) lightMarks.push({ start: from, end: until, label: `hold ${hold.level}%`, title: `Held by hand at ${hold.level}% · ${span(from, until)}`, kind: 'hold' })
+  const holding = hold && Date.parse(hold.until) > nowMs ? hold : null
+  if (holding) {
+    const { fromMin, untilMin } = holdWindow(holding.since, holding.until, now, zone)
+    if (untilMin > fromMin) lightMarks.push({ start: fromMin, end: untilMin, label: `hold ${holding.level}%`, title: `Held by hand at ${holding.level}% · ${span(fromMin, untilMin)}`, kind: 'hold' })
   }
-  const waterMarks: Mark[] = cycles.map((c) => {
+  const waterMarks: Mark[] = cycles.flatMap((c) => {
     const today = c.enabled && dayOn(c.days, weekday)
-    return runMark(c.spec.minute, c.spec.durationS, `${c.name}${today ? '' : c.enabled ? ' · not today' : ' · off'}`, 'water', !today)
+    return clipToDay(runMark(c.spec.minute, c.spec.durationS, `${c.name}${today ? '' : c.enabled ? ' · not today' : ' · off'}`, 'water', !today))
   })
   if (pumpRun) {
     const from = Math.max(0, minuteOf(pumpRun.since))
     const until = pumpRun.remainingS === null ? nowMin : nowMin + pumpRun.remainingS / 60
-    waterMarks.push({ start: from, end: Math.max(until, from + 1), label: 'now', title: `Watering now · since ${fmtClock(Math.round(from))}${pumpRun.remainingS === null ? '' : `, ${fmtMinutes(pumpRun.remainingS)} left`}`, kind: 'run' })
+    waterMarks.push(...clipToDay({ start: from, end: Math.max(until, from + 1), label: 'now', title: `Watering now · since ${fmtClock(Math.round(from))}${pumpRun.remainingS === null ? '' : `, ${fmtMinutes(pumpRun.remainingS)} left`}`, kind: 'run' }))
   }
-  const previewMarks = preview ? preview.runs.map(m => runMark(m, preview.durationS, `Preview: ${preview.name}`, 'preview')) : null
+  const previewMarks = preview ? preview.runs.flatMap(m => clipToDay(runMark(m, preview.durationS, `Preview: ${preview.name}`, 'preview'))) : null
 
-  const lightNext = nextLight(lightMuted ? [] : segments, tomorrowSegments, nowMin)
-  const waterNext = nextWater(cycles, weekday, nowMin)
-  const nextLine = lead === 'water'
-    ? waterNext && `next · Watering ${fmtMinutes(waterNext.durationS)} ${fmtIn(waterNext.inMin)}`
-    : lightNext && `next · Lights ${lightNext.level === 0 ? 'off' : `${lightNext.level}%`} ${lightNext.tomorrow ? 'tomorrow' : 'at'} ${fmtClock(lightNext.minute)}`
+  // What's next, by the same helpers as the pages' strips and subtitles, so they all agree.
+  const clock = (iso: string) => fmtClock(localTime(new Date(iso), zone).minute)
+  let nextLine: string | null = null
+  if (lead === 'water') {
+    const next = nextRun(cycles, now, zone)
+    const inMin = next ? (next.at.getTime() - nowMs) / 60_000 : 0
+    if (next) nextLine = `next · Watering ${fmtMinutes(next.cycle.spec.durationS)} ${inMin < DAY ? fmtIn(inMin) : `${WEEKDAYS[localTime(next.at, zone).weekday]} ${fmtClock(next.cycle.spec.minute)}`}`
+  }
+  else if (holding) {
+    nextLine = `next · Held at ${holding.level}% until ${clock(holding.until)}`
+  }
+  else if (mergedAt(running, Math.floor(nowMin)) > 0) {
+    const dims = nextDim(running, nowMin)
+    if (dims !== null) nextLine = `next · Lights dim at ${fmtClock(dims)}`
+  }
+  else {
+    const on = nextOn(running, runningToday(curves, (weekday + 1) % 7), nowMin)
+    if (on) nextLine = `next · Lights on ${on.tomorrow ? 'tomorrow' : 'at'} ${fmtClock(on.minute)}`
+  }
 
   // The lanes are measured so runs keep a visible width, labels fit, and hours thin out on a phone.
   const [lane, setLane] = useState<HTMLDivElement | null>(null)
@@ -170,6 +173,16 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
     return () => ro.disconnect()
   }, [lane])
   const [active, setActive] = useState<string | null>(null)
+  // Safari doesn't focus a tapped button, so a tap's tooltip closes on a tap anywhere but a mark.
+  const group = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (active === null) return
+    const close = (e: PointerEvent) => {
+      if (!(e.target instanceof Element && e.target.closest('[data-timeline-mark]') && group.current?.contains(e.target))) setActive(null)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [active])
 
   const rows = [
     { id: 'light', name: 'Light', marks: lightMarks },
@@ -215,7 +228,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
         </div>
       </div>
 
-      <div role="group" aria-label={summary} className="relative grid grid-cols-[64px_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+      <div ref={group} role="group" aria-label={summary} className="relative grid grid-cols-[64px_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
         {/* The hour grid, under the lanes and their marks. */}
         <div aria-hidden className="pointer-events-none absolute top-0 right-0 bottom-5" style={{ left: LABEL_W + 8 }}>
           {ticks.map(t => <span key={t} className="absolute inset-y-0 w-px bg-grid" style={{ left: `${pctOf(t)}%` }} />)}
@@ -231,7 +244,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
               {t === DAY ? '24:00' : fmtClock(t)}
             </span>
           ))}
-          <span className="absolute top-0.5 -translate-x-1/2 whitespace-nowrap rounded-tag bg-fg px-1.5 text-inverse" style={{ left: `${nowPct}%` }} data-testid="timeline-now-label">
+          <span className="absolute top-0.5 whitespace-nowrap rounded-tag bg-fg px-1.5 text-inverse" style={{ left: Math.max(0, Math.min(width - PILL_W, (nowPct / 100) * width - PILL_W / 2)) }} data-testid="timeline-now-label">
             {`now ${fmtClock(Math.floor(nowMin))}`}
           </span>
         </div>
@@ -257,8 +270,13 @@ function Row({ id, name, sub, title, marks, width, active, onActive, laneRef }: 
   laneRef?: (el: HTMLDivElement | null) => void
 }) {
   const pxPerMin = width / DAY
-  const sorted = [...marks].sort((a, b) => a.start - b.start)
+  // By time, and today's runs over the muted ones where they meet.
+  const sorted = [...marks].sort((a, b) => a.start - b.start || Number(!!b.muted) - Number(!!a.muted))
   const open = sorted.find((m, i) => `${id}-${i}` === active)
+  // The tooltip as wide as its text (wrapping past the lane and its label column), kept inside them.
+  const tipMax = width + LABEL_W + 8
+  const tipW = open ? Math.min(open.title.length * 6.7 + 14, tipMax) : 0
+  const tipLeft = open ? Math.max(-(LABEL_W + 8), Math.min(width - tipW, ((open.start + open.end) / 2) * pxPerMin - tipW / 2)) : 0
   return (
     <>
       <div className="flex min-w-0 flex-col leading-tight" title={title}>
@@ -270,12 +288,15 @@ function Row({ id, name, sub, title, marks, width, active, onActive, laneRef }: 
           const key = `${id}-${i}`
           const run = m.kind !== 'light' && m.kind !== 'hold'
           // A run is as wide as its length, or its label if the gap to the next run allows, and never under MIN_PX.
-          const next = sorted.slice(i + 1).find(n => n.kind === m.kind)
+          // A run at the same minute doesn't count as the next: the one on top keeps its label.
+          const next = sorted.slice(i + 1).find(n => n.kind === m.kind && n.start > m.start)
           const gapPx = next ? (next.start - m.start) * pxPerMin - 2 : (DAY - m.start) * pxPerMin
           const labelPx = m.label.length * 7.4 + 12
           const lengthPx = (m.end - m.start) * pxPerMin
-          const widthPx = run ? Math.max(lengthPx, Math.min(labelPx, gapPx), MIN_PX) : lengthPx
+          const widthPx = run ? Math.min(Math.max(lengthPx, Math.min(labelPx, gapPx), MIN_PX), width) : lengthPx
           const fits = widthPx >= labelPx
+          // Kept inside the lane at 24:00.
+          const leftPx = Math.min(m.start * pxPerMin, width - widthPx)
           return (
             <button
               key={key}
@@ -285,6 +306,7 @@ function Row({ id, name, sub, title, marks, width, active, onActive, laneRef }: 
               data-testid={`mark-${id}`}
               data-kind={m.kind}
               data-muted={m.muted ? 'true' : undefined}
+              data-timeline-mark=""
               // A mouse shows the times while over a mark; a tap or focus until another mark, a blur or Escape.
               onPointerEnter={e => e.pointerType === 'mouse' && onActive(key)}
               onPointerLeave={e => e.pointerType === 'mouse' && onActive(null)}
@@ -294,14 +316,14 @@ function Row({ id, name, sub, title, marks, width, active, onActive, laneRef }: 
               onKeyDown={e => e.key === 'Escape' && onActive(null)}
               className={cn(
                 'absolute inset-y-0 cursor-default overflow-hidden whitespace-nowrap rounded-[2px] px-1 text-left font-mono text-[11px] leading-[22px] text-fg outline-none focus-visible:ring-2 focus-visible:ring-fg',
-                m.kind === 'water' && (m.muted ? 'bg-fg-3/40 text-fg-2' : 'bg-tank/60'),
+                m.kind === 'water' && (m.muted ? 'bg-fg-3/40 text-fg-2' : 'z-[1] bg-tank/60'),
                 m.kind === 'run' && 'z-[1] bg-tank ring-2 ring-tank/50 text-inverse motion-safe:animate-pulse',
                 m.kind === 'preview' && 'border border-dashed border-tank/70 text-fg-2',
                 m.kind === 'hold' && 'z-[1] border border-hold bg-hold/25 leading-5',
                 m.kind === 'light' && m.muted && 'text-fg-2',
               )}
               style={{
-                left: `${pctOf(m.start)}%`,
+                left: `${(leftPx / (width || 1)) * 100}%`,
                 width: `${(widthPx / (width || 1)) * 100}%`,
                 ...(m.kind === 'preview' ? HATCH : {}),
                 ...(m.kind === 'light' ? { background: m.from === m.to ? LIGHT_MIX(m.from ?? 0, m.muted) : `linear-gradient(to right, ${LIGHT_MIX(m.from ?? 0, m.muted)}, ${LIGHT_MIX(m.to ?? 0, m.muted)})` } : {}),
@@ -316,8 +338,8 @@ function Row({ id, name, sub, title, marks, width, active, onActive, laneRef }: 
             role="tooltip"
             id={`${id}-${sorted.indexOf(open)}-tip`}
             data-testid="timeline-tip"
-            className={cn('pointer-events-none absolute bottom-full z-10 mb-1 whitespace-nowrap rounded-tag border border-line-2 bg-surface px-1.5 py-0.5 font-mono text-[11px] text-fg', pctOf(open.start) > 60 ? '-translate-x-full' : '')}
-            style={{ left: `${pctOf(pctOf(open.start) > 60 ? open.end : open.start)}%` }}
+            className="pointer-events-none absolute bottom-full z-10 mb-1 rounded-tag border border-line-2 bg-surface px-1.5 py-0.5 font-mono text-[11px] text-fg"
+            style={{ left: tipLeft, width: tipW }}
           >
             {open.title}
           </span>
