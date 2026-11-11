@@ -272,6 +272,31 @@ describe('grow cycle start date', () => {
     expect((await c.grow.setStart({ startedAt: '2026-10-20' })).stage).toBe('vegetative')
   })
 
+  it('lets the care engine move watering on as soon as the sowing day moves, not at its next tick', async () => {
+    const { core, c } = caller()
+    const store = core.ctx.store
+    store.settings.update({ timezone: 'UTC' })
+    store.pods.update(1, { plant: 'Basil', plantedAt: '2026-11-09', status: 'seeded' }, '2026-11-09T12:00:00Z')
+    await c.grow.start({ notes: '', startedAt: '2026-11-09' })
+    for (const sch of presetSchedules(PUMP_PRESETS[0] as typeof PUMP_PRESETS[number], { enabled: true, weekday: 0 })) store.schedules.upsert(sch)
+    // The engine on the core's own event bus, its periodic tick far off.
+    const care = new CareEngine({ store, hal: new SimHal({ tickMs: 0, now: () => day(1) }), events: core.ctx.events, now: () => day(1) })
+    const tick = vi.spyOn(care, 'tick')
+    care.start()
+    try {
+      expect(tick).toHaveBeenCalledTimes(1)
+      const pumps = () => store.schedules.list().filter(s => s.kind === 'pump')
+      expect(pumps().map(s => s.id)).toEqual(['water-germination-0800'])
+      // Sown nine days ago after all: the grow event alone moves it from germination to seedlings.
+      await c.grow.setStart({ startedAt: '2026-11-01' })
+      expect(tick.mock.calls.length).toBeGreaterThan(1)
+      expect(pumps().map(s => [s.id, s.days])).toEqual([['water-seedlings-0800', 127]])
+    }
+    finally {
+      care.stop()
+    }
+  })
+
   it('starts germination today in one call, and a retry reuses the cycle it started', async () => {
     const { core, c } = caller()
     const store = core.ctx.store

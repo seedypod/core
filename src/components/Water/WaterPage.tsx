@@ -24,7 +24,6 @@ import { useNow } from '@/src/components/System/useNow'
 import { useTankReserve } from './useTankReserve'
 import { DueChores } from '@/src/components/Care/ChoreItem'
 import { SownOn } from './SownOn'
-import { followedPreset } from '@/src/care/follow'
 import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
@@ -93,7 +92,9 @@ export function WaterPage() {
   // Sown today and germination's run time has gone by with no run yet: the first watering is still owed.
   const germination = PUMP_PRESETS.find(x => x.weekly) ?? null
   const today = localTime(now, zone).date
-  const ranToday = (runs.data ?? []).some(r => germination && r.scheduleId.startsWith(`water-${germination.slug}-`) && localTime(new Date(r.firedAt), zone).date === today)
+  // A run before the open cycle began was for the last sowing, not this one.
+  const cycleStart = grow.data?.cycle ? Date.parse(grow.data.cycle.startedAt) : null
+  const ranToday = (runs.data ?? []).some(r => germination && r.scheduleId.startsWith(`water-${germination.slug}-`) && localTime(new Date(r.firedAt), zone).date === today && (cycleStart === null || Date.parse(r.firedAt) >= cycleStart))
   const missed = germination && sown === 0 && nowMin >= (germination.minutes[0] ?? 0) && !ranToday ? germination : null
   // Running by the same rule Follow goes by: every cycle the preset's, on, on its days, its length. Paused or trimmed, they're your own.
   const running = followedPreset(cycles)
@@ -129,7 +130,7 @@ export function WaterPage() {
   // No grow cycle yet: one call on the unit starts it today and puts the cycles on germination, so a retry can't double up.
   const [starting, setStarting] = useState(false)
   // Watering doesn't follow the cycle, so germination's weekly run keeps its day when the sowing day moves: say so.
-  const germinating = followedPreset(cycles)?.id === 'germination' ? cycles[0] : undefined
+  const germinating = running?.id === 'germination' ? cycles[0] : undefined
   const stays = !cfg?.followGrowCycle && germinating && germinating.days !== 1 << sowDay ? `Follow is off: your weekly run stays on ${daysLabel(germinating.days)}` : null
   const runNow = (durationS: number) => {
     setAsked(Date.now())
@@ -325,13 +326,16 @@ export function WaterPage() {
 
       <Modal
         open={starting && !!germination}
-        onClose={() => setStarting(false)}
+        // Not dismissed mid-call: it closes itself when the unit answers, or stays to say why not.
+        onClose={() => {
+          if (!startGermination.isPending) setStarting(false)
+        }}
         title="Start germination today?"
         icon={CalendarClock}
         footer={(
           <div className="flex gap-2">
             <Button variant="primary" disabled={startGermination.isPending} onClick={() => startGermination.mutate()}>{startGermination.isPending ? 'Starting…' : 'Start'}</Button>
-            <Button onClick={() => setStarting(false)}>Cancel</Button>
+            <Button disabled={startGermination.isPending} onClick={() => setStarting(false)}>Cancel</Button>
           </div>
         )}
       >
