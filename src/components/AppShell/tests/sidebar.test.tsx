@@ -48,6 +48,27 @@ describe('Sidebar', () => {
     expect(screen.queryByText('Tank · watering')).toBeNull()
   })
 
+  it('hatches the tank\'s meter under the pump cutoff once the cutoff and calibration are known', () => {
+    data.set('sensors.latest', { water_level_pct: { value: 71, unit: '%' } })
+    // A payload without limits (an older daemon) draws no band, and doesn't throw.
+    data.set('system.info', { system: { caps: { sensors: [] } } })
+    data.set('settings.get', { waterFullCm: 5, waterEmptyCm: 20 })
+    render(<Sidebar status={online} />)
+    expect(screen.queryByTestId('meter-reserve')).toBeNull()
+    cleanup()
+    data.set('system.info', { system: { caps: { sensors: [] }, limits: { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16 } } })
+    data.set('settings.get', { waterFullCm: 5, waterEmptyCm: 20 })
+    render(<Sidebar status={online} />)
+    expect(screen.getByTestId('meter-reserve').style.width).toBe('27%')
+    expect(screen.getByTestId('meter-reserve').className).toContain('rounded-l-full')
+    cleanup()
+    // A cutoff at full: the band is the whole bar, rounded both ends.
+    data.set('system.info', { system: { caps: { sensors: [] }, limits: { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 5 } } })
+    render(<Sidebar status={online} />)
+    expect(screen.getByTestId('meter-reserve').className).toContain('rounded-full')
+    expect(screen.getByTestId('meter-reserve').className).not.toContain('rounded-l-full')
+  })
+
   it('says the tank is watering while the pump runs', () => {
     data.set('sensors.latest', { water_level_pct: { value: 71, unit: '%' } })
     data.set('pump.get', { on: true, level: 30, remainingS: 200 })

@@ -145,6 +145,20 @@ export function createTodayViz(container: HTMLElement, env?: Env): Viz<TodayData
 
 // ── Tank ─────────────────────────────────────────────────────────────────
 
+/** 45° hatching over the box [x0, x1] × [y0, y1]: one stroke every `step` along x, each clipped to the box. */
+export function hatch(x0: number, x1: number, y0: number, y1: number, step: number): Array<[[number, number], [number, number]]> {
+  const h = y1 - y0
+  const out: Array<[[number, number], [number, number]]> = []
+  if (h <= 0 || x1 <= x0 || step <= 0) return out
+  // Each stroke rises one for one from (c, y0); the first starts left of the box so its top still crosses it.
+  for (let c = x0 - h + step / 2; c < x1; c += step) {
+    const a = Math.max(x0, c)
+    const b = Math.min(x1, c + h)
+    if (b > a) out.push([[a, y0 + a - c], [b, y0 + b - c]])
+  }
+  return out
+}
+
 export const TANK_SPEC: BaseSpec = { need: 11.4, camera: { position: [0.05, 4.1, 11.6], target: [0.05, 0.95, 0] }, bounds: [[-5.2, -0.4, -0.75], [4, 2.85, 0.75]] }
 /** Below this card width the tank's scale drops the depths from its words. */
 const NARROW_PX = 560
@@ -157,6 +171,9 @@ const NARROW_PX = 560
  * and empty. Scheduled runs tick the foot of the chart (today's still to
  * come hollow, after now). While the pump runs, the water this run drew down
  * is a blue tail into the glass, the last x label turns blue, and bubbles rise.
+ * The water under the cutoff, which the pump won't draw, is hatched across
+ * the chart and right round the glass; at or under it, the water
+ * dims and "now" turns amber.
  */
 export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> {
   const x0 = -5.2
@@ -190,6 +207,28 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
   const linkGeo = new T.BufferGeometry().setFromPoints([new T.Vector3(x0 + W, 0, 0), new T.Vector3(CX - R, 0, 0)])
   const link = new T.Line(linkGeo, new T.LineBasicMaterial({ transparent: true }))
   base.root.add(link)
+  // The reserve under the cutoff: strokes behind the history, and wrapped right round the glass (stronger, to read over the water) so a spin never hides them, rebuilt when the cutoff moves.
+  const reserve = base.segments([], 'reserve', 0.55)
+  const glassReserve = base.segments([], 'reserve', 0.8)
+  reserve.renderOrder = 1
+  glassReserve.renderOrder = 1
+  let reserveAt: number | null = null
+  // Whether "now" is inked amber, for the water under the cutoff.
+  let nowLow = false
+  function hatchReserve(cut: number) {
+    const chart = hatch(x0, x0 + W, 0, cut, 0.16).map(([a, b]) => [[a[0], a[1], -0.03], [b[0], b[1], -0.03]] as [[number, number, number], [number, number, number]])
+    // The glass's wall unrolled: hatched along its circumference, then each stroke in short pieces wrapped back onto the cylinder.
+    const wall = (s: number, y: number): [number, number, number] => [CX + R * Math.sin(s / R), y, R * Math.cos(s / R)]
+    const glassy = hatch(0, 2 * Math.PI * R, 0, cut, 0.12).flatMap(([a, b]) => Array.from({ length: 6 }, (_, i) => {
+      const at = (k: number) => wall(a[0] + (b[0] - a[0]) * k / 6, a[1] + (b[1] - a[1]) * k / 6)
+      return [at(i), at(i + 1)] as [[number, number, number], [number, number, number]]
+    }))
+    reserve.geometry.dispose()
+    reserve.geometry = new T.BufferGeometry().setFromPoints(chart.flat().map(p => new T.Vector3(...p)))
+    glassReserve.geometry.dispose()
+    glassReserve.geometry = new T.BufferGeometry().setFromPoints(glassy.flat().map(p => new T.Vector3(...p)))
+    reserveAt = cut
+  }
 
   // The glass's scale, down its right side: a tick and a label each.
   const MARKS = ['full', 'now', 'cutoff', 'empty'] as const
@@ -254,11 +293,13 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     // The glass fills last, as the line reaches it.
     const e = shown ? pointEase(f.p, 119, 120) : 0
     const cur = data?.current ?? LOW
+    // At or under the cutoff the pump won't start: the water left is all reserve, so it dims under denser hatching and "now" turns amber.
+    const low = shown && !!data?.low && data.cutoff !== null
     const h = Math.max(0.02, lerp(LOW, shown ? cur : LOW, e) * H)
     water.scale.set(1, h, 1)
     water.position.set(CX, h / 2, 0)
     ;(water.material as THREE.MeshBasicMaterial).color.copy(inkMix(base, 'tank', f.state === 'error' ? 0 : e, c))
-    ;(water.material as THREE.MeshBasicMaterial).opacity = f.state === 'error' ? 0.25 : 0.5
+    ;(water.material as THREE.MeshBasicMaterial).opacity = f.state === 'error' ? 0.25 : low ? 0.3 : 0.5
     const pumping = shown && !!data?.pumping
     const rock = pumping && !f.reduced ? 0.025 * Math.sin(f.t * 5) : 0
     surface.position.set(CX, h + rock, 0)
@@ -273,10 +314,15 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     const cut = shown && data?.cutoff != null ? data.cutoff * H : null
     cutRing.visible = cut !== null
     cutLine.visible = cut !== null
+    reserve.visible = cut !== null && cut > 0
+    glassReserve.visible = reserve.visible
     if (cut !== null) {
       cutRing.position.set(CX, cut, 0)
       cutLine.position.set(0, cut, 0)
+      if (cut !== reserveAt) hatchReserve(cut)
     }
+    reserve.material.opacity = low ? 0.85 : 0.55
+    glassReserve.material.opacity = low ? 1 : 0.8
     link.visible = shown && data?.current != null
     if (link.visible) {
       const pos = linkGeo.getAttribute('position') as THREE.BufferAttribute
@@ -292,6 +338,9 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     const words = data ? (container.clientWidth < NARROW_PX && data.marks.short ? data.marks.short : data.marks) : null
     mark('full', shown ? H : null, words?.full ?? null)
     mark('now', shown && data?.current != null ? h : null, words?.now ?? null)
+    marks.now.label.setInk(low ? 'amber' : 'fg1')
+    if (low !== nowLow) base.tint(marks.now.tick.material, low ? 'amber' : 'fg1')
+    nowLow = low
     mark('cutoff', cut, words?.cutoff ?? null)
     mark('empty', shown ? 0 : null, words?.empty ?? null)
     ranBars.forEach((m, i) => {

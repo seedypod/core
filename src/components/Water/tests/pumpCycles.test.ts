@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtSpan, fmtWhen, levelAt, nextFire, nextRun, runSource, tankTrend, type PumpCycle } from '../pumpCycles'
+import { asCycle, belowCutoff, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtSpan, fmtWhen, levelAt, nextFire, nextRun, runSource, tankTrend, type PumpCycle } from '../pumpCycles'
 
 const cycle = (id: string, minute: number, days = 127, enabled = true): PumpCycle => ({ id, kind: 'pump', name: id, enabled, days, spec: { minute, durationS: 300 } })
 // Sunday 1 Nov 2026, 12:00 local.
@@ -54,6 +54,18 @@ describe('tank', () => {
     expect(cutoffPct(30, 5, 20)).toBe(0)
     expect(cutoffPct(null, 5, 20)).toBeNull()
     expect(cutoffPct(16, 20, 5)).toBeNull()
+  })
+
+  it('says the pump won\'t start as the HAL does: the distance at or past waterLowCm, else the unrounded level', () => {
+    const cal = { waterLowCm: 16, fullCm: 5, emptyCm: 20 }
+    expect(belowCutoff({ ...cal, distance: { value: 16, unit: 'cm' }, levelPct: 99 })).toBe(true)
+    expect(belowCutoff({ ...cal, distance: { value: 15.9, unit: 'cm' }, levelPct: 0 })).toBe(false)
+    // No distance in cm: 26.8% rounds to the 27% cutoff, but is over the true 26.67%.
+    expect(belowCutoff({ ...cal, distance: { value: 6.3, unit: 'in' }, levelPct: 26.8 })).toBe(false)
+    expect(belowCutoff({ ...cal, levelPct: 26.6 })).toBe(true)
+    expect(belowCutoff({ ...cal })).toBe(false)
+    expect(belowCutoff({ waterLowCm: null, fullCm: 5, emptyCm: 20, distance: { value: 19, unit: 'cm' } })).toBe(false)
+    expect(belowCutoff({ waterLowCm: 16, fullCm: 20, emptyCm: 5, levelPct: 0 })).toBe(false)
   })
 
   it('finds top-ups and the daily drain, skipping gaps', () => {

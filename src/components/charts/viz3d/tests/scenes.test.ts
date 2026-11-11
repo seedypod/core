@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import type { Env, Viz } from '../base'
-import { createLightViz, createPodsViz, createSensorsViz, createTankViz, createTodayViz } from '../scenes'
+import { createLightViz, createPodsViz, createSensorsViz, createTankViz, createTodayViz, hatch } from '../scenes'
 import { DAY_TICKS, type LightData, type PodsData, type SensorsData, type TankData, type TodayData } from '../shape'
 
 const state = vi.hoisted(() => ({ renders: 0, lost: 0, disposed: 0, clock: 0 }))
@@ -107,7 +107,7 @@ const TODAY: TodayData = {
   ],
   ticks: DAY_TICKS,
 }
-const TANK: TankData = { levels: ramp(120, i => 0.8 - (i % 40) / 100), topUps: [40 / 119, 80 / 119], cutoff: 0.3, current: 0.4, ticks: ramp(5, k => ({ at: k / 4, label: ['Mon', 'Tue', 'Thu', 'Sat', 'Sun'][k] as string })), marks: { full: 'full · 2 in', now: 'now · 5.1 in', cutoff: 'cutoff 27% · 6.3 in', empty: 'empty · 7.9 in' }, pumping: true, runFrom: 0.9, runs: [0.2, 0.5, 0.8], upcoming: [0.3, 0.7], preview: [0.33, 0.58, 0.83] }
+const TANK: TankData = { levels: ramp(120, i => 0.8 - (i % 40) / 100), topUps: [40 / 119, 80 / 119], cutoff: 0.3, current: 0.4, ticks: ramp(5, k => ({ at: k / 4, label: ['Mon', 'Tue', 'Thu', 'Sat', 'Sun'][k] as string })), marks: { full: 'full · 2 in', now: 'now · 5.1 in', cutoff: 'cutoff 27% · 6.3 in', empty: 'empty · 7.9 in' }, low: false, pumping: true, runFrom: 0.9, runs: [0.2, 0.5, 0.8], upcoming: [0.3, 0.7], preview: [0.33, 0.58, 0.83] }
 const LIGHT: LightData = { planned: ramp(97, i => (i > 28 && i < 84 ? 0.9 : 0)), actual: ramp(97, i => (i < 60 ? (i > 28 ? 0.9 : 0) : Number.NaN)), hold: { from: 0.55, until: 0.65 }, now: 0.62, nowLevel: 0.45, nowTime: '14:52', boost: 0.95, ticks: DAY_TICKS }
 const PODS: PodsData = { towers: ['1', '2', '3'].map((l, t) => ({ label: `Tower ${l}`, pods: ramp(10, k => ((t * 10 + k) % 4 === 0 ? null : ((t * 10 + k) % 10) / 10)) })) }
 const SENSORS: SensorsData = {
@@ -329,6 +329,88 @@ describe('scenes sized by their data', () => {
     advance(700, 3)
     // Three names, three readings and three ticks at most; nothing left over from the eleven.
     expect(visibleSprites()).toBeLessThanOrEqual(9)
+    viz.dispose()
+  })
+})
+
+describe('the tank\'s reserve under the pump cutoff', () => {
+  it('hatches a box in 45° strokes clipped to it, and nothing for an empty one', () => {
+    const strokes = hatch(0, 2, 0, 0.5, 0.2)
+    expect(strokes.length).toBeGreaterThan(8)
+    for (const [[ax, ay], [bx, by]] of strokes) {
+      expect(by - ay).toBeCloseTo(bx - ax)
+      for (const [x, y] of [[ax, ay], [bx, by]] as const) {
+        expect(x).toBeGreaterThanOrEqual(0)
+        expect(x).toBeLessThanOrEqual(2)
+        expect(y).toBeGreaterThanOrEqual(0)
+        expect(y).toBeLessThanOrEqual(0.5 + 1e-9)
+      }
+    }
+    expect(hatch(0, 2, 0.5, 0.5, 0.2)).toEqual([])
+    expect(hatch(2, 0, 0, 1, 0.2)).toEqual([])
+  })
+
+  // The reserve's strokes, the chart's then the glass's, are the lines in its ink (the token's fallback, as jsdom has no styles).
+  const reserve = () => {
+    const found: Array<THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>> = []
+    sceneOf().scene.traverse((o) => {
+      if (o instanceof THREE.LineSegments && (o.material as THREE.LineBasicMaterial).color.getHexString() === new THREE.Color('#b39a62').getHexString()) found.push(o as THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>)
+    })
+    expect(found).toHaveLength(2)
+    return found as [THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>, THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>]
+  }
+
+  // Lines inked amber: the cutoff's ring, line and tick, and "now"'s tick once the water is in the reserve.
+  const amberLines = () => {
+    let n = 0
+    sceneOf().scene.traverse((o) => {
+      if (o instanceof THREE.Line && !(o instanceof THREE.LineSegments) && (o.material as THREE.LineBasicMaterial).color.getHexString() === new THREE.Color('#e0b050').getHexString()) n++
+    })
+    return n
+  }
+
+  it('hatches under the cutoff across the chart and right round the glass, and denser once the level is down in it', () => {
+    const el = sized(600, 2)
+    const viz = createTankViz(el, env)
+    viz.setData({ ...TANK, pumping: false })
+    advance(16)
+    advance(200, 10)
+    const [chart, glass] = reserve()
+    expect(chart.visible && glass.visible).toBe(true)
+    const coords = (l: THREE.LineSegments) => {
+      const pos = l.geometry.getAttribute('position')
+      return { ys: Array.from({ length: pos.count }, (_, i) => pos.getY(i)), zs: Array.from({ length: pos.count }, (_, i) => pos.getZ(i)) }
+    }
+    for (const l of [chart, glass]) {
+      const { ys } = coords(l)
+      // 30% of the 2.6-high tank, and no higher.
+      expect(Math.max(...ys)).toBeLessThanOrEqual(0.3 * 2.6 + 1e-6)
+      expect(Math.max(...ys)).toBeGreaterThan(0.6)
+      expect(Math.min(...ys)).toBeGreaterThanOrEqual(0)
+    }
+    // Behind the history, and on the glass's front and back alike, so a spin can't hide it.
+    expect(coords(chart).zs.every(z => z < 0)).toBe(true)
+    expect(Math.max(...coords(glass).zs)).toBeGreaterThan(0.7)
+    expect(Math.min(...coords(glass).zs)).toBeLessThan(-0.7)
+    expect([chart.material.opacity, glass.material.opacity]).toEqual([0.55, 0.8])
+    const amber = amberLines()
+
+    // The page decides "in the reserve" (from the HAL's rule), not the scene from its rounded level.
+    viz.setData({ ...TANK, pumping: false, current: 0.25 })
+    advance(200, 10)
+    expect([chart.material.opacity, glass.material.opacity]).toEqual([0.55, 0.8])
+    viz.setData({ ...TANK, pumping: false, current: 0.25, low: true })
+    advance(200, 10)
+    expect([chart.material.opacity, glass.material.opacity]).toEqual([0.85, 1])
+    // "now"'s tick turns amber with its label, and back.
+    expect(amberLines()).toBe(amber + 1)
+    viz.setData({ ...TANK, pumping: false })
+    advance(200, 10)
+    expect(amberLines()).toBe(amber)
+
+    viz.setData({ ...TANK, pumping: false, cutoff: null, marks: { ...TANK.marks, cutoff: null } })
+    advance(200, 10)
+    expect(chart.visible || glass.visible).toBe(false)
     viz.dispose()
   })
 })

@@ -17,8 +17,9 @@ import { dayOn, daysLabel, daysToList, listToDays, weekdayOf } from '@/src/lib/d
 import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, SOAK_NOTE, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { trpc } from '@/src/utils/trpc'
-import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
+import { asCycle, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
 import { useNow } from '@/src/components/System/useNow'
+import { useTankReserve } from './useTankReserve'
 import { CareSummary } from '@/src/components/Care/CareSummary'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
@@ -56,7 +57,8 @@ export function WaterPage() {
   const limits = system.data?.system?.limits
   const cfg = settings.data
   const tank = s.water_level_pct && Math.round(s.water_level_pct.value)
-  const cutoff = cutoffPct(limits?.waterLowCm, cfg?.waterFullCm, cfg?.waterEmptyCm)
+  // The one place "in the reserve" is decided, for the readout, the meter and the scene alike.
+  const { cutoff, low } = useTankReserve(s)
   const cycles = (schedules.data ?? []).flatMap(x => asCycle(x) ?? []).sort((a, b) => a.spec.minute - b.spec.minute)
   const now = new Date()
   const next = nextRun(cycles, now)
@@ -148,9 +150,10 @@ export function WaterPage() {
           {flat
             ? (
                 <>
-                  <TankReadout tank={tank} capacityL={cfg?.tankCapacityL} />
-                  <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100}>
-                    <div className="h-full rounded-full bg-tank transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
+                  <TankReadout tank={tank} capacityL={cfg?.tankCapacityL} reserve={low} />
+                  <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100} aria-description={reserveWords(cutoff)}>
+                    <div className={cn('h-full rounded-full bg-tank transition-[width] duration-700', low && 'opacity-60')} style={{ width: `${tank ?? 0}%` }} />
+                    {cutoff !== null && <div aria-hidden data-testid="tank-reserve" className={cn('tank-reserve absolute inset-y-0 left-0', cutoff >= 100 ? 'rounded-full' : 'rounded-l-full')} style={{ width: `${cutoff}%` }} />}
                     {cutoff !== null && <div className="absolute -top-1 h-[18px] w-px bg-pod-ready" style={{ left: `${cutoff}%` }} />}
                   </div>
                   <TankScale cutoff={cutoff} emptyCm={cfg?.waterEmptyCm} fullCm={cfg?.waterFullCm} />
@@ -165,6 +168,7 @@ export function WaterPage() {
                   tank={tank}
                   capacityL={cfg?.tankCapacityL}
                   cutoff={cutoff}
+                  low={low}
                   current={s.water_level_pct?.value ?? null}
                   run={p?.on ? { since: p.since } : null}
                   ran={(runs.data ?? []).filter(r => cycles.some(c => c.id === r.scheduleId)).map(r => r.firedAt)}
@@ -363,21 +367,37 @@ function useTankHistory(hours: Hours) {
 }
 
 /** The level now in big type, and about how much water that is. */
-function TankReadout({ tank, capacityL }: { tank: number | undefined, capacityL: number | undefined }) {
+/** The hatching in words, for the meter and the charts. */
+function reserveWords(cutoff: number | null): string | undefined {
+  return cutoff === null ? undefined : `The bottom ${cutoff}%, below the pump cutoff, is hatched: the pump won't draw it.`
+}
+
+function TankReadout({ tank, capacityL, reserve = false }: { tank: number | undefined, capacityL: number | undefined, reserve?: boolean }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
       <span className="font-mono text-[44px] font-medium leading-none"><Pending loading={tank === undefined} sample="100%">{`${tank}%`}</Pending></span>
       {tank !== undefined && capacityL !== undefined && <span className="text-[13px] text-fg-2">{`≈ ${toDisplay(Math.round(capacityL * tank / 10) / 10, 'L').value} of ${withUnit(capacityL, 'L')}`}</span>}
+      {reserve && <span className="text-[13px] font-medium text-pod-ready" data-testid="tank-in-reserve">{'Below the pump cutoff · the pump won\'t start'}</span>}
     </div>
+  )
+}
+
+/** The key to the hatching: the water under the pump cutoff, which the pump won't draw. */
+function ReserveLegend({ cutoff }: { cutoff: number }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pod-ready">
+      <span aria-hidden className="tank-reserve h-2.5 w-3.5 rounded-[2px]" />
+      {`unusable · below pump cutoff ${cutoff}%`}
+    </span>
   )
 }
 
 /** Empty, the pump cutoff and full, under the meter or the scene. */
 function TankScale({ cutoff, emptyCm, fullCm }: { cutoff: number | null, emptyCm: number | undefined, fullCm: number | undefined }) {
   return (
-    <div className={AXIS}>
+    <div className={cn(AXIS, 'items-center')}>
       <span>{emptyCm !== undefined ? `empty · ${withUnit(emptyCm, 'cm')}` : 'empty'}</span>
-      {cutoff !== null && <span className="text-pod-ready">{`pump cutoff ${cutoff}%`}</span>}
+      {cutoff !== null && <ReserveLegend cutoff={cutoff} />}
       <span>{fullCm !== undefined ? `full · ${withUnit(fullCm, 'cm')}` : 'full'}</span>
     </div>
   )
@@ -429,7 +449,7 @@ function RangeTabs({ value, onChange }: { value: Hours, onChange: (v: Hours) => 
  * then the history and the glass on one scale. Without WebGL it calls
  * `onUnavailable`, and the page goes flat.
  */
-function TankBody({ hours, onHours, preview, tank, capacityL, cutoff, current, run, ran, nowMin, later, marks, onUnavailable }: {
+function TankBody({ hours, onHours, preview, tank, capacityL, cutoff, low, current, run, ran, nowMin, later, marks, onUnavailable }: {
   hours: Hours
   onHours: (h: Hours) => void
   /** A preset's run times (minutes of the day) shown before it's applied. */
@@ -437,6 +457,8 @@ function TankBody({ hours, onHours, preview, tank, capacityL, cutoff, current, r
   tank: number | undefined
   capacityL: number | undefined
   cutoff: number | null
+  /** The water is down in the reserve under the cutoff, so the pump won't start. */
+  low: boolean
   current: number | null
   run: { since: string } | null
   /** When scheduled runs fired. */
@@ -460,6 +482,7 @@ function TankBody({ hours, onHours, preview, tank, capacityL, cutoff, current, r
         levels: t.values,
         topUps: t.topUps,
         cutoffPct: cutoff,
+        low,
         currentPct: current,
         ticks,
         marks,
@@ -487,7 +510,7 @@ function TankBody({ hours, onHours, preview, tank, capacityL, cutoff, current, r
     <>
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <TankReadout tank={tank} capacityL={capacityL} />
+          <TankReadout tank={tank} capacityL={capacityL} reserve={low} />
           <span className={cn('min-h-[18px] text-[12px]', run ? 'text-tank' : 'text-fg-3')} data-testid="tank-summary">
             {status === 'loading' && !run ? <LoadingLine /> : t.values.length > 1 || run ? line : ''}
           </span>
@@ -501,11 +524,12 @@ function TankBody({ hours, onHours, preview, tank, capacityL, cutoff, current, r
         kind="tank"
         data={scene}
         status={status}
-        label={`Tank at ${tank ?? '—'}%, and its level over the last ${t.h <= 24 ? 'day' : t.h <= 168 ? 'week' : 'month'}${run ? ', with the pump running' : ''}`}
+        label={[`Tank at ${tank ?? '—'}%, and its level over the last ${t.h <= 24 ? 'day' : t.h <= 168 ? 'week' : 'month'}${run ? ', with the pump running' : ''}.`, status === 'ready' ? reserveWords(cutoff) : undefined].filter(Boolean).join(' ')}
         message={status === 'error' ? `Couldn't load the tank history: ${t.q.error?.message ?? ''}` : 'No tank level recorded in this window.'}
         fallback={null}
         onUnavailable={onUnavailable}
       />
+      {cutoff !== null && status === 'ready' && <div className="flex justify-end"><ReserveLegend cutoff={cutoff} /></div>}
     </>
   )
 }
@@ -760,7 +784,7 @@ function TankHistory({ cutoff }: { cutoff: number | null }) {
                 height={160}
                 min={0}
                 max={100}
-                guides={cutoff !== null ? [{ value: cutoff }] : []}
+                guides={cutoff !== null ? [{ value: cutoff, below: 'tank-reserve' }] : []}
                 series={[
                   { data: values, color: 'var(--meter)', fill: true, width: 1.5 },
                   { data: values.map((v, i) => (topUps.includes(i) ? v : Number.NaN)), color: 'var(--pod-ok)', dots: true, width: 4 },
@@ -771,6 +795,7 @@ function TankHistory({ cutoff }: { cutoff: number | null }) {
               <div className={AXIS} aria-hidden>
                 {ticks.map((i, k) => <span key={k}>{label(i)}</span>)}
               </div>
+              {cutoff !== null && <div className="flex justify-end" aria-description={reserveWords(cutoff)}><ReserveLegend cutoff={cutoff} /></div>}
             </>
           ))}
       {stats && (

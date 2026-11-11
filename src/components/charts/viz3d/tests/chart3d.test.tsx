@@ -27,7 +27,7 @@ vi.mock('../scenes', () => {
   return { createTodayViz: make('today'), createTankViz: make('tank'), createLightViz: make('light'), createPodsViz: make('pods'), createSensorsViz: make('sensors') }
 })
 
-const tank = (label: string): TankData => ({ levels: [0.5, 0.4], topUps: [], cutoff: null, current: 0.4, ticks: [], marks: { full: 'full', now: label, cutoff: null, empty: 'empty' }, pumping: false, runFrom: null, runs: [], upcoming: [], preview: [] })
+const tank = (label: string): TankData => ({ levels: [0.5, 0.4], topUps: [], cutoff: null, current: 0.4, ticks: [], marks: { full: 'full', now: label, cutoff: null, empty: 'empty' }, low: false, pumping: false, runFrom: null, runs: [], upcoming: [], preview: [] })
 const flush = () => act(async () => {
   await new Promise(r => setTimeout(r, 0))
 })

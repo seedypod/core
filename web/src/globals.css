@@ -160,6 +160,8 @@
 
   --accent-water: var(--lp-cool);
   --tank-fill: var(--lp-tank);
+  /* Water below the pump cutoff, which the pump won't draw: a muted wheat, hatched over the tank. */
+  --tank-reserve: oklch(0.66 0.08 80);
   --accent-light: var(--lp-warm);
   --accent-neutral: var(--lp-neutral);
   --dial-track: var(--lp-line-1);
@@ -229,6 +231,7 @@
   --lp-fg-icon: #4a4538;
   --lp-cool: #3f7489;
   --lp-tank: #78b6e3;
+  --tank-reserve: oklch(0.58 0.09 75);
   --lp-warm: oklch(0.6 0.12 75);
   --lp-neutral: #6f6857;
   --lp-green: oklch(0.55 0.09 140);
@@ -398,6 +401,13 @@ html.dark {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-2);
+}
+
+/* The tank below the pump cutoff: thin diagonal stripes on a faint wash, laid
+   over the fill and the track alike, so the water there reads as unusable. */
+.tank-reserve {
+  background-color: color-mix(in oklab, var(--tank-reserve) 16%, transparent);
+  background-image: repeating-linear-gradient(-45deg, var(--tank-reserve) 0 1.5px, transparent 1.5px 5px);
 }
 
 /* Status word (COOLING / WARMING / HOLDING). */
