@@ -22,6 +22,7 @@ export const SettingsSchema = z.object({
   telemetryFlushMin: z.number().int().min(1).max(60),
   primaryAnalyzer: z.string().min(1).max(64),
   analysisArtifacts: z.boolean(),
+  followGrowCycle: z.boolean(),
   analysisIngestToken: z.string(),
   mirrorEndpoint: z.string().url().nullable(),
   mirrorBucket: z.string().min(1).max(63).nullable(),

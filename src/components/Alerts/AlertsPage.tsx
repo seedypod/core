@@ -20,6 +20,7 @@ const LABEL: Record<string, string> = {
   water_low: 'Water low', pump_fault: 'Pump fault', dose_fault: 'Dosing lockout', over_temp: 'Board over temperature', camera_missing: 'Camera not capturing', hal_offline: 'Hardware daemon offline', mirror_failed: 'Off-device copy failed',
   reminder_thinning: 'Thin seedlings', reminder_root_check: 'Check roots', reminder_harvest: 'Harvest window', reminder_nutrients: 'Add nutrients', reminder_sow: 'Start new yCubes', light_fault: 'Light fault',
   setup_light_schedule: 'No light schedule', setup_pump_schedule: 'No pump schedule', setup_water_sensor: 'Tank sensor',
+  watering_followed: 'Watering moved to the next stage',
   chore_top_off: 'Top off the tank', chore_feed: 'Feed', chore_thin: 'Thin seedlings',
 }
 const ICON: Record<string, LucideIcon> = {
@@ -72,6 +73,7 @@ const VIEW: Record<string, { to: string, label: string }> = {
   mirror_failed: { to: '/settings', label: 'View settings' },
   setup_light_schedule: { to: '/light', label: 'View light' },
   setup_pump_schedule: { to: '/water', label: 'View water' },
+  watering_followed: { to: '/water', label: 'View water' },
   setup_water_sensor: { to: '/sensors', label: 'View sensors' },
   chore_top_off: { to: '/water', label: 'View water' },
   chore_feed: { to: '/water', label: 'View water' },

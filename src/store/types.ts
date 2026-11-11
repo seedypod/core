@@ -31,6 +31,8 @@ export interface DeviceSettings {
   telemetryFlushMin: number
   primaryAnalyzer: string
   analysisArtifacts: boolean
+  /** Move the pump cycles to the next growth stage's watering preset as the plants age. */
+  followGrowCycle: boolean
   analysisIngestToken: string
   /** Pod boxes the owner moved on the cameras' stills (#143); null keeps the measured defaults. */
   podRegions: RegionCalibration | null
@@ -387,6 +389,7 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   telemetryFlushMin: 5,
   primaryAnalyzer: 'green-threshold',
   analysisArtifacts: false,
+  followGrowCycle: true,
   analysisIngestToken: '',
   podRegions: null,
   mirrorEndpoint: null,

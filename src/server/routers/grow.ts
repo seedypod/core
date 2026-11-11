@@ -2,7 +2,30 @@ import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { cycleDay } from '../../grow/grow'
 import { harvestOutlook } from '../../grow/harvest'
+import { localTime } from '../../scheduler/time'
 import { publicProcedure, router } from '../trpc'
+
+/** How far back a cycle may be dated: past this, every reminder would fire at once. */
+const MAX_BACKDATE_DAYS = 120
+
+/** Midnight at the start of `date` (YYYY-MM-DD) in `timezone`. */
+export function zonedMidnight(date: string, timezone: string): Date {
+  const guess = Date.parse(`${date}T00:00:00Z`)
+  const offsetAt = (t: number) => {
+    const wall = localTime(new Date(t), timezone)
+    return Date.parse(`${wall.date}T00:00:00Z`) + wall.minute * 60_000 - t
+  }
+  // The offset at the guess can differ from the one at midnight on a DST day, so take it again there.
+  const first = guess - offsetAt(guess)
+  const at = guess - offsetAt(first)
+  // Where a DST jump skips midnight, the day starts at the first instant after the gap.
+  return new Date(localTime(new Date(at), timezone).date < date ? first : at)
+}
+
+const realDate = (d: string) => {
+  const t = Date.parse(`${d}T00:00:00Z`)
+  return !Number.isNaN(t) && new Date(t).toISOString().startsWith(d)
+}
 
 const Stage = z.enum(['germination', 'seedling', 'vegetative', 'harvest', 'ended'])
 const Cycle = z.object({ id: z.string(), startedAt: z.string(), endedAt: z.string().nullable(), stage: Stage, notes: z.string(), issued: z.array(z.string()) })
@@ -32,11 +55,23 @@ export const growRouter = router({
       return { cycle, day: cycle ? cycleDay(cycle, (ctx.now ?? (() => new Date()))()) : null }
     }),
   start: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/grow/start', tags: ['grow'], summary: 'Start a new grow cycle (ends any open one)' } })
-    .input(z.object({ notes: z.string().default('') }))
+    .meta({ openapi: { method: 'POST', path: '/grow/start', tags: ['grow'], summary: 'Start a new grow cycle (ends any open one); startedAt (YYYY-MM-DD, the unit\'s local date) backdates it to the sowing day' } })
+    .input(z.object({ notes: z.string().default(''), startedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'startedAt must be a date, YYYY-MM-DD').refine(realDate, 'startedAt is not a real date').optional() }))
     .output(Cycle)
     .mutation(({ ctx, input }) => {
-      const c = ctx.store.grow.start((ctx.now ?? (() => new Date()))().toISOString(), input.notes)
+      const now = (ctx.now ?? (() => new Date()))()
+      let at = now
+      if (input.startedAt) {
+        // The sowing day on the unit's calendar: midnight there, not in UTC.
+        const tz = ctx.store.settings.get().timezone
+        const today = localTime(now, tz).date
+        if (input.startedAt > today) throw new TRPCError({ code: 'BAD_REQUEST', message: `startedAt ${input.startedAt} is after today (${today})` })
+        at = zonedMidnight(input.startedAt, tz)
+        if (now.getTime() - at.getTime() > MAX_BACKDATE_DAYS * 86_400_000) throw new TRPCError({ code: 'BAD_REQUEST', message: `startedAt ${input.startedAt} is more than ${MAX_BACKDATE_DAYS} days ago` })
+        const open = ctx.store.grow.current()
+        if (open && at.getTime() < Date.parse(open.startedAt)) throw new TRPCError({ code: 'BAD_REQUEST', message: `startedAt ${input.startedAt} is before the open cycle began; end it first` })
+      }
+      const c = ctx.store.grow.start(at.toISOString(), input.notes)
       ctx.events.emit({ kind: 'mutation', path: 'grow' })
       return c
     }),

@@ -185,6 +185,7 @@ export function WaterPage() {
 
       <div id="pump-cycles" className="flex scroll-mt-6 items-center gap-3">
         <h2 className={`${EYEBROW} flex-1`}>Pump cycles</h2>
+        <FollowToggle />
         <Button icon={Plus} onClick={() => setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })}>Add cycle</Button>
       </div>
       {applyError && !confirming && <InlineError>{applyError}</InlineError>}
@@ -843,5 +844,19 @@ function NotStarted({ asked, onGiveUp, children }: { asked: number, onGiveUp: ()
       <span className="truncate text-danger" title={`Didn't start: ${why}.`}>{`Didn't start: ${why}.`}</span>
       <button type="button" className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-danger underline" onClick={onGiveUp}>Try again</button>
     </>
+  )
+}
+
+/** Whether the unit moves its pump cycles to each growth stage's preset by itself (src/care/follow.ts). */
+function FollowToggle() {
+  const utils = trpc.useUtils()
+  const settings = trpc.settings.get.useQuery()
+  const update = trpc.settings.update.useMutation({ onSuccess: () => utils.settings.invalidate() })
+  const on = settings.data?.followGrowCycle ?? false
+  return (
+    <span className="flex items-center gap-2 text-[13px] text-fg-2" title="As the plants age, move the cycles to the next stage's preset. Cycles you set by hand are left alone.">
+      Follow the grow cycle
+      <Toggle on={on} size="md" label="Follow the grow cycle" disabled={!settings.data || update.isPending} onChange={followGrowCycle => update.mutate({ followGrowCycle })} />
+    </span>
   )
 }

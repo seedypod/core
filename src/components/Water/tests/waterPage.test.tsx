@@ -6,7 +6,7 @@ import { editorLengths, START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
+  calls: { updateSettings: vi.fn(), runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
   pumpSuccess: new Map<string, (s: unknown) => void>(),
   state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string }, failOn: null as null | string, order: [] as string[] },
 }))
@@ -50,7 +50,7 @@ vi.mock('@/src/utils/trpc', () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() } }),
+      useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() } }),
       alerts: { list: query('alerts'), acknowledge: { useMutation: (o: { onSuccess: () => void }) => ({ isPending: false, error: state.ackError, mutate: (i: unknown) => {
         calls.ack(i)
         o.onSuccess()
@@ -60,7 +60,10 @@ vi.mock('@/src/utils/trpc', () => {
       care: { chores: query('chores') },
       tank: { actions: query('tankActions'), logAction: { useMutation: () => ({ mutate: vi.fn(), error: null }) }, removeAction: { useMutation: () => ({ mutate: vi.fn(), error: null }) } },
       system: { info: query('system') },
-      settings: { get: query('settings') },
+      settings: { get: query('settings'), update: { useMutation: (o?: { onSuccess?: () => void }) => ({ isPending: false, mutate: (i: unknown) => {
+        calls.updateSettings(i)
+        o?.onSuccess?.()
+      } }) } },
       grow: { current: query('grow'), pods: query('pods') },
       schedules: { list: query('schedules'), recentRuns: query('runs'), upsert: mutation('upsert'), remove: mutation('remove') },
       telemetry: {
@@ -239,7 +242,7 @@ describe('WaterPage: tank and pump', () => {
 describe('WaterPage: pump cycles', () => {
   it('lists cycles by time with their last or next run, and toggles one at once', () => {
     render(<WaterPage />)
-    const rows = screen.getAllByRole('switch').map(s => s.getAttribute('aria-label'))
+    const rows = screen.getAllByRole('switch').map(s => s.getAttribute('aria-label')).filter(l => l?.startsWith('Enable '))
     expect(rows).toEqual(['Enable Morning watering', 'Enable Evening watering'])
     expect(screen.getByText('ran 4 h ago')).toBeTruthy()
     expect(screen.getByText('next in 8 h')).toBeTruthy()
@@ -565,5 +568,14 @@ describe('WaterPage with WebGL: the tank hero', () => {
     expect(screen.getByRole('meter', { name: 'Tank level' })).toBeTruthy()
     expect(screen.getByTestId('tank-stats').textContent).toBe('min 60%avg 77%max 92%')
     expect(screen.getByTestId('pump-strip')).toBeTruthy()
+  })
+
+  it('turns following the grow cycle on and off', () => {
+    data.set('settings', { ...(data.get('settings') as object), followGrowCycle: true })
+    render(<WaterPage />)
+    const toggle = screen.getByRole('switch', { name: 'Follow the grow cycle' })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(toggle)
+    expect(calls.updateSettings).toHaveBeenCalledWith({ followGrowCycle: false })
   })
 })

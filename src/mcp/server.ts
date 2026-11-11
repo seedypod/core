@@ -71,7 +71,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async () => text({ timezone: (await caller.settings.get()).timezone, presets: LIGHT_PRESETS.map(p => ({ ...p, boostHours: boostHours({ setpoints: p.setpoints }), rating: lightRating(boostHours({ setpoints: p.setpoints })) })) }))
 
   server.registerTool('pump_presets', {
-    description: `Watering starting points by growth stage (seedlings, young plants, mature greens and herbs, large or fruiting), with each one's runs, run-length range, notes and a citation, the preset recommended for this tower with why (days since sowing, or a fruiting crop planted), the preset the pump cycles are now if they match one, today's light window and the unit's timezone. These are community starting points from r/Gardyn owners, not Gardyn's: Gardyn doesn't publish a cadence (Smart Watering adjusts it) and waits a few days to a week after sowing before the second watering (${GARDYN_WATERING_GUIDE}). Check the roots and adjust: dry, brittle roots want more; roots in pooled water before the next cycle want less. Each preset lists the pump schedules to pass to upsert_schedule, one per run; applying a preset means replacing the existing pump cycles (delete_schedule them first), since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
+    description: `Watering starting points by growth stage (seedlings, young plants, mature greens and herbs, large or fruiting), with each one's runs, run-length range, notes and a citation, the preset recommended for this tower with why (days since sowing, or a fruiting crop planted), the preset the pump cycles are now if they match one, today's light window and the unit's timezone. These are community starting points from r/Gardyn owners, not Gardyn's: Gardyn doesn't publish a cadence (Smart Watering adjusts it) and waits a few days to a week after sowing before the second watering (${GARDYN_WATERING_GUIDE}). Check the roots and adjust: dry, brittle roots want more; roots in pooled water before the next cycle want less. Each preset lists the pump schedules to pass to upsert_schedule, one per run; applying a preset means replacing the existing pump cycles (delete_schedule them first), since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC. followGrowCycle says whether the unit moves its cycles to each stage's preset by itself as the days pass (it does so only while they're exactly a preset; hand-made cycles are left alone).`,
     inputSchema: {},
   }, async () => {
     const [settings, schedules, cycle, pods] = await Promise.all([caller.settings.get(), caller.schedules.list(), caller.grow.current(), caller.grow.pods()])
@@ -83,6 +83,7 @@ export function createMcpServer(ctx: Context): McpServer {
     const days = daysSinceSowing(cycle.cycle?.startedAt, planted.map(p => p.plantedAt), now)
     return text({
       timezone: settings.timezone,
+      followGrowCycle: settings.followGrowCycle,
       guide: GARDYN_WATERING_GUIDE,
       light,
       daysSinceSowing: days,
@@ -355,10 +356,10 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.grow.markHarvested(i)))
 
   server.registerTool('grow_cycle', {
-    description: 'Manage the grow cycle: action start (optionally with notes), stage (germination|seedling|vegetative|harvest), or end.',
-    inputSchema: { action: z.enum(['start', 'stage', 'end']), stage: z.enum(['germination', 'seedling', 'vegetative', 'harvest']).optional(), notes: z.string().optional() },
+    description: 'Manage the grow cycle: action start (optionally with notes, and started_at YYYY-MM-DD to backdate it to the day the pods were sown; not in the future), stage (germination|seedling|vegetative|harvest), or end. With "follow the grow cycle" on (the default), watering moves to each growth stage\'s preset as the days since the cycle started pass.',
+    inputSchema: { action: z.enum(['start', 'stage', 'end']), stage: z.enum(['germination', 'seedling', 'vegetative', 'harvest']).optional(), notes: z.string().optional(), started_at: z.string().optional() },
   }, async (i) => {
-    if (i.action === 'start') return text(await caller.grow.start({ notes: i.notes ?? '' }))
+    if (i.action === 'start') return text(await caller.grow.start({ notes: i.notes ?? '', startedAt: i.started_at }))
     if (i.action === 'stage') return text(await caller.grow.setStage({ stage: i.stage ?? 'germination' }))
     return text(await caller.grow.end())
   })

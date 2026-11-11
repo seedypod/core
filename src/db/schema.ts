@@ -34,6 +34,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   primaryAnalyzer: text().notNull().default('green-threshold'),
   /** Store large analyser outputs (masks) in the blob sink. */
   analysisArtifacts: integer({ mode: 'boolean' }).notNull().default(false),
+  /** Move the pump cycles to the next growth stage's watering preset as the plants age. */
+  followGrowCycle: integer({ mode: 'boolean' }).notNull().default(true),
   /** Bearer token for POST /api/analyses/results; empty = ingest off. */
   analysisIngestToken: text().notNull().default(''),
   /** JSON: pod boxes moved per camera and slot, as fractions of the frame (#143); null = measured defaults. */
