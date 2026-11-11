@@ -1,11 +1,12 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SimHal } from '../../hardware/sim'
 import { createEventBus } from '../../lib/eventBus'
 import { createMcpServer } from '../../mcp/server'
 import { createCore } from '../../server/bootstrap'
 import { appRouter } from '../../server/routers/app'
+import { zonedMidnight } from '../../server/routers/grow'
 import { createCallerFactory } from '../../server/trpc'
 import { PUMP_PRESETS, presetSchedules } from '../../scheduler/pumpPlan'
 import { MemoryStore } from '../../store/memory'
@@ -43,11 +44,37 @@ describe('watering follows the grow cycle', () => {
     expect(followGrowCycle(store, day(23))).toMatchObject({ from: 'young', to: 'mature' })
   })
 
-  it('starts the stage\'s preset on a tower with no cycles, and dates from the grow cycle when there is one', () => {
-    const store = tower({ cycles: 'none' })
+  it('dates from the grow cycle when there is one', () => {
+    const store = tower()
     store.grow.start('2026-10-01T00:00:00Z', 'Autumn')
-    expect(followGrowCycle(store, day(0))).toMatchObject({ from: null, to: 'mature' })
+    expect(followGrowCycle(store, day(0))).toMatchObject({ from: 'seedlings', to: 'mature' })
     expect(pumps(store)).toEqual(['water-mature-0800', 'water-mature-1400', 'water-mature-2000'])
+  })
+
+  it('never creates cycles where there are none, or touches preset cycles that were paused or trimmed', () => {
+    const none = tower({ cycles: 'none' })
+    expect(followGrowCycle(none, day(9))).toBeNull()
+    expect(pumps(none)).toEqual([])
+    const paused = tower()
+    const seed = paused.schedules.list().find(s => s.kind === 'pump')
+    if (!seed) throw new Error('no seedling cycle')
+    paused.schedules.upsert({ ...seed, enabled: false })
+    expect(followGrowCycle(paused, day(9))).toBeNull()
+    paused.schedules.upsert({ ...seed, enabled: true, days: 31 })
+    expect(followGrowCycle(paused, day(9))).toBeNull()
+    paused.schedules.upsert({ ...seed, days: 127, spec: { minute: 480, durationS: 420 } })
+    expect(followGrowCycle(paused, day(9))).toBeNull()
+  })
+
+  it('keeps following a light-clipped preset after the light schedule changes', () => {
+    const store = tower({ plant: 'Jalapeño', cycles: 'none' })
+    // Fruiting applied under a 06:00–21:00 day: four runs.
+    const fruiting = PUMP_PRESETS.find(p => p.id === 'fruiting')
+    if (!fruiting) throw new Error('no fruiting preset')
+    for (const s of presetSchedules(fruiting, { enabled: true, light: { on: 360, off: 1260 } })) store.schedules.upsert(s)
+    store.schedules.upsert({ ...light, spec: { setpoints: [{ minute: 300, level: 0 }, { minute: 330, level: 100 }, { minute: 1350, level: 100 }, { minute: 1380, level: 0 }] } })
+    store.pods.update(1, { plant: 'Basil' }, '2026-11-09T12:00:00Z')
+    expect(followGrowCycle(store, day(9))).toMatchObject({ from: 'fruiting', to: 'young' })
   })
 
   it('leaves hand-made cycles, the soak, an empty tower and a unit that has it off alone', () => {
@@ -63,8 +90,9 @@ describe('watering follows the grow cycle', () => {
     expect(pumps(off)).toEqual(['water-seedlings-0800'])
   })
 
-  it('goes straight to the fruiting preset when a fruiting crop is planted', () => {
+  it('goes straight to the fruiting preset when a fruiting crop is planted, but not during the soak', () => {
     const store = tower({ plant: 'Jalapeño' })
+    expect(followGrowCycle(store, day(1))).toBeNull()
     expect(followGrowCycle(store, day(4))).toMatchObject({ to: 'fruiting' })
   })
 
@@ -81,6 +109,31 @@ describe('watering follows the grow cycle', () => {
     expect(seen).toContain('follow:young')
     expect(care.tick().followed).toBeNull()
   })
+
+  it('runs one tick at a time when its own schedule change asks for another', () => {
+    const store = tower()
+    const events = createEventBus()
+    const care = new CareEngine({ store, hal: new SimHal({ tickMs: 0, now: () => day(9) }), events, now: () => day(9) })
+    const tick = vi.spyOn(care, 'tick')
+    let depth = 0
+    let deepest = 0
+    tick.mockImplementation(function (this: CareEngine) {
+      depth++
+      deepest = Math.max(deepest, depth)
+      try {
+        return CareEngine.prototype.tick.call(this)
+      }
+      finally {
+        depth--
+      }
+    })
+    care.start()
+    care.stop()
+    expect(deepest).toBe(1)
+    // The start tick moved the watering and its schedule event asked for one more, run after it.
+    expect(tick).toHaveBeenCalledTimes(2)
+    expect(pumps(store)).toEqual(['water-young-0800', 'water-young-1600'])
+  })
 })
 
 describe('grow cycle start date', () => {
@@ -90,11 +143,23 @@ describe('grow cycle start date', () => {
     return { core, c: createCallerFactory(appRouter)(core.ctx) }
   }
 
-  it('backdates a cycle to the sowing day, but not into the future', async () => {
-    const { c } = caller()
-    expect((await c.grow.start({ notes: 'Order', startedAt: '2026-11-09' })).startedAt).toBe('2026-11-09T00:00:00.000Z')
-    await expect(c.grow.start({ notes: '', startedAt: '2026-12-01' })).rejects.toThrow(/in the future/)
-    await expect(c.grow.start({ notes: '', startedAt: 'soon' })).rejects.toThrow(/must be a date/)
+  it('backdates a cycle to the sowing day at midnight on the unit\'s calendar, within bounds', async () => {
+    const { core, c } = caller()
+    core.ctx.store.settings.update({ timezone: 'America/Los_Angeles' })
+    expect((await c.grow.start({ notes: 'Order', startedAt: '2026-11-09' })).startedAt).toBe('2026-11-09T08:00:00.000Z')
+    await expect(c.grow.start({ notes: '', startedAt: '2026-12-01' })).rejects.toThrow(/after today/)
+    await expect(c.grow.start({ notes: '', startedAt: '2026-11-08' })).rejects.toThrow(/before the open cycle began/)
+    await c.grow.end()
+    await expect(c.grow.start({ notes: '', startedAt: '2026-01-01' })).rejects.toThrow(/more than 120 days ago/)
+    await expect(c.grow.start({ notes: '', startedAt: '1' })).rejects.toThrow(/YYYY-MM-DD/)
+  })
+
+  it('takes today on a unit east of UTC, where it\'s already tomorrow', async () => {
+    const { core, c } = caller()
+    core.ctx.store.settings.update({ timezone: 'Australia/Sydney' })
+    // 2026-11-10T12:00Z is 23:00 on the 10th in Sydney; the 11th would be the future there too.
+    expect((await c.grow.start({ notes: '', startedAt: '2026-11-10' })).startedAt).toBe('2026-11-09T13:00:00.000Z')
+    expect(zonedMidnight('2026-11-09', 'UTC').toISOString()).toBe('2026-11-09T00:00:00.000Z')
   })
 
   it('takes started_at over MCP, and pump_presets says whether watering follows the cycle', async () => {

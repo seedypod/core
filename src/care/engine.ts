@@ -29,6 +29,9 @@ export class CareEngine {
   private timer: ReturnType<typeof setInterval> | null = null
   private unsub: (() => void) | null = null
   private lastQuality: string | undefined
+  /** A tick is running, and whether something asked for another while it did. */
+  private ticking = false
+  private again = false
   /** When each kind's problem was last seen gone; a dismissal before that no longer holds. */
   private readonly resolvedAt = new Map<string, string>()
 
@@ -99,12 +102,30 @@ export class CareEngine {
     this.timer = setInterval(() => this.safeTick(), TICK_MS)
   }
 
+  /**
+   * One tick at a time: a tick that moves the watering announces the schedule
+   * change, which this engine listens for, so that asks for one more tick
+   * after this one rather than one nested inside it.
+   */
   private safeTick(): void {
-    try {
-      this.tick()
+    if (this.ticking) {
+      this.again = true
+      return
     }
-    catch (err) {
-      console.warn(`care: ${(err as Error).message}`)
+    this.ticking = true
+    try {
+      do {
+        this.again = false
+        try {
+          this.tick()
+        }
+        catch (err) {
+          console.warn(`care: ${(err as Error).message}`)
+        }
+      } while (this.again)
+    }
+    finally {
+      this.ticking = false
     }
   }
 
