@@ -84,6 +84,13 @@ pub struct Limits {
     pub pump_max_duty: f64,
     pub water_low_cm: Option<f64>,
     pub over_temp_c: Option<f64>,
+    /// Below this pump current (A) the running pump is pulling air. Unset (the
+    /// default until a wet and a dry run are measured) or no INA219: off.
+    pub pump_dry_current_a: Option<f64>,
+    /// How long the current must stay below `pump_dry_current_a` to stop the pump.
+    pub pump_dry_after_s: u64,
+    /// How long after a start the current isn't judged, while the pump spins up.
+    pub pump_dry_grace_s: u64,
     pub distance_samples: usize,
     pub distance_timeout_ms: u64,
     /// Quiet time between pings, so one doesn't hear the last one's echo.
@@ -374,6 +381,9 @@ impl Default for Limits {
             // The board runs ~47 °C with the lights at 100 %; stock sets the
             // PCT2075 alert at 70 °C.
             over_temp_c: Some(65.0),
+            pump_dry_current_a: None,
+            pump_dry_after_s: 5,
+            pump_dry_grace_s: 3,
             distance_samples: 5,
             distance_timeout_ms: 60,
             distance_gap_ms: 60,
@@ -449,6 +459,9 @@ impl From<&Limits> for PumpLimits {
             max_duty: l.pump_max_duty,
             water_low_cm: l.water_low_cm,
             over_temp_c: l.over_temp_c,
+            dry_current_a: l.pump_dry_current_a,
+            dry_current_s: l.pump_dry_after_s,
+            dry_grace_s: l.pump_dry_grace_s,
         }
     }
 }
@@ -589,6 +602,17 @@ impl Config {
         if self.limits.pump_max_run_s == 0 {
             errs.push("limits.pump_max_run_s must be ≥ 1".into());
         }
+        if let Some(a) = self.limits.pump_dry_current_a {
+            if !(a > 0.0 && a < self.i2c.ina219_max_amps) {
+                errs.push(format!(
+                    "limits.pump_dry_current_a must be above 0 and below i2c.ina219_max_amps ({})",
+                    self.i2c.ina219_max_amps
+                ));
+            }
+        }
+        if self.limits.pump_dry_after_s == 0 {
+            errs.push("limits.pump_dry_after_s must be ≥ 1".into());
+        }
         if self.limits.distance_samples == 0 {
             errs.push("limits.distance_samples must be ≥ 1".into());
         }
@@ -706,6 +730,11 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # pump_max_duty = 30.0    # the board browns out above ~30 %
 # water_low_cm = 16.0     # dry-run interlock; comment out to disable
 # over_temp_c = 65.0      # PCB cutoff; comment out to disable
+# pump_dry_current_a = 1.2 # pump current guard: off until set (needs the ina219). Stops a running
+#                          # pump that draws less than this, past the grace, for pump_dry_after_s.
+#                          # Set it below the wet current at the lowest duty you run.
+# pump_dry_after_s = 5
+# pump_dry_grace_s = 3    # spin-up after a start, not judged
 # distance_samples = 5    # median of N pings
 # distance_timeout_ms = 60
 # distance_gap_ms = 60    # between pings, so one doesn't hear the last one's echo
@@ -959,6 +988,8 @@ http_bind = "nope"
 mqtt_url = "http://x"
 [limits]
 pump_max_duty = 150
+pump_dry_current_a = 5.0
+pump_dry_after_s = 0
 [tank]
 full_cm = 30
 [[sensor]]
@@ -994,6 +1025,8 @@ kind = "pwm_pump"
             "http_bind",
             "mqtt_url",
             "pump_max_duty",
+            "pump_dry_current_a must be above 0 and below i2c.ina219_max_amps (3.2)",
+            "pump_dry_after_s must be ≥ 1",
             "tank.full_cm",
             "unknown kind \"bme280\"",
             "(ina219): addr required",
@@ -1029,6 +1062,21 @@ kind = "pwm_pump"
         let c = Config::default();
         let p: PumpLimits = (&c.limits).into();
         assert_eq!(p.max_duty, 30.0);
+        // No baseline yet: the current guard ships off, with the guard's own timings.
+        let guard = PumpLimits::default();
+        assert_eq!(p.dry_current_a, None);
+        assert_eq!(
+            (p.dry_current_s, p.dry_grace_s),
+            (guard.dry_current_s, guard.dry_grace_s)
+        );
+        let on: Config =
+            toml::from_str("[limits]\npump_dry_current_a = 1.2\npump_dry_after_s = 4\n").unwrap();
+        let p: PumpLimits = (&on.limits).into();
+        assert_eq!(
+            (p.dry_current_a, p.dry_current_s, p.dry_grace_s),
+            (Some(1.2), 4, 3)
+        );
+        assert!(on.validate().is_empty());
         let d: DoseLimits = (&c.dosing).into();
         assert_eq!(d, DoseLimits::default());
         let t: hal_core::derived::TankGeometry = (&c.tank).into();

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use hal_core::device::{now_epoch_s, rfc3339_from_epoch};
 use hal_core::registry::Registry;
-use hal_core::safety::{Decision, DoseGuard, DoseLimits, Env, PumpGuard, PumpLimits};
+use hal_core::safety::{is_dry_run, Decision, DoseGuard, DoseLimits, Env, PumpGuard, PumpLimits, DRY_RUN};
 use hal_core::{
     topics, ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, BinarySensor, ButtonEvent,
     ButtonPress, CalibrationCommand, CalibrationResult, DeviceCommand, DeviceEntry, DeviceInventory,
@@ -145,6 +145,8 @@ pub struct Engine {
     pump: PumpGuard,
     pump_since: String,
     pump_was_on: bool,
+    /// Until when a current-guard trip holds before it may clear like a dry-run.
+    dry_hold_until: Option<Instant>,
     doses: BTreeMap<ActuatorId, DoseGuard>,
     dose_since: BTreeMap<ActuatorId, String>,
     /// Where the light is going; a fade may still be on its way there.
@@ -264,6 +266,11 @@ impl Engine {
         state_file: Option<StateFile>,
         snapshot: SharedSnapshot,
     ) -> Self {
+        let mut cfg = cfg;
+        if cfg.pump.dry_current_a.is_some() && !system.caps.sensors.contains(&SensorId::PumpA) {
+            warn!("pump current guard off: no pump monitor (ina219) to read the current from");
+            cfg.pump.dry_current_a = None;
+        }
         let mut registry = registry;
         let light = registry
             .remove_actuator(ActuatorId::Light)
@@ -284,6 +291,7 @@ impl Engine {
             pump: PumpGuard::new(cfg.pump.clone()),
             pump_since: String::new(),
             pump_was_on: false,
+            dry_hold_until: None,
             doses,
             dose_since: BTreeMap::new(),
             light_level: 0.0,
@@ -403,6 +411,7 @@ impl Engine {
                 match kind {
                     AlertKind::PumpFault => {
                         self.pump.acknowledge();
+                        self.dry_hold_until = None;
                         out.extend(self.publish_actuator(ActuatorId::Pump, now));
                         self.save_state(now);
                     }
@@ -589,8 +598,14 @@ impl Engine {
             // A dry-run clears itself once the water has read good for a whole window, as
             // `water_low` does: a trip on a lost read clears a round later, a real one once
             // the tank is filled. Over-temp and other latches still wait for a person.
-            if self.pump.fault() == Some("dry-run") && !self.water.active && self.water.all_good() {
+            let held = self.dry_hold_until.is_some_and(|t| now.instant < t);
+            if self.pump.fault().is_some_and(is_dry_run)
+                && !held
+                && !self.water.active
+                && self.water.all_good()
+            {
                 self.pump.acknowledge();
+                self.dry_hold_until = None;
                 info!("pump dry-run cleared: the water has read good for a minute");
                 out.extend(self.publish_actuator(ActuatorId::Pump, now));
             }
@@ -605,6 +620,12 @@ impl Engine {
                 Some(f) => {
                     warn!(fault = f, "pump stopped by guard; latched until acknowledged");
                     tripped = true;
+                    // A full tank says nothing about a pump pulling air: the window it
+                    // clears on starts at the trip, not before it.
+                    if is_dry_run(f) && f != DRY_RUN {
+                        self.dry_hold_until =
+                            Some(now.instant + self.cfg.telemetry_interval * WATER_WINDOW as u32);
+                    }
                 }
                 None => info!("pump run complete"),
             }
@@ -643,6 +664,7 @@ impl Engine {
         let mut distance = None;
         let mut trusted_distance = None;
         let mut pcb = None;
+        let mut pump_a = None;
         let mut readings = Vec::new();
         for s in self.registry.sensors_mut() {
             match s.read() {
@@ -655,6 +677,7 @@ impl Engine {
                             trusted_distance = (r.quality != Quality::Suspect).then_some(r.value);
                         }
                         SensorId::PcbTemp => pcb = Some(r.value),
+                        SensorId::PumpA => pump_a = Some(r.value),
                         _ => {}
                     }
                     readings.push((s.id(), r));
@@ -667,6 +690,7 @@ impl Engine {
         }
         self.env.water_distance_cm = distance;
         self.env.pcb_temp_c = pcb;
+        self.env.pump_current_a = pump_a;
         if let Some(low) = self.cfg.pump.water_low_cm {
             self.water.observe(trusted_distance, low);
         }
@@ -698,7 +722,39 @@ impl Engine {
         if let Some(s) = self.registry.sensor_mut(SensorId::PcbTemp) {
             self.env.pcb_temp_c = s.read().ok().map(|r| r.value);
         }
+        // A failed read is `None`, which the current guard doesn't count as dry.
+        self.env.pump_current_a = self
+            .registry
+            .sensor_mut(SensorId::PumpA)
+            .and_then(|s| s.read().ok())
+            .map(|r| r.value);
         self.env.over_temp_signal = self.read_over_temp_signal();
+    }
+
+    /// Whether the pump is commanded on (for `--pump-trace`).
+    pub fn pump_on(&self, now: Now) -> bool {
+        self.pump.is_running(now.instant)
+    }
+
+    /// One read of the pump monitor for `--pump-trace`: duty, then V, A and W, `None` where a read failed.
+    pub fn pump_sample(&mut self) -> crate::pump_trace::Sample {
+        let mut read = |id| {
+            self.registry
+                .sensor_mut(id)
+                .and_then(|s| s.read().ok())
+                .map(|r| r.value)
+        };
+        let (v, a, w) = (
+            read(SensorId::PumpV),
+            read(SensorId::PumpA),
+            read(SensorId::PumpW),
+        );
+        crate::pump_trace::Sample {
+            duty: self.pump.level(),
+            v,
+            a,
+            w,
+        }
     }
 
     /// What the guard judges a pump start on. A held water alert counts as no
@@ -1426,6 +1482,155 @@ mod tests {
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
         assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
         let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A pump with the current guard on, and the INA219's three quantities unless `monitor` is false.
+    fn current_rig(tag: &str, monitor: bool) -> Rig {
+        let mut r = rig(vec![ActuatorId::Pump], false, tag);
+        let mut sys = system(vec![ActuatorId::Pump]);
+        let mut registry = Registry::default();
+        let mut ids = sys.caps.sensors.clone();
+        if monitor {
+            ids.extend([SensorId::PumpV, SensorId::PumpA, SensorId::PumpW]);
+        }
+        for id in &ids {
+            registry.add_sensor(Box::new(hal_sim::SimSensor::new(*id, r.world.clone())));
+        }
+        registry.add_actuator(Box::new(hal_sim::SimActuator::new(
+            ActuatorId::Pump,
+            r.world.clone(),
+        )));
+        sys.caps.sensors = ids;
+        let mut c = cfg(false);
+        // The sim draws 0.22 A wet at 30 % and a quarter of that pulling air.
+        c.pump.dry_current_a = Some(0.15);
+        r.engine = Engine::new(
+            sys,
+            c,
+            registry,
+            None,
+            Some(StateFile::new(&r.dir)),
+            r.snapshot.clone(),
+        );
+        r
+    }
+
+    #[test]
+    fn a_pump_pulling_air_stops_on_its_current_names_it_and_clears_like_a_dry_run() {
+        let mut r = current_rig("air", true);
+        r.engine.boot(r.now);
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        // Wet, it runs on.
+        for _ in 0..12 {
+            r.now.advance(Duration::from_secs(1));
+            r.engine.tick(r.now);
+        }
+        assert_eq!(r.world.lock().unwrap().pump_level, 30.0);
+        // The intake comes out of the water: the tank still reads full, the current falls.
+        r.world.lock().unwrap().intake_dry = true;
+        let mut tripped = None;
+        for s in 1..=10 {
+            r.now.advance(Duration::from_secs(1));
+            let out = r.engine.tick(r.now);
+            if r.world.lock().unwrap().pump_level == 0.0 {
+                tripped = Some((s, out));
+                break;
+            }
+        }
+        let (after, out) = tripped.expect("the current guard never tripped");
+        // The first low read comes a second in, then 5 s of them.
+        assert!(after <= 6, "tripped {after} s after the intake went dry");
+        let why = "dry-run: pump drew 0.05 A, below 0.15 A for 5 s: it's pulling air";
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["fault"], why);
+        let alert = payload(&out, "seedypod/u1/alert/pump_fault");
+        assert_eq!(alert["active"], true);
+        assert_eq!(alert["detail"], format!("pump: {why}"));
+        assert!(!r.engine.water.active, "the tank reads full throughout");
+        // Same latch as a level dry-run: refused until the water has read good for a
+        // window, though here the window starts at the trip, as the tank was full all along.
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], false);
+        let mut cleared = None;
+        for s in 1..=(2 * WATER_WINDOW as u64 * 10) {
+            r.now.advance(Duration::from_secs(1));
+            r.engine.tick(r.now);
+            if r.engine.pump.fault().is_none() {
+                cleared = Some(s);
+                break;
+            }
+        }
+        let cleared = cleared.expect("the dry-run never cleared");
+        assert!((60..=70).contains(&cleared), "cleared {cleared} s after the trip");
+        assert_eq!(r.engine.dry_hold_until, None);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn acknowledging_a_current_trip_lets_the_pump_run_at_once() {
+        let mut r = current_rig("air-ack", true);
+        r.engine.boot(r.now);
+        r.world.lock().unwrap().intake_dry = true;
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        for _ in 0..10 {
+            r.now.advance(Duration::from_secs(1));
+            r.engine.tick(r.now);
+        }
+        assert!(r.engine.pump.fault().is_some_and(|f| f.contains("pulling air")));
+        assert!(r.engine.dry_hold_until.is_some());
+        r.world.lock().unwrap().intake_dry = false;
+        let out = r.engine.handle(Inbound::AlertAck(AlertKind::PumpFault), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/alert/pump_fault")["active"], false);
+        assert_eq!(r.engine.dry_hold_until, None);
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(30))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn without_a_pump_monitor_the_current_guard_is_off() {
+        let mut r = current_rig("no-monitor", false);
+        assert_eq!(r.engine.pump.limits().dry_current_a, None);
+        r.engine.boot(r.now);
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))), r.now);
+        r.world.lock().unwrap().intake_dry = true;
+        for _ in 0..30 {
+            r.now.advance(Duration::from_secs(1));
+            r.engine.tick(r.now);
+        }
+        assert_eq!(r.world.lock().unwrap().pump_level, 30.0);
+        assert_eq!(r.engine.pump.fault(), None);
+        assert!(current_rig("with-monitor", true)
+            .engine
+            .pump
+            .limits()
+            .dry_current_a
+            .is_some());
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn a_pump_sample_reads_the_monitor_and_leaves_gaps_for_what_is_missing() {
+        let mut r = current_rig("sample", true);
+        r.engine.boot(r.now);
+        assert!(!r.engine.pump_on(r.now));
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))), r.now);
+        assert!(r.engine.pump_on(r.now));
+        let s = r.engine.pump_sample();
+        assert_eq!((s.duty, s.v, s.a), (30.0, Some(12.1), Some(0.22)));
+        assert!(s.w.is_some());
+        let mut bare = current_rig("sample-bare", false);
+        let s = bare.engine.pump_sample();
+        assert_eq!((s.v, s.a, s.w), (None, None, None));
+        let _ = std::fs::remove_dir_all(&r.dir);
+        let _ = std::fs::remove_dir_all(&bare.dir);
     }
 
     fn water_rounds(a: &mut WaterAlert, rounds: &[Option<f64>]) -> Vec<bool> {

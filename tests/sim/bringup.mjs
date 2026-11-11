@@ -74,6 +74,12 @@ telemetry_interval_s = 1
 state_dir = "${join(work, 'hal-state')}"
 mdns = false
 
+# The current guard on, against the sim's pump: 0.22 A wet at 30 %, a quarter of that pulling air.
+[limits]
+pump_dry_current_a = 0.15
+pump_dry_after_s = 3
+pump_dry_grace_s = 2
+
 [dosing]
 enabled = true
 max_doses_per_day = 2
@@ -177,7 +183,8 @@ const coreEnv = {
 }
 let daemon = null
 let coreProc = null
-const startHald = () => (daemon = start(hald, ['--sim', '--config', config, '--mqtt-url', brokerUrl], { RUST_LOG: 'info' }, 'hald'))
+const pumpTrace = join(work, 'pump-trace.csv')
+const startHald = () => (daemon = start(hald, ['--sim', '--config', config, '--mqtt-url', brokerUrl, '--pump-trace', pumpTrace], { RUST_LOG: 'info' }, 'hald'))
 const startCore = () => (coreProc = start(process.execPath, [join(root, 'server/dist/index.js')], coreEnv, 'core'))
 async function stop(p) {
   if (!p || p.exitCode !== null || p.signalCode) return
@@ -325,6 +332,24 @@ try {
     assert(r.body.level <= 30, `duty ${r.body.level} > 30`)
     await until('pump to stop on its own', async () => (await get('/pump')).on === false, 10_000)
     return `ran at ${r.body.level} %, stopped after its bound`
+  })
+
+  await check('pump: a dry intake trips the current guard, the fault names the current, and it clears', async () => {
+    const intake = dry => fetch(`http://127.0.0.1:${halHttpPort}/sim/intake`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dry }) })
+    assert((await intake(true)).status === 200, 'sim intake switch')
+    const r = await post('/pump/run-once', { durationS: 60 })
+    assert(r.status === 200 && r.body.on, `${r.status} ${JSON.stringify(r.body)}`)
+    const alert = await until('pump_fault in core', async () => (await get('/alerts')).find(a => a.kind === 'pump_fault' && a.active), 20_000)
+    assert(/dry-run: pump drew 0\.05 A, below 0\.15 A for 3 s: it's pulling air/.test(alert.detail), `detail ${alert.detail}`)
+    const pump = await get('/pump')
+    assert(pump.on === false && /pulling air/.test(pump.fault), `pump ${JSON.stringify(pump)}`)
+    assert(!(await get('/alerts')).some(a => a.kind === 'water_low' && a.active), 'water_low raised with a full tank')
+    const trace = readFileSync(pumpTrace, 'utf8')
+    assert(/^# run /m.test(trace) && trace.includes('t_s,duty,pump_v,pump_a,pump_w\n0.00,30,'), `pump trace ${trace.slice(0, 200)}`)
+    assert((await intake(false)).status === 200, 'sim intake back')
+    // Like a level dry-run, it clears itself once the water has read good for a window.
+    await until('the dry-run to clear', async () => (await get('/pump')).fault === null && !(await get('/alerts')).some(a => a.kind === 'pump_fault' && a.active), 30_000)
+    return `"${alert.detail}" → cleared; ${trace.split('\n').length} trace lines`
   })
 
   await check('camera: still fetched over hald HTTP and stored', async () => {

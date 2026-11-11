@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/src/components/ds/core'
 import { SegmentedControl } from '@/src/components/ds/forms'
 import { DOCS_BASE } from '@/src/components/Search/docsIndex'
+import { pumpFault } from '@/src/lib/pumpFault'
 import { fmtStamp, timeAgo } from '@/src/lib/timeAgo'
 import type { AppRouter } from '@/src/server/routers/app'
 import { trpc } from '@/src/utils/trpc'
@@ -95,6 +96,9 @@ export function describeAlert(a: Pick<AlertRow, 'kind' | 'detail'>): { title: st
     const camera = cam[1] as keyof typeof PODS
     return { title: `${camera === 'upper' ? 'Upper' : 'Lower'} camera not capturing`, detail: `Returned ${cam[2]} bytes on the last capture. Pods ${PODS[camera]} have no new photos.` }
   }
+  // The current guard says what the pump drew; the title keeps which fault it is.
+  const pump = a.kind === 'pump_fault' ? pumpFault(a.detail) : null
+  if (pump?.detail) return { title: `Pump fault: ${pump.reason}`, detail: pump.detail }
   return { title: LABEL[a.kind] ?? a.kind, detail: a.detail }
 }
 
