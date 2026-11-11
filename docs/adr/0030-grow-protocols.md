@@ -126,7 +126,8 @@ effect when it is made:
 
 Each fires once per grow cycle, recorded in the cycle's `issued` list like the
 grow reminders. A queued switch applies only over the stage as the protocol
-wrote it; over edited cycles it raises a notice instead. Deleting the Then
+wrote it; over edited cycles it raises alert `protocol_then` in Needs you
+instead. Deleting the Then
 schedule resets Then to `stay`.
 
 ### 4. Your schedules
@@ -166,7 +167,7 @@ care engine's tick. Its rules are the ones that already hold:
   pump cycles are still an earlier stage's preset as written: all on, the
   preset's days and length (`followedPreset`). It never creates cycles where
   there are none. Otherwise `protocol.current` reports water as `schedule`
-  (a library entry) or `edited`, and the cycles are left alone. Light, when a
+  (a library entry), `edited` or `none`, and the cycles are left alone. Light, when a
   stage sets it, follows the same rule against the curve the protocol wrote.
 - **Germination's weekly run keeps to the sowing weekday**, as today.
 - **Then**, as section 3: a queued switch at maintenance's start, a reminder on
@@ -199,8 +200,8 @@ Neither can bring back an earlier stage.
 - `protocol.current`: the protocol, each stage with resolved water (runs,
   length, days), light, feed, checks and its start date on the unit calendar;
   the current stage and day in it; hold; `canAdvance`; Then, with the
-  first-harvest day; water `protocol`, `schedule` or `edited`; the pods sown
-  later, with `daysBehind`.
+  first-harvest day; water `protocol`, `schedule`, `edited` or `none`; the
+  pods sown later, with `daysBehind`.
 - `protocol.hold`, `protocol.release`, `protocol.advance`, `protocol.setThen`.
 - `schedules.library.list|create|update|delete|activate`.
 - `stageDiff(from, to)` in `src/care/protocol.ts`, shared by the UI and
@@ -246,11 +247,19 @@ Neither can bring back an earlier stage.
 
 ## Implementation
 
-- Protocols and `stageDiff`: `src/care/protocol.ts`; runner in the same file,
-  called from `CareEngine.tick` in place of `followGrowCycle`.
+- Protocols, the runner (`runProtocol`), Hold, Advance, Then and `stageDiff`:
+  `src/care/protocol.ts`, called from `CareEngine.tick` in place of
+  `followGrowCycle`, which is now the runner's watering move. The engine also
+  reruns on a `grow` mutation, so Advance takes effect at once. The preset
+  moves themselves stay in `src/care/follow.ts`.
+- Your schedules, activation and the derived active entry:
+  `src/care/library.ts`.
 - Store: `GrowCycle` protocol fields, `store.grow.setProtocol`,
   `store.scheduleLibrary.*`, in MemoryStore and SqliteStore with conformance
-  tests; migration 0018.
-- API: `src/server/routers/protocol.ts`; `library` under
-  `src/server/routers/schedules.ts`.
-- Tests: `src/care/tests/protocol.test.ts`; the follow tests move there.
+  tests; migration 0018 (`grow_protocols`).
+- API: `src/server/routers/protocol.ts` (`/protocol`, `/protocol/hold`,
+  `/protocol/release`, `/protocol/advance`, `/protocol/then`); `library` under
+  `src/server/routers/schedules.ts` (`/schedules/library`).
+- MCP tools in `src/mcp/server.ts`.
+- Tests: `src/care/tests/protocol.test.ts`; `follow.test.ts` keeps the
+  watering-move cases, now through the runner.

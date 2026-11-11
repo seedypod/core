@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, PlanRow, PlantProfile, Pod, PodLabel, PodLabelCursor, PodLabelValue, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowProtocolState, GrowStage, PlanRow, PlantProfile, Pod, PodLabel, PodLabelCursor, PodLabelValue, SavedSchedule, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
@@ -15,6 +15,7 @@ export class MemoryStore implements Store {
   private readonly podRows = new Map<number, Pod>()
   private readonly profileRows = new Map<string, PlantProfile>()
   private readonly customPlantRows = new Map<string, CustomPlant>()
+  private readonly savedRows = new Map<string, SavedSchedule>()
   private readonly captureRows: Capture[] = []
   private points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
@@ -108,7 +109,7 @@ export class MemoryStore implements Store {
         open.endedAt = ts
         open.stage = 'ended'
       }
-      const c: GrowCycle = { id: `cycle-${this.cycles.length + 1}`, startedAt: ts, endedAt: null, stage: 'germination', notes, issued: [] }
+      const c: GrowCycle = { id: `cycle-${this.cycles.length + 1}`, startedAt: ts, endedAt: null, stage: 'germination', notes, issued: [], protocolId: null, shiftDays: 0, holdStageId: null, holdSince: null, thenKind: 'stay', thenScheduleId: null }
       this.cycles.push(c)
       return c
     },
@@ -129,6 +130,12 @@ export class MemoryStore implements Store {
     markIssued: (reminder: string): void => {
       const c = this.grow.current()
       if (c && !c.issued.includes(reminder)) c.issued.push(reminder)
+    },
+    setProtocol: (patch: Partial<GrowProtocolState>): GrowCycle | null => {
+      const c = this.grow.current()
+      if (!c) return null
+      Object.assign(c, patch)
+      return c
     },
     end: (ts: string): GrowCycle | null => {
       const c = this.grow.current()
@@ -174,6 +181,25 @@ export class MemoryStore implements Store {
       return clone(row)
     },
     remove: (id: string): boolean => this.customPlantRows.delete(id),
+  }
+
+  scheduleLibrary = {
+    list: (): SavedSchedule[] => [...this.savedRows.values()].map(clone),
+    get: (id: string): SavedSchedule | null => {
+      const r = this.savedRows.get(id)
+      return r ? clone(r) : null
+    },
+    upsert: (s: Omit<SavedSchedule, 'createdAt' | 'updatedAt' | 'lastUsedAt'>, ts: string): SavedSchedule => {
+      const prev = this.savedRows.get(s.id)
+      const row: SavedSchedule = { ...clone(s), createdAt: prev?.createdAt ?? ts, updatedAt: ts, lastUsedAt: prev?.lastUsedAt ?? null }
+      this.savedRows.set(s.id, row)
+      return clone(row)
+    },
+    markUsed: (id: string, ts: string): void => {
+      const r = this.savedRows.get(id)
+      if (r) r.lastUsedAt = ts
+    },
+    remove: (id: string): boolean => this.savedRows.delete(id),
   }
 
   captures = {

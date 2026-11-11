@@ -14,6 +14,7 @@ import { homekitRouter } from './homekit'
 import { networkRouter } from './network'
 import { plannerRouter } from './planner'
 import { plantsRouter } from './plants'
+import { protocolRouter } from './protocol'
 import { schedulesRouter } from './schedules'
 import { sensorsRouter } from './sensors'
 import { settingsRouter } from './settings'
@@ -36,6 +37,7 @@ export const appRouter = router({
   schedules: schedulesRouter,
   automations: automationsRouter,
   grow: growRouter,
+  protocol: protocolRouter,
   care: careRouter,
   tank: tankRouter,
   plants: plantsRouter,

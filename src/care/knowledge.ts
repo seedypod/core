@@ -24,6 +24,7 @@ export function cite(note: string, section: string): Citation {
 
 const GARDYN = 'knowledge/nutrients/gardyn-feeding-guidance.md'
 const COMMUNITY = 'knowledge/nutrients/community-nutrients.md'
+const GERMINATION = 'knowledge/plants/germination.md'
 
 export const CITE = {
   /** "Tank volumes: Home 5 gal full, Studio 4 gal full; keep the tank at least half full." */
@@ -38,6 +39,14 @@ export const CITE = {
   dosesByProduct: cite(COMMUNITY, 'Doses owners use on a Gardyn'),
   /** Owners who meter run pH 5.9–6.2 and leafy greens at EC 1.3–1.6. */
   ownerTargets: cite(COMMUNITY, 'Targets owners report'),
+  /** Cardboard covers off before germinating; around 70°F at 65–75% humidity. */
+  germinationStart: cite(GERMINATION, 'Before germinating'),
+  /** Check daily for sprouts; some take up to 21 days; too much water slows them. */
+  sprouting: cite(GERMINATION, 'Sprouting'),
+  /** yCovers only after thinning: covers trap moisture around the seed. */
+  yCovers: cite(GERMINATION, 'Thinning and yCovers'),
+  /** Judge the watering by the roots: dry and brittle wants more, pooled water less. */
+  roots: cite('knowledge/watering/schedules.md', 'Judging a schedule'),
 } as const
 
 /** Below this the tank is under half full. */

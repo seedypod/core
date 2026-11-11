@@ -1,5 +1,10 @@
+import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { activateEntry, activeEntryId, libraryEntries, libraryEntry } from '../../care/library'
+import { plantSlug } from '../../plants/custom'
+import { LIGHT_PRESETS } from '../../scheduler/lightPlan'
 import { lightLevelAt } from '../../scheduler/scheduler'
+import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
 
 const LightSpec = z.object({ setpoints: z.array(z.object({ minute: z.number().int().min(0).max(1439), level: z.number().min(0).max(100) })).max(24) })
@@ -16,7 +21,96 @@ const ScheduleOut = z.object({
   spec: z.union([LightSpec, PumpSpec]), createdAt: z.string(), updatedAt: z.string(),
 })
 
+const SavedCycle = z.object({ minute: z.number().int().min(0).max(1439), durationS: z.number().int().positive().max(3600), days: z.number().int().min(1).max(127) })
+// Activating writes one pump schedule per run time, so two runs can't share a minute.
+const SavedCycles = z.array(SavedCycle).min(1).max(12).refine(cs => new Set(cs.map(c => c.minute)).size === cs.length, { message: 'two cycles start at the same minute' })
+const LightPresetId = z.string().refine(id => LIGHT_PRESETS.some(p => p.id === id), { message: 'not a light preset' }).nullable()
+const Entry = z.object({
+  id: z.string(), name: z.string(), kind: z.enum(['own', 'preset']), cycles: z.array(SavedCycle), lightPresetId: z.string().nullable(),
+  lastUsedAt: z.string().nullable(), active: z.boolean(), readOnly: z.boolean(),
+})
+
+const now = (ctx: Context) => (ctx.now ?? (() => new Date()))()
+const entries = (ctx: Context) => {
+  const active = activeEntryId(ctx.store)
+  return libraryEntries(ctx.store, now(ctx)).map(e => ({ ...e, active: e.id === active, readOnly: e.kind === 'preset' }))
+}
+const own = (ctx: Context, id: string) => {
+  if (id.startsWith('preset:')) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Built-in presets are read-only: duplicate one to change it' })
+  const s = ctx.store.scheduleLibrary.get(id)
+  if (!s) throw new TRPCError({ code: 'NOT_FOUND', message: `no schedule ${id}` })
+  return s
+}
+const changed = (ctx: Context, id: string) => {
+  ctx.events.emit({ kind: 'mutation', path: 'schedules.library' })
+  ctx.events.emit({ kind: 'schedule', action: 'changed', id: `library:${id}` })
+}
+
+/** Your schedules (ADR-0030): saved sets of pump cycles beside the read-only presets; exactly the active one is on the pump. */
+const libraryRouter = router({
+  list: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/schedules/library', tags: ['schedules'], summary: 'Your schedules, then the built-in water presets (read-only), with which one the pump cycles are now' } })
+    .output(z.array(Entry))
+    .query(({ ctx }) => entries(ctx)),
+  create: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/schedules/library', tags: ['schedules'], summary: 'Save a new schedule; activate it to use it' } })
+    .input(z.object({ name: z.string().trim().min(1).max(60), cycles: SavedCycles, lightPresetId: LightPresetId.default(null) }))
+    .output(Entry)
+    .mutation(({ ctx, input }) => {
+      const base = plantSlug(input.name) || 'schedule'
+      let id = base
+      for (let n = 2; ctx.store.scheduleLibrary.get(id); n++) id = `${base}-${n}`
+      ctx.store.scheduleLibrary.upsert({ id, ...input }, now(ctx).toISOString())
+      ctx.events.emit({ kind: 'mutation', path: 'schedules.library' })
+      return entries(ctx).find(e => e.id === id) as z.infer<typeof Entry>
+    }),
+  update: publicProcedure
+    .meta({ openapi: { method: 'PATCH', path: '/schedules/library/{id}', tags: ['schedules'], summary: 'Change a saved schedule; if it is the active one, the pump cycles change with it' } })
+    .input(z.object({ id: z.string(), name: z.string().trim().min(1).max(60).optional(), cycles: SavedCycles.optional(), lightPresetId: LightPresetId.optional() }))
+    .output(Entry)
+    .mutation(({ ctx, input }) => {
+      const prev = own(ctx, input.id)
+      const wasActive = activeEntryId(ctx.store) === prev.id
+      const { id, ...patch } = input
+      const next = ctx.store.scheduleLibrary.upsert({ id, name: patch.name ?? prev.name, cycles: patch.cycles ?? prev.cycles, lightPresetId: patch.lightPresetId === undefined ? prev.lightPresetId : patch.lightPresetId }, now(ctx).toISOString())
+      if (wasActive) {
+        const entry = libraryEntry(ctx.store, next.id, now(ctx))
+        if (entry) activateEntry(ctx.store, entry, now(ctx))
+        changed(ctx, id)
+      }
+      else ctx.events.emit({ kind: 'mutation', path: 'schedules.library' })
+      return entries(ctx).find(e => e.id === id) as z.infer<typeof Entry>
+    }),
+  delete: publicProcedure
+    .meta({ openapi: { method: 'DELETE', path: '/schedules/library/{id}', tags: ['schedules'], summary: 'Delete a saved schedule; its pump cycles stay on until another is used. A Then that named it goes back to staying in maintenance' } })
+    .input(z.object({ id: z.string() }))
+    .output(z.object({ removed: z.boolean() }))
+    .mutation(({ ctx, input }) => {
+      own(ctx, input.id)
+      const removed = ctx.store.scheduleLibrary.remove(input.id)
+      const cycle = ctx.store.grow.current()
+      if (cycle?.thenKind === 'schedule' && cycle.thenScheduleId === input.id) {
+        ctx.store.grow.setProtocol({ thenKind: 'stay', thenScheduleId: null })
+        ctx.events.emit({ kind: 'mutation', path: 'grow' })
+      }
+      ctx.events.emit({ kind: 'mutation', path: 'schedules.library' })
+      return { removed }
+    }),
+  activate: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/schedules/library/{id}/activate', tags: ['schedules'], summary: 'Use a schedule now: its cycles replace the pump cycles (and its light preset the light). Using one of yours takes watering off the grow protocol; using the current stage\'s preset hands it back' } })
+    .input(z.object({ id: z.string() }))
+    .output(z.array(Entry))
+    .mutation(({ ctx, input }) => {
+      const entry = libraryEntry(ctx.store, input.id, now(ctx))
+      if (!entry) throw new TRPCError({ code: 'NOT_FOUND', message: `no schedule ${input.id}` })
+      activateEntry(ctx.store, entry, now(ctx))
+      changed(ctx, input.id)
+      return entries(ctx)
+    }),
+})
+
 export const schedulesRouter = router({
+  library: libraryRouter,
   list: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/schedules', tags: ['schedules'] } })
     .output(z.array(ScheduleOut))

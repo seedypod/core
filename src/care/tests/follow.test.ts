@@ -11,7 +11,8 @@ import { createCallerFactory } from '../../server/trpc'
 import { PUMP_PRESETS, presetSchedules, type PumpPresetId } from '../../scheduler/pumpPlan'
 import { MemoryStore } from '../../store/memory'
 import { CareEngine } from '../engine'
-import { FOLLOW_ALERT, followedPreset, followGrowCycle } from '../follow'
+import { FOLLOW_ALERT, followedPreset } from '../follow'
+import { followGrowCycle } from '../protocol'
 
 const day = (n: number) => new Date(Date.parse('2026-11-09T12:00:00Z') + n * 86_400_000)
 const light = { id: 'gardyn', kind: 'light' as const, name: 'Gardyn day', enabled: true, days: 127, spec: { setpoints: [{ minute: 330, level: 0 }, { minute: 360, level: 100 }, { minute: 1260, level: 100 }, { minute: 1290, level: 0 }] } }

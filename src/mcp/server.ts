@@ -123,6 +123,16 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: { kind: TankActionKind.optional(), limit: z.number().int().min(1).max(500).optional() },
   }, async i => text(await caller.tank.actions({ kind: i.kind, limit: i.limit ?? 20 })))
 
+  server.registerTool('grow_protocol', {
+    description: 'The tower\'s grow protocol (ADR-0030): one sequence of stages (Greens & herbs: germination 0–7, seedlings 8–13, young 14–21, maintenance 22 on; Fruiting, picked by any planted fruiting crop: germination 0–7, maintenance 8 on), each with the watering it sets (runs, length, day mask), light (null = leaves the curves alone), feed and checks with their citations (quote only those), what changes from the stage before, and the date it starts on the unit\'s calendar. Also the current stage and day, any hold, canAdvance, then (what comes after maintenance: stay, schedule, or remind at first harvest with the catalog\'s day), water (protocol = the pump cycles are still the protocol\'s; schedule = one of Your schedules is on; edited = changed by hand, left alone; none), activeScheduleId, and pods sown later than the protocol with daysBehind. following false means Settings → followGrowCycle is off and nothing moves by itself.',
+    inputSchema: {},
+  }, async () => text(await caller.protocol.current()))
+
+  server.registerTool('list_schedule_library', {
+    description: 'Your schedules (ADR-0030): saved sets of pump cycles (minute of day, durationS, day mask Mon=1 … Sun=64) with an optional light preset, then the built-in water presets as read-only entries (id preset:<id>). active marks the one the pump cycles are now; none is active if they were edited by hand.',
+    inputSchema: {},
+  }, async () => text(await caller.schedules.library.list()))
+
   server.registerTool('captures', {
     description: 'Recent camera stills (newest first) with URLs relative to the core host. camera: upper or lower.',
     inputSchema: { camera: z.enum(['upper', 'lower']).optional(), limit: z.number().int().min(1).max(50).optional() },
@@ -369,7 +379,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text(await caller.grow.markHarvested(i)))
 
   server.registerTool('grow_cycle', {
-    description: 'Manage the grow cycle: action start (optionally with notes, and started_at YYYY-MM-DD to backdate it to the day the pods were sown; not in the future), set_start (started_at YYYY-MM-DD: move the open cycle to another sowing day, e.g. today; reminders not yet due by then wait again and the stage is read from the new day; with followGrowCycle on, germination\'s weekly run moves to the new weekday, and with it off it stays), stage (germination|seedling|vegetative|harvest), or end. With "follow the grow cycle" on (the default), watering moves to each growth stage\'s preset as the days since the cycle started pass.',
+    description: 'Manage the grow cycle: action start (optionally with notes, and started_at YYYY-MM-DD to backdate it to the day the pods were sown; not in the future), set_start (started_at YYYY-MM-DD: move the open cycle to another sowing day, e.g. today; reminders not yet due by then wait again and the stage is read from the new day; with followGrowCycle on, germination\'s weekly run moves to the new weekday, and with it off it stays), stage (germination|seedling|vegetative|harvest), or end. With "follow the grow cycle" on (the default), the grow protocol (grow_protocol) moves watering to each stage\'s preset as the days since the cycle started pass.',
     inputSchema: { action: z.enum(['start', 'set_start', 'stage', 'end']), stage: z.enum(['germination', 'seedling', 'vegetative', 'harvest']).optional(), notes: z.string().optional(), started_at: z.string().optional() },
   }, async (i) => {
     if (i.action === 'start') return text(await caller.grow.start({ notes: i.notes ?? '', startedAt: i.started_at }))
@@ -380,6 +390,26 @@ export function createMcpServer(ctx: Context): McpServer {
     if (i.action === 'stage') return text(await caller.grow.setStage({ stage: i.stage ?? 'germination' }))
     return text(await caller.grow.end())
   })
+
+  server.registerTool('hold_protocol', {
+    description: 'Hold the grow protocol at its current stage (action hold), or let it run on (release): while held the stage and its watering stay, and on release later stages start the days held later. Needs an open grow cycle. Confirm with the person first.',
+    inputSchema: { action: z.enum(['hold', 'release']) },
+  }, async i => text(i.action === 'hold' ? await caller.protocol.hold() : await caller.protocol.release()))
+
+  server.registerTool('advance_protocol', {
+    description: 'Move the grow protocol to its next stage now; the unit moves the watering on if the pump cycles are still the protocol\'s. Refused in maintenance, the last stage. Needs an open grow cycle. Confirm with the person first.',
+    inputSchema: {},
+  }, async () => text(await caller.protocol.advance()))
+
+  server.registerTool('set_protocol_then', {
+    description: 'Choose what comes after the grow protocol\'s stages: stay (keep maintenance, the default; nothing fires), schedule (switch to schedule_id from list_schedule_library, when now or when maintenance begins, the default; already in maintenance it switches now), or remind (a Needs-you item at the planted crops\' first harvest, from the catalog; refused with no catalog crop). Needs an open grow cycle. Confirm with the person first.',
+    inputSchema: { kind: z.enum(['stay', 'schedule', 'remind']), schedule_id: z.string().optional(), when: z.enum(['now', 'maintenance']).optional() },
+  }, async i => text(await caller.protocol.setThen({ kind: i.kind, scheduleId: i.schedule_id, when: i.when ?? 'maintenance' })))
+
+  server.registerTool('activate_schedule', {
+    description: 'Use one of Your schedules, or a built-in preset (id preset:<id>), now: its cycles replace all the pump cycles, and its light preset, if any, replaces the enabled light curves (others are turned off, not deleted). Using one of yours takes watering off the grow protocol; using the current stage\'s preset hands it back. Confirm with the person first.',
+    inputSchema: { id: z.string() },
+  }, async i => text(await caller.schedules.library.activate(i)))
 
   server.registerTool('upload_model', {
     description: 'Add a pod-state weights file (seedypod-cnn v1, from seedypod/training) as a model revision. Give its contents as base64, or a URL on the local network (the laptop that trained it; the unit fetches nothing from the internet), and its SHA-256, which must match. Stored disabled unless enable is true; an enabled revision runs on every capture as its own analyser beside the others. Confirm with the user before enabling.',

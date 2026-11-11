@@ -98,6 +98,14 @@ export const growCycles = sqliteTable('grow_cycles', {
   notes: text().notNull().default(''),
   /** Reminders already issued for this cycle, JSON string[]. */
   issued: text().notNull().default('[]'),
+  /** The grow protocol (ADR-0030); null until germination ends, chosen by the planted crops. */
+  protocolId: text(),
+  /** Days added to days-since-sowing for the protocol day: Advance and Release move it. */
+  shiftDays: integer().notNull().default(0),
+  holdStageId: text(),
+  holdSince: text(),
+  thenKind: text({ enum: ['stay', 'schedule', 'remind'] }).notNull().default('stay'),
+  thenScheduleId: text(),
 })
 
 export const pods = sqliteTable('pods', {
@@ -257,6 +265,18 @@ export const customPlants = sqliteTable('custom_plants', {
   source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
   createdAt: text().notNull(),
   updatedAt: text().notNull(),
+})
+
+/** Your schedules (ADR-0030): named sets of pump cycles, with a light preset, to switch between. */
+export const scheduleLibrary = sqliteTable('schedule_library', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  /** JSON { minute, durationS, days }[]. */
+  cycles: text().notNull().default('[]'),
+  lightPresetId: text(),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+  lastUsedAt: text(),
 })
 
 /** What was done to the tank (ADR-0029): fed, topped off, refreshed, pH adjusted. */
