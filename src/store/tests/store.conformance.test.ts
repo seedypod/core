@@ -107,6 +107,40 @@ for (const [name, make] of impls) {
       expect(store.grow.current()).toBeNull()
     })
 
+    it('grow cycles carry the protocol state (ADR-0030): defaults, patches, a fresh one per cycle', () => {
+      store = make()
+      expect(store.grow.setProtocol({ shiftDays: 2 })).toBeNull()
+      const c = store.grow.start('2026-01-01T00:00:00Z')
+      expect(c).toMatchObject({ protocolId: null, shiftDays: 0, holdStageId: null, holdSince: null, thenKind: 'stay', thenScheduleId: null, thenDoneAt: null, stageStarts: {} })
+      store.grow.setProtocol({ protocolId: 'greens-herbs', holdStageId: 'young', holdSince: '2026-01-15T00:00:00Z' })
+      expect(store.grow.setProtocol({ shiftDays: -3, thenKind: 'schedule', thenScheduleId: 'summer' })).toMatchObject({ protocolId: 'greens-herbs', shiftDays: -3, holdStageId: 'young', thenKind: 'schedule', thenScheduleId: 'summer' })
+      store.grow.setProtocol({ holdStageId: null, holdSince: null, thenDoneAt: '2026-01-23T00:00:00Z', stageStarts: { germination: '2026-01-01', seedlings: '2026-01-07' } })
+      expect(store.grow.current()).toMatchObject({ id: c.id, shiftDays: -3, holdStageId: null, holdSince: null, thenScheduleId: 'summer', thenDoneAt: '2026-01-23T00:00:00Z', stageStarts: { germination: '2026-01-01', seedlings: '2026-01-07' } })
+      // Patching other fields keeps the recorded stage days.
+      expect(store.grow.setProtocol({ shiftDays: 0 })?.stageStarts).toEqual({ germination: '2026-01-01', seedlings: '2026-01-07' })
+      expect(store.grow.start('2026-03-01T00:00:00Z')).toMatchObject({ protocolId: null, shiftDays: 0, thenKind: 'stay', thenDoneAt: null, stageStarts: {} })
+      // The curves Your schedules turned off are kept as a list, and null clears it.
+      expect(store.settings.get().libraryLightsOff).toBeNull()
+      expect(store.settings.update({ libraryLightsOff: ['gardyn', 'evening'] }).libraryLightsOff).toEqual(['gardyn', 'evening'])
+      expect(store.settings.update({ libraryLightsOff: null }).libraryLightsOff).toBeNull()
+    })
+
+    it('your schedules (ADR-0030): upsert keeps createdAt and lastUsedAt, list is oldest first', () => {
+      store = make()
+      const summer = { id: 'summer', name: 'Summer', cycles: [{ minute: 480, durationS: 300, days: 127 }, { minute: 720, durationS: 300, days: 127 }], lightPresetId: null }
+      expect(store.scheduleLibrary.upsert(summer, 't1')).toEqual({ ...summer, createdAt: 't1', updatedAt: 't1', lastUsedAt: null })
+      store.scheduleLibrary.upsert({ id: 'away', name: 'Away', cycles: [{ minute: 480, durationS: 480, days: 127 }], lightPresetId: 'day-14h' }, 't2')
+      store.scheduleLibrary.markUsed('summer', 't3')
+      store.scheduleLibrary.markUsed('nope', 't3')
+      expect(store.scheduleLibrary.upsert({ ...summer, name: 'Summer 2' }, 't4')).toMatchObject({ name: 'Summer 2', createdAt: 't1', updatedAt: 't4', lastUsedAt: 't3' })
+      expect(store.scheduleLibrary.list().map(x => [x.id, x.lightPresetId])).toEqual([['summer', null], ['away', 'day-14h']])
+      expect(store.scheduleLibrary.get('away')?.cycles).toEqual([{ minute: 480, durationS: 480, days: 127 }])
+      expect(store.scheduleLibrary.get('nope')).toBeNull()
+      expect(store.scheduleLibrary.remove('away')).toBe(true)
+      expect(store.scheduleLibrary.remove('away')).toBe(false)
+      expect(store.scheduleLibrary.list().map(x => x.id)).toEqual(['summer'])
+    })
+
     it('pods: a status change moves statusSince; other edits leave it', () => {
       store = make()
       store.pods.update(3, { status: 'growing' }, '2026-02-01T00:00:00Z')
@@ -519,6 +553,29 @@ describe('SqliteStore on disk', () => {
       const copy = new SqliteStore({ url: join(root, 'copy.db') })
       expect(copy.tankActions.list()).toMatchObject([{ kind: 'refresh', amount: 19, unit: 'L', note: 'baking soda wipe' }])
       copy.close()
+    }
+    finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('gives grow cycles from before migration 0018 the protocol defaults', () => {
+    const root = mkdtempSync(join(tmpdir(), 'store-'))
+    try {
+      const url = join(root, 'old.db')
+      const journal = JSON.parse(readFileSync(join(defaultMigrationsFolder(), 'meta/_journal.json'), 'utf8')) as { entries: { tag: string }[] }
+      const old = join(root, 'migrations-0017')
+      cpSync(defaultMigrationsFolder(), old, { recursive: true })
+      writeFileSync(join(old, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.filter(e => e.tag < '0018') }))
+      const db = new Database(url)
+      migrate(drizzle(db), { migrationsFolder: old })
+      db.prepare('INSERT INTO grow_cycles (id, startedAt) VALUES (?, ?)').run('cycle-1', '2026-11-01T00:00:00.000Z')
+      db.close()
+      const store = new SqliteStore({ url })
+      expect(store.grow.current()).toMatchObject({ id: 'cycle-1', protocolId: null, shiftDays: 0, holdStageId: null, thenKind: 'stay', thenScheduleId: null, thenDoneAt: null, stageStarts: {} })
+      expect(store.settings.get().libraryLightsOff).toBeNull()
+      expect(store.scheduleLibrary.list()).toEqual([])
+      store.close()
     }
     finally {
       rmSync(root, { recursive: true, force: true })

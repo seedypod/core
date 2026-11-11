@@ -24,6 +24,10 @@ describe('followSnack', () => {
     expect(s?.urgent).toBeFalsy()
   })
 
+  it('names the schedule a queued switch put on, with a View into Grow', () => {
+    expect(followSnack({ kind: 'schedule', action: 'changed', id: 'follow:schedule:Summer' })).toMatchObject({ id: 'follow', title: 'Watering switched to Summer', view: { to: '/grow', label: 'View' } })
+  })
+
   it('says germination was re-dated when it stays on germination', () => {
     expect(followSnack({ kind: 'schedule', action: 'changed', id: 'follow:germination' })?.title).toBe('Germination watering moved to the sowing weekday')
   })
@@ -62,6 +66,9 @@ describe('alertSnack', () => {
     expect(alertSnack({ id: 1, kind: 'chore_top_off', detail: 'Tank at 40%' })).toBeNull()
     expect(alertSnack({ id: 1, kind: 'reminder_thinning', detail: '' })).toBeNull()
     expect(alertSnack({ id: 1, kind: 'watering_followed', detail: 'Watering moved to Seedlings' })).toBeNull()
+    // The grow protocol's needs-you items: no toast, and Done or Skip on Alerts.
+    expect(alertSnack({ id: 1, kind: 'reminder_first_harvest', detail: 'First harvest is about now' })).toBeNull()
+    expect(alertSnack({ id: 1, kind: 'reminder_schedule_switch', detail: 'Didn’t switch' })).toBeNull()
   })
 })
 

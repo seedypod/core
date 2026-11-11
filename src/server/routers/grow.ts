@@ -95,6 +95,8 @@ export const growRouter = router({
       const again = open ? restarted(open, settings, cycleDay({ ...open, startedAt: at.toISOString() }, now)) : null
       const c = again && store.grow.setStart(at.toISOString(), again.stage, again.issued)
       if (!c) throw new TRPCError({ code: 'NOT_FOUND', message: 'No open grow cycle to move; start one' })
+      // The days recorded for begun protocol stages counted from the old sowing day (ADR-0030): read them from the new one.
+      store.grow.setProtocol({ stageStarts: {} })
       events.emit({ kind: 'mutation', path: 'grow' })
       // Germination's weekly run goes with it, while watering follows the cycle.
       const moved = redateGermination(store, now)

@@ -56,7 +56,8 @@ export const WATERING_TIPS: readonly string[] = [
 ]
 export const TIPS_CITATION = cite(NOTE, 'Judging a schedule')
 
-const hhmm = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
+/** "08:00" for minute 480. */
+export const hhmm = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
 
 /** When the light is on today, from the first lit minute to the last, across the running curves; null if it never is. */
 export function lightWindow(specs: readonly LightSpec[]): { on: number, off: number } | null {
@@ -116,7 +117,8 @@ export function sowDate(cycleStart: string | null | undefined, plantedAt: Readon
   return dates.sort()[0] ?? null
 }
 
-const dayNumber = (date: string) => Date.parse(`${date}T00:00:00Z`) / 86_400_000
+/** Days since 1970 for a plain date ("2026-11-09"), for counting whole days between two. */
+export const dayNumber = (date: string) => Date.parse(`${date}T00:00:00Z`) / 86_400_000
 
 /** Whole days since the tower was sown, counted on the unit's calendar: day 0 is the sowing date, day 1 starts at the next local midnight. */
 export function daysSinceSowing(cycleStart: string | null | undefined, plantedAt: ReadonlyArray<string | null>, now: Date, timezone: string): number | null {

@@ -2,6 +2,7 @@
 
 ## 2026-11-11
 
+- **Creation**: [Germination](plants/germination.md), Gardyn's guidance for sprouting yCubes in the tower, behind the grow protocol's germination and seedling checks (ADR 0030). Gardyn says nothing about domes in the tower, so there's no dome check.
 - **Creation**: [Watering schedules](watering/schedules.md), pump-cycle starting points by growth stage from Gardyn's first-watering guidance and r/Gardyn owners, behind the Water page's presets and MCP's `pump_presets`.
 
 ## 2026-11-09

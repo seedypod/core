@@ -31,3 +31,4 @@ Format follows [sleepypod/core](https://sleepypod.github.io/) (`# ADR NNNN: Titl
 - [0027 Cameras in HomeKit and Home Assistant](0027-camera-exposure.md)
 - [0028 Camera capture format for image analysis](0028-camera-capture-format.md) — proposed
 - [0029 Care engine and agent boundary](0029-care-engine-and-agent-boundary.md) — proposed
+- [0030 Grow protocols](0030-grow-protocols.md) — proposed

@@ -1,17 +1,19 @@
 /**
- * Care engine (ADR-0029): runs the setup check and the chores when something
- * that can change them happens (a schedule, a pod, the sensor inventory, hald
- * coming and going, the tank level turning suspect, a logged tank action, a new
- * capture) and on a slow tick, and keeps one alert per problem. A chore raises
- * an alert only when a reading makes it due: calendar chores are the grow
- * reminders' job, and a reading is news. Event-driven so an agent watching
+ * Care engine (ADR-0029): runs the grow protocol (ADR-0030), the setup check
+ * and the chores when something that can change them happens (a schedule, a
+ * pod, the grow cycle, the sensor inventory, hald coming and going, the tank
+ * level turning suspect, a logged tank action, a new capture) and on a slow
+ * tick, and keeps one alert per problem. A chore raises an alert only when a
+ * reading makes it due: calendar chores are the grow reminders' job, and a
+ * reading is news. Event-driven so an agent watching
  * alerts wakes only on a change.
  */
 import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
 import type { Store, TankActionKind } from '../store/types'
 import { chores, type Chore, type ChoreId } from './chores'
-import { FOLLOW_ALERT, followGrowCycle, type FollowChange } from './follow'
+import { FOLLOW_ALERT, type FollowChange } from './follow'
+import { runProtocol } from './protocol'
 import { SETUP_ALERTS, setupReport, type SetupReport } from './setup'
 
 const TICK_MS = 15 * 60_000
@@ -41,17 +43,19 @@ export class CareEngine {
     return (this.deps.now ?? (() => new Date()))()
   }
 
-  /** Move watering on with the grow cycle, then raise, refresh or clear each setup and chore alert to match the unit. Writes only on a change. */
+  /** Run the grow protocol (ADR-0030), then raise, refresh or clear each setup and chore alert to match the unit. Writes only on a change. */
   tick(): { setup: SetupReport, chores: Chore[], followed: FollowChange | null } {
     const { store, hal, events } = this.deps
     const snap = hal.snapshot()
     const now = this.now()
-    const followed = followGrowCycle(store, now)
+    const { followed, notices } = runProtocol(store, now)
     if (followed) {
       store.alerts.raise(FOLLOW_ALERT, followed.detail, now.toISOString())
-      events.emit({ kind: 'schedule', action: 'changed', id: `follow:${followed.to}` })
+      events.emit({ kind: 'schedule', action: 'changed', id: followed.schedule ? `follow:schedule:${followed.schedule.name}` : `follow:${followed.to}` })
       events.emit({ kind: 'mutation', path: `alerts.${FOLLOW_ALERT}` })
     }
+    // The runner has written its needs-you items already, before marking each Then done.
+    for (const n of notices) events.emit({ kind: 'mutation', path: `alerts.${n.kind}` })
     const setup = setupReport(store, snap)
     const list = chores(store, snap, now)
     const rows = store.alerts.list()

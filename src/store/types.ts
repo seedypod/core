@@ -33,6 +33,8 @@ export interface DeviceSettings {
   analysisArtifacts: boolean
   /** Move the pump cycles to the next growth stage's watering preset as the plants age. */
   followGrowCycle: boolean
+  /** Light curves Your schedules turned off for a schedule's light preset, to turn back on; null when none. */
+  libraryLightsOff: string[] | null
   analysisIngestToken: string
   /** Pod boxes the owner moved on the cameras' stills (#143); null keeps the measured defaults. */
   podRegions: RegionCalibration | null
@@ -92,6 +94,37 @@ export interface GrowCycle {
   stage: GrowStage
   notes: string
   issued: string[]
+  /** The grow protocol (ADR-0030); null until germination ends, chosen by the planted crops. */
+  protocolId: string | null
+  /** Days added to days-since-sowing for the protocol day: Advance and Release move it. */
+  shiftDays: number
+  /** The held stage and since when, or both null. */
+  holdStageId: string | null
+  holdSince: string | null
+  /** What comes after the protocol: stay in maintenance, switch to `thenScheduleId` when maintenance begins, or a reminder at first harvest. */
+  thenKind: ThenKind
+  thenScheduleId: string | null
+  /** When the chosen Then fired; choosing again clears it. */
+  thenDoneAt: string | null
+  /** The day each stage began on the unit's calendar, recorded when Advance or Release move the clock. */
+  stageStarts: Record<string, string>
+}
+
+export type ThenKind = 'stay' | 'schedule' | 'remind'
+/** The protocol fields of a grow cycle, as `grow.setProtocol` takes them. */
+export type GrowProtocolState = Pick<GrowCycle, 'protocolId' | 'shiftDays' | 'holdStageId' | 'holdSince' | 'thenKind' | 'thenScheduleId' | 'thenDoneAt' | 'stageStarts'>
+
+/** One pump cycle of a saved schedule; `days` is the weekday mask (bit 0 = Monday). */
+export interface SavedCycle { minute: number, durationS: number, days: number }
+/** One of Your schedules (ADR-0030): a named set of pump cycles, with a light preset if it sets the light. */
+export interface SavedSchedule {
+  id: string
+  name: string
+  cycles: SavedCycle[]
+  lightPresetId: string | null
+  createdAt: string
+  updatedAt: string
+  lastUsedAt: string | null
 }
 
 export type PodStatus = 'empty' | 'seeded' | 'growing' | 'harvest' | 'attention'
@@ -268,6 +301,8 @@ export interface Store {
     setStart(ts: string, stage: GrowStage, issued: string[]): GrowCycle | null
     setStage(stage: GrowStage, ts: string): GrowCycle | null
     markIssued(reminder: string): void
+    /** Change the open cycle's protocol fields; null with no open cycle. */
+    setProtocol(patch: Partial<GrowProtocolState>): GrowCycle | null
     end(ts: string): GrowCycle | null
     history(): GrowCycle[]
   }
@@ -286,6 +321,14 @@ export interface Store {
     list(): CustomPlant[]
     get(id: string): CustomPlant | null
     upsert(p: Omit<CustomPlant, 'createdAt' | 'updatedAt'>, ts: string): CustomPlant
+    remove(id: string): boolean
+  }
+  scheduleLibrary: {
+    /** Oldest first. */
+    list(): SavedSchedule[]
+    get(id: string): SavedSchedule | null
+    upsert(s: Omit<SavedSchedule, 'createdAt' | 'updatedAt' | 'lastUsedAt'>, ts: string): SavedSchedule
+    markUsed(id: string, ts: string): void
     remove(id: string): boolean
   }
   captures: {
@@ -406,6 +449,7 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   primaryAnalyzer: 'green-threshold',
   analysisArtifacts: false,
   followGrowCycle: true,
+  libraryLightsOff: null,
   analysisIngestToken: '',
   podRegions: null,
   mirrorEndpoint: null,

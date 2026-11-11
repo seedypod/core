@@ -9,7 +9,7 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PodLabel, PodLabelCursor, PodLabelValue, PumpSpec, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowProtocolState, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PodLabel, PodLabelCursor, PodLabelValue, PumpSpec, SavedCycle, SavedSchedule, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
@@ -161,6 +161,11 @@ export class SqliteStore implements Store {
       if (!c || c.issued.includes(reminder)) return
       this.db.update(t.growCycles).set({ issued: JSON.stringify([...c.issued, reminder]) }).where(eq(t.growCycles.id, c.id)).run()
     },
+    setProtocol: (patch: Partial<GrowProtocolState>): GrowCycle | null => {
+      const { stageStarts, ...rest } = patch
+      const r = this.db.update(t.growCycles).set({ ...rest, ...(stageStarts ? { stageStarts: JSON.stringify(stageStarts) } : {}) }).where(sql`${t.growCycles.endedAt} IS NULL`).returning().get()
+      return r ? rowToCycle(r) : null
+    },
     end: (ts: string): GrowCycle | null => {
       const r = this.db.update(t.growCycles).set({ endedAt: ts, stage: 'ended' }).where(sql`${t.growCycles.endedAt} IS NULL`).returning().get()
       return r ? rowToCycle(r) : null
@@ -202,6 +207,23 @@ export class SqliteStore implements Store {
       return this.customPlants.get(p.id) as CustomPlant
     },
     remove: (id: string): boolean => this.db.delete(t.customPlants).where(eq(t.customPlants.id, id)).run().changes > 0,
+  }
+
+  scheduleLibrary = {
+    list: (): SavedSchedule[] => this.db.select().from(t.scheduleLibrary).orderBy(asc(t.scheduleLibrary.createdAt), asc(t.scheduleLibrary.id)).all().map(rowToSaved),
+    get: (id: string): SavedSchedule | null => {
+      const r = this.db.select().from(t.scheduleLibrary).where(eq(t.scheduleLibrary.id, id)).get()
+      return r ? rowToSaved(r) : null
+    },
+    upsert: (s: Omit<SavedSchedule, 'createdAt' | 'updatedAt' | 'lastUsedAt'>, ts: string): SavedSchedule => {
+      const cols = { name: s.name, cycles: JSON.stringify(s.cycles), lightPresetId: s.lightPresetId, updatedAt: ts }
+      this.db.insert(t.scheduleLibrary).values({ ...cols, id: s.id, createdAt: ts }).onConflictDoUpdate({ target: t.scheduleLibrary.id, set: cols }).run()
+      return this.scheduleLibrary.get(s.id) as SavedSchedule
+    },
+    markUsed: (id: string, ts: string): void => {
+      this.db.update(t.scheduleLibrary).set({ lastUsedAt: ts }).where(eq(t.scheduleLibrary.id, id)).run()
+    },
+    remove: (id: string): boolean => this.db.delete(t.scheduleLibrary).where(eq(t.scheduleLibrary.id, id)).run().changes > 0,
   }
 
   captures = {
@@ -474,8 +496,12 @@ function rowToPlan(r: typeof t.plans.$inferSelect): PlanRow {
   return { ...r, request: JSON.parse(r.request) as PlanRow['request'], layout: JSON.parse(r.layout) as PlanRow['layout'], sowing: JSON.parse(r.sowing) as PlanRow['sowing'], issued: JSON.parse(r.issued) as string[] }
 }
 
+function rowToSaved(r: typeof t.scheduleLibrary.$inferSelect): SavedSchedule {
+  return { ...r, cycles: JSON.parse(r.cycles) as SavedCycle[] }
+}
+
 function rowToCycle(r: typeof t.growCycles.$inferSelect): GrowCycle {
-  return { ...r, issued: JSON.parse(r.issued) as string[] }
+  return { ...r, issued: JSON.parse(r.issued) as string[], stageStarts: JSON.parse(r.stageStarts) as Record<string, string> }
 }
 
 function rowToAnalysis(r: typeof t.analysisResults.$inferSelect): AnalysisRow {

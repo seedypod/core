@@ -36,6 +36,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   analysisArtifacts: integer({ mode: 'boolean' }).notNull().default(false),
   /** Move the pump cycles to the next growth stage's watering preset as the plants age. */
   followGrowCycle: integer({ mode: 'boolean' }).notNull().default(true),
+  /** Light curves Your schedules turned off for a schedule's light preset, to turn back on (ADR-0030). */
+  libraryLightsOff: text({ mode: 'json' }).$type<string[]>(),
   /** Bearer token for POST /api/analyses/results; empty = ingest off. */
   analysisIngestToken: text().notNull().default(''),
   /** JSON: pod boxes moved per camera and slot, as fractions of the frame (#143); null = measured defaults. */
@@ -98,6 +100,18 @@ export const growCycles = sqliteTable('grow_cycles', {
   notes: text().notNull().default(''),
   /** Reminders already issued for this cycle, JSON string[]. */
   issued: text().notNull().default('[]'),
+  /** The grow protocol (ADR-0030); null until germination ends, chosen by the planted crops. */
+  protocolId: text(),
+  /** Days added to days-since-sowing for the protocol day: Advance and Release move it. */
+  shiftDays: integer().notNull().default(0),
+  holdStageId: text(),
+  holdSince: text(),
+  thenKind: text({ enum: ['stay', 'schedule', 'remind'] }).notNull().default('stay'),
+  thenScheduleId: text(),
+  /** When the chosen Then fired; choosing again clears it. */
+  thenDoneAt: text(),
+  /** The day each stage began, JSON { stageId: YYYY-MM-DD }, kept when Advance or Release move the clock. */
+  stageStarts: text().notNull().default('{}'),
 })
 
 export const pods = sqliteTable('pods', {
@@ -257,6 +271,18 @@ export const customPlants = sqliteTable('custom_plants', {
   source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
   createdAt: text().notNull(),
   updatedAt: text().notNull(),
+})
+
+/** Your schedules (ADR-0030): named sets of pump cycles, with a light preset, to switch between. */
+export const scheduleLibrary = sqliteTable('schedule_library', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  /** JSON { minute, durationS, days }[]. */
+  cycles: text().notNull().default('[]'),
+  lightPresetId: text(),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+  lastUsedAt: text(),
 })
 
 /** What was done to the tank (ADR-0029): fed, topped off, refreshed, pH adjusted. */
