@@ -2,11 +2,25 @@ import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { daysSinceSowing } from '../../scheduler/pumpPlan'
 import { localTime } from '../../scheduler/time'
-import { POD_LABELS, type PodLabel, type PodLabelCursor } from '../../store/types'
+import { POD_CODE, POD_LABELS, type PodLabel, type PodLabelCursor } from '../../store/types'
+import { podCodeViews } from '../../vision/podCodes'
 import { podTrends } from '../../vision/analyze'
 import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
 import { publicProcedure, router } from '../trpc'
 
+const Code = z.string().regex(POD_CODE, 'a code is four of o | / h')
+const CodeView = z.object({
+  slot: z.number(),
+  camera: z.enum(['upper', 'lower']),
+  code: z.string(),
+  confidence: z.number(),
+  ts: z.string(),
+  confirmed: z.string().nullable(),
+  recorded: z.string().nullable(),
+})
+const CodePair = z.object({ code: z.string(), plant: z.string(), confirmedAt: z.string() })
+const CodesOut = z.object({ available: z.boolean(), pods: z.array(CodeView), pairs: z.array(CodePair) })
+const ReadOut = z.array(z.object({ camera: z.enum(['upper', 'lower']), ts: z.string().nullable(), read: z.number(), error: z.string().nullable() }))
 const Trend = z.object({ slot: z.number(), green: z.number().nullable(), verdict: z.enum(['growing', 'stalled', 'declining', 'unknown']), slope: z.number(), samples: z.number(), recent: z.array(z.number()) })
 const Metric = z.object({ name: z.string(), label: z.string(), unit: z.string().optional(), description: z.string() })
 const Source = z.enum(['device', 'remote'])
@@ -193,6 +207,37 @@ export const visionRouter = router({
       }
       ctx.events.emit({ kind: 'mutation', path: 'labels' })
       return { captureId: input.captureId, slot: input.slot, label: input.label }
+    }),
+  podCodes: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/pod-codes', tags: ['vision'], summary: 'yCube dot codes (#224): each pod a code was read under, with the plant the owner confirmed for it (or null) and its record\'s plant; and every confirmed code → plant pair' } })
+    .output(CodesOut)
+    .query(({ ctx }) => ({ available: ctx.podCodes.available, pods: podCodeViews(ctx.store) as Array<z.infer<typeof CodeView>>, pairs: ctx.store.podCodes.pairs() })),
+  readPodCodes: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/vision/pod-codes/read', tags: ['vision'], summary: 'Take a full-size pod-ID still on each camera and read its dot codes (#224); slow on a Pi Zero' } })
+    .output(ReadOut)
+    .mutation(async ({ ctx }) => {
+      if (!ctx.podCodes.available) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'podvision isn\'t installed, so dot codes can\'t be read' })
+      const out = await ctx.podCodes.readAll()
+      ctx.events.emit({ kind: 'mutation', path: 'podCodes' })
+      return out
+    }),
+  confirmPodCode: publicProcedure
+    .meta({ openapi: { method: 'PUT', path: '/vision/pod-codes/{code}', tags: ['vision'], summary: 'Say which plant a dot code is (#224): confirms a guess or corrects it. Records and plans are left alone' } })
+    .input(z.object({ code: Code, plant: z.string().trim().min(1).max(80) }))
+    .output(CodePair)
+    .mutation(({ ctx, input }) => {
+      const pair = ctx.podCodes.confirm(input.code, input.plant, (ctx.now?.() ?? new Date()).toISOString())
+      ctx.events.emit({ kind: 'mutation', path: 'podCodes' })
+      return pair
+    }),
+  forgetPodCode: publicProcedure
+    .meta({ openapi: { method: 'DELETE', path: '/vision/pod-codes/{code}', tags: ['vision'], summary: 'Forget a confirmed dot code → plant pair (#224)' } })
+    .input(z.object({ code: Code }))
+    .output(z.object({ forgotten: z.boolean() }))
+    .mutation(({ ctx, input }) => {
+      const forgotten = ctx.store.podCodes.forget(input.code)
+      if (forgotten) ctx.events.emit({ kind: 'mutation', path: 'podCodes' })
+      return { forgotten }
     }),
   regions: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/vision/regions', tags: ['vision'], summary: 'Each pod\'s box on each camera\'s stills, as fractions of the frame: the measured defaults or the owner\'s calibration' } })

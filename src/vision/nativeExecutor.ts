@@ -55,8 +55,12 @@ export interface PodvisionModel { id: string, path: string }
 
 /** Run podvision once: the still on stdin, at nice 19, killed after `timeoutMs`. Rejects with what went wrong. */
 export function runPodvision(bin: string, bytes: Uint8Array, regions: PodRegions, models: PodvisionModel[], timeoutMs = PODVISION_TIMEOUT_MS): Promise<PodvisionOutput> {
+  return podvisionJson<PodvisionOutput>(bin, ['--pods', JSON.stringify(regions), ...models.flatMap(m => ['--model', `${m.id}=${m.path}`])], bytes, timeoutMs)
+}
+
+/** One run of podvision with `args`, the still on stdin, at nice 19, killed after `timeoutMs`; resolves with the JSON it prints. */
+export function podvisionJson<T>(bin: string, args: string[], bytes: Uint8Array, timeoutMs = PODVISION_TIMEOUT_MS): Promise<T> {
   return new Promise((resolve, reject) => {
-    const args = ['--pods', JSON.stringify(regions), ...models.flatMap(m => ['--model', `${m.id}=${m.path}`])]
     const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'] })
     if (child.pid !== undefined) {
       try {
@@ -70,12 +74,12 @@ export function runPodvision(bin: string, bytes: Uint8Array, regions: PodRegions
     let size = 0
     let err = ''
     let settled = false
-    const done = (e: Error | null, value?: PodvisionOutput) => {
+    const done = (e: Error | null, value?: T) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       if (e) reject(e)
-      else resolve(value as PodvisionOutput)
+      else resolve(value as T)
     }
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
@@ -96,7 +100,7 @@ export function runPodvision(bin: string, bytes: Uint8Array, regions: PodRegions
     child.on('close', (code, signal) => {
       if (code !== 0) return done(new Error(err.trim().split('\n').at(-1) || (signal ? `killed by ${signal}` : `exit ${code}`)))
       try {
-        done(null, JSON.parse(Buffer.concat(out).toString('utf8')) as PodvisionOutput)
+        done(null, JSON.parse(Buffer.concat(out).toString('utf8')) as T)
       }
       catch (e) {
         done(new Error(`printed something that isn't JSON: ${(e as Error).message}`))

@@ -1,5 +1,5 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowProtocolState, GrowStage, PlanRow, PlantProfile, Pod, PodLabel, PodLabelCursor, PodLabelValue, SavedSchedule, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowProtocolState, GrowStage, PlanRow, PlantProfile, Pod, PodCodePair, PodCodeRead, PodLabel, PodLabelCursor, PodLabelValue, SavedSchedule, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
 import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
@@ -28,6 +28,8 @@ export class MemoryStore implements Store {
   private nextAutomationId = 1
   private nextRunId = 1
   private readonly labelRows = new Map<string, PodLabel>()
+  private readonly codePairs = new Map<string, PodCodePair>()
+  private readonly codeReads = new Map<number, PodCodeRead>()
   private readonly tankRows: TankAction[] = []
   private nextTankId = 1
 
@@ -354,6 +356,25 @@ export class MemoryStore implements Store {
         m.set(l.captureId, c)
       }
       return [...m.values()].sort((a, b) => b.ts.localeCompare(a.ts) || a.captureId.localeCompare(b.captureId)).slice(0, limit)
+    },
+  }
+
+  podCodes = {
+    pairs: (): PodCodePair[] => [...this.codePairs.values()].sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0)).map(p => ({ ...p })),
+    pair: (code: string): PodCodePair | null => {
+      const p = this.codePairs.get(code)
+      return p ? { ...p } : null
+    },
+    confirm: (code: string, plant: string, ts: string): PodCodePair => {
+      const p = { code, plant, confirmedAt: ts }
+      this.codePairs.set(code, p)
+      return { ...p }
+    },
+    forget: (code: string): boolean => this.codePairs.delete(code),
+    reads: (): PodCodeRead[] => [...this.codeReads.values()].sort((a, b) => a.slot - b.slot).map(r => ({ ...r })),
+    setReads: (camera: 'upper' | 'lower', reads: PodCodeRead[]): void => {
+      for (const [slot, r] of this.codeReads) if (r.camera === camera) this.codeReads.delete(slot)
+      for (const r of reads) this.codeReads.set(r.slot, { ...r, camera })
     },
   }
 

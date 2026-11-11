@@ -405,6 +405,36 @@ for (const [name, make] of impls) {
       expect(store.podLabels.counts()).toMatchObject({ seeded: 1, growing: 0 })
     })
 
+    it('pod codes keep only confirmed pairs, and each camera\'s latest reads (#224)', () => {
+      store = make()
+      expect(store.podCodes.pairs()).toEqual([])
+      expect(store.podCodes.pair('oo||')).toBeNull()
+      expect(store.podCodes.confirm('oo||', 'Basil', 't1')).toEqual({ code: 'oo||', plant: 'Basil', confirmedAt: 't1' })
+      store.podCodes.confirm('o|hh', 'Thyme', 't1')
+      // A correction replaces the plant.
+      expect(store.podCodes.confirm('oo||', 'Green Bok Choy', 't2')).toEqual({ code: 'oo||', plant: 'Green Bok Choy', confirmedAt: 't2' })
+      expect(store.podCodes.pairs().map(p => [p.code, p.plant])).toEqual([['oo||', 'Green Bok Choy'], ['o|hh', 'Thyme']])
+      expect(store.podCodes.forget('o|hh')).toBe(true)
+      expect(store.podCodes.forget('o|hh')).toBe(false)
+      expect(store.podCodes.pair('oo||')?.plant).toBe('Green Bok Choy')
+
+      expect(store.podCodes.reads()).toEqual([])
+      store.podCodes.setReads('upper', [
+        { slot: 6, camera: 'upper', code: 'oo||', confidence: 1, ts: 'a' },
+        { slot: 2, camera: 'upper', code: null, confidence: 0.2, ts: 'a' },
+      ])
+      store.podCodes.setReads('lower', [{ slot: 16, camera: 'lower', code: 'oooo', confidence: 0.9, ts: 'b' }])
+      expect(store.podCodes.reads().map(r => [r.slot, r.code])).toEqual([[2, null], [6, 'oo||'], [16, 'oooo']])
+      // A new still replaces only its own camera's reads.
+      store.podCodes.setReads('upper', [{ slot: 1, camera: 'upper', code: 'ooh|', confidence: 0.84, ts: 'c' }])
+      expect(store.podCodes.reads()).toEqual([
+        { slot: 1, camera: 'upper', code: 'ooh|', confidence: 0.84, ts: 'c' },
+        { slot: 16, camera: 'lower', code: 'oooo', confidence: 0.9, ts: 'b' },
+      ])
+      store.podCodes.setReads('lower', [])
+      expect(store.podCodes.reads().map(r => r.slot)).toEqual([1])
+    })
+
     it('pod labels list in code-unit order, as SQLite compares text', () => {
       store = make()
       const at = (captureId: string, slot: number) =>

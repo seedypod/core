@@ -232,6 +232,22 @@ export const podLabels = sqliteTable('pod_labels', {
   index('pod_labels_ts').on(t.ts),
 ])
 
+/** Owner-confirmed yCube dot code → plant pairs (#224). Unconfirmed pairs are never stored. */
+export const podCodes = sqliteTable('pod_codes', {
+  code: text().primaryKey(),
+  plant: text().notNull(),
+  confirmedAt: text().notNull(),
+})
+
+/** The latest dot-code read of each pod, from its camera's last pod-ID still (#224). */
+export const podCodeReads = sqliteTable('pod_code_reads', {
+  slot: integer().primaryKey(),
+  camera: text({ enum: ['upper', 'lower'] }).notNull(),
+  code: text(),
+  confidence: real().notNull(),
+  ts: text().notNull(),
+})
+
 /** Autopilot rules (ADR-0020); the AST lives in JSON columns validated by zod at the API. */
 export const automations = sqliteTable('automations', {
   id: integer().primaryKey({ autoIncrement: true }),

@@ -149,6 +149,25 @@ response's `next` back as `cursor` for the next page). The `list_labels` MCP
 tool returns the same, and `list_analyses` the summary under `labels`.
 Labelling stays in the app: agents can read labels but not set or clear them.
 
+### Pod codes
+
+Under the photo, **Pod codes** lists the pods whose yCube dot code was read
+([Dot codes](#dot-codes), #224), and only those. **Read codes** takes a
+full-size pod-ID still on each camera and reads it. That's slow on a Pi Zero,
+and a camera whose still is dark, damaged or fails keeps its last reads. Each
+row shows what the pod reads as and the plant that code is:
+
+- With no plant confirmed for the code, it offers the pod record's plant as
+  a guess (`Basil?`). **Confirm** saves the pair.
+- **Correct** (or **Say which**, when the pod has no plant) saves the code
+  as another plant.
+- A confirmed code shows its plant with a tick.
+
+Only pairs the owner has confirmed are kept, and confirming or correcting one
+never changes a pod's record or a plan. Scripts use `GET /api/vision/pod-codes`,
+`POST /api/vision/pod-codes/read`, `PUT /api/vision/pod-codes/{code}` with
+`{"plant": "Basil"}`, and `DELETE /api/vision/pod-codes/{code}`.
+
 ## Export a dataset
 
 **Analysis → Export a dataset** downloads a tar for the last 7, 30 or 90 days,

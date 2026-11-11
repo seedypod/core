@@ -13,6 +13,7 @@ import type { DatabaseInspector } from '../db/inspect'
 import type { RestoreClient } from '../backup/restore'
 import type { UpdateClient } from '../update/client'
 import type { ModelRegistry } from '../vision/registry'
+import type { PodCodeService } from '../vision/podCodes'
 import type { HomeKitControl } from '../homekit/types'
 import type { BridgeStatus } from '../mqtt/bridge'
 import type { LoggingControl } from '../logging/policy'
@@ -23,6 +24,8 @@ export interface Context {
   store: Store
   captures: CaptureService
   analysis: AnalysisService
+  /** yCube dot codes (#224): pod-ID stills read by podvision, and the owner's code → plant pairs. */
+  podCodes: PodCodeService
   wifi: Wifi
   light: LightArbiter
   autopilot: AutopilotEngine

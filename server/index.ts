@@ -30,6 +30,7 @@ import { FsModelFiles, sha256 } from '../src/vision/modelFiles'
 import { learnedAnalyzers } from '../src/vision/podState'
 import { inlineExecutor } from '../src/vision/execute'
 import { createNativeExecutor, podvisionBinary } from '../src/vision/nativeExecutor'
+import { podvisionCodeReader } from '../src/vision/podCodes'
 import { ModelRegistry } from '../src/vision/registry'
 import { createWorkerExecutor } from '../src/vision/workerExecutor'
 import { createApp } from './app'
@@ -97,7 +98,7 @@ const homekit = new HomeKitService({ store, hal, events, version, dir: join(DATA
 const haBridge = superviseBridge(() => connectBridge({ store, hal, events, unitId: hal.snapshot().system?.unitId ?? process.env.HAL_UNIT_ID ?? 'sim', stills: camera => latestStill(store, mirror, camera) }), events)
 // hald's boot log survives the reboots the journal doesn't; world-readable, so core can read it.
 const bootLog = () => readFile(join(backupPaths(process.env, DATA_DIR).stateDir, 'boot-log'), 'utf8').catch(() => null)
-const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, update, bootLog, homekit, startServices: process.env.CI !== '1', analysisExecutor: native?.run ?? vision?.run, models, podvision: native && podvision ? { bin: podvision, lastError: native.lastError } : undefined, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
+const core = createCore({ hal, store, events, version, sink: mirror, mirror, backup, restore, update, bootLog, homekit, startServices: process.env.CI !== '1', analysisExecutor: native?.run ?? vision?.run, models, podvision: native && podvision ? { bin: podvision, lastError: native.lastError } : undefined, codeReader: podvision ? podvisionCodeReader(podvision) : null, wifi, clockTrusted: () => nodeClockTrusted(), flashSource: nodeFlashSource(), database, logging, disk: nodeDiskUsage(DATA_DIR), bridge: () => bridgeStatus(store.settings.get().mqttUrl, haBridge.bridge(), haBridge.error()), host: { hostname: hostname(), arch: arch() } })
 
 const { app, injectWebSocket } = createApp({ ctx: core.ctx, staticRoot: './web/dist' })
 
