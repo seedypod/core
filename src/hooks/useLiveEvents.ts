@@ -36,7 +36,8 @@ const TOUCHES = new Map<string, readonly Area[]>([
   // Pod labels for training: the Analysis tagger and the export's counts.
   ['labels', ['vision', 'datasets']],
   ['network', ['network', 'system']],
-  ['plans', ['planner']],
+  // The active plan is what pods out of order (#224) are checked against.
+  ['plans', ['planner', 'vision']],
   ['plants', ['plants', 'grow']],
   // yCube dot codes (#224): Label pods' code list.
   ['podCodes', ['vision']],

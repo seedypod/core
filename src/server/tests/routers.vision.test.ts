@@ -273,3 +273,53 @@ describe('pod codes (#224)', () => {
     await expect(c.vision.readPodCodes()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
   })
 })
+
+describe('pods out of order (#224)', () => {
+  function swapped() {
+    const core = createCore({ hal: new SimHal({ tickMs: 0 }), store: new MemoryStore(), version: 'test', now: () => new Date('2026-11-11T21:00:00.000Z') })
+    const { store } = core.ctx
+    // Basil and Thyme were swapped by hand: the codes say so, the records and the plan don't.
+    store.pods.update(2, { plant: 'Thyme', plantedAt: '2026-11-01', status: 'growing', notes: 'thyme notes' }, 't')
+    store.pods.update(7, { plant: 'Basil', plantedAt: '2026-11-05', status: 'seeded', notes: 'basil notes' }, 't')
+    store.podCodes.confirm('oo||', 'Basil', 't')
+    store.podCodes.confirm('o|hh', 'Thyme', 't')
+    store.podCodes.setReads('upper', [{ slot: 2, camera: 'upper', code: 'oo||', confidence: 0.9, ts: 't' }, { slot: 7, camera: 'upper', code: 'o|hh', confidence: 0.9, ts: 't' }, { slot: 9, camera: 'upper', code: null, confidence: 0.1, ts: 't' }])
+    const events: string[] = []
+    core.ctx.events.subscribe(e => void (e.kind === 'mutation' && events.push(e.path)))
+    return { store, events, c: createCallerFactory(appRouter)(core.ctx) }
+  }
+
+  it('says which pods and both fixes, and changes nothing by looking', async () => {
+    const { c, store } = swapped()
+    const before = store.pods.list()
+    const o = await c.vision.podOrder()
+    expect(o).toMatchObject({
+      slots: [{ slot: 2, tower: 'Basil', record: 'Thyme', plan: null }, { slot: 7, tower: 'Thyme', record: 'Basil', plan: null }],
+      recordSwaps: [[2, 7]],
+      moves: [],
+      plan: null,
+    })
+    expect(store.pods.list()).toEqual(before)
+  })
+
+  it('updates the records to match the tower only when asked, keeping each plant\'s sowing date and status', async () => {
+    const { c, store, events } = swapped()
+    const o = await c.vision.podOrder()
+    expect(await c.vision.fixPodOrder({ key: o?.key as string })).toEqual({ swapped: [[2, 7]], unresolved: [] })
+    const pods = store.pods.list()
+    expect(pods[1]).toMatchObject({ slot: 2, plant: 'Basil', plantedAt: '2026-11-05', status: 'seeded', notes: 'basil notes' })
+    expect(pods[6]).toMatchObject({ slot: 7, plant: 'Thyme', plantedAt: '2026-11-01', status: 'growing', notes: 'thyme notes' })
+    expect(events).toContain('pods')
+    expect(await c.vision.podOrder()).toBeNull()
+    // Nothing left to fix, or a fix for something no longer shown, is refused.
+    await expect(c.vision.fixPodOrder({ key: o?.key as string })).rejects.toMatchObject({ code: 'CONFLICT' })
+  })
+
+  it('refuses a fix for a mismatch that changed since it was shown', async () => {
+    const { c, store } = swapped()
+    const o = await c.vision.podOrder()
+    store.pods.update(7, { plant: 'Mint' }, 't')
+    await expect(c.vision.fixPodOrder({ key: o?.key as string })).rejects.toMatchObject({ code: 'CONFLICT' })
+    expect(store.pods.list()[1]?.plant).toBe('Thyme')
+  })
+})

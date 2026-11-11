@@ -107,7 +107,7 @@ export function createCore(o: CoreOptions): Core {
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
-  const podCodes = new PodCodeService({ store: o.store, captures, reader: o.codeReader ?? null, log: m => console.warn(m) })
+  const podCodes = new PodCodeService({ store: o.store, captures, reader: o.codeReader ?? null, log: m => console.warn(m), onRead: () => events.emit({ kind: 'mutation', path: 'podCodes' }) })
   const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, podCodes, mirror: o.mirror, backup: o.backup, restore: o.restore, update: o.update, bootLog: o.bootLog, homekit: o.homekit, models: o.models, podvision: o.podvision, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
@@ -128,6 +128,7 @@ export function createCore(o: CoreOptions): Core {
     growTimer = setInterval(() => grow.tick(), 15 * 60_000)
     care.start()
     captures.start(o.store.settings.get().captureIntervalMin)
+    podCodes.start(() => o.now?.() ?? new Date(), () => o.store.settings.get().timezone)
     events.subscribe((e) => {
       if (e.kind === 'mutation' && e.path === 'settings') captures.start(o.store.settings.get().captureIntervalMin)
     })
@@ -147,6 +148,7 @@ export function createCore(o: CoreOptions): Core {
       autopilot.stop()
       light.close()
       captures.stop()
+      podCodes.stop()
       flash.stop()
       o.backup?.stop()
       await analysis.idle()

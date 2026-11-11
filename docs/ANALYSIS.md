@@ -163,8 +163,33 @@ row shows what the pod reads as and the plant that code is:
   as another plant.
 - A confirmed code shows its plant with a tick.
 
+The unit also reads them once a day, during the 12:00 hour local time, when
+the grow light is most likely on.
+
 Only pairs the owner has confirmed are kept, and confirming or correcting one
-never changes a pod's record or a plan. Scripts use `GET /api/vision/pod-codes`,
+never changes a pod's record or a plan.
+
+### Pods out of order
+
+The owner moves yCubes by hand, so the tower can drift from the pod records
+and from the plan. A pod whose code is confirmed says what it holds. When that
+disagrees with its record or the plan applied last, **Needs you** shows one
+line, *Pods out of order*. It links to the list above Pod codes, which names
+each pod and offers two fixes:
+
+- **Update the records to match the tower**: swaps of pod records, the same
+  as moving pods on Grow, so each plant keeps its sowing date, status and
+  notes. Nothing changes until **Update records** and then **Yes, update the
+  records**. If what's out of order changed in between, it refuses and shows
+  the list again.
+- **Move the pods to match the plan**: the swaps to make on the tower by
+  hand, for example *swap pod 2 ↔ pod 7*. Read the codes again after.
+
+Only pods with a confirmed code take part. An unread pod, or one whose code
+has no confirmed plant, is never moved or corrected, and a pod that would need
+one is listed as one neither fix can settle. Scripts use
+`GET /api/vision/pod-order` and `POST /api/vision/pod-order/fix` with the
+`key` it returned. Scripts use `GET /api/vision/pod-codes`,
 `POST /api/vision/pod-codes/read`, `PUT /api/vision/pod-codes/{code}` with
 `{"plant": "Basil"}`, and `DELETE /api/vision/pod-codes/{code}`.
 
