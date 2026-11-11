@@ -81,3 +81,43 @@ export function tweenAt(tweenStart: number | null, now: number, reduced = false)
   if (tweenStart === null || reduced) return 1
   return easeOutCubic((now - tweenStart) / TWEEN_MS)
 }
+
+/**
+ * A chart turned by hand: dragging sideways spins it about its vertical axis,
+ * a mouse dragging up or down tips it a little, and on release it coasts to a
+ * stop (not with reduced motion). It starts, and a double click returns it,
+ * at the camera's own view.
+ */
+export interface Spin { y: number, x: number, vy: number, dragging: boolean, homing: boolean }
+
+export const SPIN_PER_PX = 0.01
+export const TIP_PER_PX = 0.004
+export const MAX_TIP = 0.15
+/** Each frame the coast keeps this much of its speed. */
+export const COAST = 0.92
+
+export const restingSpin = (): Spin => ({ y: 0, x: 0, vy: 0, dragging: false, homing: false })
+
+/** A drag of `dx`, `dy` px; `tip` only for a mouse, since a touch's vertical swipe scrolls the page. */
+export function dragSpin(s: Spin, dx: number, dy: number, tip: boolean): Spin {
+  const turn = dx * SPIN_PER_PX
+  return { ...s, y: s.y + turn, x: tip ? Math.max(-MAX_TIP, Math.min(MAX_TIP, s.x + dy * TIP_PER_PX)) : s.x, vy: lerp(s.vy, turn, 0.6), dragging: true, homing: false }
+}
+
+/** Letting go: it coasts on at the drag's speed, or stops dead with reduced motion. */
+export const releaseSpin = (s: Spin, reduced: boolean): Spin => ({ ...s, dragging: false, vy: reduced ? 0 : s.vy })
+
+/** One frame on from `s`: coasting slows, homing eases back to the camera's view. */
+export function stepSpin(s: Spin, reduced: boolean): Spin {
+  if (s.dragging) return s
+  if (s.homing) {
+    if (reduced || (Math.abs(s.y) < 1e-3 && Math.abs(s.x) < 1e-3)) return restingSpin()
+    return { ...s, y: s.y * 0.82, x: s.x * 0.82, vy: 0 }
+  }
+  if (s.vy === 0) return s
+  const vy = Math.abs(s.vy * COAST) < 5e-4 ? 0 : s.vy * COAST
+  return { ...s, y: s.y + s.vy, vy }
+}
+
+/** Whether the spin still moves without a hand on it. */
+export const spinMoving = (s: Spin) => s.dragging || s.homing || s.vy !== 0

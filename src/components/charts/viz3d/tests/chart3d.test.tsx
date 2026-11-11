@@ -18,7 +18,6 @@ vi.mock('../scenes', () => {
     return {
       setState: (s: string) => fake.calls.push(`state:${s}`),
       setData: (d: { currentLabel?: string }) => fake.calls.push(`data:${d.currentLabel ?? ''}`),
-      setParallax: (on: boolean) => fake.calls.push(`parallax:${on}`),
       dispose: () => {
         fake.calls.push('dispose')
         canvas.remove()
@@ -28,7 +27,7 @@ vi.mock('../scenes', () => {
   return { createTodayViz: make('today'), createTankViz: make('tank'), createLightViz: make('light'), createPodsViz: make('pods'), createSensorsViz: make('sensors') }
 })
 
-const tank = (label: string): TankData => ({ levels: [0.5, 0.4], topUps: [], cutoff: null, current: 0.4, ticks: [], currentLabel: label, cutoffLabel: null })
+const tank = (label: string): TankData => ({ levels: [0.5, 0.4], topUps: [], cutoff: null, current: 0.4, ticks: [], currentLabel: label, cutoffLabel: null, pumping: false })
 const flush = () => act(async () => {
   await new Promise(r => setTimeout(r, 0))
 })
@@ -63,14 +62,14 @@ describe('Chart3D with WebGL', () => {
     expect(box.style.aspectRatio).toBe('2 / 1')
     expect(box.getAttribute('aria-busy')).toBe('true')
     await flush()
-    expect(fake.calls).toEqual(['tank:create', 'parallax:true', 'state:loading'])
+    expect(fake.calls).toEqual(['tank:create', 'state:loading'])
     rerender(<Chart3D kind="tank" data={tank('40%')} status="ready" label="Tank level" fallback={<p>flat</p>} />)
     // A fresh object with the same contents is not new data.
     rerender(<Chart3D kind="tank" data={tank('40%')} status="ready" label="Tank level" fallback={<p>flat</p>} />)
     rerender(<Chart3D kind="tank" data={tank('41%')} status="ready" label="Tank level" fallback={<p>flat</p>} />)
     rerender(<Chart3D kind="tank" data={null} status="loading" label="Tank level" fallback={<p>flat</p>} />)
-    rerender(<Chart3D kind="tank" data={tank('41%')} status="ready" label="Tank level" fallback={<p>flat</p>} parallax={false} />)
-    expect(fake.calls.slice(3)).toEqual(['data:40%', 'data:41%', 'state:loading', 'data:41%', 'parallax:false'])
+    rerender(<Chart3D kind="tank" data={tank('41%')} status="ready" label="Tank level" fallback={<p>flat</p>} />)
+    expect(fake.calls.slice(2)).toEqual(['data:40%', 'data:41%', 'state:loading', 'data:41%'])
     unmount()
     expect(fake.calls.at(-1)).toBe('dispose')
   })

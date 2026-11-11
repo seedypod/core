@@ -105,6 +105,8 @@ describe('tankData', () => {
     expect(t.current).toBeCloseTo(0.416)
     expect(t.currentLabel).toBe('42%')
     expect(t.cutoffLabel).toBe('cutoff 25%')
+    expect(t.pumping).toBe(false)
+    expect(tankData({ levels: [1, 2], topUps: [], cutoffPct: null, currentPct: null, ticks: [], pumping: true }).pumping).toBe(true)
   })
 
   it('falls back to the last level for now, and says so when there is none', () => {

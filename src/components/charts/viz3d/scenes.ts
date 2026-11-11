@@ -36,7 +36,6 @@ function viz<D>(base: Base, apply: (data: D) => void): Viz<D> {
       apply(data)
       base.dataArrived()
     },
-    setParallax: base.setParallax,
     dispose: base.dispose,
   }
 }
@@ -93,7 +92,7 @@ export function createTodayViz(container: HTMLElement, env?: Env): Viz<TodayData
   }
 
   const c = new T.Color()
-  function draw(f: Frame) {
+  function draw(f: Frame): boolean {
     ribbons.forEach(r => r.update(f))
     const shown = f.state === 'ready' && data !== null
     const appear = shown ? clamp01(f.p * 1.5) : 0
@@ -120,13 +119,13 @@ export function createTodayViz(container: HTMLElement, env?: Env): Viz<TodayData
       const x = x0 + e.at * W
       m.mesh.position.set(x, 0.13, EVENTS_Z)
       m.mesh.scale.setScalar(Math.max(0.001, k))
-      m.mesh.rotation.y = f.t * 0.8
       const mat = m.mesh.material as THREE.MeshBasicMaterial
       mat.color.copy(inkMix(base, TONE_INK[e.tone], k, c))
       mat.opacity = e.label ? 1 : 0.55
       m.label.setText(e.label)
       m.label.sprite.position.set(x, 0.3, EVENTS_Z)
     })
+    return false
   }
 
   return viz(base, (d: TodayData) => {
@@ -184,9 +183,15 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     d.visible = false
     return d
   })
+  // While the pump runs, a few bubbles rise through the water and its surface rocks: a cue, cheap to draw.
+  const bubbles = Array.from({ length: 7 }, (_, i) => {
+    const b = base.dot(0.045, 'fg1', 0.7)
+    b.visible = false
+    return { mesh: b, a: (i / 7) * Math.PI * 2, r: R * (0.25 + 0.5 * ((i * 37) % 7) / 7), speed: 0.45 + ((i * 53) % 7) / 14 }
+  })
 
   const c = new T.Color()
-  function draw(f: Frame) {
+  function draw(f: Frame): boolean {
     level.update(f)
     const shown = f.state === 'ready' && data !== null
     // The cylinder fills last, as the ribbon reaches it.
@@ -197,8 +202,17 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     water.position.set(CX, h / 2, 0)
     ;(water.material as THREE.MeshBasicMaterial).color.copy(inkMix(base, 'tank', f.state === 'error' ? 0 : e, c))
     ;(water.material as THREE.MeshBasicMaterial).opacity = f.state === 'error' ? 0.25 : 0.5
-    surface.position.set(CX, h, 0)
+    const pumping = shown && !!data?.pumping
+    const rock = pumping && !f.reduced ? 0.025 * Math.sin(f.t * 5) : 0
+    surface.position.set(CX, h + rock, 0)
+    surface.rotation.z = rock * 0.6
     surface.visible = shown
+    for (const b of bubbles) {
+      b.mesh.visible = pumping && h > 0.15
+      if (!b.mesh.visible) continue
+      const rise = f.reduced ? 0.5 : (f.t * b.speed + b.a) % 1
+      b.mesh.position.set(CX + Math.cos(b.a + f.t * 0.3) * b.r, 0.05 + rise * (h - 0.1), Math.sin(b.a + f.t * 0.3) * b.r)
+    }
     const cut = shown && data?.cutoff != null ? data.cutoff * H : null
     cutRing.visible = cut !== null
     cutGuide.visible = cut !== null
@@ -218,6 +232,7 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
       d.position.set(x0 + at * W, level.yAt(at), 0.03)
       d.scale.setScalar(Math.max(0.001, pointEase(f.p, at * 120, 120)))
     })
+    return pumping && !f.reduced
   }
 
   return viz(base, (d: TankData) => {
@@ -268,7 +283,7 @@ export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData
   const nowLabel = base.label('', { ink: 'fg1', size: 0.22, align: 'center', valign: 'bottom', priority: 4 })
   base.root.add(nowLabel.sprite)
 
-  function draw(f: Frame) {
+  function draw(f: Frame): boolean {
     actual.update(f)
     const shown = f.state === 'ready' && data !== null
     const appear = shown ? clamp01(f.p * 1.5) : 0
@@ -310,6 +325,8 @@ export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData
       stem.scale.set(1, Math.max(0.001, y), 1)
       nowLabel.sprite.position.set(x, y + 0.16, 0.03)
     }
+    // The now dot keeps pulsing.
+    return shown && !f.reduced
   }
 
   return viz(base, (d: LightData) => {
@@ -363,10 +380,9 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
   })
 
   const c = new T.Color()
-  function draw(f: Frame) {
+  function draw(f: Frame): boolean {
     const shown = f.state === 'ready' && data !== null
     towers.forEach((tw, t) => {
-      tw.group.rotation.y = f.reduced ? 0 : f.t * 0.22
       const cover = data?.towers[t]?.pods ?? []
       tw.label.setVisible(true)
       if (data?.towers[t]) tw.label.setText(data.towers[t].label)
@@ -384,6 +400,7 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
         mat.opacity = f.state === 'error' ? 0.35 : f.state === 'empty' ? 0.5 : 1
       })
     })
+    return false
   }
 
   return viz(base, (d: PodsData) => {
@@ -393,7 +410,7 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
 
 // ── Sensors ──────────────────────────────────────────────────────────────
 
-export const SENSORS_SPEC: BaseSpec = { need: 11, camera: { position: [0, 8.2, 6.2], target: [0, 0.15, -1.9] }, bounds: [[-5, -0.35, -4.15], [5, 1, 0.45]] }
+export const SENSORS_SPEC: BaseSpec = { need: 11, camera: { position: [0, 8.2, 6.2], target: [0, 0.15, -1.9] }, bounds: [[-5.3, -0.45, -4.3], [5.3, 1.3, 0.7]] }
 
 const GROUP_INK = { environment: 'cream', water: 'blue', pump: 'green' } as const
 
@@ -436,7 +453,7 @@ export function createSensorsViz(container: HTMLElement, env?: Env): Viz<Sensors
   }
   layout(ROWS)
 
-  function draw(f: Frame) {
+  function draw(f: Frame): boolean {
     const n = data?.series.length || ROWS
     rows.forEach((r, k) => {
       if (k >= n) return
@@ -445,6 +462,7 @@ export function createSensorsViz(container: HTMLElement, env?: Env): Viz<Sensors
       r.now.setVisible(shown)
       if (shown) r.now.sprite.position.set(x0 + W, r.ridge.yAt(1) + 0.05, zOf(k, n))
     })
+    return false
   }
 
   return viz(base, (d: SensorsData) => {

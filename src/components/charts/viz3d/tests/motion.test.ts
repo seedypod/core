@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clamp01, easeOutCubic, fitScale, initialPhase, labelHeight, LOAD_MS, nextPhase, pointEase, progressAt, pulse, tweenAt, TWEEN_MS, visibleSize, waveY } from '../motion'
+import { clamp01, dragSpin, easeOutCubic, fitScale, initialPhase, labelHeight, LOAD_MS, MAX_TIP, nextPhase, pointEase, progressAt, pulse, releaseSpin, restingSpin, SPIN_PER_PX, spinMoving, stepSpin, TIP_PER_PX, tweenAt, TWEEN_MS, visibleSize, waveY, type Spin } from '../motion'
 
 describe('easing and progress', () => {
   it('clamps and eases out', () => {
@@ -91,5 +91,43 @@ describe('phases', () => {
     expect(nextPhase(initialPhase(), { kind: 'state', state: 'empty' }, 200)).toEqual({ state: 'empty', readyAt: null, tweenAt: null })
     // Data after an error sweeps in afresh.
     expect(nextPhase({ state: 'error', readyAt: 100, tweenAt: null }, { kind: 'data' }, 300)).toEqual({ state: 'ready', readyAt: 300, tweenAt: null })
+  })
+})
+
+describe('spin', () => {
+  it('turns with a sideways drag, tips a little with a mouse only, and clamps the tip', () => {
+    let s = restingSpin()
+    s = dragSpin(s, 50, 20, true)
+    expect(s.y).toBeCloseTo(50 * SPIN_PER_PX)
+    expect(s.x).toBeCloseTo(20 * TIP_PER_PX)
+    expect(s.dragging).toBe(true)
+    s = dragSpin(s, 0, 1000, true)
+    expect(s.x).toBe(MAX_TIP)
+    expect(dragSpin(restingSpin(), 10, 300, false).x).toBe(0)
+  })
+
+  it('coasts on after release and slows to a stop, or stops dead with reduced motion', () => {
+    let s = releaseSpin(dragSpin(restingSpin(), 40, 0, false), false)
+    expect(s.dragging).toBe(false)
+    const start = s.y
+    s = stepSpin(s, false)
+    expect(s.y).toBeGreaterThan(start)
+    for (let i = 0; i < 200 && spinMoving(s); i++) s = stepSpin(s, false)
+    expect(spinMoving(s)).toBe(false)
+    expect(s.vy).toBe(0)
+    expect(releaseSpin(dragSpin(restingSpin(), 40, 0, false), true).vy).toBe(0)
+    // Held, it doesn't coast.
+    const held = dragSpin(restingSpin(), 40, 0, false)
+    expect(stepSpin(held, false)).toBe(held)
+    expect(stepSpin(restingSpin(), false)).toEqual(restingSpin())
+  })
+
+  it('eases home to the camera\'s view, or snaps there with reduced motion', () => {
+    let s: Spin = { ...dragSpin(restingSpin(), 100, 20, true), dragging: false, vy: 0, homing: true }
+    s = stepSpin(s, false)
+    expect(Math.abs(s.y)).toBeLessThan(1)
+    for (let i = 0; i < 100 && spinMoving(s); i++) s = stepSpin(s, false)
+    expect(s).toEqual(restingSpin())
+    expect(stepSpin({ ...s, y: 2, homing: true }, true)).toEqual(restingSpin())
   })
 })

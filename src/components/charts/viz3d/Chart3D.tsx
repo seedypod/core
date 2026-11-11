@@ -2,7 +2,8 @@
  * A 3D chart in a card (the five in ./scenes): made on mount, shown loading
  * until its request settles, handed its data on success and freed on unmount.
  * The box keeps the chart's aspect ratio from the first paint, so loading,
- * data, empty and error all sit in the same space. Without WebGL, or if the
+ * data, empty and error all sit in the same space. Drag it sideways to spin
+ * it; a double click puts it back. Without WebGL, or if the
  * context can't be made or is lost, `fallback` (the flat chart) stands in.
  */
 import { RefreshCw } from 'lucide-react'
@@ -38,7 +39,7 @@ export function staleSince(queries: ReadonlyArray<{ data?: unknown, error?: unkn
   return stale.length ? Math.min(...stale.map(q => q.dataUpdatedAt as number)) : null
 }
 
-export function Chart3D<K extends VizKind>({ kind, data, status, label, message, fallback, onUnavailable, parallax = true, className }: {
+export function Chart3D<K extends VizKind>({ kind, data, status, label, message, fallback, onUnavailable, className }: {
   kind: K
   data: VizData[K] | null
   status: VizState
@@ -48,16 +49,15 @@ export function Chart3D<K extends VizKind>({ kind, data, status, label, message,
   message?: string
   fallback: ReactNode
   onUnavailable?: () => void
-  parallax?: boolean
   className?: string
 }) {
   const host = useRef<HTMLDivElement>(null)
   const viz = useRef<Viz<VizData[K]> | null>(null)
   const [failed, setFailed] = useState(() => !hasWebGL())
   const shown = useRef<{ status: VizState | null, key: string }>({ status: null, key: '' })
-  const latest = useRef({ data, status, parallax })
+  const latest = useRef({ data, status })
   useEffect(() => {
-    latest.current = { data, status, parallax }
+    latest.current = { data, status }
   })
 
   const apply = (v: Viz<VizData[K]>) => {
@@ -94,7 +94,6 @@ export function Chart3D<K extends VizKind>({ kind, data, status, label, message,
       const v = (mod[FACTORY[kind]] as (el: HTMLElement) => Viz<VizData[K]>)(el)
       viz.current = v
       shown.current = { status: null, key: '' }
-      v.setParallax(latest.current.parallax)
       apply(v)
     }).catch(() => {
       if (alive) setFailed(true)
@@ -112,10 +111,6 @@ export function Chart3D<K extends VizKind>({ kind, data, status, label, message,
   useEffect(() => {
     if (viz.current) apply(viz.current)
   })
-
-  useEffect(() => {
-    viz.current?.setParallax(parallax)
-  }, [parallax])
 
   if (failed) return <>{fallback}</>
   const note = status === 'empty' || status === 'error' ? message : undefined

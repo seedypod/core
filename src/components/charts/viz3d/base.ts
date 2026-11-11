@@ -1,14 +1,14 @@
 /**
  * The shared base under every 3D chart: a transparent renderer filling its
  * card, a fixed perspective camera, the scene fitted to the card's width, a
- * loop that runs only while the chart is on screen, pointer parallax with an
- * idle sway, theme colours from the app's tokens, canvas-texture labels kept
+ * loop that runs only while something on screen moves, a drag that spins the
+ * chart (and a double click that puts it back), theme colours from the app's tokens, canvas-texture labels kept
  * at least 11 px tall, and the building blocks (ribbon, line, floor grid,
  * ring, dot) the five charts are made of. Unlit materials only: no lights, no
  * shadows. Loaded with `import()` so three.js stays in its own chunk.
  */
 import * as THREE from 'three'
-import { clamp01, initialPhase, lerp, nextPhase, progressAt, tweenAt, visibleSize, waveY, fitScale, labelHeight, pointEase, type Phase, type VizState } from './motion'
+import { clamp01, dragSpin, initialPhase, lerp, nextPhase, progressAt, releaseSpin, restingSpin, spinMoving, stepSpin, tweenAt, visibleSize, waveY, fitScale, labelHeight, pointEase, type Phase, type Spin, type VizState } from './motion'
 import { resampleArray, type Tone } from './shape'
 
 /** Every factory returns this. */
@@ -16,7 +16,6 @@ export interface Viz<D> {
   setState: (s: VizState) => void
   /** Stores the data, then shows it: the sweep on first data, a tween on a refresh. */
   setData: (data: D) => void
-  setParallax: (on: boolean) => void
   /** Cancels the loop, disconnects observers and frees the GL context. */
   dispose: () => void
 }
@@ -62,13 +61,11 @@ export interface BaseSpec {
   /** Scene width in world units that must always be visible. */
   need: number
   camera: { position: [number, number, number], target: [number, number, number] }
-  /** The box the chart and its labels fill, so it can be kept in frame at the parallax's furthest tilt. */
+  /** The box the chart and its labels fill, so it stays in frame however it's turned. */
   bounds: [[number, number, number], [number, number, number]]
 }
 
-/** The furthest the pointer and the sway together turn a chart (radians). */
-const MAX_TILT = { x: 0.09 + 0.015, y: 0.25 + 0.05 }
-/** How much of the canvas the tilted bounds may reach, in device coordinates. */
+/** How much of the canvas the turned bounds may reach, in device coordinates. */
 const FRAME = 0.97
 
 /** For tests: a stand-in renderer and clock. */
@@ -120,12 +117,14 @@ export interface Label {
 
 export type Base = ReturnType<typeof createBase>
 
-export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame: Frame) => void, env: Env = {}) {
+/** `draw` returns true while the chart itself still moves (a pulse, a flow), so the loop keeps going. */
+export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame: Frame) => boolean | undefined, env: Env = {}) {
   const now = env.now ?? (() => performance.now())
   const renderer = env.renderer ? env.renderer() : new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' })
   const canvas = renderer.domElement
   canvas.setAttribute('aria-hidden', 'true')
-  Object.assign(canvas.style, { display: 'block', width: '100%', height: '100%', position: 'absolute', inset: '0' })
+  // pan-y: a vertical swipe still scrolls the page; only a sideways drag turns the chart.
+  Object.assign(canvas.style, { display: 'block', width: '100%', height: '100%', position: 'absolute', inset: '0', touchAction: 'pan-y', cursor: 'grab' })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.setClearColor(0x000000, 0)
 
@@ -146,15 +145,15 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
   const born = now()
   let phase: Phase = initialPhase()
   let frozenT = 0
-  let parallax = !reduced
-  const tilt = { x: 0, y: 0, tx: 0, ty: 0 }
+  let spin: Spin = restingSpin()
+  let wants = false
   let visible = typeof IntersectionObserver === 'undefined'
   let dirty = true
   let raf = 0
   let disposed = false
   let lastP = -1
   let inkVersion = 0
-  const size = { width: 0, height: 0, scale: 1 }
+  const size = { width: 0, height: 0, scale: 1, fit: 1 }
 
   // ── Materials that follow the theme ────────────────────────────────────
   const tinted: Array<{ material: THREE.Material & { color: THREE.Color }, ink: Ink }> = []
@@ -317,34 +316,36 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     camera.aspect = width / height
     camera.updateProjectionMatrix()
     const vis = visibleSize(FOV, camera.aspect, camera.position.distanceTo(target))
-    size.scale = tiltFit(fitScale(vis.width, spec.need))
-    pivot.scale.setScalar(size.scale)
-    pivot.updateMatrixWorld(true)
-    for (const l of labels) scaleLabel(l)
+    size.fit = fitScale(vis.width, spec.need)
+    fitted = ''
   }
 
   const corner = new THREE.Vector3()
   const turn = new THREE.Euler()
-  /** Shrinks `s` until the bounds' corners stay in frame at every extreme tilt (only ever shrinks, as `need` does). */
-  function tiltFit(s: number): number {
-    if (!parallax) return s
+  let fitted = ''
+  /** The need-based scale, shrunk while the chart is turned so the bounds' corners stay in frame. */
+  function turnedFit(s: number, rx: number, ry: number): number {
     camera.updateMatrixWorld()
+    turn.set(rx, ry, 0)
     const [lo, hi] = spec.bounds
     for (let pass = 0; pass < 4; pass++) {
       let worst = 0
-      for (const tx of [-MAX_TILT.x, MAX_TILT.x]) {
-        for (const ty of [-MAX_TILT.y, MAX_TILT.y]) {
-          turn.set(tx, ty, 0)
-          for (let k = 0; k < 8; k++) {
-            corner.set(k & 1 ? hi[0] : lo[0], k & 2 ? hi[1] : lo[1], k & 4 ? hi[2] : lo[2]).sub(target).multiplyScalar(s).applyEuler(turn).add(target).project(camera)
-            worst = Math.max(worst, Math.abs(corner.x), Math.abs(corner.y))
-          }
-        }
+      for (let k = 0; k < 8; k++) {
+        corner.set(k & 1 ? hi[0] : lo[0], k & 2 ? hi[1] : lo[1], k & 4 ? hi[2] : lo[2]).sub(target).multiplyScalar(s).applyEuler(turn).add(target).project(camera)
+        worst = Math.max(worst, Math.abs(corner.x), Math.abs(corner.y))
       }
       if (worst <= FRAME) break
       s *= FRAME / worst
     }
     return s
+  }
+  function place() {
+    const key = `${size.fit}:${spin.x}:${spin.y}`
+    if (key === fitted) return
+    fitted = key
+    pivot.rotation.set(spin.x, spin.y, 0)
+    size.scale = turnedFit(size.fit, spin.x, spin.y)
+    pivot.scale.setScalar(size.scale)
   }
 
   function frame() {
@@ -359,13 +360,10 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     if (phase.state !== 'error') frozenT = t
     const p = phase.state === 'ready' ? progressAt(phase.readyAt, time, reduced) : 0
     const tween = tweenAt(phase.tweenAt, time, reduced)
-    // Pointer tilt eases 6% a frame; a slow sway keeps a still chart alive.
-    const sway = parallax ? { x: Math.sin(t * 0.23) * 0.015, y: Math.sin(t * 0.31) * 0.05 } : { x: 0, y: 0 }
-    tilt.x += ((parallax ? tilt.tx : 0) - tilt.x) * 0.06
-    tilt.y += ((parallax ? tilt.ty : 0) - tilt.y) * 0.06
-    pivot.rotation.set(tilt.x + sway.x, tilt.y + sway.y, 0)
-    draw({ t, state: phase.state, p, tween, reduced, inkVersion })
-    // Labels move with their data and the tilt; each is sized for where it stands this frame, then the crowded ones give way.
+    spin = stepSpin(spin, reduced)
+    place()
+    wants = draw({ t, state: phase.state, p, tween, reduced, inkVersion }) === true
+    // Labels move with their data and the turn; each is sized for where it stands this frame, then the crowded ones give way.
     pivot.updateMatrixWorld(true)
     for (const l of labels) scaleLabel(l)
     declutter()
@@ -374,11 +372,16 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     if (animating(time)) schedule()
   }
 
-  /** Whether another frame changes anything: always with motion, and with reduced motion only while something is dirty. */
+  /**
+   * Whether another frame changes anything: the loading wave, the sweep, a
+   * refresh's tween, a spin still moving, or the chart's own motion. A still
+   * chart draws nothing until something changes.
+   */
   function animating(time: number): boolean {
-    if (!visible) return false
-    if (!reduced) return true
-    return dirty || (phase.state === 'ready' && (lastP < 1 || tweenAt(phase.tweenAt, time, reduced) < 1))
+    if (!visible || disposed) return false
+    if (dirty || spinMoving(spin) || wants) return true
+    if (phase.state === 'loading') return !reduced
+    return phase.state === 'ready' && (lastP < 1 || tweenAt(phase.tweenAt, time, reduced) < 1)
   }
 
   function schedule() {
@@ -410,21 +413,38 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
       })
   intersection?.observe(container)
 
-  const onPointer = (e: PointerEvent) => {
-    if (!parallax || e.pointerType === 'touch') return
-    const r = container.getBoundingClientRect()
-    if (!r.width || !r.height) return
-    const nx = clamp01((e.clientX - r.left) / r.width) * 2 - 1
-    const ny = clamp01((e.clientY - r.top) / r.height) * 2 - 1
-    tilt.ty = nx * 0.25
-    tilt.tx = ny * 0.09
+  // Drag to spin. A touch that turns into a vertical scroll is cancelled by the browser (pan-y), which ends the drag.
+  let grab: { id: number, x: number, y: number, tip: boolean } | null = null
+  const onDown = (e: PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    grab = { id: e.pointerId, x: e.clientX, y: e.clientY, tip: e.pointerType === 'mouse' }
+    spin = { ...spin, vy: 0, homing: false }
+    canvas.setPointerCapture?.(e.pointerId)
+    canvas.style.cursor = 'grabbing'
   }
-  const onLeave = () => {
-    tilt.tx = 0
-    tilt.ty = 0
+  const onMove = (e: PointerEvent) => {
+    if (!grab || e.pointerId !== grab.id) return
+    spin = dragSpin(spin, e.clientX - grab.x, e.clientY - grab.y, grab.tip)
+    grab.x = e.clientX
+    grab.y = e.clientY
+    schedule()
   }
-  container.addEventListener('pointermove', onPointer)
-  container.addEventListener('pointerleave', onLeave)
+  const onUp = (e: PointerEvent) => {
+    if (!grab || e.pointerId !== grab.id) return
+    grab = null
+    spin = releaseSpin(spin, reduced)
+    canvas.style.cursor = 'grab'
+    schedule()
+  }
+  const onHome = () => {
+    spin = { ...spin, vy: 0, homing: true }
+    schedule()
+  }
+  canvas.addEventListener('pointerdown', onDown)
+  canvas.addEventListener('pointermove', onMove)
+  canvas.addEventListener('pointerup', onUp)
+  canvas.addEventListener('pointercancel', onUp)
+  canvas.addEventListener('dblclick', onHome)
 
   const recolor = () => {
     inks = resolveInks(container)
@@ -466,11 +486,8 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
       refit()
     },
     phase: () => phase,
-    setParallax: (on: boolean) => {
-      parallax = on && !reduced
-      if (!parallax) onLeave()
-      refit()
-    },
+    /** For tests: how the chart is turned now. */
+    spin: () => spin,
     dispose: () => {
       disposed = true
       if (raf) cancelAnimationFrame(raf)
@@ -478,8 +495,11 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
       resizeObserver?.disconnect()
       intersection?.disconnect()
       theme?.disconnect()
-      container.removeEventListener('pointermove', onPointer)
-      container.removeEventListener('pointerleave', onLeave)
+      canvas.removeEventListener('pointerdown', onDown)
+      canvas.removeEventListener('pointermove', onMove)
+      canvas.removeEventListener('pointerup', onUp)
+      canvas.removeEventListener('pointercancel', onUp)
+      canvas.removeEventListener('dblclick', onHome)
       scene.traverse((o) => {
         const m = o as THREE.Mesh
         m.geometry?.dispose()

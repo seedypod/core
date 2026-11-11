@@ -16,7 +16,7 @@ export interface Lane { key: string, label: string, sub: string, tone: Tone, val
 export interface DayEvent { at: number, tone: Tone, label: string }
 export interface TodayData { now: number, lanes: Lane[], events: DayEvent[], ticks: Tick[] }
 
-export interface TankData { levels: number[], topUps: number[], cutoff: number | null, current: number | null, ticks: Tick[], currentLabel: string, cutoffLabel: string | null }
+export interface TankData { levels: number[], topUps: number[], cutoff: number | null, current: number | null, ticks: Tick[], currentLabel: string, cutoffLabel: string | null, /** The pump is running now. */ pumping: boolean }
 
 export interface LightData { planned: number[], actual: number[], hold: { from: number, until: number } | null, now: number, nowLevel: number, nowLabel: string, ticks: Tick[] }
 
@@ -138,7 +138,7 @@ export function todayData(input: {
 }
 
 /** The tank over its window (0–100%), its top-ups, the pump cutoff and where it is now. */
-export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[] }): TankData {
+export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], pumping?: boolean }): TankData {
   const finite = input.levels.filter(Number.isFinite)
   const current = input.currentPct ?? finite.at(-1) ?? null
   return {
@@ -149,6 +149,7 @@ export function tankData(input: { levels: number[], topUps: number[], cutoffPct:
     ticks: input.ticks,
     currentLabel: current === null ? '—' : `${Math.round(current)}%`,
     cutoffLabel: input.cutoffPct === null ? null : `cutoff ${input.cutoffPct}%`,
+    pumping: input.pumping ?? false,
   }
 }
 

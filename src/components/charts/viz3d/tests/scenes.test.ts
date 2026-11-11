@@ -107,12 +107,17 @@ const TODAY: TodayData = {
   ],
   ticks: DAY_TICKS,
 }
-const TANK: TankData = { levels: ramp(120, i => 0.8 - (i % 40) / 100), topUps: [40 / 119, 80 / 119], cutoff: 0.3, current: 0.4, ticks: ramp(5, k => ({ at: k / 4, label: ['Mon', 'Tue', 'Thu', 'Sat', 'Sun'][k] as string })), currentLabel: '40%', cutoffLabel: 'cutoff 30%' }
+const TANK: TankData = { levels: ramp(120, i => 0.8 - (i % 40) / 100), topUps: [40 / 119, 80 / 119], cutoff: 0.3, current: 0.4, ticks: ramp(5, k => ({ at: k / 4, label: ['Mon', 'Tue', 'Thu', 'Sat', 'Sun'][k] as string })), currentLabel: '40%', cutoffLabel: 'cutoff 30%', pumping: true }
 const LIGHT: LightData = { planned: ramp(97, i => (i > 28 && i < 84 ? 0.9 : 0)), actual: ramp(97, i => (i < 60 ? (i > 28 ? 0.9 : 0) : Number.NaN)), hold: { from: 0.55, until: 0.65 }, now: 0.62, nowLevel: 0.45, nowLabel: '45%', ticks: DAY_TICKS }
 const PODS: PodsData = { towers: ['A', 'B', 'C'].map((l, t) => ({ label: `Tower ${l}`, pods: ramp(10, k => ((t * 10 + k) % 4 === 0 ? null : ((t * 10 + k) % 10) / 10)) })) }
 const SENSORS: SensorsData = {
   series: ['Air temperature', 'Humidity', 'Board temperature', 'Distance to water', 'Tank', 'Pump voltage', 'Pump current', 'Pump power'].map((label, k) => ({ key: `s${k}`, label, group: k < 3 ? 'environment' : k < 5 ? 'water' : 'pump', values: ramp(100, i => 0.5 + 0.4 * Math.sin(i / 8 + k)), current: '25.9 °C' })),
   ticks: [{ at: 0, label: '−24h' }, { at: 0.5, label: '−12h' }, { at: 1, label: 'now' }],
+}
+
+/** A pointer event as a mouse sends it (jsdom has no PointerEvent). */
+function pointer(target: EventTarget, type: string, x: number, y: number, pointerType = 'mouse') {
+  target.dispatchEvent(Object.assign(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }), { pointerId: 1, pointerType }))
 }
 
 interface Case<D> { name: string, make: (el: HTMLElement, env: Env) => Viz<D>, aspect: number, data: D }
@@ -201,14 +206,17 @@ describe.each(CASES)('$name chart', ({ make, aspect, data }) => {
     viz.dispose()
   })
 
-  it.each([[340, 0, 0], [340, 340, 0], [1200, 1200, 1200 / aspect], [1200, 0, 1200 / aspect]])('still fits a %i px card tilted toward the pointer at (%i, %i)', (width, x, y) => {
+  it.each([[340, 60, 0], [340, 157, 40], [1200, -300, -40], [1200, 90, 0]])('still fits a %i px card spun by a %i px drag (and %i px up or down)', (width, dx, dy) => {
     const el = sized(width, aspect)
     const viz = make(el, env)
     viz.setData(data)
-    el.dispatchEvent(Object.assign(new MouseEvent('pointermove', { clientX: x, clientY: y }), { pointerType: 'mouse' }))
-    advance(16, 120)
+    const canvas = el.querySelector('canvas') as HTMLCanvasElement
+    pointer(canvas, 'pointerdown', 100, 50)
+    pointer(canvas, 'pointermove', 100 + dx, 50 + dy)
+    advance(16, 3)
     const m = measure(width, Math.round(width / aspect))
     expect(Math.max(-m.lo.x, m.hi.x, -m.lo.y, m.hi.y)).toBeLessThanOrEqual(1)
+    expect(m.minLabelPx).toBeGreaterThanOrEqual(10.99)
     viz.dispose()
   })
 
@@ -230,9 +238,11 @@ describe.each(CASES)('$name chart', ({ make, aspect, data }) => {
     // A refresh tweens rather than restarting the sweep.
     viz.setData(data)
     advance(100, 8)
-    viz.setParallax(false)
-    el.dispatchEvent(new MouseEvent('pointermove', { clientX: 10, clientY: 10 }))
-    el.dispatchEvent(new MouseEvent('pointerleave'))
+    const canvas = el.querySelector('canvas') as HTMLCanvasElement
+    pointer(canvas, 'pointerdown', 10, 10)
+    pointer(canvas, 'pointermove', 60, 10)
+    pointer(canvas, 'pointerup', 60, 10)
+    canvas.dispatchEvent(new MouseEvent('dblclick'))
     advance(16)
     const before = state.renders
     viz.dispose()
@@ -273,7 +283,54 @@ describe('the shared base', () => {
     viz.dispose()
   })
 
-  it('renders only on change with reduced motion: no sway, no sweep', () => {
+  it('spins with a drag, coasts after release, stops drawing once still, and goes home on a double click', () => {
+    const el = sized(600, 3)
+    const viz = createTodayViz(el, env)
+    viz.setData(TODAY)
+    advance(700, 3)
+    // Settled with nothing moving, the loop stops.
+    advance(16, 2)
+    expect(frames).toHaveLength(0)
+    const canvas = el.querySelector('canvas') as HTMLCanvasElement
+    expect(canvas.style.touchAction).toBe('pan-y')
+    pointer(canvas, 'pointerdown', 100, 50)
+    expect(canvas.style.cursor).toBe('grabbing')
+    pointer(canvas, 'pointermove', 160, 50)
+    // Another pointer's moves don't turn it.
+    canvas.dispatchEvent(Object.assign(new MouseEvent('pointermove', { clientX: 900 }), { pointerId: 2, pointerType: 'touch' }))
+    advance(16)
+    const { scene } = sceneOf()
+    const pivot = scene.children[0] as THREE.Object3D
+    expect(pivot.rotation.y).toBeCloseTo(0.6)
+    pointer(canvas, 'pointerup', 160, 50)
+    advance(16)
+    expect(pivot.rotation.y).toBeGreaterThan(0.6)
+    advance(16, 200)
+    expect(frames).toHaveLength(0)
+    canvas.dispatchEvent(new MouseEvent('dblclick'))
+    advance(16, 100)
+    expect(pivot.rotation.y).toBe(0)
+    // A right click doesn't grab.
+    canvas.dispatchEvent(Object.assign(new MouseEvent('pointerdown', { button: 2 }), { pointerId: 1, pointerType: 'mouse' }))
+    expect(canvas.style.cursor).toBe('grab')
+    viz.dispose()
+  })
+
+  it('keeps drawing while the pump runs, for the tank\'s flow cue', () => {
+    const el = sized(600, 2)
+    const viz = createTankViz(el, env)
+    viz.setData({ ...TANK, pumping: true })
+    advance(700, 3)
+    advance(16, 5)
+    expect(frames).toHaveLength(1)
+    viz.setData({ ...TANK, pumping: false })
+    advance(700, 3)
+    advance(16, 2)
+    expect(frames).toHaveLength(0)
+    viz.dispose()
+  })
+
+  it('renders only on change with reduced motion: a still skeleton, no sweep', () => {
     vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduce'), addEventListener() {}, removeEventListener() {} }))
     const el = sized(600, 2)
     const viz = createLightViz(el, env)
