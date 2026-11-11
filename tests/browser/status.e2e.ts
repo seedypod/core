@@ -23,9 +23,12 @@ test('system → status: live pill, health strip, today timeline and the three c
   // DATA_DIR is a real directory on the runner, so statfs answers.
   await expect(health.getByRole('meter', { name: 'SD card used' })).toBeVisible()
 
+  // Software WebGL draws the timeline in 3D: its canvas fills the box and the data sweeps in.
   const today = main.getByRole('region', { name: 'Today' })
-  for (const lane of ['Light', 'Water', 'Air', 'Events']) await expect(today.getByRole('group', { name: lane })).toBeVisible()
-  await expect(today.getByText('now', { exact: true })).toBeVisible()
+  const chart = today.getByTestId('viz-today')
+  await expect(chart.locator('canvas')).toBeVisible()
+  await expect(chart).toHaveAttribute('data-state', 'ready', { timeout: 15_000 })
+  await expect(today.getByText(/^next: |^nothing else scheduled today$/)).toBeVisible()
 
   await expect(main.getByRole('link', { name: 'Light' })).toHaveAttribute('href', '/light')
   await expect(main.getByRole('link', { name: 'Water' })).toHaveAttribute('href', '/water')
