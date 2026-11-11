@@ -83,7 +83,8 @@ export function WaterPage() {
   const ranToday = (runs.data ?? []).some(r => germination && r.scheduleId.startsWith(`water-${germination.slug}-`) && localTime(new Date(r.firedAt), zone).date === today)
   const missed = germination && sown === 0 && nowMin >= (germination.minutes[0] ?? 0) && !ranToday ? germination : null
   // Running by the same rule Follow goes by: every cycle the preset's, on, on its days, its length. Paused or trimmed, they're your own.
-  const applied = followedPreset(cycles)?.id ?? null
+  const running = followedPreset(cycles)
+  const applied = running?.id ?? null
   const previewing = PUMP_PRESETS.find(x => x.id === preview) ?? null
   const previewRuns = previewing ? presetRuns(previewing, light) : null
   const [applying, setApplying] = useState(false)
@@ -212,8 +213,8 @@ export function WaterPage() {
           {cycles.length > 0 && (
             <span className="flex items-center gap-1.5 text-[12px] text-fg-2" data-testid="pump-running">
               <span className="text-fg-3">·</span>
-              {applied && <span className="size-2 shrink-0 rounded-full bg-tank" />}
-              {applied ? `${PUMP_PRESETS.find(x => x.id === applied)?.name ?? ''} running` : 'custom cycles'}
+              {running && <span className="size-2 shrink-0 rounded-full bg-tank" />}
+              {running ? `${running.name} running` : 'custom cycles'}
             </span>
           )}
         </div>
@@ -684,11 +685,12 @@ function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, mis
 
 /** A source, opened in a new tab, with the arrow that says so: the text wraps as text does, the arrow staying with its last word. */
 function SourceLink({ href, className, children }: { href: string, className?: string, children: string }) {
-  const words = children.split(' ')
-  const last = words.pop() ?? ''
+  // Everything up to and including the last space wraps as text; the last word keeps the arrow.
+  const cut = children.lastIndexOf(' ') + 1
+  const last = children.slice(cut)
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className={cn('w-fit underline decoration-line-2 underline-offset-2 hover:text-fg', className)}>
-      {words.length > 0 && `${words.join(' ')} `}
+      {children.slice(0, cut)}
       <span className="whitespace-nowrap">
         {last}
         <ArrowUpRight size={12} aria-hidden className="ml-0.5 inline-block align-[-1px]" />
