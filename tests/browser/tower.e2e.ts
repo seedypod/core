@@ -11,7 +11,8 @@ test('grow: the tower renders in 3D, a pod picked on it opens in the side panel'
   await expect(tower.locator('canvas')).toBeVisible()
   await expect(page.getByText('Needs attention')).toBeVisible()
 
-  // Hovering a pod previews its callout; scan until one answers.
+  // Hovering a pod previews its callout; scan until one answers. The protocol card sits above, so bring the tower into view first.
+  await tower.scrollIntoViewIfNeeded()
   const box = await tower.boundingBox()
   if (!box) throw new Error('the tower has no size')
   let found = false

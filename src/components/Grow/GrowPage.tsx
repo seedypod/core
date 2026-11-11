@@ -9,6 +9,7 @@ import { LineChart } from '@/src/components/ds/charts'
 import { cameraOf, podRegions, type RegionCalibration } from '@/src/vision/regions'
 import { CATALOG } from './plants/catalog'
 import { PlantModel } from './PlantModel'
+import { ProtocolCard } from './ProtocolCard'
 import { PlantThumb, podForm } from './PlantThumb'
 import { ageDays, heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
@@ -192,6 +193,8 @@ export function GrowPage() {
               </>
             )}
       </section>
+
+      <ProtocolCard />
 
       <div className="flex flex-wrap items-start gap-5">
         <div className="min-w-0 flex-1 basis-[480px]">

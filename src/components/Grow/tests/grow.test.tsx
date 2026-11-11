@@ -32,6 +32,9 @@ vi.mock('@/src/utils/trpc', () => {
 
 vi.mock('@tanstack/react-router', () => ({ Link: ({ to, children, className }: { to: string, children: ReactNode, className?: string }) => <a href={to} className={className}>{children}</a> }))
 
+// The protocol card has its own tests (protocolCard.test.tsx); here it only has its place.
+vi.mock('../ProtocolCard', () => ({ ProtocolCard: () => <section data-testid="protocol" /> }))
+
 // The 3D view is covered by tower.test.ts and the browser tests; here it reports what it was given.
 vi.mock('../TowerView', () => ({
   TowerView: (props: Record<string, unknown>) => {
