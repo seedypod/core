@@ -164,13 +164,17 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
   }
 
   // ── Labels ─────────────────────────────────────────────────────────────
-  interface LabelEntry { sprite: THREE.Sprite, size: number, aspect: number, priority: number, redraw: () => void, wanted: () => boolean }
+  interface LabelEntry { sprite: THREE.Sprite, size: number, aspect: number, priority: number, fit: boolean, text: () => string, redraw: () => void, wanted: () => boolean }
   const labels: LabelEntry[] = []
   let fontsReady = typeof document === 'undefined' || !document.fonts
   const font = `500 ${LABEL_FONT_PX}px "IBM Plex Mono", ui-monospace, monospace`
 
-  /** A text sprite; where labels collide on screen, the higher `priority` (then the older) stays and the other hides. */
-  const label = (text: string, o: { ink?: Ink, size?: number, align?: 'left' | 'center' | 'right', valign?: 'top' | 'middle' | 'bottom', priority?: number } = {}): Label => {
+  /**
+   * A text sprite; where labels collide on screen, the higher `priority` (then
+   * the older) stays and the other hides. A `fit` label hangs outside the
+   * chart's bounds, so the fit keeps room for it, shown or not yet.
+   */
+  const label = (text: string, o: { ink?: Ink, size?: number, align?: 'left' | 'center' | 'right', valign?: 'top' | 'middle' | 'bottom', priority?: number, fit?: boolean } = {}): Label => {
     const c = document.createElement('canvas')
     const texture = new THREE.CanvasTexture(c)
     texture.colorSpace = THREE.SRGBColorSpace
@@ -180,7 +184,7 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     const sprite = new THREE.Sprite(material)
     sprite.center.set(o.align === 'left' ? 0 : o.align === 'right' ? 1 : 0.5, o.valign === 'top' ? 1 : o.valign === 'bottom' ? 0 : 0.5)
     sprite.renderOrder = 10
-    const entry: LabelEntry = { sprite, size: o.size ?? 0.22, aspect: 1, priority: o.priority ?? 1, redraw: () => {}, wanted: () => shown && fontsReady && current.length > 0 }
+    const entry: LabelEntry = { sprite, size: o.size ?? 0.22, aspect: 1, priority: o.priority ?? 1, fit: o.fit ?? false, text: () => current, redraw: () => {}, wanted: () => shown && fontsReady && current.length > 0 }
     let current = text
     let ink: Ink = o.ink ?? 'fg3'
     let shown = true
@@ -206,6 +210,7 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
       texture.needsUpdate = true
       sprite.visible = entry.wanted()
       scaleLabel(entry)
+      if (entry.fit) fitted = ''
       invalidate()
     }
     labels.push(entry)
@@ -282,6 +287,13 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     root.add(l)
     return l
   }
+  const dashed = (points: Array<[number, number, number]>, ink: Ink, dash = 0.14, gap = 0.1, opacity = 1) => {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points.map(p => new THREE.Vector3(...p)))
+    const l = new THREE.Line(geometry, tint(new THREE.LineDashedMaterial({ dashSize: dash, gapSize: gap, transparent: opacity < 1, opacity }), ink))
+    l.computeLineDistances()
+    root.add(l)
+    return l
+  }
   const segments = (pairs: Array<[[number, number, number], [number, number, number]]>, ink: Ink, opacity = 1) => {
     const geometry = new THREE.BufferGeometry().setFromPoints(pairs.flat().map(p => new THREE.Vector3(...p)))
     const l = new THREE.LineSegments(geometry, tint(new THREE.LineBasicMaterial({ transparent: opacity < 1, opacity }), ink))
@@ -337,10 +349,32 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
       if (worst <= FRAME) break
       s *= FRAME / worst
     }
+    // Labels keep at least 11 px however small the scene, so one hanging off the side pulls the scene in by its anchor.
+    if (!size.height) return s
+    for (let pass = 0; pass < 4; pass++) {
+      let k = 1
+      for (const l of labels) {
+        if (!l.fit || !l.text()) continue
+        corner.copy(l.sprite.position).sub(target).multiplyScalar(s).applyEuler(turn).add(target)
+        const { height } = visibleSize(FOV, camera.aspect, camera.position.distanceTo(corner))
+        corner.project(camera)
+        const hPx = Math.max((l.size * s / height) * size.height, MIN_LABEL_PX * LABEL_LEADING)
+        const hN = (hPx / size.height) * 2
+        const wN = hN * l.aspect / camera.aspect
+        const reach = (anchor: number, before: number, after: number) => {
+          if (anchor > 0 && anchor + after > FRAME) return Math.max(0.5, (FRAME - after) / anchor)
+          if (anchor < 0 && anchor - before < -FRAME) return Math.max(0.5, (FRAME - before) / -anchor)
+          return 1
+        }
+        k = Math.min(k, reach(corner.x, l.sprite.center.x * wN, (1 - l.sprite.center.x) * wN), reach(corner.y, l.sprite.center.y * hN, (1 - l.sprite.center.y) * hN))
+      }
+      if (k >= 0.999) break
+      s *= k
+    }
     return s
   }
   function place() {
-    const key = `${size.fit}:${spin.x}:${spin.y}`
+    const key = `${size.fit}:${size.height}:${spin.x}:${spin.y}`
     if (key === fitted) return
     fitted = key
     pivot.rotation.set(spin.x, spin.y, 0)
@@ -470,6 +504,7 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     tint,
     label,
     line,
+    dashed,
     segments,
     ring,
     dot,
@@ -532,6 +567,8 @@ export function ribbon(base: Base, o: { x0: number, width: number, z: number, he
   let from: number[] = []
   let shown: number[] = []
   let dimFrom = Infinity
+  let tailFrom = Infinity
+  let tailInk: Ink = 'blue'
   let ink: Ink = o.ink
   let settled = false
   let painted = -1
@@ -562,7 +599,8 @@ export function ribbon(base: Base, o: { x0: number, width: number, z: number, he
   return {
     fill,
     top,
-    setValues(values: number[], opts: { dimFrom?: number, ink?: Ink } = {}) {
+    /** `dimFrom`: from this index on it's a plan, drawn dimmer. `tailFrom`: from this index on it's drawn in `tailInk`. */
+    setValues(values: number[], opts: { dimFrom?: number, ink?: Ink, tailFrom?: number, tailInk?: Ink } = {}) {
       const next = Math.max(2, values.length)
       // The old values, at the new length, are where a refresh tweens from.
       const old = resampleArray(shown, next)
@@ -570,6 +608,8 @@ export function ribbon(base: Base, o: { x0: number, width: number, z: number, he
       from = old
       target = values.length >= 2 ? [...values] : resampleArray(values, n)
       dimFrom = opts.dimFrom ?? Infinity
+      tailFrom = opts.tailFrom ?? Infinity
+      tailInk = opts.tailInk ?? 'blue'
       if (opts.ink) ink = opts.ink
       settled = false
     },
@@ -620,7 +660,7 @@ export function ribbon(base: Base, o: { x0: number, width: number, z: number, he
           }
           mix = e * (i >= dimFrom ? 0.5 : 1)
         }
-        c.copy(grey).lerp(color, mix)
+        c.copy(grey).lerp(i >= tailFrom ? inks[tailInk] : color, mix)
         const yy = y * o.height
         pos.setXYZ(i * 2, x, yy, o.z)
         pos.setXYZ(i * 2 + 1, x, 0, o.z)

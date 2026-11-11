@@ -97,22 +97,29 @@ describe('todayData', () => {
 })
 
 describe('tankData', () => {
-  it('normalises the level, places top-ups along it and labels now and the cutoff', () => {
-    const t = tankData({ levels: [80, 60, 90, 70, NaN_], topUps: [2, 9], cutoffPct: 25, currentPct: 41.6, ticks: [] })
+  const marks = { full: 'full · 2 in', now: 'now · 5.1 in', cutoff: null, empty: 'empty · 7.9 in' }
+
+  it('normalises the level, places top-ups along it and carries the cutoff and the scale\'s words', () => {
+    const t = tankData({ levels: [80, 60, 90, 70, NaN_], topUps: [2, 9], cutoffPct: 25, currentPct: 41.6, ticks: [], marks })
     expect(t.levels.slice(0, 4)).toEqual([0.8, 0.6, 0.9, 0.7])
     expect(t.topUps).toEqual([0.5])
     expect(t.cutoff).toBe(0.25)
     expect(t.current).toBeCloseTo(0.416)
-    expect(t.currentLabel).toBe('42%')
-    expect(t.cutoffLabel).toBe('cutoff 25%')
+    expect(t.marks).toBe(marks)
     expect(t.pumping).toBe(false)
-    expect(tankData({ levels: [1, 2], topUps: [], cutoffPct: null, currentPct: null, ticks: [], pumping: true }).pumping).toBe(true)
+    expect(t.runFrom).toBeNull()
   })
 
-  it('falls back to the last level for now, and says so when there is none', () => {
-    expect(tankData({ levels: [10, 30], topUps: [], cutoffPct: null, currentPct: null, ticks: [] })).toMatchObject({ current: 0.3, currentLabel: '30%', cutoff: null, cutoffLabel: null })
-    expect(tankData({ levels: [], topUps: [], cutoffPct: null, currentPct: null, ticks: [] })).toMatchObject({ current: null, currentLabel: '—' })
-    expect(tankData({ levels: [5], topUps: [0], cutoffPct: null, currentPct: 120, ticks: [] })).toMatchObject({ current: 1, topUps: [0] })
+  it('marks where a run began only while the pump runs, inside the window', () => {
+    expect(tankData({ levels: [1, 2], topUps: [], cutoffPct: null, currentPct: null, ticks: [], marks, pumping: true, runFrom: 1.4 })).toMatchObject({ pumping: true, runFrom: 1 })
+    expect(tankData({ levels: [1, 2], topUps: [], cutoffPct: null, currentPct: null, ticks: [], marks, pumping: true, runFrom: -1 }).runFrom).toBe(0)
+    expect(tankData({ levels: [1, 2], topUps: [], cutoffPct: null, currentPct: null, ticks: [], marks, pumping: false, runFrom: 0.5 }).runFrom).toBeNull()
+  })
+
+  it('falls back to the last level for now, and to none', () => {
+    expect(tankData({ levels: [10, 30], topUps: [], cutoffPct: null, currentPct: null, ticks: [], marks })).toMatchObject({ current: 0.3, cutoff: null })
+    expect(tankData({ levels: [], topUps: [], cutoffPct: null, currentPct: null, ticks: [], marks }).current).toBeNull()
+    expect(tankData({ levels: [5], topUps: [0], cutoffPct: null, currentPct: 120, ticks: [], marks })).toMatchObject({ current: 1, topUps: [0] })
   })
 })
 

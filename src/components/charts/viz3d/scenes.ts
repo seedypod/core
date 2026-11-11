@@ -12,12 +12,17 @@ import { type LightData, type PodsData, type SensorsData, type Tick, type TankDa
 function axis(base: Base, o: { x0: number, width: number, y: number, z: number, size?: number }) {
   let labels: Label[] = []
   return {
+    /** Recolours one tick's label, e.g. "now" while the pump runs. */
+    ink(i: number, ink: Ink) {
+      labels[i]?.setInk(ink)
+    },
     set(ticks: Tick[]) {
       for (const l of labels) l.setVisible(false)
       labels = ticks.map((t, i) => {
         const l = labels[i] ?? base.label(t.label, { ink: 'fg3', size: o.size ?? 0.2, align: i === 0 ? 'left' : i === ticks.length - 1 ? 'right' : 'center', valign: 'top', priority: 3 })
         l.setText(t.label)
-        l.setVisible(true)
+        // A day named twice in a row (a week's ticks fall mid-day) says it once.
+        l.setVisible(t.label !== ticks[i - 1]?.label)
         l.sprite.center.x = t.at <= 0.001 ? 0 : t.at >= 0.999 ? 1 : 0.5
         l.sprite.position.set(o.x0 + t.at * o.width, o.y, o.z)
         base.root.add(l.sprite)
@@ -140,9 +145,18 @@ export function createTodayViz(container: HTMLElement, env?: Env): Viz<TodayData
 
 // ── Tank ─────────────────────────────────────────────────────────────────
 
-export const TANK_SPEC: BaseSpec = { need: 10.2, camera: { position: [-0.78, 4.6, 10.4], target: [-0.78, 1.15, 0] }, bounds: [[-5.2, -0.35, -0.75], [3.65, 3, 0.75]] }
+export const TANK_SPEC: BaseSpec = { need: 11.4, camera: { position: [0.05, 4.1, 11.6], target: [0.05, 0.95, 0] }, bounds: [[-5.2, -0.4, -0.75], [4, 2.85, 0.75]] }
+/** Below this card width the tank's scale drops the depths from its words. */
+const NARROW_PX = 560
 
-/** The tank's level over the window as a ribbon with its top-ups, beside a glass cylinder filled to the level now and ringed at the pump cutoff. */
+/**
+ * The tank's level over the window and the glass of water now on one
+ * vertical scale: the line (with a soft fill and its top-ups) runs into a
+ * cylinder filled to the level now. One dashed cutoff line crosses both and
+ * rings the glass; ticks down the glass's right side read full, now, cutoff
+ * and empty. While the pump runs, the water this run drew down is a blue
+ * tail into the glass, the last x label turns blue, and bubbles rise.
+ */
 export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> {
   const x0 = -5.2
   const W = 6.6
@@ -154,12 +168,10 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
   const base = createBase(container, TANK_SPEC, draw, env)
   const T = base.THREE
   const level = ribbon(base, { x0, width: W, z: 0, height: H, ink: 'cream', n: 120, fill: 0.2 })
-  floorGrid(base, { x0, x1: x0 + W, z0: -0.6, z1: 0.6, xs: [0, 0.25, 0.5, 0.75, 1].map(a => x0 + a * W), zs: [0] })
+  floorGrid(base, { x0, x1: x0 + W, z0: -0.6, z1: 0.6, xs: [0, 0.2, 0.4, 0.6, 0.8, 1].map(a => x0 + a * W), zs: [0] })
   base.segments([[[x0, H / 2, -0.02], [x0 + W, H / 2, -0.02]], [[x0, H, -0.02], [x0 + W, H, -0.02]]], 'grid')
-  const top = base.label('100%', { ink: 'fg3', size: 0.19, align: 'left', valign: 'bottom' })
-  top.sprite.position.set(x0, H + 0.04, 0)
-  base.root.add(top.sprite)
   const ticks = axis(base, { x0, width: W, y: -0.05, z: 0.7, size: 0.19 })
+  let tickLabels: Tick[] = []
 
   // The glass: a faint shell with its rim and base; the water inside it; the cutoff ring round it.
   const glass = new T.Mesh(new T.CylinderGeometry(R, R, H, 48, 1, true), base.tint(new T.MeshBasicMaterial({ transparent: true, opacity: 0.06, side: T.DoubleSide, depthWrite: false }), 'fg1'))
@@ -171,13 +183,24 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
   base.root.add(water)
   const surface = base.ring(R * 0.94, [0, 0, 0], 'tank', 0.9)
   const cutRing = base.ring(R * 1.08, [0, 0, 0], 'amber', 0.95)
-  const cutGuide = base.line([[x0, 0, 0.01], [x0 + W, 0, 0.01]], 'amber', 0.35)
-  const cutLabel = base.label('', { ink: 'amber', size: 0.18, align: 'left', valign: 'bottom', priority: 3 })
-  base.root.add(cutLabel.sprite)
-  const link = base.line([[x0 + W, 0, 0], [CX - R, 0, 0]], 'fg3', 0.6)
-  const nowLabel = base.label('', { ink: 'fg1', size: 0.3, align: 'center', valign: 'bottom', priority: 4 })
-  nowLabel.sprite.position.set(CX, H + 0.1, 0)
-  base.root.add(nowLabel.sprite)
+  // One dashed cutoff line, across the history and through the glass.
+  const cutLine = base.dashed([[x0, 0, 0.01], [CX + R + 0.16, 0, 0.01]], 'amber', 0.14, 0.1, 0.8)
+  // Where the line meets the glass: level with the end of the history, or, while pumping, the run's draw-down into the level now.
+  const linkGeo = new T.BufferGeometry().setFromPoints([new T.Vector3(x0 + W, 0, 0), new T.Vector3(CX - R, 0, 0)])
+  const link = new T.Line(linkGeo, new T.LineBasicMaterial({ transparent: true }))
+  base.root.add(link)
+
+  // The glass's scale, down its right side: a tick and a label each.
+  const MARKS = ['full', 'now', 'cutoff', 'empty'] as const
+  const SAMPLE = { full: 'full · 2.0 in', now: 'now · 5.1 in', cutoff: 'cutoff 27% · 6.3 in', empty: 'empty · 7.9 in' }
+  const marks = Object.fromEntries(MARKS.map((k) => {
+    const tick: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> = base.line([[CX + R + 0.02, 0, 0], [CX + R + 0.16, 0, 0]], k === 'cutoff' ? 'amber' : k === 'now' ? 'fg1' : 'fg3', 0.9)
+    // Placeholder text until data, so the fit makes room for the words from the start.
+    const l = base.label(SAMPLE[k], { ink: k === 'cutoff' ? 'amber' : k === 'now' ? 'fg1' : 'fg3', size: 0.17, align: 'left', valign: 'middle', priority: k === 'now' ? 4 : k === 'cutoff' ? 3 : 2, fit: true })
+    base.root.add(l.sprite)
+    return [k, { tick, label: l }]
+  })) as Record<typeof MARKS[number], { tick: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>, label: Label }>
+
   const dots = Array.from({ length: 16 }, () => {
     const d = base.dot(0.07, 'green')
     d.visible = false
@@ -191,10 +214,21 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
   })
 
   const c = new T.Color()
+  function mark(k: typeof MARKS[number], y: number | null, text: string | null) {
+    const m = marks[k]
+    const on = y !== null && text !== null
+    m.tick.visible = on
+    m.label.setVisible(on)
+    if (!on) return
+    m.tick.position.set(0, y, 0)
+    m.label.setText(text)
+    m.label.sprite.position.set(CX + R + 0.22, y, 0)
+  }
+
   function draw(f: Frame): boolean {
     level.update(f)
     const shown = f.state === 'ready' && data !== null
-    // The cylinder fills last, as the ribbon reaches it.
+    // The glass fills last, as the line reaches it.
     const e = shown ? pointEase(f.p, 119, 120) : 0
     const cur = data?.current ?? LOW
     const h = Math.max(0.02, lerp(LOW, shown ? cur : LOW, e) * H)
@@ -215,16 +249,31 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     }
     const cut = shown && data?.cutoff != null ? data.cutoff * H : null
     cutRing.visible = cut !== null
-    cutGuide.visible = cut !== null
-    cutLabel.setVisible(cut !== null)
+    cutLine.visible = cut !== null
     if (cut !== null) {
       cutRing.position.set(CX, cut, 0)
-      cutGuide.position.set(0, cut, 0)
-      cutLabel.sprite.position.set(x0 + 0.05, cut + 0.03, 0.01)
+      cutLine.position.set(0, cut, 0)
     }
     link.visible = shown && data?.current != null
-    if (link.visible) link.position.set(0, h, 0)
-    nowLabel.setVisible(shown)
+    if (link.visible) {
+      const pos = linkGeo.getAttribute('position') as THREE.BufferAttribute
+      pos.setXYZ(0, x0 + W, pumping ? level.yAt(1) : h, 0)
+      pos.setXYZ(1, CX - R, h, 0)
+      pos.needsUpdate = true
+      linkGeo.computeBoundingSphere()
+      const mat = link.material as THREE.LineBasicMaterial
+      mat.color.copy(base.inks()[pumping ? 'blue' : 'fg3'])
+      mat.opacity = pumping ? 1 : 0.6
+    }
+    // On a narrow card the scale's words lose their depths, so the glass keeps its size.
+    const words = data ? (container.clientWidth < NARROW_PX && data.marks.short ? data.marks.short : data.marks) : null
+    mark('full', shown ? H : null, words?.full ?? null)
+    mark('now', shown && data?.current != null ? h : null, words?.now ?? null)
+    mark('cutoff', cut, words?.cutoff ?? null)
+    mark('empty', shown ? 0 : null, words?.empty ?? null)
+    // While watering, "now" at the end of the time axis is blue like the tail.
+    const last = tickLabels.length - 1
+    ticks.ink(last, pumping ? 'blue' : 'fg3')
     dots.forEach((d, i) => {
       const at = data?.topUps[i]
       d.visible = shown && at !== undefined
@@ -237,10 +286,9 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
 
   return viz(base, (d: TankData) => {
     data = d
-    level.setValues(d.levels)
+    level.setValues(d.levels, { tailFrom: d.runFrom === null ? undefined : Math.round(d.runFrom * (Math.max(2, d.levels.length) - 1)), tailInk: 'blue' })
+    tickLabels = d.ticks
     ticks.set(d.ticks)
-    nowLabel.setText(d.currentLabel)
-    cutLabel.setText(d.cutoffLabel ?? '')
   })
 }
 

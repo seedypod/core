@@ -18,11 +18,11 @@ vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
   const { useEffect } = await import('react')
   return {
     ...real,
-    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { currentLabel: string, cutoffLabel: string | null, pumping: boolean, topUps: number[] } | null, onUnavailable?: () => void }) => {
+    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, pumping: boolean, topUps: number[] } | null, onUnavailable?: () => void }) => {
       useEffect(() => {
         if (hero.fail) onUnavailable?.()
       }, [onUnavailable])
-      return <div data-testid="tank-3d" data-state={status} aria-label={label}>{data && `${data.currentLabel} · ${data.cutoffLabel} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'}`}</div>
+      return <div data-testid="tank-3d" data-state={status} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'}`}</div>
     },
   }
 })
@@ -99,73 +99,95 @@ describe('WaterPage: tank and pump', () => {
     expect(calls.setPump).not.toHaveBeenCalled()
   })
 
-  it('sums up the tank, the pump and the next run, against the calibration', () => {
+  it('sums up the pump and the next run, and the tank against the calibration', () => {
     render(<WaterPage />)
-    expect(screen.getByText('Tank 71% · pump idle · next run 20:00')).toBeTruthy()
+    expect(screen.getByText('pump idle · next run 20:00')).toBeTruthy()
+    const strip = within(screen.getByTestId('pump-strip'))
+    expect(strip.getByText('Pump idle')).toBeTruthy()
+    expect(strip.getByText('Next run 20:00 · supply 12.3 V')).toBeTruthy()
     expect(screen.getByText('≈ 13.5 of 19 L')).toBeTruthy()
     expect(screen.getByText('empty · 20 cm')).toBeTruthy()
     expect(screen.getByText('full · 5 cm')).toBeTruthy()
     expect(screen.getByText('pump cutoff 27%')).toBeTruthy()
     expect(screen.getByText('9.4 cm')).toBeTruthy()
-    expect(screen.getByText(/Up to 15 min per run at 30% duty\. Won't start below 16 cm of water\./)).toBeTruthy()
+    // The pump's limits are Run's tooltip.
+    expect(strip.getByRole('button', { name: 'Run' }).getAttribute('title')).toBe('Up to 15 min per run at 30% duty. Won\'t start below 16 cm of water.')
   })
 
-  it('runs the pump for the chosen length, and swaps to Stop while it runs', () => {
+  it('runs the pump for the chosen length, and turns the strip into the run with a countdown and Stop', () => {
     render(<WaterPage />)
-    fireEvent.click(screen.getByRole('tab', { name: '10 min' }))
-    fireEvent.click(screen.getByText('Run pump'))
+    const chips = within(screen.getByRole('radiogroup', { name: 'Run length' }))
+    expect(chips.getByRole('radio', { name: '5 min' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(chips.getByRole('radio', { name: '10 min' }))
+    expect(chips.getByRole('radio', { name: '10 min' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     expect(calls.runOnce).toHaveBeenCalledWith({ durationS: 600 })
     cleanup()
-    // Started a minute ago with two left: a three-minute run.
+    // Started a minute ago with two left: a three-minute run, by hand.
     data.set('pump', { ...idle, on: true, level: 30, remainingS: 120, since: new Date(Date.now() - 60_000).toISOString() })
     render(<WaterPage />)
-    // The run shows in one place, on Stop; the subtitle just says it's watering.
-    expect(screen.getByText(/watering at 30%/).textContent).not.toMatch(/left/)
-    expect(screen.queryByTestId('watering')).toBeNull()
-    expect(screen.queryByText('Run pump')).toBeNull()
-    // The duration picker becomes the run's track: the time left above, the stops as ticks, the run's own length marked.
-    const track = within(screen.getByTestId('run-track'))
-    expect(track.getByText('2:00 left')).toBeTruthy()
-    expect(screen.queryByRole('tab', { name: '5 min' })).toBeNull()
-    expect(track.getByRole('progressbar', { name: 'Watering' }).getAttribute('aria-valuenow')).toBe('33')
-    expect(track.getByText('15 min')).toBeTruthy()
+    const strip = screen.getByTestId('pump-strip')
+    expect(strip.getAttribute('data-state')).toBe('running')
+    expect(within(strip).getByText('Watering')).toBeTruthy()
+    expect(within(strip).getByText('Manual · 30% duty · 0 W · 0 A · 12.3 V')).toBeTruthy()
+    expect(within(strip).getByTestId('run-left').textContent).toBe('2:00')
+    expect(within(strip).getByText('of 3 min')).toBeTruthy()
+    expect(within(strip).getByRole('progressbar', { name: 'Watering' }).getAttribute('aria-valuenow')).toBe('33')
+    expect(screen.queryByRole('radiogroup', { name: 'Run length' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Run' })).toBeNull()
     const stopButton = screen.getByTestId('stop-pump')
-    expect(stopButton.textContent).toBe('Stop pump')
+    expect(stopButton.textContent).toBe('Stop')
     fireEvent.click(stopButton)
     expect(calls.stop).toHaveBeenCalled()
+  })
+
+  it('names the cycle that started a scheduled run', () => {
+    data.set('pump', { ...idle, on: true, level: 30, remainingS: 200, since: new Date(at(8).getTime() + 20_000).toISOString() })
+    render(<WaterPage />)
+    expect(within(screen.getByTestId('pump-strip')).getByText(/^Morning watering · 30% duty/)).toBeTruthy()
   })
 
   it('waters with no known end without a clock', () => {
     data.set('pump', { ...idle, on: true, level: 30, remainingS: null })
     render(<WaterPage />)
     expect(screen.getByText(/watering at 30%/)).toBeTruthy()
-    expect(screen.getByTestId('stop-pump').textContent).toBe('Stop pump')
-    expect(within(screen.getByTestId('run-track')).queryByText(/left$/)).toBeNull()
+    expect(screen.getByTestId('stop-pump').textContent).toBe('Stop')
+    expect(screen.getByText('until stopped')).toBeTruthy()
+    expect(screen.queryByTestId('run-left')).toBeNull()
   })
 
   it('says Starting… after Run, and why when the pump doesn\'t come on', () => {
     vi.useFakeTimers()
     data.set('alerts', [{ id: 188, kind: 'water_low', active: true, detail: 'water distance 86.9 cm ≥ 16.0 cm' }])
     render(<WaterPage />)
-    fireEvent.click(screen.getByText('Run pump'))
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     expect(screen.getByText('Starting…').closest('button')?.disabled).toBe(true)
     expect(screen.queryByText(/Didn't start/)).toBeNull()
     act(() => {
       vi.advanceTimersByTime(START_WAIT_MS + 1000)
     })
-    expect(screen.getByText(/Didn't start: the tank reads low \(water distance 86\.9 cm ≥ 16\.0 cm\)/)).toBeTruthy()
-    fireEvent.click(screen.getByText('Try again'))
-    expect(screen.getByText('Run pump')).toBeTruthy()
+    // The reason takes the strip's subtitle, so nothing below moves.
+    const strip = within(screen.getByTestId('pump-strip'))
+    expect(strip.getByText(/Didn't start: the tank reads low \(water distance 86\.9 cm ≥ 16\.0 cm\)/)).toBeTruthy()
+    fireEvent.click(strip.getByText('Try again'))
+    expect(screen.getByRole('button', { name: 'Run' })).toBeTruthy()
+    expect(strip.getByText('Next run 20:00 · supply 12.3 V')).toBeTruthy()
     vi.useRealTimers()
   })
 
-  it('reports a refused run and a latched fault', () => {
+  it('reports a refused run and a latched fault in the strip', () => {
     state.runError = { message: 'tank too low' }
     data.set('pump', { ...idle, fault: 'dry run' })
     render(<WaterPage />)
-    expect(screen.getByText('tank too low')).toBeTruthy()
+    const strip = within(screen.getByTestId('pump-strip'))
+    expect(strip.getByText('tank too low')).toBeTruthy()
+    expect(strip.getByText('Pump fault')).toBeTruthy()
     expect(screen.getByText(/pump fault: dry run/)).toBeTruthy()
-    expect(screen.getByText('Run pump').closest('button')?.disabled).toBe(true)
+    expect(strip.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    cleanup()
+    state.runError = null
+    render(<WaterPage />)
+    expect(within(screen.getByTestId('pump-strip')).getByText('dry run')).toBeTruthy()
   })
 
   it('clears a latched pump fault from the page, without going to Alerts', () => {
@@ -195,6 +217,7 @@ describe('WaterPage: tank and pump', () => {
     data.delete('system')
     render(<WaterPage />)
     expect(screen.getByText('… · next run 20:00')).toBeTruthy()
+    expect(within(screen.getByTestId('pump-strip')).getByText('Pump')).toBeTruthy()
     expect(screen.getByText('empty')).toBeTruthy()
     expect(screen.queryByText(/pump cutoff/)).toBeNull()
   })
@@ -292,44 +315,51 @@ describe('WaterPage with WebGL: the tank hero', () => {
     vi.unstubAllGlobals()
   })
 
-  it('heads the page with the 3D tank, its readout, scale and stats, beside the run column, and drops the flat chart', () => {
+  it('puts the level once in big type over one line, the range as plain tabs, and the history and glass on one scale', () => {
     render(<WaterPage />)
-    const top = screen.getByTestId('tank-hero')
-    expect(within(top).getByText('71%')).toBeTruthy()
-    expect(within(top).getByText('≈ 13.5 of 19 L')).toBeTruthy()
-    expect(within(top).getByText('pump cutoff 27%')).toBeTruthy()
-    expect(within(top).getByText('9.4 cm')).toBeTruthy()
-    expect(within(top).getByTestId('tank-summary').textContent).toBe('One top-up this week. Drops about 14% a day.')
-    expect(within(top).getByTestId('tank-3d').textContent).toBe('71% · cutoff 27% · 1 top-up · still')
+    expect(screen.getAllByText('71%')).toHaveLength(1)
+    expect(screen.getByText('≈ 13.5 of 19 L')).toBeTruthy()
+    expect(screen.getByTestId('tank-summary').textContent).toBe('One top-up this week · drops about 14% a day')
+    expect(screen.getByTestId('tank-3d').textContent).toBe('now · 9.4 cm · cutoff 27% · 16 cm · 1 top-up · still')
+    // The scale's words are on the glass now: no footer, no flat meter, no separate history card.
+    expect(screen.queryByText('empty · 20 cm')).toBeNull()
     expect(screen.queryByRole('meter', { name: 'Tank level' })).toBeNull()
     expect(screen.queryByTestId('tank-stats')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Run pump' })).toBeTruthy()
-    fireEvent.click(within(top).getByRole('tab', { name: '24h' }))
+    const tabs = within(screen.getByRole('tablist', { name: 'Tank level range' }))
+    expect(tabs.getByRole('tab', { name: '7d' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(tabs.getByRole('tab', { name: '24h' }))
     expect(calls.history).toHaveBeenLastCalledWith({ sensor: 'water_level_pct', hours: 24, maxPoints: 300 })
+    expect(screen.getByTestId('tank-summary').textContent).toMatch(/ today/)
   })
 
-  it('shows the pump running in the scene and keeps the run track beside it', () => {
-    data.set('pump', { ...idle, on: true, level: 30, since: at(11, 59).toISOString(), remainingS: 240 })
+  it('while the pump runs, says how far this run has drawn the tank down and draws the run into the glass', () => {
+    // History: 85% at 12:00 on the 3rd; the run began after it; the tank reads 71% now.
+    vi.setSystemTime(at(13, 0, 3))
+    data.set('pump', { ...idle, on: true, level: 30, since: at(12, 30, 3).toISOString(), remainingS: 240 })
     render(<WaterPage />)
+    expect(screen.getByTestId('tank-summary').textContent).toBe('Down 14% so far this run')
     expect(screen.getByTestId('tank-3d').textContent).toMatch(/pumping$/)
     expect(screen.getByTestId('tank-3d').getAttribute('aria-label')).toMatch(/with the pump running/)
+    cleanup()
+    data.set('history', [])
+    render(<WaterPage />)
+    expect(screen.getByTestId('tank-summary').textContent).toBe('Watering now')
   })
 
   it('holds the readout\'s place while loading and says the history is loading', () => {
     data.delete('sensors')
     state.historyLoading = true
     render(<WaterPage />)
-    const top = screen.getByTestId('tank-hero')
-    expect(within(top).getByText('loading …')).toBeTruthy()
-    expect(within(top).getByText('100%').className).toContain('animate-pulse')
-    expect(within(top).getByTestId('tank-3d').getAttribute('data-state')).toBe('loading')
+    expect(screen.getByText('loading …')).toBeTruthy()
+    expect(screen.getByText('100%').className).toContain('animate-pulse')
+    expect(screen.getByTestId('tank-3d').getAttribute('data-state')).toBe('loading')
   })
 
   it('goes back to the flat meter and history chart when the 3D tank can\'t run', () => {
     hero.fail = true
     render(<WaterPage />)
-    expect(screen.queryByTestId('tank-hero')).toBeNull()
     expect(screen.getByRole('meter', { name: 'Tank level' })).toBeTruthy()
     expect(screen.getByTestId('tank-stats').textContent).toBe('min 60%avg 77%max 92%')
+    expect(screen.getByTestId('pump-strip')).toBeTruthy()
   })
 })

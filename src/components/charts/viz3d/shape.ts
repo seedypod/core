@@ -16,7 +16,20 @@ export interface Lane { key: string, label: string, sub: string, tone: Tone, val
 export interface DayEvent { at: number, tone: Tone, label: string }
 export interface TodayData { now: number, lanes: Lane[], events: DayEvent[], ticks: Tick[] }
 
-export interface TankData { levels: number[], topUps: number[], cutoff: number | null, current: number | null, ticks: Tick[], currentLabel: string, cutoffLabel: string | null, /** The pump is running now. */ pumping: boolean }
+/** The words on the tank's scale: full, the level now, the pump cutoff and empty, each with its depth; `short` for a narrow card. */
+export interface TankMarks { full: string, now: string, cutoff: string | null, empty: string, short?: Omit<TankMarks, 'short'> }
+export interface TankData {
+  levels: number[]
+  topUps: number[]
+  cutoff: number | null
+  current: number | null
+  ticks: Tick[]
+  marks: TankMarks
+  /** The pump is running now. */
+  pumping: boolean
+  /** Where along the window this run began (0..1): from there the line is the water this run drew down. */
+  runFrom: number | null
+}
 
 export interface LightData { planned: number[], actual: number[], hold: { from: number, until: number } | null, now: number, nowLevel: number, nowLabel: string, ticks: Tick[] }
 
@@ -137,8 +150,8 @@ export function todayData(input: {
   }
 }
 
-/** The tank over its window (0–100%), its top-ups, the pump cutoff and where it is now. */
-export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], pumping?: boolean }): TankData {
+/** The tank over its window (0–100%), its top-ups, the pump cutoff, where it is now and, while the pump runs, where the run began. */
+export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], marks: TankMarks, pumping?: boolean, runFrom?: number | null }): TankData {
   const finite = input.levels.filter(Number.isFinite)
   const current = input.currentPct ?? finite.at(-1) ?? null
   return {
@@ -147,9 +160,9 @@ export function tankData(input: { levels: number[], topUps: number[], cutoffPct:
     cutoff: input.cutoffPct === null ? null : input.cutoffPct / 100,
     current: current === null ? null : Math.max(0, Math.min(1, current / 100)),
     ticks: input.ticks,
-    currentLabel: current === null ? '—' : `${Math.round(current)}%`,
-    cutoffLabel: input.cutoffPct === null ? null : `cutoff ${input.cutoffPct}%`,
+    marks: input.marks,
     pumping: input.pumping ?? false,
+    runFrom: input.pumping && input.runFrom != null ? Math.max(0, Math.min(1, input.runFrom)) : null,
   }
 }
 

@@ -20,7 +20,7 @@ export type VizKind = keyof VizData
 
 const FACTORY = { today: 'createTodayViz', tank: 'createTankViz', light: 'createLightViz', pods: 'createPodsViz', sensors: 'createSensorsViz' } as const satisfies Record<VizKind, keyof typeof Scenes>
 /** Each chart's shape; the scenes are framed for these. */
-export const ASPECT: Record<VizKind, number> = { today: 3, tank: 2, light: 2, pods: 2.4, sensors: 2.5 }
+export const ASPECT: Record<VizKind, number> = { today: 3, tank: 2.4, light: 2.4, pods: 2.4, sensors: 2.5 }
 
 let loading: Promise<typeof Scenes> | null = null
 /** three.js and the scenes, fetched once, in their own chunk. */
