@@ -38,6 +38,7 @@
   --color-pod-attention: var(--pod-attention);
   --color-pod-ready: var(--pod-ready);
   --color-pod-empty: var(--pod-empty);
+  --color-pod-seeded: var(--pod-seeded);
   --color-meter: var(--meter);
   --color-ok: var(--status-ok);
   --color-warn: var(--status-warn);
@@ -140,6 +141,7 @@
   --lp-indigo: #7f8fb8;
   --lp-humidity: #8fb4c4;
   --lp-clay: #5b5548;
+  --lp-tan: oklch(0.68 0.06 60);
   --lp-meter: #d9cfbb;
 
   --surface-app: var(--lp-ink-0);
@@ -166,6 +168,7 @@
   --pod-ready: var(--lp-amber);
   --pod-attention: var(--lp-red);
   --pod-empty: var(--lp-clay);
+  --pod-seeded: var(--lp-tan);
   /* The 3D leaf-cover chart's column edges and pod stubs. */
   --viz-edge: #5a5446;
   --viz-stub: #4a4638;
@@ -235,6 +238,7 @@
   --lp-indigo: #4a5a8a;
   --lp-humidity: #3f7489;
   --lp-clay: #b3aa96;
+  --lp-tan: oklch(0.58 0.06 60);
   --lp-meter: #6b6455;
   --viz-edge: #a39a86;
   --viz-stub: #c4bba8;

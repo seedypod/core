@@ -110,21 +110,41 @@ It is off by default to spare the SD card.
 A trained pod model needs examples: photos where someone has said what each
 pod shows. **Analysis → Label pods** is where you give them.
 
-1. Pick the camera, and step to an older photo with the arrows if you like (the
-   last 48 per camera).
-2. Pick a label: **Empty**, **Sprouted**, **Growing**, **Ready** or
-   **Unhealthy**.
-3. Tap each pod that shows it. A tap sets the label. Tapping a pod that already
-   has that label clears it. To change a label, pick the other one and tap the
-   pod again.
+1. Pick the camera: **Upper**, **Lower**, or **Both** to see the two stills
+   from one round of captures together (stacked on a phone, side by side on a
+   wider screen). Step to an older photo with the arrows if you like (the last
+   48 per camera); in **Both** the arrows move both cameras back in time
+   together, each showing its newest still at or before that moment.
+2. Pick a label:
+   - **Empty**: a capped pod, no yCube.
+   - **Seeded**: a yCube is in, but nothing is visible yet.
+   - **Sprouted**: the first leaves are showing.
+   - **Growing**, **Ready** (to harvest) or **Unhealthy**.
+3. Tap each pod that shows it. A tap sets the label. To remove a label, tap
+   the pod again with the same label, or pick **Clear** and tap it. To change
+   a label, pick the other one and tap the pod again.
+
+When a pod is labelled, its plant and sowing date go with the label, so a
+season of labels keeps the right species and age after pods are replanted.
+A plant sown after the photo was taken isn't in it, so it isn't recorded.
+Changing a label later keeps the plant it was first given.
 
 The counts above the photo show how many pods carry each label, across every
-photo. Labels are kept per photo and pod, and they stay after the unit prunes
-the photo. Scripts use `PUT /api/vision/captures/{captureId}/labels/{slot}`
-with `{"label": "ready"}` (or `null` to clear it),
-`GET /api/vision/captures/{captureId}/labels`, and `GET /api/vision/labels`
-for the counts and the labelled photos. The `list_analyses` MCP tool returns
-the same summary under `labels`.
+photo. **All labels** shows every labelled pod as its crop, newest photo
+first, with its pod, plant, age and when the photo was taken. Filter by label
+with the chips (each shows its count), **Change** a label with the same chips,
+**Remove** it, or tap the crop to open its photo in the tagger. Labels are
+kept per photo and pod, and they stay after the unit prunes the photo; a
+pruned photo's labels can still be changed or removed.
+
+Scripts use `PUT /api/vision/captures/{captureId}/labels/{slot}` with
+`{"label": "seeded"}` (or `null` to clear it),
+`GET /api/vision/captures/{captureId}/labels`, `GET /api/vision/labels` for
+the counts and the labelled photos, and `GET /api/vision/labels/pods` for the
+labelled pods themselves (`label`, `camera`, `limit` and `cursor`; pass the
+response's `next` back as `cursor` for the next page). The `list_labels` MCP
+tool returns the same, and `list_analyses` the summary under `labels`.
+Labelling stays in the app: agents can read labels but not set or clear them.
 
 ## Export a dataset
 
@@ -151,15 +171,17 @@ recalibrate a threshold, or train a model.
 the window. Rows are ordered by photo time, then photo, then pod:
 
 ```json
-{"captureId":"upper-2026-10-20T00-00-00-000Z","ts":"2026-10-20T00:00:00.000Z","camera":"upper","slot":1,"label":"growing","labelledAt":"2026-10-31T09:00:00.000Z","image":"images/upper-2026-10-20T00-00-00-000Z.jpg","width":1280,"height":960,"region":{"x":128,"y":192,"w":640,"h":480},"box":{"x":0.1,"y":0.2,"w":0.5,"h":0.5}}
+{"captureId":"upper-2026-10-20T00-00-00-000Z","ts":"2026-10-20T00:00:00.000Z","camera":"upper","slot":1,"label":"growing","labelledAt":"2026-10-31T09:00:00.000Z","plant":"Basil","plantedAt":"2026-10-06","daysSinceSowing":14,"image":"images/upper-2026-10-20T00-00-00-000Z.jpg","width":1280,"height":960,"region":{"x":128,"y":192,"w":640,"h":480},"box":{"x":0.1,"y":0.2,"w":0.5,"h":0.5}}
 ```
 
 | Field | Meaning |
 |---|---|
 | `captureId`, `ts`, `camera` | The photo, when it was taken, and which camera (`upper`: pods 1–15, `lower`: 16–30) |
 | `slot` | The pod, 1–30 |
-| `label` | `empty`, `sprouted`, `growing`, `ready` or `unhealthy` |
+| `label` | `empty` (capped, no yCube), `seeded` (yCube in, nothing visible yet), `sprouted`, `growing`, `ready` or `unhealthy` |
 | `labelledAt` | When it was labelled |
+| `plant`, `plantedAt` | The pod's plant and sowing date when it was labelled; `null` when it had none, or for labels from before core recorded them |
+| `daysSinceSowing` | Whole days from `plantedAt` to `ts`; `null` without a sowing date |
 | `image` | The photo's path in the archive, or `null` when it isn't there (exported without photos, pruned, or a demo still) |
 | `width`, `height` | The photo's size in pixels, read from its JPEG header; `null` when the photo can't be read |
 | `region` | The pod's crop in the photo's pixels, `x`, `y`, `w`, `h` with the origin top left; `null` when the photo can't be read |
@@ -187,7 +209,9 @@ of photos labelled before, which is right as long as the camera hasn't moved.
 `pod-state` is a small convolutional network (three 3×3 convolutions of 16, 32
 and 64 channels, a global average pool and one dense layer, about 24,000
 weights) that reads each pod's crop shrunk to 64×64 and names its state:
-`empty`, `sprouted`, `growing`, `ready` or `unhealthy`. Per pod it stores two
+`empty`, `sprouted`, `growing`, `ready` or `unhealthy`. It has no `seeded`
+class: that label came after the model, so the next training run either adds
+it or maps it onto one of these. Per pod it stores two
 results: `pod_state`, the index of the most likely class (its `detail` names
 it and holds every class's probability), and `pod_state_confidence`, that
 class's probability. The Analysis screen shows the state in a column beside the
