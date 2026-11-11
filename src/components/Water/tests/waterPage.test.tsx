@@ -416,9 +416,24 @@ describe('WaterPage: pump cycles', () => {
   it('marks the preset the cycles already are', () => {
     data.set('schedules', [curve, { ...morning, id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', spec: { minute: 480, durationS: 600 } }])
     render(<WaterPage />)
-    expect(within(screen.getByTestId('pump-preset-seedlings')).getByTestId('pump-applied').textContent).toBe('Running')
-    expect(screen.getAllByTestId('pump-applied')).toHaveLength(1)
-    expect(screen.getAllByTestId('pump-applied')).toHaveLength(1)
+    // Its card is tinted, and the section header names it; no chip to crowd the title.
+    const card = screen.getByTestId('pump-preset-seedlings').parentElement as HTMLElement
+    expect(card.dataset.running).toBe('true')
+    expect(card.className).toContain('bg-tank/10')
+    expect(document.querySelectorAll('[data-running]')).toHaveLength(1)
+    expect(screen.getByTestId('pump-running').textContent).toBe('·Seedlings running')
+    // Previewed as well, it keeps the tint and gains the preview's ringed border.
+    fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
+    expect(card.className).toMatch(/bg-tank\/10.*border-tank ring-1 ring-tank/)
+    cleanup()
+    // Cycles of your own say so; none, nothing.
+    data.set('schedules', [curve, morning])
+    render(<WaterPage />)
+    expect(screen.getByTestId('pump-running').textContent).toBe('·custom cycles')
+    cleanup()
+    data.set('schedules', [curve])
+    render(<WaterPage />)
+    expect(screen.queryByTestId('pump-running')).toBeNull()
   })
 
   it('keeps a cycle the preset re-creates rather than removing it first', async () => {
@@ -528,10 +543,8 @@ describe('WaterPage: pump cycles', () => {
     render(<WaterPage />)
     expect(screen.getByText(/the cycles move along these stages as the days pass/)).toBeTruthy()
     expect(screen.getAllByTestId('pump-stage').map(e => e.textContent)).toEqual(['Days 0–7', 'Days 8–13 · today is day 10', 'Days 14–21', 'Day 22 on', 'Tomatoes, cucumbers, peppers · from day 8'])
-    // The only chip is Running, on the preset the cycles are; none here.
-    expect(screen.queryByTestId('pump-applied')).toBeNull()
-    // Cycles on another preset say they're yours, not a second "now".
-    expect(within(screen.getByTestId('pump-preset-seedlings')).queryByTestId('pump-applied')).toBeNull()
+    // The cycles here are no preset: no card is tinted as running.
+    expect(document.querySelectorAll('[data-running]')).toHaveLength(0)
     // Every stage still previews.
     fireEvent.click(screen.getByTestId('pump-preset-mature'))
     expect(screen.getByTestId('pump-preset-mature').getAttribute('aria-pressed')).toBe('true')
