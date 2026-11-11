@@ -14,7 +14,7 @@ import { tankData, type TankMarks } from '@/src/components/charts/viz3d/shape'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { dayOn, daysLabel, daysToList, listToDays, weekdayOf } from '@/src/lib/days'
-import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, recommendPreset, TIPS_CITATION, WATERING_TIPS, type PumpPresetId } from '@/src/scheduler/pumpPlan'
+import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
@@ -62,7 +62,8 @@ export function WaterPage() {
   const light = lightWindow(runningToday((schedules.data ?? []).flatMap(x => asCurve(x) ?? []), weekdayOf(now)).map(c => c.spec))
   const planted = (pods.data ?? []).filter(x => x.status !== 'empty')
   const sown = daysSinceSowing(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), now)
-  const recommended = recommendPreset(sown, planted.map(x => x.plant))
+  const recommended = recommendedPreset(sown, plantCategories(planted.map(x => x.plant)))
+  const applied = appliedPreset(cycles, light)
   const previewing = PUMP_PRESETS.find(x => x.id === preview) ?? null
   const previewRuns = previewing ? presetRuns(previewing, light) : null
   const apply = () => {
@@ -169,7 +170,7 @@ export function WaterPage() {
       <PumpPresets
         light={light}
         recommended={recommended}
-        sown={sown}
+        applied={applied}
         previewing={preview}
         onPreview={(id) => {
           setPreview(id === preview ? null : id)
@@ -498,10 +499,11 @@ function DayStrip({ runs, light }: { runs: number[], light: { on: number, off: n
  * the chart and the strip; Apply there replaces the cycles. Blank opens the
  * editor.
  */
-function PumpPresets({ light, recommended, sown, previewing, onPreview, onBlank }: {
+function PumpPresets({ light, recommended, applied, previewing, onPreview, onBlank }: {
   light: { on: number, off: number } | null
-  recommended: PumpPresetId | null
-  sown: number | null
+  recommended: { id: PumpPresetId, why: string } | null
+  /** The preset the cycles are now, if they match one. */
+  applied: PumpPresetId | null
   previewing: PumpPresetId | null
   onPreview: (id: PumpPresetId) => void
   onBlank: () => void
@@ -517,14 +519,19 @@ function PumpPresets({ light, recommended, sown, previewing, onPreview, onBlank 
         {PUMP_PRESETS.map((p) => {
           const runs = presetRuns(p, light)
           const mins = Math.round(p.durationS / 60)
-          const mine = recommended === p.id
+          const mine = recommended?.id === p.id
           return (
             <div key={p.id} className={cn('flex flex-col gap-2 rounded-card border bg-surface px-3.5 py-3', previewing === p.id ? 'border-tank' : mine ? 'border-fg-3' : 'border-line')}>
               <button type="button" data-testid={`pump-preset-${p.id}`} aria-pressed={previewing === p.id} onClick={() => onPreview(p.id)} className="flex cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left">
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium">{p.name}</span>
                 </span>
-                {mine && <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-recommended">{p.id === 'fruiting' ? 'for your fruiting plants' : `for day ${sown}`}</span>}
+                {(mine || applied === p.id) && (
+                  <span className="flex flex-wrap gap-1.5">
+                    {applied === p.id && <span className="w-fit rounded-[10px] bg-tank/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-tank" data-testid="pump-applied">running now</span>}
+                    {mine && recommended && <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-recommended" title={`Recommended: ${recommended.why}`}>{`recommended · ${recommended.why}`}</span>}
+                  </span>
+                )}
                 <DayStrip runs={runs} light={light} />
                 <span className="font-mono text-[11px] text-fg-2">{`${runs.length} × ${mins} min = ${dailyMinutes(runs.length, p.durationS)} min a day`}</span>
                 <span className="text-[12px] leading-snug text-fg-3">{p.note}</span>

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { anchor } from '../../care/knowledge'
-import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, recommendPreset, TIPS_CITATION, WATERING_TIPS, type PumpPreset } from '../pumpPlan'
+import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, appliedPreset, plantCategories, presetSchedules, PUMP_PRESETS, recommendedPreset, TIPS_CITATION, WATERING_TIPS, type PumpPreset } from '../pumpPlan'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const preset = (id: string) => PUMP_PRESETS.find(p => p.id === id) as PumpPreset
@@ -60,6 +60,7 @@ describe('pump presets', () => {
       { id: 'water-mature-1400', kind: 'pump', name: 'Mature · 3× 6 min (14:00)', enabled: true, days: 127, spec: { minute: 840, durationS: 360 } },
       { id: 'water-mature-2000', kind: 'pump', name: 'Mature · 3× 6 min (20:00)', enabled: true, days: 127, spec: { minute: 1200, durationS: 360 } },
     ])
+    // Exactly the cycle already on the unit, so it reads as applied.
     expect(presetSchedules(preset('seedlings'), { enabled: false })[0]).toMatchObject({ id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', enabled: false })
     expect(presetSchedules(preset('fruiting'), { enabled: true, light: { on: 420, off: 1260 } }).map(s => s.name)).toEqual(['Fruiting · 3× 5 min (10:00)', 'Fruiting · 3× 5 min (14:00)', 'Fruiting · 3× 5 min (18:00)'])
   })
@@ -75,13 +76,30 @@ describe('recommending a preset', () => {
     expect(daysSinceSowing('2026-12-01T00:00:00Z', [], now)).toBe(0)
   })
 
-  it('picks by stage, and fruiting whenever a fruiting crop is planted', () => {
-    expect(recommendPreset(0, ['Basil'])).toBe('seedlings')
-    expect(recommendPreset(7, [])).toBe('seedlings')
-    expect(recommendPreset(8, [])).toBe('young')
-    expect(recommendPreset(21, [])).toBe('young')
-    expect(recommendPreset(22, [null])).toBe('mature')
-    expect(recommendPreset(null, [])).toBeNull()
-    expect(recommendPreset(3, ['Basil', 'Cucumber'])).toBe('fruiting')
+  it('picks by stage, and fruiting whenever a fruiting crop is planted, saying why', () => {
+    expect(recommendedPreset(0, ['herb'])).toEqual({ id: 'seedlings', why: 'day 0 since sowing' })
+    expect(recommendedPreset(7, [])?.id).toBe('seedlings')
+    expect(recommendedPreset(8, [])?.id).toBe('young')
+    expect(recommendedPreset(21, [])?.id).toBe('young')
+    expect(recommendedPreset(22, ['green'])).toEqual({ id: 'mature', why: 'day 22 since sowing' })
+    expect(recommendedPreset(null, [])).toBeNull()
+    expect(recommendedPreset(3, ['herb', 'fruiting'])).toEqual({ id: 'fruiting', why: 'a fruiting crop is planted' })
+    expect(recommendedPreset(null, ['fruiting'])?.id).toBe('fruiting')
+  })
+
+  it('reads the planted plants\' catalog categories, skipping unknown names', () => {
+    expect(plantCategories(['Cucumber', null, 'Not a plant', 'Basil'])).toEqual(['fruiting', expect.any(String)])
+  })
+
+  it('knows which preset the cycles are, and none when they differ', () => {
+    const mature = presetSchedules(preset('mature'), { enabled: true })
+    expect(appliedPreset(mature, null)).toBe('mature')
+    expect(appliedPreset([{ id: 'water-seedlings-0800', spec: { minute: 480, durationS: 600 } }], null)).toBe('seedlings')
+    // Under another id, its name still says which it is.
+    expect(appliedPreset([{ id: 'water-old-0800', name: 'Seedlings · once a day 10 min (08:00)', spec: { minute: 480, durationS: 600 } }], null)).toBe('seedlings')
+    expect(appliedPreset([{ id: 'other', name: 'Mine', spec: { minute: 480, durationS: 600 } }], null)).toBeNull()
+    expect(appliedPreset(mature.slice(1), null)).toBeNull()
+    expect(appliedPreset([{ ...mature[0] as typeof mature[number], spec: { minute: 480, durationS: 300 } }, ...mature.slice(1)], null)).toBeNull()
+    expect(appliedPreset([], null)).toBeNull()
   })
 })

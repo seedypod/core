@@ -246,7 +246,7 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.getByRole('link', { name: 'Gardyn’s guide' }).getAttribute('href')).toBe('https://help.mygardyn.com/en/articles/4435265')
     const young = screen.getByTestId('pump-preset-young')
     expect(within(young).getByText('2 × 6 min = 12 min a day')).toBeTruthy()
-    expect(within(young).getByTestId('pump-recommended').textContent).toBe('for day 10')
+    expect(within(young).getByTestId('pump-recommended').textContent).toBe('recommended · day 10 since sowing')
     expect(screen.getAllByTestId('pump-recommended')).toHaveLength(1)
     // Fruiting keeps to the light: 22:00 falls outside 06:00–21:00.
     expect(within(screen.getByTestId('pump-preset-fruiting')).getByText('4 × 5 min = 20 min a day')).toBeTruthy()
@@ -258,7 +258,7 @@ describe('WaterPage: pump cycles', () => {
   it('recommends the fruiting preset when a fruiting crop is planted', () => {
     data.set('pods', [{ slot: 1, plant: 'Cucumber', status: 'growing', plantedAt: '2026-10-01' }, { slot: 2, plant: null, status: 'empty', plantedAt: null }])
     render(<WaterPage />)
-    expect(within(screen.getByTestId('pump-preset-fruiting')).getByTestId('pump-recommended').textContent).toBe('for your fruiting plants')
+    expect(within(screen.getByTestId('pump-preset-fruiting')).getByTestId('pump-recommended').textContent).toBe('recommended · a fruiting crop is planted')
   })
 
   it('previews a preset on the strip and the day\'s chart without saving, and applies it in place of the cycles after a confirmation', () => {
@@ -299,6 +299,13 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', enabled: true }))
     expect(calls.remove).not.toHaveBeenCalled()
+  })
+
+  it('marks the preset the cycles already are', () => {
+    data.set('schedules', [curve, { ...morning, id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', spec: { minute: 480, durationS: 600 } }])
+    render(<WaterPage />)
+    expect(within(screen.getByTestId('pump-preset-seedlings')).getByTestId('pump-applied').textContent).toBe('running now')
+    expect(screen.getAllByTestId('pump-applied')).toHaveLength(1)
   })
 
   it('keeps a cycle the preset re-creates rather than removing it first', () => {
