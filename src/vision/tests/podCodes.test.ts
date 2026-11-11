@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { MemoryStore } from '../../store/memory'
-import { DARK_STILL, PodCodeService, podCodeViews, podvisionCodeReader, type CodeReader, type CodesOutput } from '../podCodes'
+import { podvisionCodeReader } from '../nativeExecutor'
+import { DARK_STILL, PodCodeService, podCodeViews, type CodeReader, type CodesOutput } from '../podCodes'
 import { DEFAULT_REGIONS } from '../regions'
 
 /** podvision's answer for a camera: these slots read, everything else on it unknown. */

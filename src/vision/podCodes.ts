@@ -4,13 +4,13 @@
  * readable. Core keeps the latest read of every pod. Which code is which plant
  * is learnt only from the owner's confirmations: an unconfirmed pair is never
  * stored or trusted.
+ *
+ * This runs in the browser demo too, so podvision itself (node-only) is
+ * passed in as a `CodeReader`: `podvisionCodeReader` in nativeExecutor.ts.
  */
 import type { PodCodePair, PodCodeRead, Store } from '../store/types'
-import { podvisionJson } from './nativeExecutor'
 import { CAMERAS, podRegions, type Camera, type PodRegions } from './regions'
 
-/** A Pi Zero decodes the 2592×1944 still in several seconds, then reads 15 pods. */
-export const PODVISION_CODES_TIMEOUT_MS = 120_000
 /** Darker than this (mean of R, G and B, 0–1), the still says nothing: the last reads stay. */
 export const DARK_STILL = 0.08
 
@@ -25,11 +25,6 @@ export interface CodesOutput {
 }
 
 export type CodeReader = (bytes: Uint8Array, regions: PodRegions) => Promise<CodesOutput>
-
-/** The real reader: podvision at nice 19. */
-export function podvisionCodeReader(bin: string, timeoutMs = PODVISION_CODES_TIMEOUT_MS): CodeReader {
-  return (bytes, regions) => podvisionJson<CodesOutput>(bin, ['--codes', '--pods', JSON.stringify(regions)], bytes, timeoutMs)
-}
 
 /** One pod as Label pods shows it: what was read, and what the owner has said that code is. */
 export interface PodCodeView extends PodCodeRead {

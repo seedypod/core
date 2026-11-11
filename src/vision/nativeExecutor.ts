@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs'
 import { setPriority } from 'node:os'
 import { deviceAnalyzers, findAnalyzer } from './analyzer'
 import { DAMAGED, type AnalysisJob, type Executor, type JobOutput, type JobResult } from './execute'
+import type { CodeReader, CodesOutput } from './podCodes'
 import { podStateRows, type LearnedSpec } from './podState'
 import { podRegions, type PodRegions } from './regions'
 
@@ -56,6 +57,14 @@ export interface PodvisionModel { id: string, path: string }
 /** Run podvision once: the still on stdin, at nice 19, killed after `timeoutMs`. Rejects with what went wrong. */
 export function runPodvision(bin: string, bytes: Uint8Array, regions: PodRegions, models: PodvisionModel[], timeoutMs = PODVISION_TIMEOUT_MS): Promise<PodvisionOutput> {
   return podvisionJson<PodvisionOutput>(bin, ['--pods', JSON.stringify(regions), ...models.flatMap(m => ['--model', `${m.id}=${m.path}`])], bytes, timeoutMs)
+}
+
+/** A Pi Zero decodes a 2592×1944 pod-ID still in several seconds, then reads 15 pods. */
+export const PODVISION_CODES_TIMEOUT_MS = 120_000
+
+/** Reads yCube dot codes (#224) with `podvision --codes`, at nice 19. */
+export function podvisionCodeReader(bin: string, timeoutMs = PODVISION_CODES_TIMEOUT_MS): CodeReader {
+  return (bytes, regions) => podvisionJson<CodesOutput>(bin, ['--codes', '--pods', JSON.stringify(regions)], bytes, timeoutMs)
 }
 
 /** One run of podvision with `args`, the still on stdin, at nice 19, killed after `timeoutMs`; resolves with the JSON it prints. */
