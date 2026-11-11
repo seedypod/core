@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { podRegions } from '@/src/vision/regions'
 import { HISTORY, LabelPods, PAGE, rounds } from '../LabelPods'
 
+// Pod codes have their own tests (podCodes.test.tsx).
+vi.mock('../PodCodes', () => ({ PodCodes: () => null }))
+
 const { data, calls, invalidate, mutation, infinite } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   calls: { frames: vi.fn(), get: vi.fn(), labels: vi.fn(), setLabel: vi.fn(), labelList: vi.fn(), fetchNextPage: vi.fn() },

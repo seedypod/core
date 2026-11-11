@@ -265,6 +265,30 @@ export interface PodLabel {
 /** Where a page of labels ends: the last row's capture time, capture and pod. */
 export interface PodLabelCursor { ts: string, captureId: string, slot: number }
 
+/**
+ * A yCube dot code (#224): four marks read away from the solid dot, each `o`
+ * open, `|` bar, `/` slanted bar or `h` half filled.
+ */
+export const POD_CODE = /^[o|/h]{4}$/
+
+/** A code the owner has said is this plant (#224). Only confirmed pairs are kept. */
+export interface PodCodePair {
+  code: string
+  plant: string
+  confirmedAt: string
+}
+
+/** What the last pod-ID still of a pod's camera read under it (#224). */
+export interface PodCodeRead {
+  slot: number
+  camera: 'upper' | 'lower'
+  /** Null when nothing was read with enough confidence. */
+  code: string | null
+  confidence: number
+  /** When the pod-ID still was taken. */
+  ts: string
+}
+
 /** One sample of the SD card's sectors-written counter; `bytes` were written since the previous sample. */
 export interface FlashSample { ts: string, sectors: number, bytes: number }
 
@@ -394,6 +418,18 @@ export interface Store {
     counts(): Record<PodLabelValue, number>
     /** Labelled captures, newest first, with how many of their pods are labelled. */
     captures(limit?: number): Array<{ captureId: string, ts: string, camera: 'upper' | 'lower', pods: number }>
+  }
+  podCodes: {
+    /** Owner-confirmed pairs, by code. */
+    pairs(): PodCodePair[]
+    pair(code: string): PodCodePair | null
+    /** Upsert on code: a correction replaces the plant. */
+    confirm(code: string, plant: string, ts: string): PodCodePair
+    forget(code: string): boolean
+    /** The latest read of every pod, by slot. */
+    reads(): PodCodeRead[]
+    /** Replace one camera's reads with a new pod-ID still's. */
+    setReads(camera: 'upper' | 'lower', reads: PodCodeRead[]): void
   }
   automations: {
     list(): Automation[]

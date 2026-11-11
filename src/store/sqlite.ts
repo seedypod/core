@@ -9,7 +9,7 @@ import type { SensorId } from '../hardware/contract'
 import type { AutomationRule } from '../autopilot/types'
 import * as t from '../db/schema'
 import { downsample } from './memory'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowProtocolState, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PodLabel, PodLabelCursor, PodLabelValue, PumpSpec, SavedCycle, SavedSchedule, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowProtocolState, GrowStage, LightSpec, PlanRow, PlantProfile, Pod, PodCodePair, PodCodeRead, PodLabel, PodLabelCursor, PodLabelValue, PumpSpec, SavedCycle, SavedSchedule, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
 export interface SqliteStoreOptions {
@@ -406,6 +406,22 @@ export class SqliteStore implements Store {
     captures: (limit = 50): Array<{ captureId: string, ts: string, camera: 'upper' | 'lower', pods: number }> =>
       this.db.select({ captureId: t.podLabels.captureId, ts: t.podLabels.ts, camera: t.podLabels.camera, pods: sql<number>`count(*)` }).from(t.podLabels)
         .groupBy(t.podLabels.captureId).orderBy(desc(t.podLabels.ts), asc(t.podLabels.captureId)).limit(limit).all(),
+  }
+
+  podCodes = {
+    pairs: (): PodCodePair[] => this.db.select().from(t.podCodes).orderBy(asc(t.podCodes.code)).all(),
+    pair: (code: string): PodCodePair | null => this.db.select().from(t.podCodes).where(eq(t.podCodes.code, code)).get() ?? null,
+    confirm: (code: string, plant: string, ts: string): PodCodePair =>
+      this.db.insert(t.podCodes).values({ code, plant, confirmedAt: ts })
+        .onConflictDoUpdate({ target: t.podCodes.code, set: { plant, confirmedAt: ts } }).returning().get(),
+    forget: (code: string): boolean => this.db.delete(t.podCodes).where(eq(t.podCodes.code, code)).run().changes > 0,
+    reads: (): PodCodeRead[] => this.db.select().from(t.podCodeReads).orderBy(asc(t.podCodeReads.slot)).all(),
+    setReads: (camera: 'upper' | 'lower', reads: PodCodeRead[]): void => {
+      this.db.transaction((tx) => {
+        tx.delete(t.podCodeReads).where(eq(t.podCodeReads.camera, camera)).run()
+        if (reads.length) tx.insert(t.podCodeReads).values(reads.map(r => ({ ...r, camera }))).onConflictDoUpdate({ target: t.podCodeReads.slot, set: { camera, code: sql`excluded.code`, confidence: sql`excluded.confidence`, ts: sql`excluded.ts` } }).run()
+      })
+    },
   }
 
   automations = {

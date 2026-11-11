@@ -28,6 +28,7 @@ import { TelemetryRetention } from '../telemetry/retention'
 import type { Executor } from '../vision/execute'
 import type { ModelRegistry } from '../vision/registry'
 import { AnalysisService } from '../vision/service'
+import { PodCodeService, type CodeReader } from '../vision/podCodes'
 import type { Context } from './context'
 
 export interface CoreOptions {
@@ -48,6 +49,8 @@ export interface CoreOptions {
   models?: ModelRegistry
   /** The native pod-state runner (#191), when it's installed; node hosts only. */
   podvision?: Context['podvision']
+  /** Reads yCube dot codes from pod-ID stills (#224): podvision, when it's installed. */
+  codeReader?: CodeReader | null
   /** NetworkManager on a unit; an in-memory stand-in for tests and the demo. */
   wifi?: Wifi
   /** Downloads, nightly bucket uploads and the staleness alert (ADR-0021); node hosts only. */
@@ -104,7 +107,8 @@ export function createCore(o: CoreOptions): Core {
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, update: o.update, bootLog: o.bootLog, homekit: o.homekit, models: o.models, podvision: o.podvision, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  const podCodes = new PodCodeService({ store: o.store, captures, reader: o.codeReader ?? null, log: m => console.warn(m) })
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, podCodes, mirror: o.mirror, backup: o.backup, restore: o.restore, update: o.update, bootLog: o.bootLog, homekit: o.homekit, models: o.models, podvision: o.podvision, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const retention = new TelemetryRetention({ store: o.store, now: o.now })

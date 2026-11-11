@@ -38,6 +38,8 @@ const TOUCHES = new Map<string, readonly Area[]>([
   ['network', ['network', 'system']],
   ['plans', ['planner']],
   ['plants', ['plants', 'grow']],
+  // yCube dot codes (#224): Label pods' code list.
+  ['podCodes', ['vision']],
   ['pods', ['grow', 'planner', 'vision', 'protocol']],
   // Pod boxes on the stills: the Analysis overlay and the Grow crops.
   ['regions', ['vision']],

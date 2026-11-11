@@ -10,6 +10,7 @@ import { createCore } from '../bootstrap'
 import { appRouter } from '../routers/app'
 import { createCallerFactory } from '../trpc'
 import { DEFAULT_REGIONS } from '../../vision/regions'
+import type { CodeReader } from '../../vision/podCodes'
 
 async function scored(n = 3) {
   const sink = new MemorySink()
@@ -224,5 +225,51 @@ describe('vision router (ADR-0019)', () => {
     await expect(c.vision.setLabel({ captureId: 'upper-gone', slot: 20, label: 'ready' })).rejects.toThrow(/pod 20 is not on the upper camera/)
     await c.vision.setLabel({ captureId: 'upper-gone', slot: 7, label: null })
     await expect(c.vision.setLabel({ captureId: 'upper-gone', slot: 7, label: 'ready' })).rejects.toThrow(/no capture upper-gone/)
+  })
+})
+
+describe('pod codes (#224)', () => {
+  function codesCore(reader: CodeReader | null) {
+    const events: string[] = []
+    const core = createCore({ hal: new SimHal({ tickMs: 0 }), store: new MemoryStore(), version: 'test', captureMinBytes: 1, codeReader: reader, now: () => new Date('2026-11-11T21:00:00.000Z') })
+    core.ctx.events.subscribe(e => void (e.kind === 'mutation' && events.push(e.path)))
+    return { ctx: core.ctx, events, c: createCallerFactory(appRouter)(core.ctx) }
+  }
+  const answer = (pods: Array<{ slot: number, code: string | null }>) => ({ width: 2592, height: 1944, brightness: 0.4, damaged: false, pods: pods.map(p => ({ ...p, confidence: p.code ? 0.9 : 0.1, dots: [] })), ms: { decode: 1, read: 1 } })
+
+  it('reads on demand, then shows only the pods a code was read under', async () => {
+    const { c, ctx, events } = codesCore(async (_b, regions) => (regions[6] ? answer([{ slot: 6, code: 'oo||' }, { slot: 9, code: null }]) : answer([])))
+    ctx.store.pods.update(6, { plant: 'Green Bok Choy', plantedAt: '2026-11-01', status: 'growing' }, 't')
+    expect(await c.vision.podCodes()).toEqual({ available: true, pods: [], pairs: [] })
+    expect(await c.vision.readPodCodes()).toEqual([
+      { camera: 'upper', ts: '2026-11-11T21:00:00.000Z', read: 1, error: null },
+      { camera: 'lower', ts: '2026-11-11T21:00:00.000Z', read: 0, error: null },
+    ])
+    expect(events).toContain('podCodes')
+    const got = await c.vision.podCodes()
+    expect(got.pods).toEqual([{ slot: 6, camera: 'upper', code: 'oo||', confidence: 0.9, ts: '2026-11-11T21:00:00.000Z', confirmed: null, recorded: 'Green Bok Choy' }])
+    // No capture was added, and nothing was confirmed by reading.
+    expect(await c.camera.list({ limit: 10 })).toEqual([])
+    expect(ctx.store.podCodes.pairs()).toEqual([])
+  })
+
+  it('confirms and corrects a pair without touching the pod records', async () => {
+    const { c, ctx } = codesCore(async () => answer([{ slot: 6, code: 'oo||' }]))
+    ctx.store.pods.update(6, { plant: 'Basil', plantedAt: '2026-11-01', status: 'growing' }, 't')
+    const before = ctx.store.pods.list()
+    expect(await c.vision.confirmPodCode({ code: 'oo||', plant: 'Basil' })).toEqual({ code: 'oo||', plant: 'Basil', confirmedAt: '2026-11-11T21:00:00.000Z' })
+    expect(await c.vision.confirmPodCode({ code: 'oo||', plant: ' Green Bok Choy ' })).toMatchObject({ plant: 'Green Bok Choy' })
+    expect((await c.vision.podCodes()).pairs).toEqual([{ code: 'oo||', plant: 'Green Bok Choy', confirmedAt: '2026-11-11T21:00:00.000Z' }])
+    expect(ctx.store.pods.list()).toEqual(before)
+    expect(await c.vision.forgetPodCode({ code: 'oo||' })).toEqual({ forgotten: true })
+    expect(await c.vision.forgetPodCode({ code: 'oo||' })).toEqual({ forgotten: false })
+    await expect(c.vision.confirmPodCode({ code: 'xx', plant: 'Basil' })).rejects.toThrow(/four of/)
+    await expect(c.vision.confirmPodCode({ code: 'oooo', plant: '  ' })).rejects.toThrow()
+  })
+
+  it('says when podvision isn\'t there to read', async () => {
+    const { c } = codesCore(null)
+    expect((await c.vision.podCodes()).available).toBe(false)
+    await expect(c.vision.readPodCodes()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' })
   })
 })

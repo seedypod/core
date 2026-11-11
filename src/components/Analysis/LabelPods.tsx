@@ -9,6 +9,7 @@ import type { AppRouter } from '@/src/server/routers/app'
 import { POD_LABELS, type PodLabelValue } from '@/src/store/types'
 import { apiBase, trpc } from '@/src/utils/trpc'
 import type { PodRegions } from '@/src/vision/regions'
+import { PodCodes } from './PodCodes'
 
 type Camera = 'upper' | 'lower'
 type Shown = Camera | 'both'
@@ -319,6 +320,7 @@ export function LabelPods({ boxes }: { boxes: (camera: Camera) => PodRegions }) 
                 {pinned && <span className="text-center text-xs text-fg-3">{`Older than the last ${HISTORY} photos: the arrows go back to them.`}</span>}
                 {missed && <span className="text-center text-xs text-fg-3">That photo is no longer kept, so the newest is shown.</span>}
               </figure>
+              <PodCodes />
             </>
           )}
       {set.error && <InlineError>{set.error.message}</InlineError>}
