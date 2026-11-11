@@ -11,9 +11,20 @@ const MAX_BACKDATE_DAYS = 120
 /** Midnight at the start of `date` (YYYY-MM-DD) in `timezone`. */
 export function zonedMidnight(date: string, timezone: string): Date {
   const guess = Date.parse(`${date}T00:00:00Z`)
-  const wall = localTime(new Date(guess), timezone)
-  const offset = Date.parse(`${wall.date}T00:00:00Z`) + wall.minute * 60_000 - guess
-  return new Date(guess - offset)
+  const offsetAt = (t: number) => {
+    const wall = localTime(new Date(t), timezone)
+    return Date.parse(`${wall.date}T00:00:00Z`) + wall.minute * 60_000 - t
+  }
+  // The offset at the guess can differ from the one at midnight on a DST day, so take it again there.
+  const first = guess - offsetAt(guess)
+  const at = guess - offsetAt(first)
+  // Where a DST jump skips midnight, the day starts at the first instant after the gap.
+  return new Date(localTime(new Date(at), timezone).date < date ? first : at)
+}
+
+const realDate = (d: string) => {
+  const t = Date.parse(`${d}T00:00:00Z`)
+  return !Number.isNaN(t) && new Date(t).toISOString().startsWith(d)
 }
 
 const Stage = z.enum(['germination', 'seedling', 'vegetative', 'harvest', 'ended'])
@@ -45,7 +56,7 @@ export const growRouter = router({
     }),
   start: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/grow/start', tags: ['grow'], summary: 'Start a new grow cycle (ends any open one); startedAt (YYYY-MM-DD, the unit\'s local date) backdates it to the sowing day' } })
-    .input(z.object({ notes: z.string().default(''), startedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'startedAt must be a date, YYYY-MM-DD').optional() }))
+    .input(z.object({ notes: z.string().default(''), startedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'startedAt must be a date, YYYY-MM-DD').refine(realDate, 'startedAt is not a real date').optional() }))
     .output(Cycle)
     .mutation(({ ctx, input }) => {
       const now = (ctx.now ?? (() => new Date()))()

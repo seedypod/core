@@ -162,6 +162,18 @@ describe('grow cycle start date', () => {
     expect(zonedMidnight('2026-11-09', 'UTC').toISOString()).toBe('2026-11-09T00:00:00.000Z')
   })
 
+  it('finds midnight on DST days, and the day\'s first instant where a jump skips it', async () => {
+    // Sydney springs forward at 02:00 on 2026-10-04; midnight is still +10.
+    expect(zonedMidnight('2026-10-04', 'Australia/Sydney').toISOString()).toBe('2026-10-03T14:00:00.000Z')
+    // And falls back at 03:00 on 2026-04-05; midnight is still +11.
+    expect(zonedMidnight('2026-04-05', 'Australia/Sydney').toISOString()).toBe('2026-04-04T13:00:00.000Z')
+    // Santiago jumps 00:00 → 01:00 on 2026-09-06: the day starts at 01:00 (-3).
+    expect(zonedMidnight('2026-09-06', 'America/Santiago').toISOString()).toBe('2026-09-06T04:00:00.000Z')
+    const { c } = caller()
+    await expect(c.grow.start({ notes: '', startedAt: '2026-02-30' })).rejects.toThrow(/not a real date/)
+    await expect(c.grow.start({ notes: '', startedAt: '2026-13-01' })).rejects.toThrow(/not a real date/)
+  })
+
   it('takes started_at over MCP, and pump_presets says whether watering follows the cycle', async () => {
     const { core } = caller()
     const [a, b] = InMemoryTransport.createLinkedPair()
