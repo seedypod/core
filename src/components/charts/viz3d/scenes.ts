@@ -6,7 +6,7 @@
 import type * as THREE from 'three'
 import { createBase, floorGrid, inkMix, ribbon, type Base, type BaseSpec, type Env, type Frame, type Ink, type Label, type Viz } from './base'
 import { clamp01, lerp, pointEase, pulse } from './motion'
-import { type LightData, type PodsData, type SensorsData, type Tick, type TankData, type TodayData, type Tone } from './shape'
+import { DAY_TICKS, type LightData, type PodsData, type SensorsData, type Tick, type TankData, type TodayData, type Tone } from './shape'
 
 /** Tick labels along x: the first starts at its tick, the last ends at its, the rest centre on theirs, so none hangs past the ends. */
 function axis(base: Base, o: { x0: number, width: number, y: number, z: number, size?: number }) {
@@ -294,24 +294,29 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
 
 // ── Light ────────────────────────────────────────────────────────────────
 
-export const LIGHT_SPEC: BaseSpec = { need: 11.2, camera: { position: [0, 4.6, 11.8], target: [0, 1.3, 0] }, bounds: [[-5, -0.35, -0.7], [5, 3.1, 0.8]] }
+export const LIGHT_SPEC: BaseSpec = { need: 11.4, camera: { position: [0.05, 4.1, 11.6], target: [0.05, 0.95, 0] }, bounds: [[-5.2, -0.4, -0.75], [4, 2.85, 0.75]] }
 
-/** The day's planned curve as a line, what the LED gave as a ribbon up to now, a manual hold's window on the floor, and a pulsing dot at now. */
+/**
+ * The light's day and the lamp now on one vertical scale: the planned curve
+ * as a line, what the LED gave as a ribbon up to now, a manual hold's window
+ * on the floor and a pulsing dot at now, beside a glass tube lit to the level
+ * now. One dashed Boost line, labelled once, crosses both; ticks down the
+ * tube's right side read now and off.
+ */
 export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData> {
-  const x0 = -5
-  const W = 10
-  const H = 2.8
+  const x0 = -5.2
+  const W = 6.6
+  const H = 2.6
+  const CX = 2.9
+  const R = 0.32
   let data: LightData | null = null
   const base = createBase(container, LIGHT_SPEC, draw, env)
   const T = base.THREE
   const actual = ribbon(base, { x0, width: W, z: 0, height: H, ink: 'amber', n: 97, fill: 0.26 })
   floorGrid(base, { x0, x1: x0 + W, z0: -0.7, z1: 0.7, xs: [0, 0.25, 0.5, 0.75, 1].map(a => x0 + a * W), zs: [0] })
   base.segments([[[x0, H / 2, -0.02], [x0 + W, H / 2, -0.02]], [[x0, H, -0.02], [x0 + W, H, -0.02]]], 'grid')
-  const top = base.label('100%', { ink: 'fg3', size: 0.19, align: 'left', valign: 'bottom' })
-  top.sprite.position.set(x0, H + 0.04, 0)
-  base.root.add(top.sprite)
   const ticks = axis(base, { x0, width: W, y: -0.05, z: 0.8, size: 0.19 })
-  ticks.set([0, 6, 12, 18, 24].map(h => ({ at: h / 24, label: `${String(h).padStart(2, '0')}:00` })))
+  ticks.set(DAY_TICKS)
 
   const plannedGeo = new T.BufferGeometry()
   plannedGeo.setAttribute('position', new T.BufferAttribute(new Float32Array(97 * 3), 3))
@@ -328,9 +333,42 @@ export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData
   base.root.add(holdLabel.sprite)
   const dot = base.dot(0.1, 'amber')
   const stem = base.line([[0, 0, 0], [0, 1, 0]], 'fg3', 0.6)
-  const nowLabel = base.label('', { ink: 'fg1', size: 0.22, align: 'center', valign: 'bottom', priority: 4 })
-  base.root.add(nowLabel.sprite)
 
+  // The lamp: a slim glass tube, lit from the floor to the level now.
+  const tube = new T.Mesh(new T.CylinderGeometry(R, R, H, 32, 1, true), base.tint(new T.MeshBasicMaterial({ transparent: true, opacity: 0.06, side: T.DoubleSide, depthWrite: false }), 'fg1'))
+  tube.position.set(CX, H / 2, 0)
+  base.root.add(tube)
+  base.ring(R, [CX, H, 0], 'fg3', 0.7)
+  base.ring(R, [CX, 0, 0], 'fg3', 0.7)
+  const glow = new T.Mesh(new T.CylinderGeometry(R * 0.9, R * 0.9, 1, 32), new T.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false }))
+  base.root.add(glow)
+  const glowTop = base.ring(R * 0.9, [0, 0, 0], 'amber', 0.9)
+  // The one reference line: Boost, across the day and through the tube.
+  const boostLine = base.dashed([[x0, 0, 0.01], [CX + R + 0.16, 0, 0.01]], 'amber', 0.14, 0.1, 0.8)
+  // From the dot at now along to the tube, at the level now.
+  const link = base.line([[0, 0, 0.02], [1, 0, 0.02]], 'fg3', 0.45)
+
+  // Boost's one label sits over its line at the start of the day, clear of the lamp's ticks.
+  const boostLabel = base.label('Boost 95%', { ink: 'amber', size: 0.17, align: 'left', valign: 'bottom', priority: 3 })
+  base.root.add(boostLabel.sprite)
+  const MARKS = ['now', 'off'] as const
+  const marks = Object.fromEntries(MARKS.map((k) => {
+    const tick: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> = base.line([[CX + R + 0.02, 0, 0], [CX + R + 0.16, 0, 0]], k === 'now' ? 'fg1' : 'fg3', 0.9)
+    const l = base.label(k === 'now' ? 'now · 00:00' : 'off', { ink: k === 'now' ? 'fg1' : 'fg3', size: 0.17, align: 'left', valign: 'middle', priority: k === 'now' ? 4 : 2, fit: true })
+    base.root.add(l.sprite)
+    return [k, { tick, label: l }]
+  })) as Record<typeof MARKS[number], { tick: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>, label: Label }>
+  function mark(k: typeof MARKS[number], y: number | null, text: string) {
+    const m = marks[k]
+    m.tick.visible = y !== null
+    m.label.setVisible(y !== null)
+    if (y === null) return
+    m.tick.position.set(0, y, 0)
+    m.label.setText(text)
+    m.label.sprite.position.set(CX + R + 0.22, y, 0)
+  }
+
+  const c = new T.Color()
   function draw(f: Frame): boolean {
     actual.update(f)
     const shown = f.state === 'ready' && data !== null
@@ -360,9 +398,29 @@ export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData
       holdEdge.position.set(x0 + h.from * W, 0.005, 0)
       holdLabel.sprite.position.set(x0 + h.from * W + 0.04, 0, 0.62)
     }
+    // The tube lights last, as the ribbon reaches now.
+    const e = shown ? pointEase(f.p, 96, 97) : 0
+    const level = shown && data ? data.nowLevel : 0
+    const lit = Math.max(0.001, level * e * H)
+    glow.visible = shown && level > 0
+    glow.scale.set(1, lit, 1)
+    glow.position.set(CX, lit / 2, 0)
+    ;(glow.material as THREE.MeshBasicMaterial).color.copy(inkMix(base, 'amber', e, c))
+    glowTop.visible = glow.visible
+    glowTop.position.set(CX, lit, 0)
+    const boost = shown && data ? data.boost * H : null
+    boostLine.visible = boost !== null
+    if (boost !== null) boostLine.position.set(0, boost, 0)
+    boostLabel.setVisible(boost !== null)
+    if (boost !== null) {
+      boostLabel.setText(`Boost ${Math.round((data?.boost ?? 0) * 100)}%`)
+      boostLabel.sprite.position.set(x0 + 0.05, boost + 0.04, 0.01)
+    }
+    mark('now', shown ? lit : null, `now · ${data?.nowTime ?? ''}`)
+    mark('off', shown ? 0 : null, 'off')
     dot.visible = shown
     stem.visible = shown
-    nowLabel.setVisible(shown)
+    link.visible = shown
     if (shown && data) {
       const x = x0 + data.now * W
       const y = data.nowLevel * H
@@ -371,7 +429,8 @@ export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData
       dot.scale.setScalar(Math.max(0.001, appear * beat))
       stem.position.set(x, 0, 0.03)
       stem.scale.set(1, Math.max(0.001, y), 1)
-      nowLabel.sprite.position.set(x, y + 0.16, 0.03)
+      link.position.set(x, y, 0)
+      link.scale.set(Math.max(0.001, CX - R - x), 1, 1)
     }
     // The now dot keeps pulsing.
     return shown && !f.reduced
@@ -382,7 +441,6 @@ export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData
     actual.setValues(d.actual)
     plannedFrom = plannedTo.length ? plannedTo : []
     plannedTo = d.planned.length === 97 ? d.planned : Array.from({ length: 97 }, (_, i) => d.planned[Math.round((i / 96) * (d.planned.length - 1))] ?? 0)
-    nowLabel.setText(`now ${d.nowLabel}`)
     ticks.set(d.ticks)
   })
 }

@@ -4,7 +4,9 @@
  * position along the x axis a fraction 0..1, and labels as ready strings, so
  * the scenes only place things.
  */
+import { fmtClock } from '@/src/components/charts/format'
 import { bridge } from '@/src/components/charts/TimeChart'
+import { BOOST_LEVEL } from '@/src/scheduler/lightPlan'
 import type { SensorMeta } from '@/src/lib/sensorMeta'
 
 /** The chart colours by role; each scene resolves them from the theme's tokens. */
@@ -31,7 +33,18 @@ export interface TankData {
   runFrom: number | null
 }
 
-export interface LightData { planned: number[], actual: number[], hold: { from: number, until: number } | null, now: number, nowLevel: number, nowLabel: string, ticks: Tick[] }
+export interface LightData {
+  planned: number[]
+  actual: number[]
+  hold: { from: number, until: number } | null
+  now: number
+  nowLevel: number
+  /** The time now, for the lamp's "now" tick. */
+  nowTime: string
+  /** Gardyn's Boost level (0..1), the one reference line across the chart and the lamp. */
+  boost: number
+  ticks: Tick[]
+}
 
 export interface PodsData { towers: Array<{ label: string, pods: Array<number | null> }> }
 
@@ -191,7 +204,8 @@ export function lightData(input: { planned: number[], nowMin: number, level: num
     hold,
     now: input.nowMin / DAY_MIN,
     nowLevel: input.level / 100,
-    nowLabel: `${Math.round(input.level)}%`,
+    nowTime: fmtClock(Math.floor(input.nowMin)),
+    boost: BOOST_LEVEL / 100,
     ticks: DAY_TICKS,
   }
 }

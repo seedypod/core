@@ -374,7 +374,9 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     return s
   }
   function place() {
-    const key = `${size.fit}:${size.height}:${spin.x}:${spin.y}`
+    // Labels the fit makes room for move with their data, so where they stand is part of the key.
+    const room = labels.filter(l => l.fit).map(l => `${l.sprite.position.x.toFixed(2)},${l.sprite.position.y.toFixed(2)},${l.aspect.toFixed(2)}`).join(';')
+    const key = `${size.fit}:${size.height}:${spin.x}:${spin.y}:${room}`
     if (key === fitted) return
     fitted = key
     pivot.rotation.set(spin.x, spin.y, 0)
@@ -397,6 +399,7 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     spin = stepSpin(spin, reduced)
     place()
     wants = draw({ t, state: phase.state, p, tween, reduced, inkVersion }) === true
+    place()
     // Labels move with their data and the turn; each is sized for where it stands this frame, then the crowded ones give way.
     pivot.updateMatrixWorld(true)
     for (const l of labels) scaleLabel(l)

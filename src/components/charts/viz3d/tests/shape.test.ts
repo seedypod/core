@@ -135,7 +135,8 @@ describe('lightData', () => {
     expect(l.hold).toBeNull()
     expect(l.now).toBe(0.5)
     expect(l.nowLevel).toBe(0.8)
-    expect(l.nowLabel).toBe('80%')
+    expect(l.nowTime).toBe('12:00')
+    expect(l.boost).toBe(0.95)
   })
 
   it('holds at the level now from the hold\'s start, and drops a hold that has ended', () => {

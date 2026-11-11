@@ -59,7 +59,7 @@ describe('Chart3D with WebGL', () => {
   it('makes the chart on mount in a box of its aspect, loads, then hands over data once per change', async () => {
     const { rerender, unmount } = render(<Chart3D kind="tank" data={null} status="loading" label="Tank level" fallback={<p>flat</p>} />)
     const box = screen.getByRole('img', { name: 'Tank level' })
-    expect(box.style.aspectRatio).toBe('2 / 1')
+    expect(box.style.aspectRatio).toBe('2.4 / 1')
     expect(box.getAttribute('aria-busy')).toBe('true')
     await flush()
     expect(fake.calls).toEqual(['tank:create', 'state:loading'])

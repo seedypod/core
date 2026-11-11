@@ -421,7 +421,7 @@ function PumpStrip({ pump: p, at, readings: s, next, source, limits, dur, onDur,
     <div
       data-testid="pump-strip"
       data-state={running ? 'running' : 'idle'}
-      className={cn('relative flex flex-col gap-3 border-b border-line px-[22px] py-3.5 @min-[620px]:flex-row @min-[620px]:items-center @min-[620px]:justify-between', running ? 'bg-tank/10' : 'bg-active/40')}
+      className={cn('relative flex flex-col gap-3 border-b border-line px-[22px] py-3.5 @min-[620px]:flex-row @min-[620px]:items-center @min-[620px]:justify-between', running ? 'bg-tank/15' : 'bg-active/40')}
     >
       {running && p
         ? (
@@ -482,7 +482,7 @@ function PumpRunning({ pump: p, at, readings: s, source, stopping, onStop, statu
           ? (
               <span className="flex items-baseline gap-1.5">
                 <span className="font-mono text-[26px] font-medium leading-none" data-testid="run-left">{fmtCountdown(run.left)}</span>
-                <span className="text-[12px] text-fg-3">{`of ${fmtMinutes(run.total)}`}</span>
+                <span className="text-[12px] text-fg-3">{`of ${run.total >= 60 ? `${Math.round(run.total / 60)} min` : fmtMinutes(run.total)}`}</span>
               </span>
             )
           : <span className="text-[12px] text-fg-3">until stopped</span>}

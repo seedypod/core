@@ -108,7 +108,7 @@ const TODAY: TodayData = {
   ticks: DAY_TICKS,
 }
 const TANK: TankData = { levels: ramp(120, i => 0.8 - (i % 40) / 100), topUps: [40 / 119, 80 / 119], cutoff: 0.3, current: 0.4, ticks: ramp(5, k => ({ at: k / 4, label: ['Mon', 'Tue', 'Thu', 'Sat', 'Sun'][k] as string })), marks: { full: 'full · 2 in', now: 'now · 5.1 in', cutoff: 'cutoff 27% · 6.3 in', empty: 'empty · 7.9 in' }, pumping: true, runFrom: 0.9 }
-const LIGHT: LightData = { planned: ramp(97, i => (i > 28 && i < 84 ? 0.9 : 0)), actual: ramp(97, i => (i < 60 ? (i > 28 ? 0.9 : 0) : Number.NaN)), hold: { from: 0.55, until: 0.65 }, now: 0.62, nowLevel: 0.45, nowLabel: '45%', ticks: DAY_TICKS }
+const LIGHT: LightData = { planned: ramp(97, i => (i > 28 && i < 84 ? 0.9 : 0)), actual: ramp(97, i => (i < 60 ? (i > 28 ? 0.9 : 0) : Number.NaN)), hold: { from: 0.55, until: 0.65 }, now: 0.62, nowLevel: 0.45, nowTime: '14:52', boost: 0.95, ticks: DAY_TICKS }
 const PODS: PodsData = { towers: ['A', 'B', 'C'].map((l, t) => ({ label: `Tower ${l}`, pods: ramp(10, k => ((t * 10 + k) % 4 === 0 ? null : ((t * 10 + k) % 10) / 10)) })) }
 const SENSORS: SensorsData = {
   series: ['Air temperature', 'Humidity', 'Board temperature', 'Distance to water', 'Tank', 'Pump voltage', 'Pump current', 'Pump power'].map((label, k) => ({ key: `s${k}`, label, group: k < 3 ? 'environment' : k < 5 ? 'water' : 'pump', values: ramp(100, i => 0.5 + 0.4 * Math.sin(i / 8 + k)), current: '25.9 °C' })),
@@ -338,7 +338,11 @@ describe('the shared base', () => {
     expect(state.renders).toBe(1)
     viz.setData(LIGHT)
     advance(16, 5)
-    expect(state.renders).toBe(2)
+    // The data, then once more as the lamp's words land and refit; then nothing.
+    const settled = state.renders
+    expect(settled).toBeLessThanOrEqual(3)
+    advance(16, 10)
+    expect(state.renders).toBe(settled)
     viz.dispose()
   })
 

@@ -22,11 +22,15 @@ test('light slider and power toggle drive the HAL', async ({ page }) => {
 
 test('pump run is bounded and reported', async ({ page }) => {
   await page.goto('/water')
-  await page.getByRole('button', { name: 'Run pump' }).click()
+  const strip = page.getByTestId('pump-strip')
+  await strip.getByRole('radio', { name: '1 min' }).click()
+  await strip.getByRole('button', { name: 'Run' }).click()
   await expect(page.getByText(/watering at 30%/)).toBeVisible()
-  await expect(page.getByTestId('run-track')).toContainText(/\d+:\d\d left/)
-  await page.getByRole('button', { name: 'Stop' }).click()
-  await expect(page.getByText('pump idle')).toBeVisible()
+  await expect(strip).toHaveAttribute('data-state', 'running')
+  await expect(strip.getByTestId('run-left')).toHaveText(/^\d+:\d\d$/)
+  await strip.getByRole('button', { name: 'Stop' }).click()
+  await expect(page.getByText(/^pump idle/)).toBeVisible()
+  await expect(strip.getByText('Pump idle')).toBeVisible()
 })
 
 test('water: create, toggle, delete a pump cycle', async ({ page }) => {

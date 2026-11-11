@@ -1,6 +1,6 @@
-import { CalendarClock, ChevronDown, ChevronUp, Clock, Hand, Plus, Wand2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Clock, Hand, Plus } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Badge, Button, Card, GhostIcon } from '@/src/components/ds/core'
 import { Slider, Toggle } from '@/src/components/ds/forms'
@@ -9,11 +9,11 @@ import { fmtClock } from '@/src/components/charts/format'
 import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { lightData } from '@/src/components/charts/viz3d/shape'
 import { daysLabel, weekdayOf } from '@/src/lib/days'
-import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '@/src/scheduler/lightPlan'
+import { BOOST_LEVEL, boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '@/src/scheduler/lightPlan'
 import { trpc } from '@/src/utils/trpc'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
-import { asCurve, levelAt, litHours, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
+import { asCurve, boostHoursToday, levelAt, litHours, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
 
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
@@ -50,68 +50,46 @@ export function LightPage() {
 
   const following = running.length === 1 ? `Following ${running[0]?.name}` : running.length > 1 ? `Following ${running.length} curves` : 'No curve today'
   const holding = o?.source === 'manual' && o.manualUntil ? `held by hand until ${clock(o.manualUntil)}` : o?.source === 'autopilot' ? 'Autopilot is in charge' : null
+  const boostH = running.length ? boostHoursToday(running, BOOST_LEVEL) : null
+  const rating = boostH === null ? null : lightRating(boostH)
 
   return (
     <div className="mx-auto flex max-w-[1000px] flex-col gap-6">
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex min-w-[240px] flex-1 flex-col gap-1">
-          <h1 className="text-2xl font-semibold">Light</h1>
-          <p className="text-[13px] text-fg-2">{[following, holding].filter(Boolean).join(' · ')}</p>
-        </div>
-        <span className="flex items-center gap-2.5 text-[13px] text-fg-2">
-          {lightOn ? 'Lights on' : 'Lights off'}
-          <Toggle on={lightOn} size="md" label="Light power" onChange={power} />
-        </span>
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold">Light</h1>
+        <p className="text-[13px] text-fg-2">{[following, holding].filter(Boolean).join(' · ')}</p>
       </div>
 
-      <Card className="gap-5 p-[22px]">
-        <div className="flex flex-wrap items-start gap-6">
-          <div className="flex min-w-[140px] flex-col gap-1">
-            <span className="font-mono text-[44px] font-medium leading-none"><Pending loading={!l} sample="100%">{l && (l.on || requested ? `${level}%` : 'Off')}</Pending></span>
-            <span className="text-[12px] text-fg-3">{l ? `since ${clock(l.since)}` : <LoadingLine />}</span>
-          </div>
-          <div className="flex min-w-[260px] flex-1 flex-col gap-3 pt-2">
-            <Slider
-              value={level}
-              onChange={preview}
-              onCommit={commit}
-              label="Brightness"
-            />
-            <div className={AXIS} aria-hidden>
-              <span>off</span>
-              <span>50</span>
-              <span>100%</span>
+      <Card className="@container gap-0 overflow-hidden p-0">
+        <LightStrip
+          on={lightOn}
+          known={!!l}
+          owner={o}
+          running={running}
+          curves={curves}
+          now={now}
+          level={level}
+          resuming={resume.isPending}
+          onResume={() => resume.mutate()}
+          onPower={power}
+          onPreview={preview}
+          onCommit={commit}
+        />
+        <div className="flex flex-col gap-3 px-[22px] pb-5 pt-4">
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="font-mono text-[44px] font-medium leading-none" data-testid="light-level"><Pending loading={!l} sample="100%">{l && (l.on || requested ? `${level}%` : 'Off')}</Pending></span>
+              <span className="min-h-[18px] text-[12px] text-fg-3" data-testid="light-summary">
+                {schedules.data === undefined ? <LoadingLine /> : boostH === null || rating === null ? 'Nothing scheduled today' : `${boostH} h at full today · ${rating.charAt(0).toUpperCase()}${rating.slice(1)}`}
+              </span>
             </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 rounded-[10px] bg-active/60 px-3.5 py-2.5 text-[13px] text-fg-2">
-          {o?.source === 'manual' ? <Hand size={16} /> : o?.source === 'autopilot' ? <Wand2 size={16} /> : <CalendarClock size={16} />}
-          <span className="min-w-[200px] flex-1">
-            {o?.source === 'manual'
-              ? `Your change holds until ${clock(o.manualUntil ?? '')}. Then ${o.schedule !== null ? `the curve (${o.schedule}% at this hour)` : 'the curve or Autopilot'} takes over again.`
-              : o?.source === 'autopilot'
-                ? 'Autopilot is setting the light. A change here holds for 30 minutes.'
-                : 'Following the curve. A change here holds for 30 minutes.'}
-          </span>
-          {o?.source === 'manual' && <Button disabled={resume.isPending} onClick={() => resume.mutate()}>Resume curve</Button>}
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <div className={`${EYEBROW} flex items-center justify-between gap-3 text-[10px]`}>
-            <span className="flex items-center gap-3">
-              Today
-              <ChartNote status={status} stale={staleSince(queries)} onRetry={() => void schedules.refetch()} />
-            </span>
-            {lightHours.data && (
-              <span data-testid="led-hours">{`LED life ${Math.round(Math.max(0, 100 - lightHours.data.pctUsed))}% · ${Math.round(lightHours.data.hours).toLocaleString()} / ${lightHours.data.ratedHours.toLocaleString()} h`}</span>
-            )}
+            <ChartNote status={status} stale={staleSince(queries)} onRetry={() => void schedules.refetch()} />
           </div>
           <Chart3D
             kind="light"
             data={scene}
             status={status}
-            label={`Today's light: the curve planned, what the LED has given so far${o?.source === 'manual' ? ', and the manual hold' : ''}`}
+            label={`Today's light: the curve planned, what the LED has given so far${o?.source === 'manual' ? ', and the manual hold' : ''}, beside the lamp now`}
             message={status === 'error' ? 'Couldn\'t load today\'s curve.' : 'No curve runs today, so the light stays where you set it.'}
             fallback={today
               ? (
@@ -142,6 +120,9 @@ export function LightPage() {
           />
         </div>
       </Card>
+      {lightHours.data && (
+        <p className="-mt-3 font-mono text-[11px] text-fg-3" data-testid="led-hours">{`LED life ${Math.round(Math.max(0, 100 - lightHours.data.pctUsed))}% · ${Math.round(lightHours.data.hours).toLocaleString()} / ${lightHours.data.ratedHours.toLocaleString()} h`}</p>
+      )}
 
       <div className="flex items-center gap-3">
         <h2 className={`${EYEBROW} flex-1`}>Curves</h2>
@@ -210,6 +191,79 @@ export function LightPage() {
           onSave={next => upsert.mutate(next)}
         />
       ))}
+    </div>
+  )
+}
+
+type Owner = { source: 'manual' | 'autopilot' | 'schedule' | null, manualUntil: string | null, schedule: number | null } | undefined
+
+/**
+ * The top band of the Light card, the Water strip's twin: what the light is
+ * doing and why (the curve it follows and when it next dims or comes on, a
+ * hand's hold with Resume, or Autopilot), with power and brightness at the
+ * right. It tints amber while the light is on. A change here holds for 30
+ * minutes, as before.
+ */
+function LightStrip({ on, known, owner: o, running, curves, now, level, resuming, onResume, onPower, onPreview, onCommit }: {
+  on: boolean
+  known: boolean
+  owner: Owner
+  running: LightCurve[]
+  /** Every light curve, for tomorrow's. */
+  curves: LightCurve[]
+  now: Date
+  level: number
+  resuming: boolean
+  onResume: () => void
+  onPower: (on: boolean) => void
+  onPreview: (level: number) => void
+  onCommit: (level: number) => void
+}) {
+  const minute = now.getHours() * 60 + now.getMinutes()
+  const tomorrow = new Date(now.getTime() + 86_400_000)
+  const held = o?.source === 'manual' && o.manualUntil
+  const following = running.length === 1 ? running[0]?.name : running.length > 1 ? `${running.length} curves` : null
+  let title = known ? (on ? 'Light on' : 'Light off') : 'Light'
+  let sub: ReactNode = null
+  if (held) {
+    title = `Held by hand until ${clock(o.manualUntil ?? '')}`
+    sub = (
+      <>
+        <span className="truncate">{`then ${o.schedule !== null ? `the curve (${o.schedule}% at this hour)` : 'the curve or Autopilot'}`}</span>
+        <button type="button" disabled={resuming} onClick={onResume} className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-fg underline underline-offset-2 disabled:opacity-60">Resume schedule</button>
+      </>
+    )
+  }
+  else if (o?.source === 'autopilot') {
+    sub = <span className="truncate">Autopilot is setting the light</span>
+  }
+  else if (on) {
+    const dims = nextDim(running, minute)
+    sub = <span className="truncate">{following ? [`following ${following}`, dims !== null ? `dims at ${fmtClock(dims)}` : null].filter(Boolean).join(' · ') : 'no curve today'}</span>
+  }
+  else if (known) {
+    const next = nextOn(running, runningToday(curves, weekdayOf(tomorrow)), minute)
+    sub = <span className="truncate">{next ? `Next on ${next.tomorrow ? 'tomorrow ' : ''}${fmtClock(next.minute)} (${next.name})` : 'no curve to turn it on'}</span>
+  }
+  return (
+    <div
+      data-testid="light-strip"
+      data-state={on ? 'on' : 'off'}
+      className={cn('flex flex-col gap-3 border-b border-line px-[22px] py-3.5 @min-[620px]:flex-row @min-[620px]:items-center @min-[620px]:justify-between', on ? 'bg-light/10' : 'bg-active/40')}
+    >
+      <div className="flex h-11 min-w-0 items-center gap-3">
+        {held ? <Hand size={14} className="shrink-0 text-light" /> : <span className={cn('size-2.5 shrink-0 rounded-full', on ? 'bg-light' : 'bg-fg-3')} />}
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-[15px] font-medium leading-tight">{title}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-fg-3">{sub}</span>
+        </div>
+      </div>
+      <div className="flex h-10 items-center gap-3" title="A change here holds for 30 minutes, then the curve or Autopilot takes over again.">
+        <Toggle on={on} size="md" label="Light power" onChange={onPower} />
+        <div className="w-[200px] max-w-[48vw]">
+          <Slider value={level} onChange={onPreview} onCommit={onCommit} label="Brightness" />
+        </div>
+      </div>
     </div>
   )
 }
