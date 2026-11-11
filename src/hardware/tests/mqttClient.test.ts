@@ -68,6 +68,21 @@ describe('MqttHalClient', () => {
     await expect(client.setActuator('pump', { on: false })).rejects.toThrow(/did not acknowledge/)
   })
 
+  it('counts a run\'s seconds left down to now, since hald sends them only when the state changes', () => {
+    let now = Date.parse('2026-11-11T00:03:05Z')
+    const mqtt = new FakeMqtt()
+    const client = new MqttHalClient({ unitId: U, mqtt, httpBase: '', now: () => new Date(now) })
+    mqtt.msg(`seedypod/${U}/actuator/pump/state`, { on: true, level: 30, since: '2026-11-11T00:03:05Z', fault: null, remainingS: 900 })
+    expect(client.snapshot().actuators.pump?.remainingS).toBe(900)
+    // Six minutes on, the unit's API said 900 still.
+    now += 6 * 60_000 + 500
+    expect(client.snapshot().actuators.pump?.remainingS).toBe(540)
+    now += 20 * 60_000
+    expect(client.snapshot().actuators.pump?.remainingS).toBe(0)
+    mqtt.msg(`seedypod/${U}/actuator/light/state`, { on: true, level: 100, since: '2026-11-11T00:03:05Z', fault: null, remainingS: null })
+    expect(client.snapshot().actuators.light?.remainingS).toBeNull()
+  })
+
   it('subscribes immediately when handed an already-connected client (connectAsync)', () => {
     const mqtt = new FakeMqtt()
     mqtt.connected = true

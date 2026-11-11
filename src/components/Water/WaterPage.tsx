@@ -52,7 +52,7 @@ export function WaterPage() {
   }
   const isNew = !!editing && !cycles.some(c => c.id === editing.id)
 
-  const pumpLine = p ? (p.on ? `watering at ${p.level}%${p.remainingS === null ? '' : ` · ${fmtMinutes(p.remainingS)} left`}` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
+  const pumpLine = p ? (p.on ? `watering at ${p.level}%` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
   const subtitle = [tank === undefined ? null : `Tank ${tank}%`, pumpLine, next ? `next run ${fmtClock(next.cycle.spec.minute)}` : null].filter(Boolean).join(' · ')
 
   return (
@@ -80,7 +80,6 @@ export function WaterPage() {
             {cutoff !== null && <span className="text-pod-ready">{`pump cutoff ${cutoff}%`}</span>}
             <span>{cfg ? `full · ${withUnit(cfg.waterFullCm, 'cm')}` : 'full'}</span>
           </div>
-          {p?.on && <Watering since={p.since} remainingS={p.remainingS} at={pump.dataUpdatedAt} />}
           <div className="flex flex-wrap gap-5 border-t border-line pt-2.5 font-mono text-[12px] text-fg-3">
             <span>
               {'distance '}
@@ -322,30 +321,6 @@ function ClearFault() {
       <Button className="px-3 py-[5px] text-[13px]" disabled={ack.isPending} onClick={() => ack.mutate({ id: fault.id })}>Clear fault</Button>
       {ack.error && <InlineError>{ack.error.message}</InlineError>}
     </>
-  )
-}
-
-/**
- * While the pump runs: the run so far as a filling bar and the time left on a
- * clock, counted down here between the pump's updates. `at` is when the pump's
- * state (and its seconds left) was fetched.
- */
-function Watering({ since, remainingS, at }: { since: string, remainingS: number | null, at: number }) {
-  const run = useRun(since, remainingS, at)
-  if (!run) return <div data-testid="watering" className="text-[13px] text-fg">Watering…</div>
-  return (
-    <div data-testid="watering" className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between text-[13px]">
-        <span className="flex items-center gap-1.5 font-medium text-fg">
-          <span className="size-2 animate-pulse rounded-full bg-tank" />
-          Watering
-        </span>
-        <span className="font-mono text-fg-2">{`${fmtCountdown(run.left)} left of ${fmtMinutes(run.total)}`}</span>
-      </div>
-      <div className="h-1.5 rounded-full bg-line" role="progressbar" aria-label="Watering" aria-valuenow={Math.round(run.done)} aria-valuemin={0} aria-valuemax={100}>
-        <div className="h-full rounded-full bg-tank transition-[width] duration-1000 ease-linear" style={{ width: `${run.done}%` }} />
-      </div>
-    </div>
   )
 }
 

@@ -102,10 +102,9 @@ describe('WaterPage: tank and pump', () => {
     // Started a minute ago with two left: a three-minute run.
     data.set('pump', { ...idle, on: true, level: 30, remainingS: 120, since: new Date(Date.now() - 60_000).toISOString() })
     render(<WaterPage />)
-    expect(screen.getByText(/watering at 30% · 2 min left/)).toBeTruthy()
-    const watering = screen.getByTestId('watering')
-    expect(watering.textContent).toMatch(/^Watering2:00 left of 3 min$/)
-    expect(screen.getByRole('progressbar', { name: 'Watering' })).toBeTruthy()
+    // The run shows in one place, on Stop; the subtitle just says it's watering.
+    expect(screen.getByText(/watering at 30%/).textContent).not.toMatch(/left/)
+    expect(screen.queryByTestId('watering')).toBeNull()
     expect(screen.queryByText('Run pump')).toBeNull()
     // Stop carries the run: the time left, and a fill as far through as it is.
     const stopButton = screen.getByTestId('stop-pump')
@@ -118,7 +117,6 @@ describe('WaterPage: tank and pump', () => {
     data.set('pump', { ...idle, on: true, level: 30, remainingS: null })
     render(<WaterPage />)
     expect(screen.getByText(/watering at 30%/)).toBeTruthy()
-    expect(screen.getByTestId('watering').textContent).toBe('Watering…')
     expect(screen.getByTestId('stop-pump').textContent).toBe('Stop')
   })
 
