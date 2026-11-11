@@ -296,6 +296,8 @@ describe('model registry over REST, tRPC and MCP', () => {
     expect(exp.body).toMatchObject({ captures: 1, images: false, labelsPerClass: { empty: 0, seeded: 1, sprouted: 1, growing: 0, ready: 0, unhealthy: 0 } })
     expect((await call('list_labels', {})).body).toMatchObject({ counts: { seeded: 1, sprouted: 1 }, pods: 2 })
     expect((await call('list_labels', { capture_id: 'upper-1' })).body).toMatchObject([{ slot: 2, label: 'sprouted', plant: 'Basil' }, { slot: 3, label: 'seeded', plant: null }])
+    // capture_id wins: the filters and paging are ignored, and every label on that capture comes back.
+    expect((await call('list_labels', { capture_id: 'upper-1', label: 'ready', camera: 'lower', limit: 1, cursor: 'x' })).body).toMatchObject([{ slot: 2 }, { slot: 3 }])
     expect((await call('list_labels', { label: 'sprouted' })).body).toEqual({
       labels: [expect.objectContaining({ slot: 2, plant: 'Basil', plantedAt: null, daysSinceSowing: null, url: '/api/captures/upper-1.jpg' })],
       next: null,

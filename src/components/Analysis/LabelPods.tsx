@@ -335,6 +335,7 @@ function Crop({ entry, box }: { entry: Entry, box: PodRegions[number] }) {
       {entry.url
         ? (
             <img
+              // The url is both arguments: a demo still's data: URL stays as it is, an API path gets the base.
               src={srcOf(entry.url, entry.url)}
               alt={`Pod ${entry.slot} at ${entry.ts}`}
               loading="lazy"

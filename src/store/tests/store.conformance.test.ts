@@ -371,6 +371,19 @@ for (const [name, make] of impls) {
       expect(store.podLabels.counts()).toMatchObject({ seeded: 1, growing: 0 })
     })
 
+    it('pod labels list in code-unit order, as SQLite compares text', () => {
+      store = make()
+      const at = (captureId: string, slot: number) =>
+        store.podLabels.set({ captureId, ts: '2026-11-02T00:00:00.000Z', camera: 'upper', slot, label: 'seeded', labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null })
+      // 'a' sorts after 'B' by code unit, before it by locale.
+      at('upper-B', 1)
+      at('upper-a', 1)
+      at('upper-a', 2)
+      const keys = (ls: PodLabel[]) => ls.map(l => `${l.captureId}:${l.slot}`)
+      expect(keys(store.podLabels.list({ limit: 10 }))).toEqual(['upper-a:1', 'upper-a:2', 'upper-B:1'])
+      expect(keys(store.podLabels.list({ limit: 10, before: { ts: '2026-11-02T00:00:00.000Z', captureId: 'upper-a', slot: 2 } }))).toEqual(['upper-B:1'])
+    })
+
     it('pod labels list newest photo first, by pod, filtered and paged', () => {
       store = make()
       const at = (captureId: string, ts: string, slot: number, label: PodLabelValue) =>

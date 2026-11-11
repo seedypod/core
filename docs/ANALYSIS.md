@@ -113,8 +113,10 @@ pod shows. **Analysis → Label pods** is where you give them.
 1. Pick the camera: **Upper**, **Lower**, or **Both** to see the two stills
    from one round of captures together (stacked on a phone, side by side on a
    wider screen). Step to an older photo with the arrows if you like (the last
-   48 per camera); in **Both** the arrows move both cameras back in time
-   together, each showing its newest still at or before that moment.
+   48 per camera). In **Both** the arrows step through rounds: a round holds
+   at most one still per camera, taken within 5 minutes of the round's newest
+   still. A camera that took none in a round shows an empty slot there, not an
+   older still.
 2. Pick a label:
    - **Empty**: a capped pod, no yCube.
    - **Seeded**: a yCube is in, but nothing is visible yet.

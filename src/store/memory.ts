@@ -299,7 +299,9 @@ export class MemoryStore implements Store {
       [...this.labelRows.values()].filter(l => l.ts >= fromTs && l.ts <= toTs)
         .sort((a, b) => a.ts.localeCompare(b.ts) || a.captureId.localeCompare(b.captureId) || a.slot - b.slot).map(l => ({ ...l })),
     list: (q: { label?: PodLabelValue, camera?: 'upper' | 'lower', limit: number, before?: PodLabelCursor }): PodLabel[] => {
-      const order = (a: PodLabelCursor, b: PodLabelCursor) => b.ts.localeCompare(a.ts) || b.captureId.localeCompare(a.captureId) || a.slot - b.slot
+      // Code-unit order, as SQLite compares text, so both stores page alike.
+      const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+      const order = (a: PodLabelCursor, b: PodLabelCursor) => cmp(b.ts, a.ts) || cmp(b.captureId, a.captureId) || a.slot - b.slot
       const { before } = q
       return [...this.labelRows.values()]
         .filter(l => (!q.label || l.label === q.label) && (!q.camera || l.camera === q.camera) && (!before || order(l, before) > 0))
