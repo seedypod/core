@@ -326,16 +326,16 @@ describe('WaterPage: pump cycles', () => {
   })
 
   it('shows the presets with their day, total and note, marks the one for this tower, and the tips', () => {
-    // The daylight curve lights 06:00 to 21:00; the cycle began 10 days ago: young plants.
+    // The daylight curve lights 06:00 to 21:00; the cycle began 15 days ago: young plants.
     data.set('schedules', [{ ...curve, spec: { setpoints: [{ minute: 330, level: 0 }, { minute: 360, level: 100 }, { minute: 1260, level: 100 }, { minute: 1290, level: 0 }] } }])
     data.set('grow', { cycle: { id: 'c', startedAt: at(12, 0, 1).toISOString(), endedAt: null, stage: 'seedling', notes: '', issued: [] }, day: 10 })
-    vi.setSystemTime(at(12, 0, 11))
+    vi.setSystemTime(at(12, 0, 16))
     render(<WaterPage />)
-    expect(screen.getByText(/Community starting points from r\/Gardyn owners, not Gardyn’s/)).toBeTruthy()
+    expect(screen.getByText(/Germination is Gardyn’s germination mode.*community starting points from r\/Gardyn owners, not Gardyn’s/)).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Gardyn’s guide' }).getAttribute('href')).toBe('https://help.mygardyn.com/en/articles/4435265')
     const young = screen.getByTestId('pump-preset-young')
     expect(within(young).getByText('2 × 6 min = 12 min a day')).toBeTruthy()
-    expect(within(young).getByTestId('pump-recommended').textContent).toBe('recommended · day 10 since sowing')
+    expect(within(young).getByTestId('pump-recommended').textContent).toBe('recommended · day 15 since sowing')
     expect(screen.getAllByTestId('pump-recommended')).toHaveLength(1)
     // Fruiting keeps to the light: 22:00 falls outside 06:00–21:00.
     expect(within(screen.getByTestId('pump-preset-fruiting')).getByText('4 × 5 min = 20 min a day')).toBeTruthy()
@@ -401,7 +401,7 @@ describe('WaterPage: pump cycles', () => {
   it('marks the preset the cycles already are', () => {
     data.set('schedules', [curve, { ...morning, id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', spec: { minute: 480, durationS: 600 } }])
     render(<WaterPage />)
-    expect(within(screen.getByTestId('pump-preset-seedlings')).getByTestId('pump-applied').textContent).toBe('running now')
+    expect(within(screen.getByTestId('pump-preset-seedlings')).getByTestId('pump-applied').textContent).toBe('your cycles')
     expect(screen.getAllByTestId('pump-applied')).toHaveLength(1)
   })
 
@@ -438,7 +438,7 @@ describe('WaterPage: pump cycles', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Apply'))
     })
-    expect(within(screen.getByTestId('strip-preview')).getByText(/^Couldn't apply Seedlings · week 1/)).toBeTruthy()
+    expect(within(screen.getByTestId('strip-preview')).getByText(/^Couldn't apply Seedlings · days 8–13/)).toBeTruthy()
     fireEvent.click(screen.getByText('Cancel'))
     expect(screen.queryByText(/Couldn't apply/)).toBeNull()
   })
@@ -453,12 +453,72 @@ describe('WaterPage: pump cycles', () => {
     expect(strip.getByText('Apply')).toBeTruthy()
   })
 
-  it('marks the soak in the first days after sowing, not a daily watering', () => {
-    data.set('grow', { cycle: { id: 'c', startedAt: at(9), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+  it('recommends germination after sowing, once a week on the sowing weekday, and applies it on that day', async () => {
+    // Sown this Sunday at 09:00; its 08:00 run comes round next Sunday.
+    data.set('grow', { cycle: { id: 'c', startedAt: at(9).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+    data.set('schedules', [])
     render(<WaterPage />)
-    const seedlings = within(screen.getByTestId('pump-preset-seedlings'))
-    expect(seedlings.getByTestId('pump-recommended').textContent).toBe('soak · day 0')
-    expect(seedlings.getByTestId('pump-soak').textContent).toBe('Soak: Gardyn waits a few days to a week after sowing before the second watering.')
+    const germination = within(screen.getByTestId('pump-preset-germination'))
+    expect(germination.getByTestId('pump-recommended').textContent).toBe('recommended · day 0 since sowing')
+    expect(germination.getByText('1 × 15 min once a week')).toBeTruthy()
+    expect(germination.getByTestId('pump-next').textContent).toBe('next: Sun 8 Nov')
+    expect(screen.queryAllByTestId('pump-stage')).toHaveLength(0)
+    fireEvent.click(screen.getByTestId('pump-preset-germination'))
+    // Sunday is its day, so the timeline draws today's run.
+    expect(within(screen.getByTestId('lane-preview')).getAllByTestId('mark-preview')).toHaveLength(1)
+    await act(async () => {
+      fireEvent.click(within(screen.getByTestId('pump-strip')).getByText('Apply'))
+    })
+    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'water-germination-0800', name: 'Germination · once a week 15 min (08:00)', days: 64, spec: { minute: 480, durationS: 900 } }))
+  })
+
+  it('says plainly when the sowing day\'s germination run has gone by, and offers it by hand', () => {
+    // Sown today at 09:00; it's noon, after germination's 08:00 run.
+    data.set('grow', { cycle: { id: 'c', startedAt: at(9).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+    render(<WaterPage />)
+    const card = screen.getByTestId('pump-preset-germination').parentElement as HTMLElement
+    expect(within(card).getByTestId('pump-missed').textContent).toMatch(/^Today’s 08:00 run has passed: water the pods now\?/)
+    fireEvent.click(within(card).getByRole('button', { name: 'Run 15 min now' }))
+    expect(calls.runOnce).toHaveBeenCalledWith({ durationS: 900 })
+    // Nothing runs by itself, and only the germination card asks.
+    expect(screen.getAllByTestId('pump-missed')).toHaveLength(1)
+    cleanup()
+    // The apply confirmation says it too.
+    render(<WaterPage />)
+    fireEvent.click(screen.getByTestId('pump-preset-germination'))
+    fireEvent.click(within(screen.getByTestId('pump-strip')).getByText('Apply'))
+    expect(within(screen.getByRole('dialog')).getByTestId('pump-missed')).toBeTruthy()
+    expect(within(screen.getByRole('dialog')).getByText(/15 min each, once a week \(Sun\)/)).toBeTruthy()
+    cleanup()
+    // Once today's germination run has happened, or before 08:00, there's nothing to ask.
+    data.set('runs', [{ scheduleId: 'water-germination-0800', key: 'g', firedAt: at(8).toISOString(), result: 'ok' }])
+    render(<WaterPage />)
+    expect(screen.queryByTestId('pump-missed')).toBeNull()
+    cleanup()
+    data.set('runs', [])
+    vi.setSystemTime(at(7))
+    data.set('grow', { cycle: { id: 'c', startedAt: at(6).toISOString(), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+    render(<WaterPage />)
+    expect(screen.queryByTestId('pump-missed')).toBeNull()
+  })
+
+  it('reads the stages as a path while watering follows the grow cycle: the one it\'s at now, the rest from their day', () => {
+    data.set('settings', { waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19, followGrowCycle: true })
+    data.set('grow', { cycle: { id: 'c', startedAt: at(9, 0, -9).toISOString(), endedAt: null, stage: 'seedling', notes: '', issued: [] }, day: 9 })
+    render(<WaterPage />)
+    expect(screen.getByText(/the cycles move along these stages as the days pass/)).toBeTruthy()
+    expect(screen.getAllByTestId('pump-stage').map(e => e.textContent)).toEqual(['from day 0', 'day 10 · this stage', 'from day 14', 'from day 22', 'fruiting crops · from day 8'])
+    expect(screen.queryByTestId('pump-recommended')).toBeNull()
+    // Cycles on another preset say they're yours, not a second "now".
+    expect(within(screen.getByTestId('pump-preset-seedlings')).queryByTestId('pump-applied')).toBeNull()
+    // Every stage still previews.
+    fireEvent.click(screen.getByTestId('pump-preset-mature'))
+    expect(screen.getByTestId('pump-preset-mature').getAttribute('aria-pressed')).toBe('true')
+    cleanup()
+    // Without a sowing date there's no path to place it on.
+    data.delete('grow')
+    render(<WaterPage />)
+    expect(screen.queryAllByTestId('pump-stage')).toHaveLength(0)
   })
 
   it('offers a preset\'s own run length in the editor, and keeps any other', () => {
@@ -499,7 +559,7 @@ describe('WaterPage: pump cycles', () => {
     render(<WaterPage />)
     // The presets are the four stages; a cycle of your own comes from Add custom cycle.
     expect(screen.queryByTestId('pump-preset-blank')).toBeNull()
-    expect(screen.getAllByTestId(/^pump-preset-/).map(e => e.dataset.testid)).toEqual(['pump-preset-seedlings', 'pump-preset-young', 'pump-preset-mature', 'pump-preset-fruiting'])
+    expect(screen.getAllByTestId(/^pump-preset-/).map(e => e.dataset.testid)).toEqual(['pump-preset-germination', 'pump-preset-seedlings', 'pump-preset-young', 'pump-preset-mature', 'pump-preset-fruiting'])
     fireEvent.click(screen.getByText('Add custom cycle'))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).queryByText('Delete')).toBeNull()

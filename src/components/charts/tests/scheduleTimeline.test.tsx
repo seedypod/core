@@ -75,6 +75,20 @@ describe('ScheduleTimeline', () => {
     expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 10 min in 2h 0m')
   })
 
+  it('dates a run more than a day off, and a weekly preview that doesn\'t run today', () => {
+    // Germination sown on a Monday: its run is next Monday, 16 November.
+    const germ = cycle('Germination', 480, 900, { days: 1 })
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[germ]} timezone="UTC" preview={{ name: 'Germination · week 1', short: 'Germination', runs: [480], durationS: 900, days: 1, next: new Date('2026-11-16T08:00:00Z') }} />)
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 15 min Mon 08:00')
+    expect(screen.queryAllByTestId('mark-preview')).toHaveLength(0)
+    expect(screen.getByTestId('lane-preview-note').textContent).toBe('not today · next Mon 16 Nov')
+    cleanup()
+    // On its day it's drawn like any other run.
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" preview={{ name: 'Germination · week 1', short: 'Germination', runs: [480], durationS: 900, days: 1 << TUESDAY }} />)
+    expect(screen.getAllByTestId('mark-preview')).toHaveLength(1)
+    expect(screen.queryByTestId('lane-preview-note')).toBeNull()
+  })
+
   it('says when the lights come on tomorrow, and nothing with nothing next', () => {
     vi.setSystemTime(new Date('2026-11-10T22:00:00Z'))
     const { unmount } = render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" />)

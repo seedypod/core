@@ -15,10 +15,10 @@ import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { dayOn, daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { localTime, systemZone } from '@/src/scheduler/time'
-import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, SOAK_NOTE, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
+import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetDays, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { trpc } from '@/src/utils/trpc'
-import { asCycle, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
+import { asCycle, cycleWhen, fmtCountdown, fmtDay, fmtMinutes, fmtWhen, levelAt, nextPresetRun, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
 import { useNow } from '@/src/components/System/useNow'
 import { useTankReserve } from './useTankReserve'
 import { CareSummary } from '@/src/components/Care/CareSummary'
@@ -72,8 +72,15 @@ export function WaterPage() {
   const light = lightByDay[weekday] ?? null
   const next = nextRun(cycles, now, zone)
   const planted = (pods.data ?? []).filter(x => x.status !== 'empty')
-  const sown = daysSinceSowing(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), now)
+  const sown = daysSinceSowing(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), now, zone)
   const recommended = recommendedPreset(sown, plantCategories(planted.map(x => x.plant)))
+  // Germination's weekly run falls on the weekday it was sown.
+  const sowDay = sowWeekday(grow.data?.cycle?.startedAt, planted.map(x => x.plantedAt), zone, now)
+  // Sown today and germination's run time has gone by with no run yet: the first watering is still owed.
+  const germination = PUMP_PRESETS.find(x => x.weekly) ?? null
+  const today = localTime(now, zone).date
+  const ranToday = (runs.data ?? []).some(r => germination && r.scheduleId.startsWith(`water-${germination.slug}-`) && localTime(new Date(r.firedAt), zone).date === today)
+  const missed = germination && sown === 0 && nowMin >= (germination.minutes[0] ?? 0) && !ranToday ? germination : null
   const applied = appliedPreset(cycles, light)
   const previewing = PUMP_PRESETS.find(x => x.id === preview) ?? null
   const previewRuns = previewing ? presetRuns(previewing, light) : null
@@ -87,7 +94,7 @@ export function WaterPage() {
    */
   const apply = async () => {
     if (!previewing) return
-    const fresh = presetSchedules(previewing, { enabled: true, light })
+    const fresh = presetSchedules(previewing, { enabled: true, light, weekday: sowDay })
     setApplying(true)
     setApplyError(null)
     try {
@@ -102,6 +109,10 @@ export function WaterPage() {
     finally {
       setApplying(false)
     }
+  }
+  const runNow = (durationS: number) => {
+    setAsked(Date.now())
+    runOnce.mutate({ durationS })
   }
   const lastRun = (id: string) => {
     const r = (runs.data ?? []).find(r => r.scheduleId === id)
@@ -147,10 +158,7 @@ export function WaterPage() {
           asked={p?.on ? null : asked}
           onGiveUp={() => setAsked(null)}
           stopping={stop.isPending}
-          onRun={() => {
-            setAsked(Date.now())
-            runOnce.mutate({ durationS: Number(dur) })
-          }}
+          onRun={() => runNow(Number(dur))}
           onStop={() => stop.mutate()}
         />
         {asked !== null && p?.on && <Started onSeen={() => setAsked(null)} />}
@@ -206,13 +214,19 @@ export function WaterPage() {
         cycles={cycles}
         timezone={cfg?.timezone}
         pumpRun={p?.on ? { since: p.since, remainingS: p.remainingS } : null}
-        preview={previewing && previewRuns ? { name: previewing.name, short: previewing.short, runs: previewRuns, durationS: previewing.durationS } : null}
+        preview={previewing && previewRuns ? { name: previewing.name, short: previewing.short, runs: previewRuns, durationS: previewing.durationS, days: presetDays(previewing, sowDay), next: nextPresetRun(previewing, light, sowDay, now, zone) } : null}
       />
       {applyError && !confirming && <InlineError>{applyError}</InlineError>}
       <PumpPresets
         light={light}
         recommended={recommended}
         sown={sown}
+        follow={!!cfg?.followGrowCycle}
+        nextWeekly={(preset) => {
+          const at = nextPresetRun(preset, light, sowDay, now, zone)
+          return at && (localTime(at, zone).date === today ? 'today' : fmtDay(at, zone))
+        }}
+        missed={missed && <MissedRun preset={missed} busy={!!p?.on || asked !== null} onRun={() => runNow(missed.durationS)} />}
         applied={applied}
         previewing={preview}
         onPreview={(id) => {
@@ -279,7 +293,8 @@ export function WaterPage() {
           <ul className="flex flex-col gap-1 font-mono text-[12px]" data-testid="replaced-cycles">
             {cycles.map(c => <li key={c.id}>{`${fmtClock(c.spec.minute)} · ${c.name}`}</li>)}
           </ul>
-          {previewing && previewRuns && <p>{`And ${previewing.name} runs ${previewRuns.map(fmtClock).join(', ')}, ${fmtMinutes(previewing.durationS)} each, every day.`}</p>}
+          {previewing && previewRuns && <p>{`And ${previewing.name} runs ${previewRuns.map(fmtClock).join(', ')}, ${fmtMinutes(previewing.durationS)} each, ${previewing.weekly ? `once a week (${daysLabel(presetDays(previewing, sowDay))})` : 'every day'}.`}</p>}
+          {missed && previewing === missed && <MissedRun preset={missed} busy={!!p?.on || asked !== null} onRun={() => runNow(missed.durationS)} />}
           {applyError && <InlineError>{applyError}</InlineError>}
         </div>
       </Modal>
@@ -563,14 +578,31 @@ function DayStrip({ runs, light }: { runs: number[], light: { on: number, off: n
 /**
  * Watering starting points by growth stage, as Light offers curves: each
  * with its day in a line, what it adds up to, the note behind it and a link
- * to the source, the one for this tower marked. Picking one previews it on
- * the chart and the strip; Apply there replaces the cycles. Add custom cycle
- * opens the editor.
+ * to the source, the one for this tower marked. With Follow on and a sowing
+ * date they read as a path: the stage it's at now, the others from their day.
+ * Picking one previews it on the chart and the strip; Apply there replaces
+ * the cycles. Add custom cycle opens the editor.
  */
-function PumpPresets({ light, recommended, sown, applied, previewing, onPreview }: {
+/** Germination's run for today has gone by: say so, and offer the run by hand. Nothing runs by itself. */
+function MissedRun({ preset, busy, onRun }: { preset: PumpPreset, busy: boolean, onRun: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[12px] leading-snug text-pod-ready" data-testid="pump-missed">
+      <span>{`Today’s ${fmtClock(preset.minutes[0] ?? 0)} run has passed: water the pods now?`}</span>
+      <Button size="sm" icon={Play} disabled={busy} onClick={onRun}>{`Run ${fmtMinutes(preset.durationS)} now`}</Button>
+    </div>
+  )
+}
+
+function PumpPresets({ light, recommended, sown, follow, nextWeekly, missed, applied, previewing, onPreview }: {
   light: { on: number, off: number } | null
-  recommended: { id: PumpPresetId, why: string, soak?: boolean } | null
+  recommended: { id: PumpPresetId, why: string } | null
   sown: number | null
+  /** Watering follows the grow cycle, so the stages are a path it moves along. */
+  follow: boolean
+  /** When a weekly preset's run next comes round if applied: "today", "Mon 16 Nov". */
+  nextWeekly: (preset: PumpPreset) => string | null
+  /** Shown on the weekly preset's card: today's run has gone by. */
+  missed: ReactNode
   /** The preset the cycles are now, if they match one. */
   applied: PumpPresetId | null
   previewing: PumpPresetId | null
@@ -579,32 +611,39 @@ function PumpPresets({ light, recommended, sown, applied, previewing, onPreview 
   return (
     <Card dashed className="gap-3">
       <p className="text-[13px] text-fg-2 text-pretty">
-        {'Community starting points from r/Gardyn owners, not Gardyn’s: Gardyn doesn’t publish a watering cadence (its Smart Watering adjusts it), and waits a few days to a week after sowing before the second watering. '}
+        {'Germination is Gardyn’s germination mode, a 15 min run on the sowing day and a week later. After it, community starting points from r/Gardyn owners, not Gardyn’s: Gardyn doesn’t publish a watering cadence (its Smart Watering adjusts it). '}
         <a href={GARDYN_WATERING_GUIDE} target="_blank" rel="noopener noreferrer" className="underline decoration-line-2 underline-offset-2 hover:text-fg">Gardyn’s guide</a>
-        . Pick one to preview it on the chart; Apply replaces your cycles.
+        {`. Pick one to preview it on the chart; Apply replaces your cycles.${follow ? ' Following the grow cycle, the cycles move along these stages as the days pass.' : ''}`}
       </p>
-      <div className="grid gap-2 min-[560px]:grid-cols-2 min-[900px]:grid-cols-4">
+      <div className="grid gap-2 min-[560px]:grid-cols-2 min-[900px]:grid-cols-5">
         {PUMP_PRESETS.map((p) => {
           const runs = presetRuns(p, light)
           const mins = Math.round(p.durationS / 60)
           const mine = recommended?.id === p.id
+          const path = follow && sown !== null
+          const next = p.weekly ? nextWeekly(p) : null
           return (
             <div key={p.id} className={cn('flex flex-col gap-2 rounded-card border bg-surface px-3.5 py-3', previewing === p.id ? 'border-tank' : mine ? 'border-fg-3' : 'border-line')}>
               <button type="button" data-testid={`pump-preset-${p.id}`} aria-pressed={previewing === p.id} onClick={() => onPreview(p.id)} className="flex cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left">
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium">{p.name}</span>
                 </span>
-                {(mine || applied === p.id) && (
+                {(mine || applied === p.id || path) && (
                   <span className="flex flex-wrap gap-1.5">
-                    {applied === p.id && <span className="w-fit rounded-[10px] bg-tank/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-tank" data-testid="pump-applied">running now</span>}
-                    {mine && recommended && <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-recommended" title={`Recommended: ${recommended.why}`}>{recommended.soak ? `soak · day ${sown ?? 0}` : `recommended · ${recommended.why}`}</span>}
+                    {applied === p.id && <span className="w-fit rounded-[10px] bg-tank/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-tank" data-testid="pump-applied">your cycles</span>}
+                    {path
+                      ? mine
+                        ? <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-stage" title={`Recommended: ${recommended?.why ?? ''}`}>{`day ${sown} · this stage`}</span>
+                        : <span className="w-fit rounded-[10px] border border-line-2 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-fg-3" data-testid="pump-stage">{p.id === 'fruiting' ? `fruiting crops · from day ${p.from}` : `from day ${p.from}`}</span>
+                      : mine && recommended && <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-recommended" title={`Recommended: ${recommended.why}`}>{`recommended · ${recommended.why}`}</span>}
                   </span>
                 )}
-                {mine && recommended?.soak && <span className="text-[12px] leading-snug text-pod-ok" data-testid="pump-soak">{`Soak: ${SOAK_NOTE}`}</span>}
                 <DayStrip runs={runs} light={light} />
-                <span className="font-mono text-[11px] text-fg-2">{`${runs.length} × ${mins} min = ${dailyMinutes(runs.length, p.durationS)} min a day`}</span>
+                <span className="font-mono text-[11px] text-fg-2">{p.weekly ? `${runs.length} × ${mins} min once a week` : `${runs.length} × ${mins} min = ${dailyMinutes(runs.length, p.durationS)} min a day`}</span>
+                {next && <span className="font-mono text-[11px] text-fg-2" data-testid="pump-next">{`next: ${next}`}</span>}
                 <span className="text-[12px] leading-snug text-fg-3">{p.note}</span>
               </button>
+              {p.weekly && missed}
               <a href={p.citation.url} target="_blank" rel="noopener noreferrer" className="w-fit text-[12px] text-fg-3 underline decoration-line-2 underline-offset-2 hover:text-fg">{p.citation.section}</a>
             </div>
           )
@@ -889,7 +928,7 @@ function FollowToggle() {
   const update = trpc.settings.update.useMutation({ onSuccess: () => utils.settings.invalidate() })
   const on = settings.data?.followGrowCycle ?? false
   return (
-    <span className="flex items-center gap-2 text-[13px] text-fg-2" title="As the plants age, move the cycles to the next stage's preset. Cycles you set by hand are left alone.">
+    <span className="flex items-center gap-2 text-[13px] text-fg-2" title="As the plants age, move the cycles on to the next stage's preset, never back. Cycles you set by hand are left alone. While on, germination's weekly run keeps to the sowing weekday.">
       Follow the grow cycle
       <Toggle on={on} size="md" label="Follow the grow cycle" disabled={!settings.data || update.isPending} onChange={followGrowCycle => update.mutate({ followGrowCycle })} />
     </span>

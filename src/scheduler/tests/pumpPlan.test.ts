@@ -2,14 +2,15 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { anchor } from '../../care/knowledge'
-import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, appliedPreset, plantCategories, presetSchedules, PUMP_PRESETS, recommendedPreset, TIPS_CITATION, WATERING_TIPS, type PumpPreset } from '../pumpPlan'
+import { advances, dailyMinutes, daysSinceSowing, sowDate, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, appliedPreset, plantCategories, presetDays, presetSchedules, PUMP_PRESETS, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS, type PumpPreset } from '../pumpPlan'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const preset = (id: string) => PUMP_PRESETS.find(p => p.id === id) as PumpPreset
 
 describe('pump presets', () => {
-  it('runs by growth stage: once, twice, three and five times a day, within the run limit and their own ranges', () => {
+  it('runs by growth stage: once a week, then once, twice, three and five times a day, within the run limit and their own ranges', () => {
     expect(PUMP_PRESETS.map(p => [p.id, p.minutes, p.durationS])).toEqual([
+      ['germination', [480], 900],
       ['seedlings', [480], 600],
       ['young', [480, 960], 360],
       ['mature', [480, 840, 1200], 360],
@@ -30,7 +31,8 @@ describe('pump presets', () => {
       expect(headings).toContain(c.section)
       expect(c.url).toBe(`https://github.com/seedypod/core/blob/dev/knowledge/watering/schedules.md#${anchor(c.section)}`)
     }
-    expect(note).toContain('once a day: 10 min (5–15 min) at 08:00')
+    expect(note).toContain('Once a week, 15 min at 08:00, on the sowing weekday')
+    expect(note).toContain('Once a day, 10 min (5–15 min), at 08:00')
     expect(note).toContain('Twice a day, 6 min (5–8 min), at 08:00 and 16:00')
     expect(note).toContain('Three times a day, 6 min (5–8 min), at 08:00, 14:00 and 20:00')
     expect(note).toContain('06:00, 10:00, 14:00, 18:00 and 22:00')
@@ -55,14 +57,19 @@ describe('pump presets', () => {
   })
 
   it('makes one daily pump schedule per run, with ids and names by stage and time', () => {
-    expect(presetSchedules(preset('mature'), { enabled: true })).toEqual([
+    expect(presetSchedules(preset('mature'), { enabled: true, weekday: 3 })).toEqual([
       { id: 'water-mature-0800', kind: 'pump', name: 'Mature · 3× 6 min (08:00)', enabled: true, days: 127, spec: { minute: 480, durationS: 360 } },
       { id: 'water-mature-1400', kind: 'pump', name: 'Mature · 3× 6 min (14:00)', enabled: true, days: 127, spec: { minute: 840, durationS: 360 } },
       { id: 'water-mature-2000', kind: 'pump', name: 'Mature · 3× 6 min (20:00)', enabled: true, days: 127, spec: { minute: 1200, durationS: 360 } },
     ])
+    // Germination runs once a week, on the sowing weekday: Thursday here.
+    expect(presetSchedules(preset('germination'), { enabled: true, weekday: 3 })).toEqual([
+      { id: 'water-germination-0800', kind: 'pump', name: 'Germination · once a week 15 min (08:00)', enabled: true, days: 8, spec: { minute: 480, durationS: 900 } },
+    ])
+    expect(presetDays(preset('young'), 3)).toBe(127)
     // Exactly the cycle already on the unit, so it reads as applied.
-    expect(presetSchedules(preset('seedlings'), { enabled: false })[0]).toMatchObject({ id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', enabled: false })
-    expect(presetSchedules(preset('fruiting'), { enabled: true, light: { on: 420, off: 1260 } }).map(s => s.name)).toEqual(['Fruiting · 3× 5 min (10:00)', 'Fruiting · 3× 5 min (14:00)', 'Fruiting · 3× 5 min (18:00)'])
+    expect(presetSchedules(preset('seedlings'), { enabled: false, weekday: 0 })[0]).toMatchObject({ id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', enabled: false })
+    expect(presetSchedules(preset('fruiting'), { enabled: true, light: { on: 420, off: 1260 }, weekday: 0 }).map(s => s.name)).toEqual(['Fruiting · 3× 5 min (10:00)', 'Fruiting · 3× 5 min (14:00)', 'Fruiting · 3× 5 min (18:00)'])
   })
 })
 
@@ -70,24 +77,62 @@ describe('recommending a preset', () => {
   const now = new Date('2026-11-20T12:00:00Z')
 
   it('counts days from the grow cycle, else the earliest planted pod', () => {
-    expect(daysSinceSowing('2026-11-10T08:00:00Z', ['2026-10-01'], now)).toBe(10)
-    expect(daysSinceSowing(null, ['2026-11-15', null, '2026-11-12'], now)).toBe(8)
-    expect(daysSinceSowing(undefined, [null], now)).toBeNull()
-    expect(daysSinceSowing('2026-12-01T00:00:00Z', [], now)).toBe(0)
+    expect(daysSinceSowing('2026-11-10T08:00:00Z', ['2026-10-01'], now, 'UTC')).toBe(10)
+    expect(daysSinceSowing(null, ['2026-11-15', null, '2026-11-12'], now, 'UTC')).toBe(8)
+    expect(daysSinceSowing(undefined, [null], now, 'UTC')).toBeNull()
+    expect(daysSinceSowing('2026-12-01T00:00:00Z', [], now, 'UTC')).toBe(0)
+    expect(sowDate(null, ['2026-11-15', null, '2026-11-12'], 'UTC')).toBe('2026-11-12')
   })
 
-  it('picks by stage, and fruiting whenever a fruiting crop is planted, saying why', () => {
-    // The first days are Gardyn's soak: Seedlings, marked as nothing new to run yet.
-    expect(recommendedPreset(0, ['herb'])).toEqual({ id: 'seedlings', why: 'day 0 since sowing, the soak: Gardyn waits a few days to a week after sowing before the second watering.', soak: true })
-    expect(recommendedPreset(2, [])?.soak).toBe(true)
-    expect(recommendedPreset(3, [])).toEqual({ id: 'seedlings', why: 'day 3 since sowing' })
-    expect(recommendedPreset(7, [])?.id).toBe('seedlings')
-    expect(recommendedPreset(8, [])?.id).toBe('young')
+  it('counts on the unit\'s calendar: a new day starts at its midnight, not UTC\'s', () => {
+    // Sown Monday 9 November in Los Angeles. Sunday 15th at 16:00 there is already the 16th in UTC, but still day 6.
+    expect(daysSinceSowing(null, ['2026-11-09'], new Date('2026-11-16T00:00:00Z'), 'America/Los_Angeles')).toBe(6)
+    // Day 7 is Monday the 16th from local midnight.
+    expect(daysSinceSowing(null, ['2026-11-09'], new Date('2026-11-16T08:30:00Z'), 'America/Los_Angeles')).toBe(7)
+    // A grow cycle started at local midnight in Tokyo is that day there, the day before in UTC.
+    expect(sowDate('2026-11-08T15:00:00Z', [], 'Asia/Tokyo')).toBe('2026-11-09')
+    expect(daysSinceSowing('2026-11-08T15:00:00Z', [], new Date('2026-11-09T14:59:00Z'), 'Asia/Tokyo')).toBe(0)
+  })
+
+  it('picks by stage, germination first for every crop, then fruiting whenever a fruiting crop is planted, saying why', () => {
+    expect(recommendedPreset(0, ['herb'])).toEqual({ id: 'germination', why: 'day 0 since sowing' })
+    // Day 7 is germination's second run; seedlings start on day 8.
+    expect(recommendedPreset(7, [])?.id).toBe('germination')
+    expect(recommendedPreset(8, [])).toEqual({ id: 'seedlings', why: 'day 8 since sowing' })
+    expect(recommendedPreset(13, [])?.id).toBe('seedlings')
+    expect(recommendedPreset(14, [])?.id).toBe('young')
     expect(recommendedPreset(21, [])?.id).toBe('young')
     expect(recommendedPreset(22, ['green'])).toEqual({ id: 'mature', why: 'day 22 since sowing' })
     expect(recommendedPreset(null, [])).toBeNull()
-    expect(recommendedPreset(3, ['herb', 'fruiting'])).toEqual({ id: 'fruiting', why: 'a fruiting crop is planted' })
+    expect(recommendedPreset(3, ['herb', 'fruiting'])?.id).toBe('germination')
+    expect(recommendedPreset(7, ['herb', 'fruiting'])?.id).toBe('germination')
+    expect(recommendedPreset(8, ['herb', 'fruiting'])).toEqual({ id: 'fruiting', why: 'a fruiting crop is planted' })
+  })
+
+  it('only ever moves forward: germination to anything after it, then seedlings, young, mature; fruiting only from germination', () => {
+    expect(advances('germination', 'seedlings')).toBe(true)
+    expect(advances('germination', 'fruiting')).toBe(true)
+    expect(advances('germination', 'mature')).toBe(true)
+    expect(advances('germination', 'germination')).toBe(false)
+    expect(advances('seedlings', 'young')).toBe(true)
+    expect(advances('young', 'mature')).toBe(true)
+    expect(advances('mature', 'young')).toBe(false)
+    expect(advances('seedlings', 'germination')).toBe(false)
+    expect(advances('mature', 'germination')).toBe(false)
+    expect(advances('fruiting', 'germination')).toBe(false)
+    expect(advances('fruiting', 'mature')).toBe(false)
+    expect(advances('seedlings', 'fruiting')).toBe(false)
     expect(recommendedPreset(null, ['fruiting'])?.id).toBe('fruiting')
+  })
+
+  it('finds the sowing weekday on the unit\'s calendar, from the same date as the days', () => {
+    // 2026-11-12 is a Thursday; 07:00 UTC is still Wednesday evening in Los Angeles.
+    expect(sowWeekday('2026-11-12T08:00:00Z', ['2026-11-09'], 'UTC', now)).toBe(3)
+    expect(sowWeekday('2026-11-12T07:00:00Z', [], 'America/Los_Angeles', now)).toBe(2)
+    // A plain sow date is that day anywhere; the earliest pod's.
+    expect(sowWeekday(null, ['2026-11-12', null, '2026-11-09'], 'America/Los_Angeles', now)).toBe(0)
+    // No date: today, Friday the 20th.
+    expect(sowWeekday(undefined, [null], 'UTC', now)).toBe(4)
   })
 
   it('reads the planted plants\' catalog categories, skipping unknown names', () => {
@@ -95,7 +140,7 @@ describe('recommending a preset', () => {
   })
 
   it('knows which preset the cycles are, and none when they differ', () => {
-    const mature = presetSchedules(preset('mature'), { enabled: true })
+    const mature = presetSchedules(preset('mature'), { enabled: true, weekday: 0 })
     expect(appliedPreset(mature, null)).toBe('mature')
     expect(appliedPreset([{ id: 'water-seedlings-0800', spec: { minute: 480, durationS: 600 } }], null)).toBe('seedlings')
     // Under another id, its name still says which it is.
@@ -104,5 +149,6 @@ describe('recommending a preset', () => {
     expect(appliedPreset(mature.slice(1), null)).toBeNull()
     expect(appliedPreset([{ ...mature[0] as typeof mature[number], spec: { minute: 480, durationS: 300 } }, ...mature.slice(1)], null)).toBeNull()
     expect(appliedPreset([], null)).toBeNull()
+    expect(appliedPreset(presetSchedules(preset('germination'), { enabled: true, weekday: 5 }), null)).toBe('germination')
   })
 })

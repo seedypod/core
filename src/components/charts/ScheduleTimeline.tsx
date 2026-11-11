@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { Card } from '@/src/components/ds/core'
 import { fmtClock } from '@/src/components/charts/format'
 import { holdWindow, mergedAt, nextDim, nextOn, runningToday, type LightCurve } from '@/src/components/Light/curves'
-import { fmtMinutes, nextRun, type PumpCycle } from '@/src/components/Water/pumpCycles'
+import { fmtDay, fmtMinutes, nextRun, type PumpCycle } from '@/src/components/Water/pumpCycles'
 import { fmtIn } from '@/src/components/System/statusData'
 import { useNow } from '@/src/components/System/useNow'
 import { dayOn } from '@/src/lib/days'
@@ -98,8 +98,8 @@ export interface ScheduleTimelineProps {
   hold?: { since: string, until: string, level: number } | null
   /** The pump running now. */
   pumpRun?: { since: string, remainingS: number | null } | null
-  /** A preset on show before it's applied: its runs as a hatched row under the real ones. */
-  preview?: { name: string, short: string, runs: number[], durationS: number } | null
+  /** A preset on show before it's applied: its runs as a hatched row under the real ones, on the days in `days` (every day without), and when they next come round. */
+  preview?: { name: string, short: string, runs: number[], durationS: number, days?: number, next?: Date | null } | null
 }
 
 /**
@@ -141,7 +141,10 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
     const until = pumpRun.remainingS === null ? nowMin : nowMin + pumpRun.remainingS / 60
     waterMarks.push(...clipToDay({ start: from, end: Math.max(until, from + 1), label: 'now', title: `Watering now · since ${fmtClock(Math.round(from))}${pumpRun.remainingS === null ? '' : `, ${fmtMinutes(pumpRun.remainingS)} left`}`, kind: 'run' }))
   }
-  const previewMarks = preview ? preview.runs.flatMap(m => clipToDay(runMark(m, preview.durationS, `Preview: ${preview.name}`, 'preview'))) : null
+  // A weekly preset runs only on its day: elsewhere its row says when it next does.
+  const previewToday = !preview?.days || dayOn(preview.days, weekday)
+  const previewMarks = preview ? (previewToday ? preview.runs.flatMap(m => clipToDay(runMark(m, preview.durationS, `Preview: ${preview.name}`, 'preview'))) : []) : null
+  const previewNext = !previewToday ? preview?.next ?? null : null
 
   // What's next, by the same helpers as the pages' strips and subtitles, so they all agree.
   const clock = (iso: string) => fmtClock(localTime(new Date(iso), zone).minute)
@@ -234,7 +237,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
           {ticks.map(t => <span key={t} className="absolute inset-y-0 w-px bg-grid" style={{ left: `${pctOf(t)}%` }} />)}
         </div>
         {rows.map((r, i) => (
-          <Row key={r.id} id={r.id} name={r.name} sub={r.id === 'preview' ? preview?.short : undefined} title={r.id === 'preview' ? `Preview: ${preview?.name ?? ''}` : undefined} marks={r.marks} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
+          <Row key={r.id} id={r.id} name={r.name} sub={r.id === 'preview' ? preview?.short : undefined} title={r.id === 'preview' ? `Preview: ${preview?.name ?? ''}` : undefined} marks={r.marks} note={r.id === 'preview' && previewNext ? `not today · next ${fmtDay(previewNext, zone)}` : undefined} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
         ))}
 
         <span />
@@ -258,12 +261,14 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   )
 }
 
-function Row({ id, name, sub, title, marks, width, active, onActive, laneRef }: {
+function Row({ id, name, sub, title, marks, note, width, active, onActive, laneRef }: {
   id: string
   name: string
   sub?: string
   title?: string
   marks: Mark[]
+  /** Written in an empty lane. */
+  note?: string
   width: number
   active: string | null
   onActive: (key: string | null) => void
@@ -284,6 +289,7 @@ function Row({ id, name, sub, title, marks, width, active, onActive, laneRef }: 
         {sub && <span className="truncate font-mono text-[11px] text-fg-3">{sub}</span>}
       </div>
       <div ref={laneRef} className={cn('relative rounded-[2px] bg-active/60', id === 'preview' && 'border border-dashed border-tank/40')} style={{ height: LANE_H }} data-testid={`lane-${id}`}>
+        {note && <span className="absolute inset-y-0 left-1.5 font-mono text-[11px] leading-[20px] text-fg-3" data-testid={`lane-${id}-note`}>{note}</span>}
         {sorted.map((m, i) => {
           const key = `${id}-${i}`
           const run = m.kind !== 'light' && m.kind !== 'hold'

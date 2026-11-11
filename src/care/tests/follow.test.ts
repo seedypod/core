@@ -8,46 +8,85 @@ import { createCore } from '../../server/bootstrap'
 import { appRouter } from '../../server/routers/app'
 import { zonedMidnight } from '../../server/routers/grow'
 import { createCallerFactory } from '../../server/trpc'
-import { PUMP_PRESETS, presetSchedules } from '../../scheduler/pumpPlan'
+import { PUMP_PRESETS, presetSchedules, type PumpPresetId } from '../../scheduler/pumpPlan'
 import { MemoryStore } from '../../store/memory'
 import { CareEngine } from '../engine'
-import { FOLLOW_ALERT, followGrowCycle } from '../follow'
+import { FOLLOW_ALERT, followedPreset, followGrowCycle } from '../follow'
 
 const day = (n: number) => new Date(Date.parse('2026-11-09T12:00:00Z') + n * 86_400_000)
 const light = { id: 'gardyn', kind: 'light' as const, name: 'Gardyn day', enabled: true, days: 127, spec: { setpoints: [{ minute: 330, level: 0 }, { minute: 360, level: 100 }, { minute: 1260, level: 100 }, { minute: 1290, level: 0 }] } }
 
-function tower(o: { plant?: string, cycles?: 'seedlings' | 'young' | 'hand' | 'none' } = {}) {
+// Sown on Monday 9 November: weekday 0, the day germination's weekly cycle runs.
+function tower(o: { plant?: string, cycles?: PumpPresetId | 'hand' | 'none' } = {}) {
   const store = new MemoryStore(30)
   store.schedules.upsert(light)
   store.pods.update(1, { plant: o.plant ?? 'Basil', plantedAt: '2026-11-09', status: 'seeded' }, '2026-11-09T12:00:00Z')
-  const cycles = o.cycles ?? 'seedlings'
+  const cycles = o.cycles ?? 'germination'
   if (cycles === 'hand') store.schedules.upsert({ id: 'mine', kind: 'pump', name: 'My watering', enabled: true, days: 127, spec: { minute: 450, durationS: 420 } })
   else if (cycles !== 'none') {
     const p = PUMP_PRESETS.find(x => x.id === cycles)
     if (!p) throw new Error(`no preset ${cycles}`)
-    for (const s of presetSchedules(p, { enabled: true, light: { on: 360, off: 1260 } })) store.schedules.upsert(s)
+    for (const s of presetSchedules(p, { enabled: true, light: { on: 360, off: 1260 }, weekday: 0 })) store.schedules.upsert(s)
   }
   return store
 }
 const pumps = (store: MemoryStore) => store.schedules.list().filter(s => s.kind === 'pump').map(s => s.id).sort()
 
 describe('watering follows the grow cycle', () => {
-  it('moves seedling cycles to the young plants\' preset once the seedling week is over', () => {
+  it('moves germination\'s weekly cycle to the seedlings\' daily one on day 8, after its day-7 run, then on through the stages', () => {
     const store = tower()
-    expect(followGrowCycle(store, day(5))).toBeNull()
-    const change = followGrowCycle(store, day(9))
-    expect(change).toMatchObject({ from: 'seedlings', to: 'young', days: 9 })
-    expect(change?.detail).toMatch(/^Watering moved to .*: 2 × 6 min \(08:00, 16:00\), day 9 since sowing\./)
-    expect(pumps(store)).toEqual(['water-young-0800', 'water-young-1600'])
+    expect(store.schedules.list().find(s => s.kind === 'pump')).toMatchObject({ id: 'water-germination-0800', days: 1, spec: { minute: 480, durationS: 900 } })
+    // Day 7 is germination's second run: it stays.
+    expect(followGrowCycle(store, day(7))).toBeNull()
+    const change = followGrowCycle(store, day(8))
+    expect(change).toMatchObject({ from: 'germination', to: 'seedlings', days: 8 })
+    expect(change?.detail).toMatch(/^Watering moved to Seedlings · days 8–13: 1 × 10 min \(08:00\), day 8 since sowing\./)
+    expect(pumps(store)).toEqual(['water-seedlings-0800'])
     // Once moved, nothing more to do until the next stage.
-    expect(followGrowCycle(store, day(10))).toBeNull()
+    expect(followGrowCycle(store, day(13))).toBeNull()
+    expect(followGrowCycle(store, day(14))).toMatchObject({ from: 'seedlings', to: 'young' })
+    expect(pumps(store)).toEqual(['water-young-0800', 'water-young-1600'])
     expect(followGrowCycle(store, day(23))).toMatchObject({ from: 'young', to: 'mature' })
+  })
+
+  it('never moves back: a new grow cycle over grown plants, or seedlings early, keep their cycles', () => {
+    // Mature tomatoes on the fruiting preset; a new grow cycle starts today.
+    const tomatoes = tower({ plant: 'Tomato', cycles: 'fruiting' })
+    tomatoes.grow.start(day(4).toISOString(), 'New')
+    expect(followGrowCycle(tomatoes, day(4))).toBeNull()
+    expect(pumps(tomatoes)).toEqual(expect.arrayContaining(['water-fruiting-1000']))
+    // Seedlings applied by hand on day 3: not back to the weekly run.
+    const early = tower({ cycles: 'seedlings' })
+    expect(followGrowCycle(early, day(3))).toBeNull()
+    expect(pumps(early)).toEqual(['water-seedlings-0800'])
+    // Mature cycles under a new grow cycle stay mature.
+    const mature = tower({ cycles: 'mature' })
+    mature.grow.start(day(4).toISOString(), 'New')
+    expect(followGrowCycle(mature, day(4))).toBeNull()
+    expect(pumps(mature)).toEqual(['water-mature-0800', 'water-mature-1400', 'water-mature-2000'])
+  })
+
+  it('keeps germination\'s run on the sowing weekday, moving it with a notice when the grow cycle restarts on another day', () => {
+    const store = tower()
+    // Restarted on Thursday the 12th on the unit's calendar.
+    store.grow.start('2026-11-12T08:00:00Z', 'Again')
+    const change = followGrowCycle(store, day(4))
+    expect(change).toMatchObject({ from: 'germination', to: 'germination', days: 1 })
+    expect(change?.detail).toMatch(/^Germination's weekly run moved to Thu, the sowing weekday: day 1 since sowing\./)
+    expect(store.schedules.list().find(s => s.kind === 'pump')).toMatchObject({ id: 'water-germination-0800', days: 1 << 3 })
+    expect(followGrowCycle(store, day(5))).toBeNull()
+    // A germination cycle on two days isn't the preset as written: left alone.
+    const two = tower()
+    const g = two.schedules.list().find(s => s.kind === 'pump')
+    if (!g) throw new Error('no germination cycle')
+    two.schedules.upsert({ ...g, days: 3 })
+    expect(followGrowCycle(two, day(8))).toBeNull()
   })
 
   it('dates from the grow cycle when there is one', () => {
     const store = tower()
     store.grow.start('2026-10-01T00:00:00Z', 'Autumn')
-    expect(followGrowCycle(store, day(0))).toMatchObject({ from: 'seedlings', to: 'mature' })
+    expect(followGrowCycle(store, day(0))).toMatchObject({ from: 'germination', to: 'mature' })
     expect(pumps(store)).toEqual(['water-mature-0800', 'water-mature-1400', 'water-mature-2000'])
   })
 
@@ -57,27 +96,29 @@ describe('watering follows the grow cycle', () => {
     expect(pumps(none)).toEqual([])
     const paused = tower()
     const seed = paused.schedules.list().find(s => s.kind === 'pump')
-    if (!seed) throw new Error('no seedling cycle')
+    if (!seed) throw new Error('no germination cycle')
     paused.schedules.upsert({ ...seed, enabled: false })
     expect(followGrowCycle(paused, day(9))).toBeNull()
-    paused.schedules.upsert({ ...seed, enabled: true, days: 31 })
+    paused.schedules.upsert({ ...seed, enabled: true, days: 127 })
     expect(followGrowCycle(paused, day(9))).toBeNull()
-    paused.schedules.upsert({ ...seed, days: 127, spec: { minute: 480, durationS: 420 } })
+    paused.schedules.upsert({ ...seed, days: 1, spec: { minute: 480, durationS: 420 } })
     expect(followGrowCycle(paused, day(9))).toBeNull()
   })
 
-  it('keeps following a light-clipped preset after the light schedule changes', () => {
+  it('still knows a light-clipped preset after the light schedule changes', () => {
     const store = tower({ plant: 'Jalapeño', cycles: 'none' })
     // Fruiting applied under a 06:00–21:00 day: four runs.
     const fruiting = PUMP_PRESETS.find(p => p.id === 'fruiting')
     if (!fruiting) throw new Error('no fruiting preset')
-    for (const s of presetSchedules(fruiting, { enabled: true, light: { on: 360, off: 1260 } })) store.schedules.upsert(s)
+    for (const s of presetSchedules(fruiting, { enabled: true, light: { on: 360, off: 1260 }, weekday: 0 })) store.schedules.upsert(s)
     store.schedules.upsert({ ...light, spec: { setpoints: [{ minute: 300, level: 0 }, { minute: 330, level: 100 }, { minute: 1350, level: 100 }, { minute: 1380, level: 0 }] } })
+    expect(followedPreset(store.schedules.list().filter((s): s is typeof s & { spec: { minute: number, durationS: number } } => s.kind === 'pump'))?.id).toBe('fruiting')
+    // Fruiting is a track of its own: with the crop gone it doesn't drop to seedlings.
     store.pods.update(1, { plant: 'Basil' }, '2026-11-09T12:00:00Z')
-    expect(followGrowCycle(store, day(9))).toMatchObject({ from: 'fruiting', to: 'young' })
+    expect(followGrowCycle(store, day(9))).toBeNull()
   })
 
-  it('leaves hand-made cycles, the soak, an empty tower and a unit that has it off alone', () => {
+  it('leaves hand-made cycles, a tower with no cycles, an empty tower and a unit that has it off alone', () => {
     const hand = tower({ cycles: 'hand' })
     expect(followGrowCycle(hand, day(9))).toBeNull()
     expect(pumps(hand)).toEqual(['mine'])
@@ -87,13 +128,13 @@ describe('watering follows the grow cycle', () => {
     const off = tower()
     off.settings.update({ followGrowCycle: false })
     expect(followGrowCycle(off, day(9))).toBeNull()
-    expect(pumps(off)).toEqual(['water-seedlings-0800'])
+    expect(pumps(off)).toEqual(['water-germination-0800'])
   })
 
-  it('goes straight to the fruiting preset when a fruiting crop is planted, but not during the soak', () => {
+  it('moves a fruiting crop from germination straight to the fruiting preset on day 8', () => {
     const store = tower({ plant: 'Jalapeño' })
-    expect(followGrowCycle(store, day(1))).toBeNull()
-    expect(followGrowCycle(store, day(4))).toMatchObject({ to: 'fruiting' })
+    expect(followGrowCycle(store, day(7))).toBeNull()
+    expect(followGrowCycle(store, day(8))).toMatchObject({ from: 'germination', to: 'fruiting' })
   })
 
   it('raises a notice and says the schedules changed when the care engine moves them', () => {
@@ -104,9 +145,9 @@ describe('watering follows the grow cycle', () => {
       if (e.kind === 'schedule') seen.push(e.id)
     })
     const care = new CareEngine({ store, hal: new SimHal({ tickMs: 0, now: () => day(9) }), events, now: () => day(9) })
-    expect(care.tick().followed).toMatchObject({ to: 'young' })
+    expect(care.tick().followed).toMatchObject({ to: 'seedlings' })
     expect(store.alerts.list({ activeOnly: true }).find(a => a.kind === FOLLOW_ALERT)?.detail).toMatch(/Watering moved to/)
-    expect(seen).toContain('follow:young')
+    expect(seen).toContain('follow:seedlings')
     expect(care.tick().followed).toBeNull()
   })
 
@@ -132,7 +173,7 @@ describe('watering follows the grow cycle', () => {
     expect(deepest).toBe(1)
     // The start tick moved the watering and its schedule event asked for one more, run after it.
     expect(tick).toHaveBeenCalledTimes(2)
-    expect(pumps(store)).toEqual(['water-young-0800', 'water-young-1600'])
+    expect(pumps(store)).toEqual(['water-seedlings-0800'])
   })
 })
 

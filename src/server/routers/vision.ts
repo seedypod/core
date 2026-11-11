@@ -159,7 +159,7 @@ export const visionRouter = router({
         return urls.get(id) ?? null
       }
       return {
-        labels: page.map(l => ({ ...l, daysSinceSowing: daysSinceSowing(null, [l.plantedAt], new Date(l.ts)), url: urlOf(l.captureId) })),
+        labels: page.map(l => ({ ...l, daysSinceSowing: daysSinceSowing(null, [l.plantedAt], new Date(l.ts), 'UTC'), url: urlOf(l.captureId) })),
         next: rows.length > input.limit && page.length ? cursorOf(page[page.length - 1] as PodLabel) : null,
       }
     }),
