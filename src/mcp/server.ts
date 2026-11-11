@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { RuleInput } from '../autopilot/schema'
 import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '../scheduler/lightPlan'
 import { dayEnabled, localTime } from '../scheduler/time'
-import { appliedPreset, dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, TIPS_CITATION, WATERING_TIPS } from '../scheduler/pumpPlan'
+import { appliedPreset, dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetDays, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS } from '../scheduler/pumpPlan'
 import { SensorId } from '../hardware/contract'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
@@ -71,7 +71,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async () => text({ timezone: (await caller.settings.get()).timezone, presets: LIGHT_PRESETS.map(p => ({ ...p, boostHours: boostHours({ setpoints: p.setpoints }), rating: lightRating(boostHours({ setpoints: p.setpoints })) })) }))
 
   server.registerTool('pump_presets', {
-    description: `Watering starting points by growth stage (seedlings, young plants, mature greens and herbs, large or fruiting), with each one's runs, run-length range, notes and a citation, the preset recommended for this tower with why (days since sowing, or a fruiting crop planted), the preset the pump cycles are now if they match one, today's light window and the unit's timezone. These are community starting points from r/Gardyn owners, not Gardyn's: Gardyn doesn't publish a cadence (Smart Watering adjusts it) and waits a few days to a week after sowing before the second watering (${GARDYN_WATERING_GUIDE}). Check the roots and adjust: dry, brittle roots want more; roots in pooled water before the next cycle want less. Each preset lists the pump schedules to pass to upsert_schedule, one per run; applying a preset means replacing the existing pump cycles (delete_schedule them first), since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC. followGrowCycle says whether the unit moves its cycles to each stage's preset by itself as the days pass (it does so only while they're exactly a preset; hand-made cycles are left alone).`,
+    description: `Watering starting points by growth stage (germination, seedlings, young plants, mature greens and herbs, large or fruiting), with each one's runs, day mask, the day since sowing it starts (from), run-length range, notes and a citation, the preset recommended for this tower with why (days since sowing, or a fruiting crop planted), the preset the pump cycles are now if they match one, today's light window, the sowing weekday and the unit's timezone. Germination (days 0–7, every crop) is Gardyn's germination mode as a plain schedule: one 15 min run a week on the sowing weekday, so day 0 and day 7 (${GARDYN_WATERING_GUIDE}); sown after 08:00, water by hand that day (run_pump). Days count on the unit's calendar. The other stages are community starting points from r/Gardyn owners, not Gardyn's: Gardyn doesn't publish a cadence (Smart Watering adjusts it). Check the roots and adjust: dry, brittle roots want more; roots in pooled water before the next cycle want less. Each preset lists the pump schedules to pass to upsert_schedule, one per run; applying a preset means replacing the existing pump cycles (delete_schedule them first), since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC. followGrowCycle says whether the unit moves its cycles to each stage's preset by itself as the days pass (only forward, only while they're exactly a preset; hand-made cycles are left alone, and while germinating it keeps the weekly run on the sowing weekday).`,
     inputSchema: {},
   }, async () => {
     const [settings, schedules, cycle, pods] = await Promise.all([caller.settings.get(), caller.schedules.list(), caller.grow.current(), caller.grow.pods()])
@@ -80,20 +80,23 @@ export function createMcpServer(ctx: Context): McpServer {
     const today = localTime(now, settings.timezone)
     const light = lightWindow(schedules.flatMap(s => (s.kind === 'light' && s.enabled && dayEnabled(s.days, today.weekday) && 'setpoints' in s.spec ? [s.spec] : [])))
     const planted = pods.filter(p => p.status !== 'empty')
-    const days = daysSinceSowing(cycle.cycle?.startedAt, planted.map(p => p.plantedAt), now)
+    const days = daysSinceSowing(cycle.cycle?.startedAt, planted.map(p => p.plantedAt), now, settings.timezone)
+    // 0 = Monday, as in the day masks.
+    const sowDay = sowWeekday(cycle.cycle?.startedAt, planted.map(p => p.plantedAt), settings.timezone, now)
     return text({
       timezone: settings.timezone,
       followGrowCycle: settings.followGrowCycle,
       guide: GARDYN_WATERING_GUIDE,
       light,
       daysSinceSowing: days,
+      sowWeekday: sowDay,
       recommended: recommendedPreset(days, plantCategories(planted.map(p => p.plant))),
       applied: appliedPreset(schedules.flatMap(s => (s.kind === 'pump' && 'durationS' in s.spec ? [{ id: s.id, name: s.name, spec: s.spec }] : [])), light),
       tips: WATERING_TIPS,
       tipsCitation: TIPS_CITATION.url,
       presets: PUMP_PRESETS.map((p) => {
         const runs = presetRuns(p, light)
-        return { id: p.id, name: p.name, runs, durationS: p.durationS, range: p.range, minutesADay: dailyMinutes(runs.length, p.durationS), note: p.note, citation: p.citation.url, schedules: presetSchedules(p, { enabled: true, light }) }
+        return { id: p.id, name: p.name, from: p.from, runs, days: presetDays(p, sowDay), durationS: p.durationS, range: p.range, ...(p.weekly ? { minutesAWeek: dailyMinutes(runs.length, p.durationS) } : { minutesADay: dailyMinutes(runs.length, p.durationS) }), note: p.note, citation: p.citation.url, schedules: presetSchedules(p, { enabled: true, light, weekday: sowDay }) }
       }),
     })
   })

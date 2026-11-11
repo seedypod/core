@@ -1,5 +1,6 @@
 import { fmtClock } from '@/src/components/charts/format'
 import { dayOn } from '@/src/lib/days'
+import { presetSchedules, type PumpPreset } from '@/src/scheduler/pumpPlan'
 import { localTime, systemZone } from '@/src/scheduler/time'
 
 export interface PumpCycle { id: string, kind: 'pump', name: string, enabled: boolean, days: number, spec: { minute: number, durationS: number, level?: number } }
@@ -32,6 +33,14 @@ export function nextRun(cycles: PumpCycle[], now: Date, timezone = systemZone())
   }
   return best
 }
+
+/** When a preset's runs would next come round if applied now, on the unit's clock: a weekly one's on the sowing weekday. */
+export function nextPresetRun(preset: PumpPreset, light: { on: number, off: number } | null, sowWeekday: number, now: Date, timezone: string): Date | null {
+  return nextRun(presetSchedules(preset, { enabled: true, light, weekday: sowWeekday }), now, timezone)?.at ?? null
+}
+
+/** "Mon 16 Nov": a day on the unit's calendar. */
+export const fmtDay = (at: Date, timezone: string) => at.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: timezone })
 
 /** "25 min", "8 h", "3 d". */
 export function fmtSpan(ms: number): string {

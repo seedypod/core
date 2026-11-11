@@ -3,6 +3,7 @@
 import { ChevronDown, Minus, Plus } from 'lucide-react'
 import { useEffect, useRef, type ComponentProps, type PointerEvent, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { dayOn, daysLabel, runsOn } from '@/src/lib/days'
 
 /* ─── Toggle ─────────────────────────────────────────────────────────────
    Green track when on. Only the knob animates (150ms standard ease). */
@@ -356,6 +357,27 @@ export function DayPicker({ value, onChange, days = DEFAULT_DAYS, labels, classN
         )
       })}
     </div>
+  )
+}
+
+/* ─── WeekdayDots ────────────────────────────────────────────────────────
+   DayPicker's read-only twin: the week Mon-first with a schedule's days lit,
+   and the days summed up beside it ("Every day", "Mondays", "Mon, Wed, Fri"). */
+export function WeekdayDots({ days, summary = true, className }: {
+  /** The schedule's day mask, Mon=1 … Sun=64. */
+  days: number
+  summary?: boolean
+  className?: string
+}) {
+  return (
+    <span role="img" aria-label={runsOn(days)} data-testid="weekday-dots" className={cn('flex flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[11px]', className)}>
+      <span className="flex shrink-0 gap-0.5" aria-hidden>
+        {DEFAULT_DAYS.map((d, i) => (
+          <span key={i} data-on={dayOn(days, i) ? 'true' : undefined} className={cn('grid size-4 place-items-center rounded-[3px] leading-none', dayOn(days, i) ? 'bg-tank/20 text-tank' : 'text-fg-3/60')}>{d}</span>
+        ))}
+      </span>
+      {summary && <span className="whitespace-nowrap text-fg-2" aria-hidden>{daysLabel(days)}</span>}
+    </span>
   )
 }
 

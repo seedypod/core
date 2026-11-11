@@ -75,6 +75,20 @@ describe('ScheduleTimeline', () => {
     expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 10 min in 2h 0m')
   })
 
+  it('dates a run more than a day off, and a weekly preview that doesn\'t run today', () => {
+    // Germination sown on a Monday: its run is next Monday, 16 November.
+    const germ = cycle('Germination', 480, 900, { days: 1 })
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[germ]} timezone="UTC" preview={{ name: 'Germination · week 1', short: 'Germination', runs: [480], durationS: 900, days: 1, next: new Date('2026-11-16T08:00:00Z') }} />)
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 15 min Mon 08:00')
+    expect(screen.queryAllByTestId('mark-preview')).toHaveLength(0)
+    expect(screen.getByTestId('lane-preview-note').textContent).toBe('not today · next Mon 16 Nov')
+    cleanup()
+    // On its day it's drawn like any other run.
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" preview={{ name: 'Germination · week 1', short: 'Germination', runs: [480], durationS: 900, days: 1 << TUESDAY }} />)
+    expect(screen.getAllByTestId('mark-preview')).toHaveLength(1)
+    expect(screen.queryByTestId('lane-preview-note')).toBeNull()
+  })
+
   it('says when the lights come on tomorrow, and nothing with nothing next', () => {
     vi.setSystemTime(new Date('2026-11-10T22:00:00Z'))
     const { unmount } = render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" />)
@@ -149,12 +163,12 @@ describe('ScheduleTimeline', () => {
     const [morning, evening] = screen.getAllByTestId('mark-water')
     if (!morning || !evening) throw new Error('no marks')
     fireEvent.focus(morning)
-    expect(screen.getByRole('tooltip').textContent).toBe('Morning · 08:00–08:10 · 10 min')
+    expect(screen.getByRole('tooltip').textContent).toMatch(/^Morning · 08:00–08:10 · 10 min/)
     expect(morning.getAttribute('aria-describedby')).toBe(screen.getByRole('tooltip').id)
     fireEvent.keyDown(morning, { key: 'Escape' })
     expect(screen.queryByRole('tooltip')).toBeNull()
     fireEvent.click(evening)
-    expect(screen.getByRole('tooltip').textContent).toBe('Evening · 20:00–20:10 · 10 min')
+    expect(screen.getByRole('tooltip').textContent).toMatch(/^Evening · 20:00–20:10 · 10 min/)
     fireEvent.blur(evening)
     expect(screen.queryByRole('tooltip')).toBeNull()
     fireEvent.pointerEnter(morning, { pointerType: 'mouse' })
@@ -235,6 +249,17 @@ describe('ScheduleTimeline', () => {
     expect(over?.querySelector('span')?.className).not.toContain('invisible')
   })
 
+  it('says a run\'s days under its times in the tooltip', () => {
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Germination', 480, 900, { days: 1 << TUESDAY }), cycle('Daily', 1200, 300)]} timezone="UTC" preview={{ name: 'Germination · week 1', short: 'Germination', runs: [960], durationS: 900, days: 1 << TUESDAY }} />)
+    const [germ, daily] = screen.getAllByTestId('mark-water')
+    fireEvent.focus(germ as HTMLElement)
+    expect(screen.getByTestId('timeline-tip-days').textContent).toBe('Tuesdays')
+    fireEvent.focus(daily as HTMLElement)
+    expect(screen.getByTestId('timeline-tip-days').textContent).toBe('Every day')
+    fireEvent.focus(screen.getByTestId('mark-preview'))
+    expect(screen.getByTestId('timeline-tip-days').textContent).toBe('Tuesdays')
+  })
+
   it('closes a tapped tooltip on a tap anywhere else, not on another mark', () => {
     render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Morning', 480, 600), cycle('Evening', 1200, 600)]} timezone="UTC" />)
     const [morning, evening] = screen.getAllByTestId('mark-water')
@@ -242,9 +267,9 @@ describe('ScheduleTimeline', () => {
     fireEvent.click(morning)
     // Pressing another mark leaves it to that mark's click.
     fireEvent.pointerDown(evening)
-    expect(screen.getByRole('tooltip').textContent).toBe('Morning · 08:00–08:10 · 10 min')
+    expect(screen.getByRole('tooltip').textContent).toMatch(/^Morning · 08:00–08:10 · 10 min/)
     fireEvent.click(evening)
-    expect(screen.getByRole('tooltip').textContent).toBe('Evening · 20:00–20:10 · 10 min')
+    expect(screen.getByRole('tooltip').textContent).toMatch(/^Evening · 20:00–20:10 · 10 min/)
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('tooltip')).toBeNull()
   })

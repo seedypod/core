@@ -100,7 +100,8 @@ async function labelRows(ctx: Context, w: ExportWindow, labels: PodLabel[], regi
     const size = sizes.get(l.captureId) ?? null
     return {
       ...l,
-      daysSinceSowing: daysSinceSowing(null, [l.plantedAt], new Date(l.ts)),
+      // Counted on the UTC calendar, as it always has been for labels.
+      daysSinceSowing: daysSinceSowing(null, [l.plantedAt], new Date(l.ts), 'UTC'),
       image: w.images && size && inArchive.has(l.captureId) ? `images/${l.captureId}.jpg` : null,
       width: size?.width ?? null,
       height: size?.height ?? null,
