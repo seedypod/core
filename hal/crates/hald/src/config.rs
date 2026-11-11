@@ -125,8 +125,9 @@ pub struct UsbRecovery {
     pub attempts: u32,
     /// Seconds to wait for the bus to fill after each re-probe.
     pub settle_s: u64,
-    /// Reboots in a row to try for a missing hub. 0 turns this off. The count only
-    /// resets when the hub is seen, so a power cycle doesn't start it again.
+    /// Reboots in a row to try for a missing hub. 0, the default, turns this off
+    /// until the timing is proved on a unit. The count only resets when the hub is
+    /// seen, so a power cycle doesn't start it again.
     pub reboot_attempts: u32,
     /// Looks at the pump and dosers before rebooting, and the wait between looks.
     /// Long enough to outlast a full pump run; after that this boot goes without.
@@ -383,7 +384,7 @@ impl Default for UsbRecovery {
             boot_wait_s: 90,
             attempts: 0,
             settle_s: 20,
-            reboot_attempts: 4,
+            reboot_attempts: 0,
             busy_checks: 20,
             busy_wait_s: 60,
             rebind_controller: false,
@@ -720,7 +721,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # [usb_recovery]          # reboot to try again when the USB hub didn't come up
 # enabled = true
 # boot_wait_s = 90
-# reboot_attempts = 4     # reboots in a row; 0 turns this off
+# reboot_attempts = 0     # reboots in a row; 0 (the default) turns this off
 # busy_checks = 20        # waits for the pump and dosers to finish first,
 # busy_wait_s = 60        # then leaves this boot alone
 # attempts = 0            # root hub re-probes before any reboot
@@ -892,7 +893,8 @@ capture_timeout_s = 0
         assert!(!keys.contains_key("usb_recovery"));
         let c: Config = toml::from_str(DEFAULT_CONFIG_TOML).unwrap();
         assert!(c.usb_recovery.enabled);
-        assert_eq!(c.usb_recovery.reboot_attempts, 4);
+        // An unattended reboot is opt-in (AGENTS.md: auto-recovery is default-off).
+        assert_eq!(c.usb_recovery.reboot_attempts, 0);
     }
 
     /// Dropping the key would make a `hal.toml` that set it crash-loop hald.

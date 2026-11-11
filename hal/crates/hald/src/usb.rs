@@ -7,7 +7,8 @@
 //! re-probes did that isn't known yet, so the timing and defaults here are pending.
 //!
 //! So `hald --usb-recover` runs once per boot as root. If the bus is still empty
-//! after `boot_wait_s` it asks for a reboot, up to `reboot_attempts` in a row. That
+//! after `boot_wait_s` it can ask for a reboot, up to `reboot_attempts` in a row.
+//! That is off by default (`reboot_attempts = 0`) until the timing is proved. The
 //! count is on the card, written and synced first, and only resets when the hub is
 //! seen, so nothing here can loop: no count, no reboot. It won't reboot while the
 //! pump, a doser or the setup hotspot is in use, during an update or a restore, or

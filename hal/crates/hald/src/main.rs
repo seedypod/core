@@ -177,7 +177,8 @@ async fn main() -> anyhow::Result<()> {
             }
             usb::Recovery::NotRebooting(why) => warn!(%why, "USB hub missing; not rebooting this boot"),
             usb::Recovery::GaveUp { reboots } => {
-                anyhow::bail!("USB hub missing after {reboots} reboots; waiting for it to be seen")
+                let limit = cfg.usb_recovery.reboot_attempts;
+                anyhow::bail!("USB hub missing after {reboots} reboots (reboot_attempts = {limit}); waiting for it to be seen")
             }
         }
         return Ok(());
