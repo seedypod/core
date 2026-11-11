@@ -436,6 +436,21 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.queryByTestId('pump-running')).toBeNull()
   })
 
+  it('counts a preset as running only as Follow does: paused, trimmed or re-timed, the cycles are your own', () => {
+    const seedlings = { ...morning, id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', spec: { minute: 480, durationS: 600 } }
+    for (const changed of [{ ...seedlings, enabled: false }, { ...seedlings, days: 31 }, { ...seedlings, spec: { minute: 480, durationS: 420 } }]) {
+      data.set('schedules', [curve, changed])
+      render(<WaterPage />)
+      expect(screen.getByTestId('pump-running').textContent).toBe('·custom cycles')
+      expect(document.querySelectorAll('[data-running]')).toHaveLength(0)
+      cleanup()
+    }
+    // Germination counts on any one weekday, as Follow keeps it.
+    data.set('schedules', [curve, { ...morning, id: 'water-germination-0800', name: 'Germination · once a week 15 min (08:00)', days: 1 << 4, spec: { minute: 480, durationS: 900 } }])
+    render(<WaterPage />)
+    expect(screen.getByTestId('pump-running').textContent).toBe('·Germination running')
+  })
+
   it('keeps a cycle the preset re-creates rather than removing it first', async () => {
     data.set('schedules', [{ ...morning, id: 'water-mature-0800' }, evening])
     render(<WaterPage />)

@@ -38,7 +38,7 @@ const oneDay = (days: number) => days > 0 && (days & (days - 1)) === 0
  * so a preset clipped to the light hours (fruiting) is still recognised after
  * the light schedule changes.
  */
-export function followedPreset(cycles: ReadonlyArray<Schedule & { spec: PumpSpec }>): PumpPreset | null {
+export function followedPreset(cycles: ReadonlyArray<Pick<Schedule, 'id' | 'enabled' | 'days'> & { spec: Pick<PumpSpec, 'durationS'> }>): PumpPreset | null {
   if (!cycles.length) return null
   const preset = PUMP_PRESETS.find(p => cycles.every(c => c.id.startsWith(`water-${p.slug}-`)))
   if (!preset) return null

@@ -1,11 +1,29 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const WIDTHS = [390, 768, 1024, 1280, 1440]
+
+/** Delete every pump cycle the way a person does: Edit, then Delete. */
+async function deleteCycles(page: Page) {
+  const edit = page.getByTestId('pump-cycle-list').getByRole('button', { name: /^Edit / })
+  while (await edit.count()) {
+    await edit.first().click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  }
+}
+
+// Back to no cycles whatever happened, as the other specs expect.
+test.afterEach(async ({ page }) => {
+  await page.goto('/water')
+  await deleteCycles(page)
+})
 
 test('water: the preset cards fit at every width, nothing clipped or overflowing', async ({ page }, info) => {
   // Five widths, each measured and photographed.
   test.setTimeout(120_000)
   await page.goto('/water')
+  // From no cycles, whatever earlier specs left.
+  await deleteCycles(page)
   const main = page.getByRole('main')
   // A running preset (tinted) and another previewed (ringed), so both states are measured.
   await main.getByTestId('pump-preset-seedlings').click()
@@ -29,10 +47,4 @@ test('water: the preset cards fit at every width, nothing clipped or overflowing
     // Kept beside the test's other artifacts for a look by eye.
     await grid.screenshot({ path: info.outputPath(`preset-cards-${width}.png`) })
   }
-
-  // Back to no cycles, as the other specs expect.
-  await page.setViewportSize({ width: 1280, height: 1000 })
-  await main.getByRole('button', { name: 'Edit Seedlings · once a day 10 min (08:00)' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-  await expect(main.getByTestId('pump-running')).toHaveCount(0)
 })
