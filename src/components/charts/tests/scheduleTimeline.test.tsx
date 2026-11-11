@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LightCurve } from '@/src/components/Light/curves'
@@ -287,5 +289,39 @@ describe('ScheduleTimeline', () => {
     // Germination's run on Mondays, seen on a Tuesday.
     render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('Germination', 480, 900, { days: 1 })]} timezone="UTC" />)
     expect(screen.getByTestId('timeline-next').textContent).toBe('next · Watering 15 min Mon 08:00')
+  })
+
+  it('hatches and dims the rest of the day as forecast in every lane, with the legend saying so', () => {
+    render(<ScheduleTimeline lead="water" curves={[day]} cycles={[cycle('Morning', 480, 600)]} timezone="UTC" preview={{ name: 'Young plants', short: 'Young', runs: [480, 960], durationS: 360 }} />)
+    // 14:00: everything from 58.3% across is ahead.
+    for (const lane of ['water', 'preview', 'light']) {
+      const ahead = screen.getByTestId(`ahead-${lane}`)
+      expect(ahead.style.left).toBe(`${(840 / 1440) * 100}%`)
+      expect(ahead.style.backgroundImage).toContain('var(--forecast-hatch)')
+      expect(ahead.style.backgroundImage).toContain('var(--forecast-dim)')
+      expect(ahead.getAttribute('aria-hidden')).toBe('true')
+    }
+    expect(screen.getByTestId('legend-ahead').textContent).toBe('ahead')
+  })
+
+  it('lays the forecast over a run going now, so it reads solid up to now and hatched after', () => {
+    render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" pumpRun={{ since: '2026-11-10T13:55:00Z', remainingS: 600 }} />)
+    const run = screen.getByTestId('mark-water')
+    const ahead = screen.getByTestId('ahead-water')
+    // The run starts before now and ends after; the forecast starts at now and is drawn over it.
+    expect(Number.parseFloat(run.style.left)).toBeLessThan(Number.parseFloat(ahead.style.left))
+    expect(run.compareDocumentPosition(ahead) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(ahead.className).toContain('z-[1]')
+    expect(ahead.className).toContain('pointer-events-none')
+  })
+})
+
+describe('forecast tokens', () => {
+  it('defines the hatch and the dim for the dark and the light theme', () => {
+    // Under jsdom the module's URL isn't a file one; vitest runs from the repo root.
+    const css = readFileSync(join(process.cwd(), 'web/src/globals.css'), 'utf8')
+    const blocks = [...css.matchAll(/(:root|\[data-theme="light"\]) \{([^}]*)\}/g)].filter(m => m[2]?.includes('--forecast-hatch'))
+    expect(blocks.map(m => m[1])).toEqual([':root', '[data-theme="light"]'])
+    for (const m of blocks) expect(m[2]).toContain('--forecast-dim')
   })
 })

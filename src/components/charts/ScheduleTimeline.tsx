@@ -19,6 +19,11 @@ const LABEL_W = 64
 /** The now pill's width, "now 14:05" at 11 px, to keep it inside the axis at either end. */
 const PILL_W = 72
 
+/** The rest of today, read as forecast: a grey hatch over a wash that dims what's under it. */
+export const AHEAD: CSSProperties = {
+  backgroundImage: 'repeating-linear-gradient(135deg, var(--forecast-hatch) 0 1px, transparent 1px 6px), linear-gradient(var(--forecast-dim), var(--forecast-dim))',
+}
+
 export const HATCH: CSSProperties = {
   backgroundImage: 'repeating-linear-gradient(135deg, color-mix(in srgb, var(--tank-fill) 55%, transparent) 0 1px, transparent 1px 6px)',
 }
@@ -110,8 +115,9 @@ export interface ScheduleTimelineProps {
  * and ramps as gradients, a Water row of pump runs with their length, and
  * a preset's runs hatched under them while it's previewed. Schedules off or
  * not running today are muted; a manual hold is outlined and a run going now
- * ringed. A now line crosses the rows, the header says what's next, and each
- * mark has its exact times on hover, tap or focus.
+ * ringed. A now line crosses the rows, and the rest of the day past it is
+ * hatched and dimmed as forecast. The header says what's next, and each mark
+ * has its exact times on hover, tap or focus.
  */
 export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun, preview }: ScheduleTimelineProps) {
   const nowMs = useNow(30_000)
@@ -212,6 +218,10 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
         <span className="text-[15px] font-medium">Today</span>
         {nextLine && <span className="font-mono text-xs text-fg-2" data-testid="timeline-next">{nextLine}</span>}
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-fg-2">
+          <span className="flex items-center gap-1.5" data-testid="legend-ahead">
+            <span className="h-2 w-3.5 rounded-[2px] border border-line-2 bg-active" style={AHEAD} />
+            ahead
+          </span>
           {muted && (
             <span className="flex items-center gap-1.5" data-testid="legend-muted">
               <span className="h-2 w-3.5 rounded-[2px] bg-fg-3/40" />
@@ -239,7 +249,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
           {ticks.map(t => <span key={t} className="absolute inset-y-0 w-px bg-grid" style={{ left: `${pctOf(t)}%` }} />)}
         </div>
         {rows.map((r, i) => (
-          <Row key={r.id} id={r.id} name={r.name} sub={r.id === 'preview' ? preview?.short : undefined} title={r.id === 'preview' ? `Preview: ${preview?.name ?? ''}` : undefined} marks={r.marks} note={r.id === 'preview' && previewNext ? `not today · next ${fmtDay(previewNext, zone)}` : undefined} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
+          <Row key={r.id} id={r.id} name={r.name} sub={r.id === 'preview' ? preview?.short : undefined} title={r.id === 'preview' ? `Preview: ${preview?.name ?? ''}` : undefined} marks={r.marks} nowPct={nowPct} note={r.id === 'preview' && previewNext ? `not today · next ${fmtDay(previewNext, zone)}` : undefined} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
         ))}
 
         <span />
@@ -263,12 +273,14 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   )
 }
 
-function Row({ id, name, sub, title, marks, note, width, active, onActive, laneRef }: {
+function Row({ id, name, sub, title, marks, nowPct, note, width, active, onActive, laneRef }: {
   id: string
   name: string
   sub?: string
   title?: string
   marks: Mark[]
+  /** Where now is across the lane: what's right of it is still ahead. */
+  nowPct: number
   /** Written in an empty lane. */
   note?: string
   width: number
@@ -341,6 +353,8 @@ function Row({ id, name, sub, title, marks, note, width, active, onActive, laneR
             </button>
           )
         })}
+        {/* Over the marks, so a block ahead reads dimmer and a run going now solid up to now, hatched after. */}
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-[1] rounded-r-[2px]" style={{ left: `${nowPct}%`, ...AHEAD }} data-testid={`ahead-${id}`} />
         {open && (
           <span
             role="tooltip"

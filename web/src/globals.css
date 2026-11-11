@@ -582,6 +582,17 @@ html.dark {
   --thermal-ramp: linear-gradient(to right, #8fc0ea, #a2bcd4, #b7b8ba, #d2a898, #eaa98e);
 }
 
+/* The schedule timeline's rest of today: a light grey hatch over a wash of the card. */
+:root {
+  --forecast-hatch: rgba(239, 232, 218, 0.16);
+  --forecast-dim: rgba(23, 21, 15, 0.4);
+}
+
+[data-theme="light"] {
+  --forecast-hatch: rgba(28, 26, 20, 0.14);
+  --forecast-dim: rgba(253, 250, 243, 0.45);
+}
+
 .lp-fade-in {
   animation: sp-fade-in 150ms var(--ease-standard);
 }
