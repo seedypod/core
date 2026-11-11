@@ -14,6 +14,9 @@ use crate::contract::{Quality, Reading, SensorId};
 use crate::device::{DeviceError, Sensor};
 use crate::safety::median;
 
+/// How far from the median an answer may be and still agree with it (cm).
+pub const AGREE_CM: f64 = 3.0;
+
 /// Last median distance and its quality, shared with [`LevelPctSensor`].
 pub type SharedDistance = Arc<Mutex<Option<(f64, Quality)>>>;
 
@@ -86,14 +89,17 @@ impl Sensor for MedianSensor {
                 Err(e) => last_err = Some(e),
             }
         }
-        let n = vals.len();
         let Some(m) = median(&mut vals) else {
             *self.last.lock().unwrap_or_else(|e| e.into_inner()) = None;
             return Err(last_err.unwrap_or(DeviceError::Timeout));
         };
         let mut r = Reading::new(m, &unit);
-        // Fewer than half the samples answered: flag it rather than hide it.
-        if n * 2 < self.samples {
+        // Fewer than two answers agreeing with the median is a guess: flag it rather
+        // than hide it. Two that agree are a reading, however many pings went
+        // unanswered (strays past the tank bottom are dropped, so a good round
+        // often keeps only a few).
+        let agree = vals.iter().filter(|v| (**v - m).abs() <= AGREE_CM).count();
+        if agree < 2.min(self.samples) {
             r.quality = Quality::Suspect;
         }
         *self.last.lock().unwrap_or_else(|e| e.into_inner()) = Some((m, r.quality));
@@ -268,6 +274,23 @@ mod tests {
         };
         let mut m = MedianSensor::new(Box::new(inner), 3).with_max(30.0);
         assert!(matches!(m.read(), Err(DeviceError::Other(_))));
+    }
+
+    #[test]
+    fn two_answers_that_agree_are_a_reading_and_ones_that_disagree_are_not() {
+        // The unit after #207: three strays dropped, two pings at the surface.
+        let inner = Noisy {
+            seq: vec![Ok(88.5), Ok(13.9), Ok(71.0), Ok(13.95), Ok(64.0)],
+        };
+        let mut m = MedianSensor::new(Box::new(inner), 5).with_max(30.0);
+        assert_eq!(m.read().unwrap().quality, Quality::Good);
+        // Three answers far apart are not a reading, whatever their median.
+        let inner = Noisy {
+            seq: vec![Ok(9.0), Ok(13.9), Ok(20.0)],
+        };
+        let mut m = MedianSensor::new(Box::new(inner), 3);
+        let r = m.read().unwrap();
+        assert_eq!((r.value, r.quality), (13.9, Quality::Suspect));
     }
 
     #[test]
