@@ -253,7 +253,7 @@ describe('LightPage: curves', () => {
     cleanup()
     data.delete('schedules')
     render(<LightPage />)
-    expect(within(screen.getByTestId('light-summary')).getByText('loading …')).toBeTruthy()
+    expect(within(screen.getByTestId('light-summary')).getByTestId('loading-line')).toBeTruthy()
   })
 
   it('lists each curve, opens the running one, and toggles one on at once', () => {

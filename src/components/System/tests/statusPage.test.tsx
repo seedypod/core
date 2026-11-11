@@ -302,7 +302,7 @@ describe('today timeline', () => {
   it('says it is loading until the day\'s requests answer', () => {
     page()
     const today = within(main()).getByRole('region', { name: 'Today' })
-    expect(within(today).getByText('loading …')).toBeTruthy()
+    expect(within(today).getByTestId('loading-line')).toBeTruthy()
     expect(within(today).queryByText('nothing else scheduled today')).toBeNull()
   })
 
@@ -312,12 +312,12 @@ describe('today timeline', () => {
     data.delete('schedules.previewCurve')
     page()
     const today = () => within(main()).getByRole('region', { name: 'Today' })
-    expect(within(today()).getByText('loading …')).toBeTruthy()
+    expect(within(today()).getByTestId('loading-line')).toBeTruthy()
     cleanup()
     day()
     data.set('telemetry.history:air_temp', [])
     page()
-    expect(within(today()).queryByText('loading …')).toBeNull()
+    expect(within(today()).queryByTestId('loading-line')).toBeNull()
   })
 
   it('says when nothing else is scheduled, and draws nothing without data', () => {

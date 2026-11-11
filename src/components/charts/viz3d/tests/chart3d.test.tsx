@@ -139,9 +139,22 @@ describe('header parts', () => {
     expect(screen.getByTestId('v').textContent).toBe('45%')
   })
 
-  it('says loading', () => {
+  it('shows a pulsing bar while loading, with no words on screen but Loading for a screen reader', () => {
+    vi.useFakeTimers()
     render(<LoadingLine className="x" />)
-    expect(screen.getByText('loading …').className).toContain('x')
+    const line = screen.getByRole('status')
+    expect(line.className).toContain('x')
+    expect(line.className).toMatch(/animate-pulse.*motion-reduce:animate-none/)
+    expect(line.getAttribute('aria-live')).toBe('polite')
+    // The region mounts empty, then says Loading, so the change is announced.
+    expect(line.textContent).toBe('')
+    act(() => {
+      vi.runAllTimers()
+    })
+    vi.useRealTimers()
+    // The only text is the screen reader's.
+    expect(screen.getByText('Loading').className).toBe('sr-only')
+    expect(line.textContent).toBe('Loading')
   })
 
   it('offers Retry on an error, a timestamp when stale, and nothing otherwise', () => {

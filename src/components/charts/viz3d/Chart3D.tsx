@@ -136,9 +136,23 @@ export function Pending({ loading, sample, children }: { loading: boolean, sampl
   return <span aria-hidden className="inline-block animate-pulse select-none rounded-[6px] bg-active text-transparent motion-reduce:animate-none">{sample}</span>
 }
 
-/** A card's subtitle while its chart loads. */
+/**
+ * A card's subtitle while its chart loads: no words, just a pulsing bar about
+ * a line of text in size, so nothing shifts when the subtitle lands (the 3D
+ * chart shows its own loading wave). Screen readers hear "Loading".
+ */
 export function LoadingLine({ className }: { className?: string }) {
-  return <span className={cn('animate-pulse text-fg-3 motion-reduce:animate-none', className)} aria-live="polite">loading …</span>
+  // The live region mounts empty and says Loading a beat later, or screen readers miss it.
+  const [said, setSaid] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSaid(true), 0)
+    return () => clearTimeout(t)
+  }, [])
+  return (
+    <span role="status" aria-live="polite" data-testid="loading-line" className={cn('inline-block h-[0.9em] w-40 max-w-full animate-pulse rounded-[4px] bg-active align-[-0.1em] motion-reduce:animate-none', className)}>
+      {said && <span className="sr-only">Loading</span>}
+    </span>
+  )
 }
 
 /** The card header's note when the chart failed (with Retry) or is showing data older than a failed refresh. */
