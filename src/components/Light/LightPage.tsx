@@ -5,12 +5,14 @@ import { cn } from '@/lib/utils'
 import { Badge, Button, Card, GhostIcon } from '@/src/components/ds/core'
 import { Slider, Toggle } from '@/src/components/ds/forms'
 import { LineChart } from '@/src/components/ds/charts'
+import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 import { fmtClock } from '@/src/components/charts/format'
 import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { lightData } from '@/src/components/charts/viz3d/shape'
 import { daysLabel, weekdayOf } from '@/src/lib/days'
 import { BOOST_LEVEL, boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '@/src/scheduler/lightPlan'
 import { trpc } from '@/src/utils/trpc'
+import { asCycle } from '@/src/components/Water/pumpCycles'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
 import { asCurve, boostHoursToday, levelAt, litHours, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
@@ -128,6 +130,14 @@ export function LightPage() {
       {lightHours.data && (
         <p className="-mt-3 font-mono text-[11px] text-fg-3" data-testid="led-hours">{`LED life ${Math.round(Math.max(0, 100 - lightHours.data.pctUsed))}% · ${Math.round(lightHours.data.hours).toLocaleString()} / ${lightHours.data.ratedHours.toLocaleString()} h`}</p>
       )}
+
+      <ScheduleTimeline
+        lead="light"
+        curves={curves}
+        cycles={(schedules.data ?? []).flatMap(s => asCycle(s) ?? [])}
+        timezone={timezone}
+        hold={o?.source === 'manual' && o.manualUntil && l ? { since: l.since, until: o.manualUntil, level: l.on ? l.level : 0 } : null}
+      />
 
       <div className="flex items-center gap-3">
         <h2 className={`${EYEBROW} flex-1`}>Curves</h2>

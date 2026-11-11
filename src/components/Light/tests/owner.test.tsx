@@ -51,6 +51,16 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('LightPage: who controls the light', () => {
+  it('outlines the hand\'s hold on today\'s timeline, light row first', () => {
+    const minutes = (n: number) => new Date(Date.now() + n * 60_000).toISOString()
+    data.set('light', { on: true, level: 60, since: minutes(-1), fault: null, remainingS: null })
+    data.set('owner', { source: 'manual', level: 60, leaseId: null, manualUntil: minutes(30), schedule: 40 })
+    data.set('schedules', [daylight, pump])
+    render(<LightPage />)
+    expect(screen.getAllByTestId(/^lane-/).map(l => l.dataset.testid)).toEqual(['lane-light', 'lane-water'])
+    expect(screen.getAllByTestId('mark-light').find(m => m.dataset.kind === 'hold')?.getAttribute('aria-label')).toMatch(/^Held by hand at 60% · /)
+  })
+
   it('says in the strip when a hand holds the light and what takes over, with Resume schedule', () => {
     data.set('owner', { source: 'manual', level: 80, leaseId: null, manualUntil: '2026-10-31T10:30:00Z', schedule: 40 })
     render(<LightPage />)
@@ -204,7 +214,7 @@ describe('LightPage: curves', () => {
     data.set('schedules', [daylight, pump])
     render(<LightPage />)
     expect(screen.getByText('Following Daylight curve')).toBeTruthy()
-    expect(screen.getByText('24:00')).toBeTruthy()
+    expect(screen.getAllByText('24:00').filter(e => !e.closest('[data-testid="schedule-timeline"]'))).toHaveLength(1)
     // 85% all day is no Boost.
     expect(screen.getByTestId('light-summary').textContent).toBe('0 h at full today · Low')
     cleanup()

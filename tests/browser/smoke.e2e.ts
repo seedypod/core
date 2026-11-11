@@ -36,8 +36,8 @@ test('pump run is bounded and reported', async ({ page }) => {
 test('water: create, toggle, delete a pump cycle', async ({ page }) => {
   await page.goto('/water')
   const main = page.getByRole('main')
-  // The starting points are always there; Blank opens the editor.
-  await main.getByTestId('pump-preset-blank').click()
+  // The starting points are always there; Add custom cycle opens the editor.
+  await main.getByRole('button', { name: 'Add custom cycle' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
   await expect(main.getByText('Watering', { exact: true })).toBeVisible()
   const toggle = main.getByRole('switch', { name: 'Enable Watering' })
