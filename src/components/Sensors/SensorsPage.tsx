@@ -6,6 +6,9 @@ import { Modal } from '@/src/components/ds/feedback'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import type { DeviceEntry, DeviceKindInfo, Reading, SensorId } from '@/src/hardware/contract'
 import { SensorAge } from '@/src/components/ds/charts'
+import { Chart3D, ChartNote, LoadingLine, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
+import { sensorsData } from '@/src/components/charts/viz3d/shape'
+import { hasWebGL } from '@/src/components/Grow/TowerView'
 import { formatReading, hexAddr, SENSOR_META, type SensorMeta } from '@/src/lib/sensorMeta'
 import { trpc } from '@/src/utils/trpc'
 import { CalibrationWizard } from './CalibrationWizard'
@@ -40,6 +43,8 @@ export function SensorsPage() {
   const [adding, setAdding] = useState(false)
   const [calibrating, setCalibrating] = useState<DeviceEntry | null>(null)
   const [removing, setRemoving] = useState<DeviceEntry | null>(null)
+  // The ridgeline stands in for the tiles' sparklines; without WebGL they keep theirs.
+  const [ridges, setRidges] = useState(hasWebGL)
   const inv = devices.data
   const sensors = inv?.sensors ?? []
   const kindOf = (d: DeviceEntry) => inv?.addable.find(k => k.kind === d.kind)
@@ -63,6 +68,8 @@ export function SensorsPage() {
         {inv && inv.addable.length > 0 && <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Add sensor</Button>}
       </div>
 
+      {live.length > 0 && ridges && <SensorRidges ids={live} latest={latest.data ?? {}} hours={Number(hours)} onUnavailable={() => setRidges(false)} />}
+
       {GROUPS.map(({ group, label }) => {
         const ids = live.filter(id => SENSOR_META[id].group === group)
         if (!ids.length) return null
@@ -70,7 +77,7 @@ export function SensorsPage() {
           <section key={group} className="flex flex-col gap-2.5">
             <h2 className={LABEL}>{label}</h2>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
-              {ids.map(id => <SensorTile key={id} sensor={id} part={partOf(sourceOf(id)?.kind ?? '')} latest={latest.data?.[id]} hours={Number(hours)} />)}
+              {ids.map(id => <SensorTile key={id} sensor={id} part={partOf(sourceOf(id)?.kind ?? '')} latest={latest.data?.[id]} hours={Number(hours)} spark={!ridges} />)}
             </div>
           </section>
         )
@@ -111,7 +118,49 @@ export function sparkPoints(values: number[]): string {
   return values.map((v, i) => `${round((i / (values.length - 1)) * 200)},${round(46 - ((v - lo) / span) * 42)}`).join(' ')
 }
 
-function SensorTile({ sensor, part, latest, hours }: { sensor: SensorId, part: string, latest?: Reading, hours: number }) {
+/** Ticks under the ridgeline: the window's start, its middle and now. */
+export function ridgeTicks(hours: number): Array<{ at: number, label: string }> {
+  const ago = (h: number) => (hours <= 24 ? `−${h}h` : `−${Math.round((h / 24) * 10) / 10}d`)
+  return [{ at: 0, label: ago(hours) }, { at: 0.5, label: ago(hours / 2) }, { at: 1, label: 'now' }]
+}
+
+/** Every live reading's history as one ridgeline, each in its own range, with the reading now at the right end. */
+function SensorRidges({ ids, latest, hours, onUnavailable }: { ids: SensorId[], latest: Partial<Record<SensorId, Reading>>, hours: number, onUnavailable: () => void }) {
+  // The same requests as the tiles, so they share one fetch each.
+  const histories = trpc.useQueries(t => ids.map(sensor => t.telemetry.history({ sensor, hours, maxPoints: hours <= 24 ? 144 : 336 }, { refetchInterval: 60_000 })))
+  const status = vizStatus(histories, histories.every(q => (q.data ?? []).length === 0))
+  // The window ends when the histories were fetched, so it moves on with each refresh.
+  const to = Math.max(0, ...histories.map(q => q.dataUpdatedAt))
+  const scene = status === 'ready'
+    ? sensorsData(ids.map((id, i) => {
+        const now = latest[id]
+        // The reading now closes each ridge at its right end, where its value is written.
+        return { key: id, label: titleOf(id), group: SENSOR_META[id].group, current: formatReading(now), samples: [...(histories[i]?.data ?? []), ...(now ? [{ ts: now.ts, value: now.value }] : [])] }
+      }), to - hours * 3_600_000, to, ridgeTicks(hours))
+    : null
+  return (
+    <section className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-4 sm:p-5" aria-label="Readings">
+      <div className="flex flex-wrap items-baseline gap-3">
+        <h2 className="text-[15px] font-medium">Readings</h2>
+        <span className="min-w-[180px] flex-1 text-[12px] text-fg-3">
+          {status === 'loading' ? <LoadingLine /> : `${ids.length} sensor${ids.length === 1 ? '' : 's'} · each in its own range`}
+        </span>
+        <ChartNote status={status} stale={staleSince(histories)} onRetry={() => histories.forEach(q => void q.refetch())} />
+      </div>
+      <Chart3D
+        kind="sensors"
+        data={scene}
+        status={status}
+        label={`Sensor history: ${ids.map(titleOf).join(', ')}`}
+        message={status === 'error' ? 'Couldn\'t load the sensor history.' : 'Nothing recorded in this window.'}
+        fallback={null}
+        onUnavailable={onUnavailable}
+      />
+    </section>
+  )
+}
+
+function SensorTile({ sensor, part, latest, hours, spark = true }: { sensor: SensorId, part: string, latest?: Reading, hours: number, spark?: boolean }) {
   const q = trpc.telemetry.history.useQuery({ sensor, hours, maxPoints: hours <= 24 ? 144 : 336 }, { refetchInterval: 60_000 })
   const title = titleOf(sensor)
   const values = (q.data ?? []).map(p => p.value)
@@ -123,15 +172,17 @@ function SensorTile({ sensor, part, latest, hours }: { sensor: SensorId, part: s
         <span className="font-mono text-[10px] text-fg-3">{part}</span>
       </div>
       <span className="font-mono text-[26px] font-medium leading-tight" data-testid={`trend-${sensor}-value`}>{formatReading(latest)}</span>
-      {q.error
-        ? <InlineError>{`Couldn't load the history: ${q.error.message}`}</InlineError>
-        : values.length > 1
-          ? (
-              <svg role="img" aria-label={title} viewBox="0 0 200 50" preserveAspectRatio="none" className="block h-[50px] w-full">
-                <polyline points={sparkPoints(values)} fill="none" stroke="var(--meter)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-              </svg>
-            )
-          : <div className="flex h-[50px] items-center text-xs text-fg-3">{q.isLoading ? 'Loading…' : 'Nothing recorded in this window.'}</div>}
+      {!spark
+        ? null
+        : q.error
+          ? <InlineError>{`Couldn't load the history: ${q.error.message}`}</InlineError>
+          : values.length > 1
+            ? (
+                <svg role="img" aria-label={title} viewBox="0 0 200 50" preserveAspectRatio="none" className="block h-[50px] w-full">
+                  <polyline points={sparkPoints(values)} fill="none" stroke="var(--meter)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+                </svg>
+              )
+            : <div className="flex h-[50px] items-center text-xs text-fg-3">{q.isLoading ? 'Loading…' : 'Nothing recorded in this window.'}</div>}
       {stats && (
         <div className="flex justify-between font-mono text-[11px] text-fg-3" data-testid={`trend-${sensor}-stats`}>
           <span>{`min ${round(stats.min)}`}</span>

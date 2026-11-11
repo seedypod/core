@@ -6,6 +6,8 @@ import { Badge, Button, Card, GhostIcon } from '@/src/components/ds/core'
 import { Slider, Toggle } from '@/src/components/ds/forms'
 import { LineChart } from '@/src/components/ds/charts'
 import { fmtClock } from '@/src/components/charts/format'
+import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
+import { lightData } from '@/src/components/charts/viz3d/shape'
 import { daysLabel, weekdayOf } from '@/src/lib/days'
 import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '@/src/scheduler/lightPlan'
 import { trpc } from '@/src/utils/trpc'
@@ -40,6 +42,11 @@ export function LightPage() {
   // With nothing picked, the first curve running today is the open one.
   const open = openId ?? running[0]?.id ?? null
   const nowAt = minutesNow / 15
+  const queries = [schedules, { data: l }]
+  const status = vizStatus(queries, today === null)
+  const scene = status === 'ready' && today
+    ? lightData({ planned: today, nowMin: minutesNow + now.getSeconds() / 60, level: l?.on ? l.level : 0, hold: o?.source === 'manual' && o.manualUntil && l ? holdWindow(l.since, o.manualUntil, now) : null })
+    : null
 
   const following = running.length === 1 ? `Following ${running[0]?.name}` : running.length > 1 ? `Following ${running.length} curves` : 'No curve today'
   const holding = o?.source === 'manual' && o.manualUntil ? `held by hand until ${clock(o.manualUntil)}` : o?.source === 'autopilot' ? 'Autopilot is in charge' : null
@@ -60,8 +67,8 @@ export function LightPage() {
       <Card className="gap-5 p-[22px]">
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex min-w-[140px] flex-col gap-1">
-            <span className="font-mono text-[44px] font-medium leading-none">{l ? (l.on || requested ? `${level}%` : 'Off') : '…'}</span>
-            <span className="text-[12px] text-fg-3">{l ? `since ${clock(l.since)}` : '…'}</span>
+            <span className="font-mono text-[44px] font-medium leading-none"><Pending loading={!l} sample="100%">{l && (l.on || requested ? `${level}%` : 'Off')}</Pending></span>
+            <span className="text-[12px] text-fg-3">{l ? `since ${clock(l.since)}` : <LoadingLine />}</span>
           </div>
           <div className="flex min-w-[260px] flex-1 flex-col gap-3 pt-2">
             <Slider
@@ -91,38 +98,48 @@ export function LightPage() {
         </div>
 
         <div className="flex flex-col gap-2">
-          <div className={`${EYEBROW} flex justify-between text-[10px]`}>
-            <span>Today</span>
+          <div className={`${EYEBROW} flex items-center justify-between gap-3 text-[10px]`}>
+            <span className="flex items-center gap-3">
+              Today
+              <ChartNote status={status} stale={staleSince(queries)} onRetry={() => void schedules.refetch()} />
+            </span>
             {lightHours.data && (
               <span data-testid="led-hours">{`LED life ${Math.round(Math.max(0, 100 - lightHours.data.pctUsed))}% · ${Math.round(lightHours.data.hours).toLocaleString()} / ${lightHours.data.ratedHours.toLocaleString()} h`}</span>
             )}
           </div>
-          {today
-            ? (
-                <>
-                  <LineChart
-                    height={110}
-                    min={0}
-                    max={100}
-                    series={[
-                      { data: today, color: 'var(--meter)', fill: true, width: 1.5 },
-                      // Where the light actually is now, on the curve's timeline.
-                      { data: SAMPLE_MINUTES.map((_, i) => (l && i === Math.round(nowAt) ? (l.on ? l.level : 0) : Number.NaN)), color: 'var(--pod-ok)', dots: true, width: 4 },
-                    ]}
-                    markers={[{ at: nowAt, label: `now ${fmtClock(minutesNow)}` }]}
-                    xLabel={i => fmtClock(SAMPLE_MINUTES[i] ?? 0)}
-                    format={(v, s) => (s === 0 ? `curve ${Math.round(v)}%` : `now ${Math.round(v)}%`)}
-                  />
-                  <div className={AXIS} aria-hidden>
-                    <span>00:00</span>
-                    <span>06:00</span>
-                    <span>12:00</span>
-                    <span>18:00</span>
-                    <span>24:00</span>
-                  </div>
-                </>
-              )
-            : <p className="py-6 text-center text-[13px] text-fg-3">No curve runs today, so the light stays where you set it.</p>}
+          <Chart3D
+            kind="light"
+            data={scene}
+            status={status}
+            label={`Today's light: the curve planned, what the LED has given so far${o?.source === 'manual' ? ', and the manual hold' : ''}`}
+            message={status === 'error' ? 'Couldn\'t load today\'s curve.' : 'No curve runs today, so the light stays where you set it.'}
+            fallback={today
+              ? (
+                  <>
+                    <LineChart
+                      height={110}
+                      min={0}
+                      max={100}
+                      series={[
+                        { data: today, color: 'var(--meter)', fill: true, width: 1.5 },
+                        // Where the light actually is now, on the curve's timeline.
+                        { data: SAMPLE_MINUTES.map((_, i) => (l && i === Math.round(nowAt) ? (l.on ? l.level : 0) : Number.NaN)), color: 'var(--pod-ok)', dots: true, width: 4 },
+                      ]}
+                      markers={[{ at: nowAt, label: `now ${fmtClock(minutesNow)}` }]}
+                      xLabel={i => fmtClock(SAMPLE_MINUTES[i] ?? 0)}
+                      format={(v, s) => (s === 0 ? `curve ${Math.round(v)}%` : `now ${Math.round(v)}%`)}
+                    />
+                    <div className={AXIS} aria-hidden>
+                      <span>00:00</span>
+                      <span>06:00</span>
+                      <span>12:00</span>
+                      <span>18:00</span>
+                      <span>24:00</span>
+                    </div>
+                  </>
+                )
+              : <p className="py-6 text-center text-[13px] text-fg-3">No curve runs today, so the light stays where you set it.</p>}
+          />
         </div>
       </Card>
 
@@ -195,6 +212,13 @@ export function LightPage() {
       ))}
     </div>
   )
+}
+
+/** A manual hold's window today in minutes: from when the light was set (or midnight) until it hands back (or midnight). */
+export function holdWindow(sinceIso: string, untilIso: string, now: Date): { fromMin: number, untilMin: number } {
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const minutes = (iso: string) => Math.max(0, Math.min(1440, (Date.parse(iso) - midnight) / 60_000))
+  return { fromMin: minutes(sinceIso), untilMin: minutes(untilIso) }
 }
 
 function CurveCard({ curve: c, running, open, onOpen, onSave }: { curve: LightCurve, running: boolean, open: boolean, onOpen: (open: boolean) => void, onSave: (next: LightCurve) => void }) {

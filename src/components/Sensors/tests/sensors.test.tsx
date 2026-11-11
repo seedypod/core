@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DeviceEntry, DeviceInventory, DeviceKindInfo } from '@/src/hardware/contract'
 import { formatReading, hexAddr } from '@/src/lib/sensorMeta'
 import { CalibrationWizard } from '../CalibrationWizard'
-import { SensorsPage, sparkPoints } from '../SensorsPage'
+import { ridgeTicks, SensorsPage, sparkPoints } from '../SensorsPage'
+import type * as Chart3DModule from '@/src/components/charts/viz3d/Chart3D'
 
 // The pages only need the hooks' shape; each test sets what the queries return and
 // what the mutations do, so the trpc client itself stays out of the picture.
@@ -30,8 +31,28 @@ const { q, mutations, mutationError, invalidate, useMutation, history } = vi.hoi
   return { q, mutations, mutationError, invalidate, useMutation, history }
 })
 
+// The ridgeline's 3D chart as a stub that shows what it was handed, or gives up as a browser without WebGL would.
+const ridge = vi.hoisted(() => ({ fail: false }))
+vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
+  const real = await orig<typeof Chart3DModule>()
+  const { useEffect } = await import('react')
+  return {
+    ...real,
+    Chart3D: ({ status, data, onUnavailable }: { status: string, data: { series: Array<{ label: string, current: string, values: number[] }> } | null, onUnavailable?: () => void }) => {
+      useEffect(() => {
+        if (ridge.fail) onUnavailable?.()
+      }, [onUnavailable])
+      return <div data-testid="ridge" data-state={status}>{(data?.series ?? []).map(s => `${s.label}=${s.current}`).join('|')}</div>
+    },
+  }
+})
+
 vi.mock('@/src/utils/trpc', () => ({
   trpc: {
+    useQueries: (fn: (t: unknown) => unknown[]) => fn({ telemetry: { history: (input: unknown) => input } }).map((input) => {
+      history.calls.push(input)
+      return { data: history.data, error: history.error, dataUpdatedAt: Date.parse('2026-10-31T12:00:00Z'), refetch: vi.fn() }
+    }),
     useUtils: () => ({ devices: { invalidate }, system: { invalidate }, sensors: { invalidate } }),
     devices: { list: { useQuery: () => q.devices }, addSensor: { useMutation: useMutation('addSensor') }, removeSensor: { useMutation: useMutation('removeSensor') } },
     sensors: { latest: { useQuery: () => q.latest }, calibrate: { useMutation: useMutation('calibrate') } },
@@ -179,6 +200,52 @@ describe('SensorsPage', () => {
     fireEvent.click(screen.getByText('Calibrate'))
     expect(screen.getByRole('dialog', { name: 'Calibrate pH probe (Atlas EZO)' })).toBeTruthy()
     expect(screen.getByText('Step 1 of 2')).toBeTruthy()
+  })
+})
+
+describe('SensorsPage with WebGL', () => {
+  beforeEach(() => {
+    vi.stubGlobal('WebGLRenderingContext', function WebGLRenderingContext() {})
+    ridge.fail = false
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('draws every live reading as one ridgeline in place of the tiles\' sparklines', () => {
+    render(<SensorsPage />)
+    const card = screen.getByRole('region', { name: 'Readings' })
+    expect(card.textContent).toContain('3 sensors · each in its own range')
+    expect(screen.getByTestId('ridge').getAttribute('data-state')).toBe('ready')
+    expect(screen.getByTestId('ridge').textContent).toBe('Air temperature=22.5°C|Humidity=—|pH=6.1')
+    expect(screen.queryByRole('img', { name: 'pH' })).toBeNull()
+    expect(screen.getAllByText('min 21')).toHaveLength(3)
+  })
+
+  it('says it is loading, then that nothing was recorded', () => {
+    history.data = undefined as unknown as typeof history.data
+    render(<SensorsPage />)
+    expect(screen.getByText('loading …')).toBeTruthy()
+    expect(screen.getByTestId('ridge').getAttribute('data-state')).toBe('loading')
+    cleanup()
+    history.data = []
+    render(<SensorsPage />)
+    expect(screen.getByTestId('ridge').getAttribute('data-state')).toBe('empty')
+  })
+
+  it('gives the sparklines back when the 3D chart can\'t run', () => {
+    ridge.fail = true
+    render(<SensorsPage />)
+    expect(screen.queryByRole('region', { name: 'Readings' })).toBeNull()
+    expect(screen.getByRole('img', { name: 'pH' })).toBeTruthy()
+  })
+})
+
+describe('ridgeTicks', () => {
+  it('labels the window\'s start, middle and now in hours or days', () => {
+    expect(ridgeTicks(24).map(t => t.label)).toEqual(['−24h', '−12h', 'now'])
+    expect(ridgeTicks(168).map(t => t.label)).toEqual(['−7d', '−3.5d', 'now'])
+    expect(ridgeTicks(6).map(t => t.at)).toEqual([0, 0.5, 1])
   })
 })
 

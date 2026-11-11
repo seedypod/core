@@ -7,6 +7,8 @@ import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { asCycle } from '@/src/components/Water/pumpCycles'
 import type { SensorId } from '@/src/hardware/contract'
 import { dayOn, weekdayOf } from '@/src/lib/days'
+import { Chart3D, ChartNote, LoadingLine, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
+import { todayData } from '@/src/components/charts/viz3d/shape'
 import { trpc } from '@/src/utils/trpc'
 import { useNow } from './useNow'
 import {
@@ -29,7 +31,7 @@ export function useToday(now: Date) {
   const previews = trpc.useQueries(t => curves.map(c => t.schedules.previewCurve(c.spec)))
   const curve = mergeCurves(previews.map(p => p.data).filter(d => d !== undefined))
   const setpoints = curves.flatMap(c => c.spec.setpoints)
-  return { curves, cycles, curve, setpoints, jobs: curves.length + cycles.length }
+  return { curves, cycles, curve, setpoints, jobs: curves.length + cycles.length, schedules }
 }
 
 const TONE: Record<LaneEvent['tone'], string> = { muted: 'bg-fg-3', light: 'bg-light', down: 'bg-pod-attention' }
@@ -102,18 +104,15 @@ export function TodayTimeline() {
   // An hour label gives way to "now" when they'd touch.
   const clear = (pct: number) => (Math.abs(pct - nowPct) / 100) * width > 40
 
-  return (
-    <section aria-label="Today" className="flex flex-col gap-1.5 rounded-[14px] border border-line bg-surface px-[22px] pb-3.5 pt-[18px]">
-      <div className="flex flex-wrap items-baseline gap-3 pb-2.5">
-        <h2 className="text-[15px] font-semibold">Today</h2>
-        <div className="min-w-[220px] flex-1 font-mono text-xs text-fg-3">{next ? `next: ${next.label} · ${fmtIn(next.minute - nowMin)}` : 'nothing else scheduled today'}</div>
-        <Link to="/light" className="flex items-center gap-1.5 text-[13px] text-fg-2 hover:text-fg">
-          <span className="font-mono">{today.jobs}</span>
-          {` job${today.jobs === 1 ? '' : 's'} · Schedule`}
-          <ArrowRight size={16} />
-        </Link>
-      </div>
+  const queries = [today.schedules, light, tank, air]
+  const status = vizStatus(queries, false)
+  const loading = status === 'loading'
+  const scene = status === 'ready'
+    ? todayData({ nowMin, light: lightLane, tank: tankPts, tankRange: [tLo, tHi], air: airPts, airRange: [aLo, aHi], events, pumpPast, pumpFuture })
+    : null
 
+  const flat = (
+    <>
       <Lane label="Light" sub="0–100%" nowPct={nowPct}>
         {lightLane.past.length > 1 && <path d={laneArea(lightLane.past, 0, 100)} fill="var(--color-light)" fillOpacity={0.12} />}
         <polyline points={lanePoints(lightLane.past, 0, 100)} fill="none" stroke="var(--color-light)" strokeWidth={1.6} vectorEffect="non-scaling-stroke" data-testid="light-past" />
@@ -156,6 +155,24 @@ export function TodayTimeline() {
           {clear(100) && <span className="absolute right-0">24:00</span>}
         </div>
       </div>
+    </>
+  )
+
+  return (
+    <section aria-label="Today" className="flex flex-col gap-1.5 rounded-[14px] border border-line bg-surface px-[22px] pb-3.5 pt-[18px]">
+      <div className="flex flex-wrap items-baseline gap-3 pb-2.5">
+        <h2 className="text-[15px] font-semibold">Today</h2>
+        <div className="min-w-[220px] flex-1 font-mono text-xs text-fg-3">
+          {loading ? <LoadingLine /> : next ? `next: ${next.label} · ${fmtIn(next.minute - nowMin)}` : 'nothing else scheduled today'}
+        </div>
+        <ChartNote status={status} stale={staleSince(queries)} onRetry={() => queries.forEach(q => void q.refetch?.())} />
+        <Link to="/light" className="flex items-center gap-1.5 text-[13px] text-fg-2 hover:text-fg">
+          <span className="font-mono">{today.jobs}</span>
+          {` job${today.jobs === 1 ? '' : 's'} · Schedule`}
+          <ArrowRight size={16} />
+        </Link>
+      </div>
+      <Chart3D kind="today" data={scene} status={status} label="Today: light, water and air from midnight, with the day's events" message="Couldn't load today's readings." fallback={flat} />
     </section>
   )
 }

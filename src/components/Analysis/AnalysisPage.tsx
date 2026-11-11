@@ -15,6 +15,7 @@ import type { Rect } from '@/src/vision/greenArea'
 import { POD_STATES } from '@/src/vision/podState'
 import { podRegions, type PodRegions } from '@/src/vision/regions'
 import { LabelPods } from './LabelPods'
+import { LeafCover } from './LeafCover'
 import { PodBounds } from './PodBounds'
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
@@ -127,6 +128,7 @@ export function AnalysisPage() {
         {selected && <AnalyzerDetail a={selected} color={colorOf(listingKey(selected))} busy={!!st?.backfill} />}
       </Panel>
 
+      <LeafCover capturedAt={latest.map(l => l.frame?.ts).filter((t): t is string => !!t).sort().at(-1) ?? null} />
       <LabelPods boxes={calibration.boxes} />
       <PerPod analyzers={list} latest={cameras} colorOf={colorOf} plant={slot => pod(slot)?.plant ?? '—'} empty={slot => pod(slot)?.status === 'empty'} />
       <ComparePod colorOf={colorOf} />

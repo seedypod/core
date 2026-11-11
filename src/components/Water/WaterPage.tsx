@@ -9,6 +9,8 @@ import { DayPicker, SegmentedControl, TextField, Toggle } from '@/src/components
 import { Modal } from '@/src/components/ds/feedback'
 import { fmtClock, fmtDate, fmtTime } from '@/src/components/charts/format'
 import { bin } from '@/src/components/charts/TimeChart'
+import { Chart3D, ChartNote, LoadingLine, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
+import { tankData } from '@/src/components/charts/viz3d/shape'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { trpc } from '@/src/utils/trpc'
@@ -151,7 +153,7 @@ export function WaterPage() {
             </Card>
           )}
 
-      <TankHistory cutoff={cutoff} />
+      <TankHistory cutoff={cutoff} current={s.water_level_pct?.value ?? null} />
 
       <div className="flex flex-col gap-2.5">
         <h2 className={EYEBROW}>Recent runs</h2>
@@ -235,8 +237,8 @@ export function WaterPage() {
 
 const RANGES = [{ value: '24', label: '24h' }, { value: '168', label: '7d' }, { value: '720', label: '30d' }] as const
 
-/** Tank level over a range, with each top-up marked and the drain rate between them. */
-function TankHistory({ cutoff }: { cutoff: number | null }) {
+/** Tank level over a range, with each top-up marked and the drain rate between them, beside the tank now with its pump cutoff. */
+function TankHistory({ cutoff, current }: { cutoff: number | null, current: number | null }) {
   const [hours, setHours] = useState<typeof RANGES[number]['value']>('168')
   const h = Number(hours)
   const q = trpc.telemetry.history.useQuery({ sensor: 'water_level_pct', hours: h, maxPoints: 300 }, { refetchInterval: 60_000 })
@@ -256,15 +258,10 @@ function TankHistory({ cutoff }: { cutoff: number | null }) {
     h <= 24 ? ' today.' : h <= 168 ? ' this week.' : ' this month.',
     dropPerDay ? ` Drops about ${dropPerDay}% a day.` : '',
   ].join('')
-  return (
-    <Card className="gap-3.5 p-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex flex-1 flex-col gap-[3px]">
-          <span className="text-[15px] font-medium">Tank level</span>
-          {values.length > 1 && <span className="text-[12px] text-fg-3" data-testid="tank-summary">{summary}</span>}
-        </div>
-        <SegmentedControl size="sm" ariaLabel="Tank level range" value={hours} options={RANGES} onChange={setHours} className="font-mono" />
-      </div>
+  const status = vizStatus([q], values.length === 0)
+  const scene = status === 'ready' ? tankData({ levels: values, topUps, cutoffPct: cutoff, currentPct: current, ticks: ticks.map((i, k) => ({ at: k / 4, label: label(i) })) }) : null
+  const flat = (
+    <>
       {q.isLoading && <Skeleton className="h-[160px] w-full" />}
       {q.error && <InlineError>{`Couldn't load the tank history: ${q.error.message}`}</InlineError>}
       {!q.isLoading && !q.error && (values.length === 0
@@ -288,6 +285,26 @@ function TankHistory({ cutoff }: { cutoff: number | null }) {
               </div>
             </>
           ))}
+    </>
+  )
+  return (
+    <Card className="gap-3.5 p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-1 flex-col gap-[3px]">
+          <span className="text-[15px] font-medium">Tank level</span>
+          {status === 'loading' ? <LoadingLine className="text-[12px]" /> : values.length > 1 && <span className="text-[12px] text-fg-3" data-testid="tank-summary">{summary}</span>}
+        </div>
+        <ChartNote status={status} stale={staleSince([q])} onRetry={() => void q.refetch()} />
+        <SegmentedControl size="sm" ariaLabel="Tank level range" value={hours} options={RANGES} onChange={setHours} className="font-mono" />
+      </div>
+      <Chart3D
+        kind="tank"
+        data={scene}
+        status={status}
+        label={`Tank level over the last ${h <= 24 ? 'day' : h <= 168 ? 'week' : 'month'}, beside the tank now`}
+        message={status === 'error' ? `Couldn't load the tank history: ${q.error?.message ?? ''}` : 'No tank level recorded in this window.'}
+        fallback={flat}
+      />
       {stats && (
         <div className="flex flex-wrap gap-6 border-t border-line pt-2.5 font-mono text-[12px] text-fg-3" data-testid="tank-stats">
           {(['min', 'avg', 'max'] as const).map(k => (
