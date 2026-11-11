@@ -142,9 +142,15 @@ export function Pending({ loading, sample, children }: { loading: boolean, sampl
  * chart shows its own loading wave). Screen readers hear "Loading".
  */
 export function LoadingLine({ className }: { className?: string }) {
+  // The live region mounts empty and says Loading a beat later, or screen readers miss it.
+  const [said, setSaid] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSaid(true), 0)
+    return () => clearTimeout(t)
+  }, [])
   return (
     <span role="status" aria-live="polite" data-testid="loading-line" className={cn('inline-block h-[0.9em] w-40 max-w-full animate-pulse rounded-[4px] bg-active align-[-0.1em] motion-reduce:animate-none', className)}>
-      <span className="sr-only">Loading</span>
+      {said && <span className="sr-only">Loading</span>}
     </span>
   )
 }
