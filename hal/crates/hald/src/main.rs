@@ -366,7 +366,7 @@ async fn main() -> anyhow::Result<()> {
     // An empty USB bus → camera_missing, once recovery has had its chance.
     if !cli.sim && cfg.usb_recovery.enabled && !cfg.camera.is_empty() {
         let tx = inbound_tx.clone();
-        let mut watch = usb::Watch::new(&cfg.usb_recovery);
+        let mut watch = usb::Watch::new(&cfg.usb_recovery, state_dir.clone());
         let reboots_dir = state_dir.clone();
         tokio::spawn(async move {
             loop {

@@ -531,6 +531,8 @@ async function main(argv) {
       process.stderr.write(`${e.message}\n`)
       return result(e.code === 'newer-schema' ? 3 : 4, { ok: false, code: e.code, error: e.message })
     }
+    // No terminal status was written, so nothing else will lift the hold on a USB hub reboot.
+    markBusy(false)
     process.stderr.write(`restore failed: ${e.message}\n`)
     return result(1, { ok: false, code: 'failed', error: e.message })
   }

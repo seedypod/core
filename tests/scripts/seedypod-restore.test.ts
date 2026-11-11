@@ -186,6 +186,14 @@ describe('restoring', () => {
     expect(existsSync(join(dir, 'busy/restore'))).toBe(false)
   })
 
+  it('lifts its busy mark when it fails without a status to say so', async () => {
+    const p = await bundle()
+    // The work dir can't be made, so even the first status write throws.
+    writeFileSync(join(dir, 'work'), 'not a directory')
+    expect(run(p).code).toBe(1)
+    expect(existsSync(join(dir, 'busy/restore'))).toBe(false)
+  })
+
   it('undoes a wrong restore, and a second undo redoes it', async () => {
     run(await bundle())
     expect(run('--undo').code).toBe(0)

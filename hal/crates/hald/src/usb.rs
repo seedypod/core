@@ -203,11 +203,21 @@ pub fn reboots_so_far(state_dir: &Path) -> Result<u32, String> {
     }
 }
 
-/// On the card before it returns, so a reboot that follows can't lose it.
+/// On the card before it returns, so a reboot that follows can't lose it. This runs
+/// as root in a directory hald's own user can write, so the temp file is made fresh:
+/// a leftover is unlinked (never followed), and if one appears again before the
+/// create, the create fails rather than writing through it, and there's no reboot.
 fn save_reboots(state_dir: &Path, count: u32) -> std::io::Result<()> {
     let path = state_dir.join(REBOOTS_FILE);
     let tmp = path.with_extension("tmp");
-    let mut file = std::fs::File::create(&tmp)?;
+    match std::fs::remove_file(&tmp) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)?;
     file.write_all(count.to_string().as_bytes())?;
     file.sync_all()?;
     std::fs::rename(&tmp, &path)?;
@@ -479,18 +489,28 @@ fn hub_missing(reboots: u32) -> String {
 pub struct Watch {
     grace: Duration,
     raised: bool,
+    state_dir: PathBuf,
+    seen: bool,
 }
 
 impl Watch {
-    pub fn new(cfg: &UsbRecovery) -> Self {
+    pub fn new(cfg: &UsbRecovery, state_dir: PathBuf) -> Self {
         Self {
             grace: Duration::from_secs(cfg.boot_wait_s + u64::from(cfg.attempts) * (cfg.settle_s + 2) + 30),
             raised: false,
+            state_dir,
+            seen: false,
         }
     }
 
     /// While the bus is empty this repeats, so a camera's own failure doesn't bury the cause.
     pub fn tick(&mut self, state: &BusState, uptime: Duration, reboots: u32) -> Option<Inbound> {
+        // A hub that turns up after `--usb-recover` has exited was still seen, so the
+        // next miss gets a fresh run of reboots, as it would had recovery seen it.
+        if *state == BusState::Populated && !self.seen {
+            self.seen = true;
+            reset_reboots(&self.state_dir);
+        }
         match state {
             BusState::Empty(_) if uptime >= self.grace => {
                 self.raised = true;
@@ -660,7 +680,7 @@ mod tests {
         assert_eq!(bus.root_hub, None);
         assert_eq!(bus.controller, "20980000.usb");
         // So the daemon raises the alert.
-        let mut watch = Watch::new(&cfg());
+        let mut watch = Watch::new(&cfg(), PathBuf::from("/nonexistent"));
         let up = watch.tick(&bus_state(&root), Duration::from_secs(600), 0);
         assert!(failed(up).starts_with("USB hub: it didn't come up"));
         let _ = std::fs::remove_dir_all(root);
@@ -1225,7 +1245,7 @@ mod tests {
             root_hub: Some("usb1".into()),
             controller: "20980000.usb".into(),
         });
-        let mut watch = Watch::new(&cfg());
+        let mut watch = Watch::new(&cfg(), PathBuf::from("/nonexistent"));
         // 90 s wait, two re-probes of 3 + 2 s, 30 s margin.
         assert_eq!(watch.grace, Duration::from_secs(130));
         assert!(watch.tick(&empty, Duration::from_secs(129), 0).is_none());
@@ -1246,8 +1266,47 @@ mod tests {
     }
 
     #[test]
+    fn a_hub_seen_after_recovery_exits_resets_the_count() {
+        let root = fake_sysfs("late-watch", "dwc_otg");
+        save_reboots(&root, 4).unwrap();
+        let mut watch = Watch::new(&reboot_cfg(), root.clone());
+        watch.tick(&bus_state(&root), Duration::from_secs(600), 4);
+        assert_eq!(counted(&root).as_deref(), Some("4"));
+        plug_in(&root, "1-1");
+        watch.tick(&bus_state(&root), Duration::from_secs(630), 4);
+        assert_eq!(counted(&root), None);
+        // So the next boot that misses it can reboot again.
+        std::fs::remove_dir(root.join("bus/usb/devices/1-1")).unwrap();
+        assert_eq!(boot(&root), Recovery::Reboot { attempt: 1, limit: 4 });
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn saving_the_count_never_writes_through_a_planted_link() {
+        let root = fake_sysfs("planted", "dwc_otg");
+        let victim = root.join("victim");
+        std::fs::write(&victim, "keep me").unwrap();
+        let tmp = root.join(REBOOTS_FILE).with_extension("tmp");
+        std::os::unix::fs::symlink(&victim, &tmp).unwrap();
+        save_reboots(&root, 1).unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+        assert_eq!(counted(&root).as_deref(), Some("1"));
+        assert!(std::fs::symlink_metadata(&tmp).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_save_cut_short_last_boot_doesnt_block_the_next() {
+        let root = fake_sysfs("interrupted", "dwc_otg");
+        std::fs::write(root.join(REBOOTS_FILE).with_extension("tmp"), "9").unwrap();
+        assert_eq!(boot(&root), Recovery::Reboot { attempt: 1, limit: 4 });
+        assert_eq!(counted(&root).as_deref(), Some("1"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn the_alert_stays_out_of_it_on_a_bus_this_doesnt_manage() {
-        let mut watch = Watch::new(&cfg());
+        let mut watch = Watch::new(&cfg(), PathBuf::from("/nonexistent"));
         let other = BusState::NotApplicable("not a Pi USB controller");
         assert!(watch.tick(&other, Duration::from_secs(9999), 0).is_none());
     }
