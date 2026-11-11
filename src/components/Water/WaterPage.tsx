@@ -14,7 +14,7 @@ import { tankData, type TankMarks } from '@/src/components/charts/viz3d/shape'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { dayOn, daysLabel, daysToList, listToDays, weekdayOf } from '@/src/lib/days'
-import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
+import { dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, SOAK_NOTE, TIPS_CITATION, WATERING_TIPS, appliedPreset, type PumpPresetId } from '@/src/scheduler/pumpPlan'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
@@ -22,7 +22,8 @@ import { useNow } from '@/src/components/System/useNow'
 import { CareSummary } from '@/src/components/Care/CareSummary'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
-const CYCLE_DURATIONS = ['60', '180', '300', '600', '900'] as const
+/** The editor's run lengths, in seconds: the presets' among them, so a 6-minute preset cycle reads as itself. */
+const CYCLE_DURATIONS = [60, 180, 300, 360, 600, 900]
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
 
@@ -66,14 +67,31 @@ export function WaterPage() {
   const applied = appliedPreset(cycles, light)
   const previewing = PUMP_PRESETS.find(x => x.id === preview) ?? null
   const previewRuns = previewing ? presetRuns(previewing, light) : null
-  const apply = () => {
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
+  /**
+   * Replaces the cycles with the preview, one step at a time: the new ones
+   * first, then the old ones it doesn't re-create, so a failure part way
+   * leaves more cycles than either plan, never fewer. On failure the preview
+   * and the dialog stay open with the reason.
+   */
+  const apply = async () => {
     if (!previewing) return
     const fresh = presetSchedules(previewing, { enabled: true, light })
-    // Applying replaces the cycles; one with a new schedule's id is replaced by the upsert itself.
-    for (const c of cycles) if (!fresh.some(f => f.id === c.id)) remove.mutate({ id: c.id })
-    for (const sch of fresh) upsert.mutate(sch)
-    setPreview(null)
-    setConfirming(false)
+    setApplying(true)
+    setApplyError(null)
+    try {
+      for (const sch of fresh) await upsert.mutateAsync(sch)
+      for (const c of cycles) if (!fresh.some(f => f.id === c.id)) await remove.mutateAsync({ id: c.id })
+      setPreview(null)
+      setConfirming(false)
+    }
+    catch (e) {
+      setApplyError(`Couldn't apply ${previewing.name}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    finally {
+      setApplying(false)
+    }
   }
   const lastRun = (id: string) => {
     const r = (runs.data ?? []).find(r => r.scheduleId === id)
@@ -84,9 +102,6 @@ export function WaterPage() {
   const pumpLine = p ? (p.on ? `watering at ${p.level}%` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
   const subtitle = [pumpLine, next ? `next run ${fmtClock(next.cycle.spec.minute)}` : null].filter(Boolean).join(' · ')
   const limitsLine = limits ? `Up to ${fmtMinutes(limits.pumpMaxRunS)} per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.` : undefined
-  const notice = runOnce.error
-    ? <span className="truncate text-danger" title={runOnce.error.message}>{runOnce.error.message}</span>
-    : asked !== null && !p?.on ? <NotStarted asked={asked} onGiveUp={() => setAsked(null)} /> : null
 
   return (
     <div className="mx-auto flex max-w-[1000px] flex-col gap-6">
@@ -108,14 +123,19 @@ export function WaterPage() {
           unscheduled={schedules.data !== undefined && !next}
           onSchedule={() => document.getElementById('pump-cycles')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
           preview={previewing && previewRuns
-            ? { label: `${previewRuns.length} × ${Math.round(previewing.durationS / 60)} min`, onApply: () => (cycles.length ? setConfirming(true) : apply()), onCancel: () => setPreview(null) }
+            ? { label: `${previewRuns.length} × ${Math.round(previewing.durationS / 60)} min`, busy: applying, error: confirming ? null : applyError, onApply: () => (cycles.length ? setConfirming(true) : void apply()), onCancel: () => {
+                setPreview(null)
+                setApplyError(null)
+              } }
             : null}
           source={p?.on ? runSource(runs.data ?? [], cycles, p.since) : null}
           limits={limitsLine}
           dur={dur}
           onDur={setDur}
           starting={asked !== null}
-          notice={notice}
+          runError={runOnce.error?.message ?? null}
+          asked={p?.on ? null : asked}
+          onGiveUp={() => setAsked(null)}
           stopping={stop.isPending}
           onRun={() => {
             setAsked(Date.now())
@@ -167,9 +187,11 @@ export function WaterPage() {
         <h2 className={`${EYEBROW} flex-1`}>Pump cycles</h2>
         <Button icon={Plus} onClick={() => setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })}>Add cycle</Button>
       </div>
+      {applyError && !confirming && <InlineError>{applyError}</InlineError>}
       <PumpPresets
         light={light}
         recommended={recommended}
+        sown={sown}
         applied={applied}
         previewing={preview}
         onPreview={(id) => {
@@ -227,7 +249,7 @@ export function WaterPage() {
         icon={CalendarClock}
         footer={(
           <div className="flex gap-2">
-            <Button variant="primary" onClick={apply}>Replace</Button>
+            <Button variant="primary" disabled={applying} onClick={() => void apply()}>{applying ? 'Replacing…' : 'Replace'}</Button>
             <Button onClick={() => setConfirming(false)}>Cancel</Button>
           </div>
         )}
@@ -238,6 +260,7 @@ export function WaterPage() {
             {cycles.map(c => <li key={c.id}>{`${fmtClock(c.spec.minute)} · ${c.name}`}</li>)}
           </ul>
           {previewing && previewRuns && <p>{`And ${previewing.name} runs ${previewRuns.map(fmtClock).join(', ')}, ${fmtMinutes(previewing.durationS)} each, every day.`}</p>}
+          {applyError && <InlineError>{applyError}</InlineError>}
         </div>
       </Modal>
 
@@ -290,7 +313,7 @@ export function WaterPage() {
             </label>
             <div className="flex flex-col gap-1.5 text-xs text-fg-2">
               Duration
-              <SegmentedControl value={String(editing.spec.durationS) as typeof CYCLE_DURATIONS[number]} options={CYCLE_DURATIONS.map(d => ({ value: d, label: `${Number(d) / 60} min` }))} onChange={v => setEditing({ ...editing, spec: { ...editing.spec, durationS: Number(v) } })} />
+              <SegmentedControl value={String(editing.spec.durationS)} options={editorLengths(editing.spec.durationS).map(d => ({ value: String(d), label: fmtMinutes(d) }))} onChange={v => setEditing({ ...editing, spec: { ...editing.spec, durationS: Number(v) } })} />
             </div>
             <div className="flex flex-col gap-1.5 text-xs text-fg-2">
               Days
@@ -301,6 +324,11 @@ export function WaterPage() {
       </Modal>
     </div>
   )
+}
+
+/** The editor's lengths, with a cycle's own if it's none of them, so editing never changes it unasked. */
+export function editorLengths(current: number): number[] {
+  return CYCLE_DURATIONS.includes(current) ? CYCLE_DURATIONS : [...CYCLE_DURATIONS, current].sort((a, b) => a - b)
 }
 
 const RANGES = [{ value: '24', label: '24h' }, { value: '168', label: '7d' }, { value: '720', label: '30d' }] as const
@@ -499,9 +527,10 @@ function DayStrip({ runs, light }: { runs: number[], light: { on: number, off: n
  * the chart and the strip; Apply there replaces the cycles. Blank opens the
  * editor.
  */
-function PumpPresets({ light, recommended, applied, previewing, onPreview, onBlank }: {
+function PumpPresets({ light, recommended, sown, applied, previewing, onPreview, onBlank }: {
   light: { on: number, off: number } | null
-  recommended: { id: PumpPresetId, why: string } | null
+  recommended: { id: PumpPresetId, why: string, soak?: boolean } | null
+  sown: number | null
   /** The preset the cycles are now, if they match one. */
   applied: PumpPresetId | null
   previewing: PumpPresetId | null
@@ -529,9 +558,10 @@ function PumpPresets({ light, recommended, applied, previewing, onPreview, onBla
                 {(mine || applied === p.id) && (
                   <span className="flex flex-wrap gap-1.5">
                     {applied === p.id && <span className="w-fit rounded-[10px] bg-tank/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-tank" data-testid="pump-applied">running now</span>}
-                    {mine && recommended && <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-recommended" title={`Recommended: ${recommended.why}`}>{`recommended · ${recommended.why}`}</span>}
+                    {mine && recommended && <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-recommended" title={`Recommended: ${recommended.why}`}>{recommended.soak ? `soak · day ${sown ?? 0}` : `recommended · ${recommended.why}`}</span>}
                   </span>
                 )}
+                {mine && recommended?.soak && <span className="text-[12px] leading-snug text-pod-ok" data-testid="pump-soak">{`Soak: ${SOAK_NOTE}`}</span>}
                 <DayStrip runs={runs} light={light} />
                 <span className="font-mono text-[11px] text-fg-2">{`${runs.length} × ${mins} min = ${dailyMinutes(runs.length, p.durationS)} min a day`}</span>
                 <span className="text-[12px] leading-snug text-fg-3">{p.note}</span>
@@ -564,7 +594,7 @@ const CHIP = 'grid size-8 cursor-pointer place-items-center rounded-[7px] border
  * power, a countdown and Stop, and a progress line along its foot. Both states
  * are the same height, so the body below never moves.
  */
-function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, preview, source, limits, dur, onDur, starting, notice, stopping, onRun, onStop }: {
+function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, preview, runError, asked, onGiveUp, source, limits, dur, onDur, starting, stopping, onRun, onStop }: {
   pump: { on: boolean, level: number, since: string, fault: string | null, remainingS: number | null } | undefined
   at: number
   readings: Partial<Record<SensorId, Reading>>
@@ -573,18 +603,50 @@ function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, pr
   unscheduled: boolean
   onSchedule: () => void
   /** A preset on show before it's applied. */
-  preview: { label: string, onApply: () => void, onCancel: () => void } | null
+  preview: { label: string, busy: boolean, error: string | null, onApply: () => void, onCancel: () => void } | null
+  /** Why the last Run was refused. */
+  runError: string | null
+  /** When Run was pressed, while the pump hasn't come on. */
+  asked: number | null
+  onGiveUp: () => void
   source: string | null
   limits: string | undefined
   dur: typeof DURATIONS[number]['value']
   onDur: (v: typeof DURATIONS[number]['value']) => void
   starting: boolean
-  notice: ReactNode
   stopping: boolean
   onRun: () => void
   onStop: () => void
 }) {
   const running = !!p?.on
+  const usual = (
+    <span className="truncate">
+      {unscheduled && <button type="button" onClick={onSchedule} className="cursor-pointer border-0 bg-transparent p-0 text-fg-2 underline underline-offset-2 hover:text-fg">No watering schedule</button>}
+      {[unscheduled ? null : next, s.pump_v ? `supply ${fmt(s.pump_v)}` : null].filter(Boolean).map((t, i) => (unscheduled || i > 0 ? ` · ${t}` : t)).join('')}
+    </span>
+  )
+  // What the idle strip says under its title, first match wins: a preview (what you're doing now, over an older
+  // run's error), why the last Run was refused, a fault, a Run that hasn't started (the usual line until it has
+  // something to say), else the next run and the supply.
+  const subtitle = (): ReactNode => {
+    if (preview) {
+      return (
+        <span className="flex min-w-0 items-center gap-1.5 text-tank" data-testid="strip-preview">
+          {preview.error
+            ? <span className="truncate text-danger" title={preview.error}>{preview.error}</span>
+            : <span className="truncate">{`Preview: ${preview.label}`}</span>}
+          <span aria-hidden>·</span>
+          <button type="button" disabled={preview.busy} onClick={preview.onApply} className="shrink-0 cursor-pointer border-0 bg-transparent p-0 font-medium text-fg underline underline-offset-2 disabled:opacity-60">{preview.busy ? 'Applying…' : 'Apply'}</button>
+          <span aria-hidden>·</span>
+          <button type="button" onClick={preview.onCancel} className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-fg-2 underline underline-offset-2 hover:text-fg">Cancel</button>
+        </span>
+      )
+    }
+    if (runError) return <span className="truncate text-danger" title={runError}>{runError}</span>
+    if (p?.fault) return <span className="truncate">{p.fault}</span>
+    if (asked !== null) return <NotStarted asked={asked} onGiveUp={onGiveUp}>{usual}</NotStarted>
+    return usual
+  }
   const status = (dot: string, title: string, sub: ReactNode) => (
     <div className="flex h-11 min-w-0 items-center gap-3">
       <span className={cn('size-2.5 shrink-0 rounded-full', dot)} />
@@ -609,24 +671,7 @@ function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, pr
               {status(
                 p?.fault ? 'bg-danger' : 'bg-fg-3',
                 p ? (p.fault ? 'Pump fault' : 'Pump idle') : 'Pump',
-                notice ?? (p?.fault
-                  ? <span className="truncate">{p.fault}</span>
-                  : preview
-                    ? (
-                        <span className="flex min-w-0 items-center gap-1.5 text-tank" data-testid="strip-preview">
-                          <span className="truncate">{`Preview: ${preview.label}`}</span>
-                          <span aria-hidden>·</span>
-                          <button type="button" onClick={preview.onApply} className="shrink-0 cursor-pointer border-0 bg-transparent p-0 font-medium text-fg underline underline-offset-2">Apply</button>
-                          <span aria-hidden>·</span>
-                          <button type="button" onClick={preview.onCancel} className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-fg-2 underline underline-offset-2 hover:text-fg">Cancel</button>
-                        </span>
-                      )
-                    : (
-                        <span className="truncate">
-                          {unscheduled && <button type="button" onClick={onSchedule} className="cursor-pointer border-0 bg-transparent p-0 text-fg-2 underline underline-offset-2 hover:text-fg">No watering schedule</button>}
-                          {[unscheduled ? null : next, s.pump_v ? `supply ${fmt(s.pump_v)}` : null].filter(Boolean).map((t, i) => (unscheduled || i > 0 ? ` · ${t}` : t)).join('')}
-                        </span>
-                      )),
+                subtitle(),
               )}
               <div className="flex h-10 items-center gap-2">
                 <span className="text-[12px] text-fg-3">Run for</span>
@@ -784,10 +829,10 @@ function Started({ onSeen }: { onSeen: () => void }) {
 /** How long the pump gets to come on after Run before the page says it didn't, and why if an alert says. */
 export const START_WAIT_MS = 6000
 
-function NotStarted({ asked, onGiveUp }: { asked: number, onGiveUp: () => void }) {
+function NotStarted({ asked, onGiveUp, children }: { asked: number, onGiveUp: () => void, children: ReactNode }) {
   const now = useNow(1000)
   const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
-  if (now - asked < START_WAIT_MS) return null
+  if (now - asked < START_WAIT_MS) return <>{children}</>
   const open = alerts.data ?? []
   const low = open.find(a => a.kind === 'water_low')
   const fault = open.find(a => a.kind === 'pump_fault')

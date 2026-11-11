@@ -6,6 +6,7 @@
  */
 import { fmtClock } from '@/src/components/charts/format'
 import { bridge } from '@/src/components/charts/TimeChart'
+import { podPlaces } from '@/src/components/Grow/towerLayout'
 import { BOOST_LEVEL } from '@/src/scheduler/lightPlan'
 import type { SensorMeta } from '@/src/lib/sensorMeta'
 
@@ -219,14 +220,21 @@ export function lightData(input: { planned: number[], nowMin: number, level: num
   }
 }
 
-/** The pods down each tower, top to bottom: a leaf-cover fraction, or null for an empty or unmeasured pod. */
-export function podsData(pods: ReadonlyArray<{ slot: number, empty: boolean, cover: number | null }>, columns: number): PodsData {
-  const sorted = [...pods].sort((a, b) => a.slot - b.slot)
-  const per = Math.max(1, Math.ceil(sorted.length / Math.max(1, columns)))
-  const towers: PodsData['towers'] = []
-  for (let c = 0; c * per < sorted.length; c++) {
-    const slice = sorted.slice(c * per, (c + 1) * per)
-    towers.push({ label: `Tower ${String.fromCharCode(65 + c)}`, pods: slice.map(p => (p.empty || p.cover === null ? null : Math.max(0, Math.min(1, p.cover)))) })
+/**
+ * The pods down each of the tower's columns, top to bottom, as the tower
+ * places them (towerLayout: slots count across the columns, then down): a
+ * leaf-cover fraction, or null for an empty or unmeasured pod. A Home's 30
+ * make three columns of 10, a Studio's 16 two of 8.
+ */
+export function podsData(pods: ReadonlyArray<{ slot: number, empty: boolean, cover: number | null }>): PodsData {
+  // Sized for the highest slot, so a list with gaps still lands each pod where the tower has it.
+  const places = podPlaces(Math.max(pods.length, ...pods.map(p => p.slot)))
+  const columns = Math.max(0, ...places.map(p => p.column + 1))
+  const towers: PodsData['towers'] = Array.from({ length: columns }, (_, c) => ({ label: `Tower ${String.fromCharCode(65 + c)}`, pods: places.filter(p => p.column === c).map(() => null) }))
+  for (const p of pods) {
+    const place = places.find(pl => pl.slot === p.slot)
+    const tower = place && towers[place.column]
+    if (tower && place) tower.pods[place.row] = p.empty || p.cover === null ? null : Math.max(0, Math.min(1, p.cover))
   }
   return { towers }
 }

@@ -487,59 +487,89 @@ export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData
 
 export const PODS_SPEC: BaseSpec = { need: 10, camera: { position: [0, 2.1, 10.8], target: [0, 1.45, 0] }, bounds: [[-3.9, -0.4, -0.66], [3.9, 3.4, 0.7]] }
 
-/** Three towers of pods, turning slowly; each pod a sphere sized by its leaf cover, an empty one a small grey bead. */
+/**
+ * The tower's columns of pods, as many as the data has (a Home's three of 10,
+ * a Studio's two of 8; three of 10 while loading); each pod a sphere sized by
+ * its leaf cover, an empty one a small grey bead.
+ */
 export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> {
-  const TOWERS = 3
-  const PER = 10
   const GAP = 3.2
   const TOP = 3.1
   const PITCH = 0.31
   const RADIUS = 0.42
   let data: PodsData | null = null
+  let count = 0
+  let per = 0
   const base = createBase(container, PODS_SPEC, draw, env)
   const T = base.THREE
   const sphere = new T.SphereGeometry(1, 18, 12)
-  const towers = Array.from({ length: TOWERS }, (_, t) => {
+  const towers: Array<{ group: THREE.Group, post: THREE.Mesh, label: Label, pods: Array<{ mesh: THREE.Mesh, arm: THREE.Line }> }> = []
+
+  function tower(t: number) {
     const group = new T.Group()
-    group.position.set((t - (TOWERS - 1) / 2) * GAP, 0, 0)
     base.root.add(group)
+    // The post reaches from the floor to just above the top pod; shorter columns end lower down it.
     const post = new T.Mesh(new T.CylinderGeometry(0.05, 0.05, TOP + 0.25, 10), base.tint(new T.MeshBasicMaterial(), 'grid'))
     post.position.y = (TOP + 0.25) / 2
     group.add(post)
-    base.ring(0.62, [group.position.x, 0, 0], 'grid')
+    group.add(base.ring(0.62, [0, 0, 0], 'grid'))
     const label = base.label(`Tower ${String.fromCharCode(65 + t)}`, { ink: 'fg2', size: 0.2, align: 'center', valign: 'top', priority: 3 })
-    label.sprite.position.set(group.position.x, -0.12, 0.7)
     base.root.add(label.sprite)
-    const pods = Array.from({ length: PER }, (_, k) => {
-      const a = k * ((Math.PI * 2) / 5) + t * 0.7
-      const mesh = new T.Mesh(sphere, new T.MeshBasicMaterial({ transparent: true }))
-      const at = new T.Vector3(Math.cos(a) * RADIUS, TOP - k * PITCH, Math.sin(a) * RADIUS)
-      mesh.position.copy(at)
-      group.add(mesh)
-      const arm = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(0, at.y, 0), at]), base.tint(new T.LineBasicMaterial({ transparent: true, opacity: 0.8 }), 'grid'))
-      group.add(arm)
-      return mesh
+    return { group, post, label, pods: [] as Array<{ mesh: THREE.Mesh, arm: THREE.Line }> }
+  }
+  function pod(t: number, k: number, group: THREE.Group) {
+    const a = k * ((Math.PI * 2) / 5) + t * 0.7
+    const mesh = new T.Mesh(sphere, new T.MeshBasicMaterial({ transparent: true }))
+    const at = new T.Vector3(Math.cos(a) * RADIUS, TOP - k * PITCH, Math.sin(a) * RADIUS)
+    mesh.position.copy(at)
+    const arm = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(0, at.y, 0), at]), base.tint(new T.LineBasicMaterial({ transparent: true, opacity: 0.8 }), 'grid'))
+    group.add(mesh, arm)
+    return { mesh, arm }
+  }
+  /** `n` columns of `rows` pods, centred; the rest of the pool hidden. */
+  function layout(n: number, rows: number) {
+    if (n === count && rows === per) return
+    count = n
+    per = rows
+    while (towers.length < n) towers.push(tower(towers.length))
+    towers.forEach((tw, t) => {
+      const on = t < n
+      tw.group.visible = on
+      tw.label.setVisible(on)
+      if (!on) return
+      const x = (t - (n - 1) / 2) * GAP
+      tw.group.position.set(x, 0, 0)
+      tw.label.sprite.position.set(x, -0.12, 0.7)
+      while (tw.pods.length < rows) tw.pods.push(pod(t, tw.pods.length, tw.group))
+      tw.pods.forEach((p, k) => {
+        p.mesh.visible = k < rows
+        p.arm.visible = k < rows
+      })
     })
-    return { group, pods, label }
-  })
+    base.invalidate()
+  }
+  layout(3, 10)
 
   const c = new T.Color()
   function draw(f: Frame): boolean {
     const shown = f.state === 'ready' && data !== null
+    const total = count * per
     towers.forEach((tw, t) => {
+      if (t >= count) return
       const cover = data?.towers[t]?.pods ?? []
-      tw.label.setVisible(true)
       if (data?.towers[t]) tw.label.setText(data.towers[t].label)
-      tw.pods.forEach((mesh, k) => {
-        const i = t * PER + k
+      tw.pods.forEach((p, k) => {
+        if (k >= per) return
+        const i = t * per + k
         const idle = 0.075 * (f.state === 'loading' && !f.reduced ? 0.8 + 0.45 * pulse(i, f.t) : 1)
         const v = cover[k]
         const has = shown && k < cover.length
-        const e = has ? pointEase(f.p, i, TOWERS * PER) : 0
+        const e = has ? pointEase(f.p, i, total) : 0
         const r = has && v !== null && v !== undefined ? 0.07 + 0.17 * Math.sqrt(v) : 0.075
-        mesh.visible = !shown || k < cover.length
-        mesh.scale.setScalar(lerp(idle, r, e))
-        const mat = mesh.material as THREE.MeshBasicMaterial
+        p.mesh.visible = !shown || k < cover.length
+        p.arm.visible = p.mesh.visible
+        p.mesh.scale.setScalar(lerp(idle, r, e))
+        const mat = p.mesh.material as THREE.MeshBasicMaterial
         mat.color.copy(inkMix(base, 'green', v === null || v === undefined ? 0 : e, c))
         mat.opacity = f.state === 'error' ? 0.35 : f.state === 'empty' ? 0.5 : 1
       })
@@ -549,6 +579,7 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
 
   return viz(base, (d: PodsData) => {
     data = d
+    layout(Math.max(1, d.towers.length), Math.max(1, ...d.towers.map(t => t.pods.length)))
   })
 }
 
@@ -558,7 +589,7 @@ export const SENSORS_SPEC: BaseSpec = { need: 11, camera: { position: [0, 8.2, 6
 
 const GROUP_INK = { environment: 'cream', water: 'blue', pump: 'green' } as const
 
-/** Every sensor as a ridge in its own range, back to front, its name at the left and its reading now at the right end. */
+/** Every sensor as a ridge in its own range, back to front, its name at the left and its reading now at the right end; any number of rows within the same depth. */
 export function createSensorsViz(container: HTMLElement, env?: Env): Viz<SensorsData> {
   const x0 = -5
   const W = 10
@@ -567,7 +598,9 @@ export function createSensorsViz(container: HTMLElement, env?: Env): Viz<Sensors
   const H = 0.75
   let data: SensorsData | null = null
   const base = createBase(container, SENSORS_SPEC, draw, env)
-  const zOf = (k: number, n: number) => -(n - 1 - k) * GAP
+  // Up to eight rows sit GAP apart; more (pH, EC and water temperature probes) share the same depth, so the scene keeps to its bounds.
+  const DEPTH = (ROWS - 1) * GAP
+  const zOf = (k: number, n: number) => -(n - 1 - k) * Math.min(GAP, n > 1 ? DEPTH / (n - 1) : GAP)
   const rows: Array<{ ridge: ReturnType<typeof ribbon>, name: Label, now: Label }> = []
   const grid = floorGrid(base, { x0, x1: x0 + W, z0: zOf(0, ROWS) - 0.3, z1: 0.3, xs: [x0, x0 + W / 2, x0 + W], zs: [] })
   const ticks = axis(base, { x0, width: W, y: -0.05, z: 0.45, size: 0.19 })
@@ -591,8 +624,10 @@ export function createSensorsViz(container: HTMLElement, env?: Env): Viz<Sensors
       r.ridge.top.position.z = z
       r.name.setVisible(on)
       r.name.sprite.position.set(x0, 0.04, z)
+      // A row past the data's has no reading to show either.
+      if (!on) r.now.setVisible(false)
     })
-    grid.scale.z = Math.max(1, n) / ROWS
+    grid.scale.z = Math.min(1, Math.max(1, n) / ROWS)
     base.invalidate()
   }
   layout(ROWS)

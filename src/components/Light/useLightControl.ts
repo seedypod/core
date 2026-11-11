@@ -36,6 +36,8 @@ export function useLightControl() {
   if (held !== null && held === l?.level) setHeld(null)
   return {
     light: l,
+    /** The light's query itself, for its loading and error state and to retry it. */
+    query: light,
     level: held ?? l?.level ?? 0,
     /** Whether a requested level is on show, which turns the light on if it's off. */
     requested: held !== null,

@@ -4,16 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LightPage } from '../LightPage'
 import { HOLD_MS } from '../useLightControl'
 
-const { data, calls, setLight } = vi.hoisted(() => ({
+const { data, errors, calls, setLight } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn() },
+  errors: new Map<string, Error>(),
+  calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn(), refetch: vi.fn() },
   setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onMutate?: () => { command: number }, onSuccess?: (s: unknown, sent: unknown, context: { command: number }) => void, onError?: (e: Error, sent: { level?: number }) => void } },
 }))
 
 vi.mock('@tanstack/react-router', () => ({ Link: ({ children, to, hash }: { children: React.ReactNode, to: string, hash?: string }) => <a href={hash ? `${to}#${hash}` : to}>{children}</a> }))
 vi.mock('../CurveEditor', () => ({ CurveEditor: ({ schedule }: { schedule: { name: string } }) => <div>{`editing ${schedule.name}`}</div> }))
 vi.mock('@/src/utils/trpc', () => {
-  const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
+  const query = (name: string) => ({ useQuery: () => ({ data: data.get(name), error: errors.get(name) ?? null, refetch: () => calls.refetch(name) }) })
   const mutation = (name: keyof typeof calls) => ({ useMutation: () => ({ isPending: false, mutate: (i?: unknown) => calls[name](i) }) })
   const set = {
     useMutation: (hook: typeof setLight.hook) => {
@@ -39,6 +40,7 @@ const pump = { id: 'p', kind: 'pump', name: 'Watering', enabled: true, days: 127
 
 beforeEach(() => {
   data.clear()
+  errors.clear()
   for (const f of Object.values(calls)) f.mockReset()
   setLight.pending = undefined
   setLight.setData.mockReset()
@@ -183,6 +185,17 @@ describe('LightPage: who controls the light', () => {
     render(<LightPage />)
     expect(screen.getByText('Light off')).toBeTruthy()
     expect(screen.getByTestId('light-level').textContent).toBe('Off')
+  })
+})
+
+describe('LightPage: when the light can\'t be read', () => {
+  it('says so instead of loading forever, and Retry asks for the light and the curves again', () => {
+    data.delete('light')
+    errors.set('light', new Error('hald offline'))
+    render(<LightPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(calls.refetch).toHaveBeenCalledWith('light')
+    expect(calls.refetch).toHaveBeenCalledWith('schedules')
   })
 })
 

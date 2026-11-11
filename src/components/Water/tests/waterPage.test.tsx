@@ -2,13 +2,13 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as Chart3DModule from '@/src/components/charts/viz3d/Chart3D'
-import { START_WAIT_MS, WaterPage } from '../WaterPage'
+import { editorLengths, START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   calls: { runOnce: vi.fn(), stop: vi.fn(), ack: vi.fn(), upsert: vi.fn(), remove: vi.fn(), history: vi.fn(), invalidatePump: vi.fn(), setPump: vi.fn() },
   pumpSuccess: new Map<string, (s: unknown) => void>(),
-  state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string } },
+  state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string }, failOn: null as null | string, order: [] as string[] },
 }))
 
 // The hero's 3D tank as a stub showing what it was handed, or giving up as a browser without WebGL would.
@@ -35,7 +35,17 @@ vi.mock('@/src/utils/trpc', () => {
   const mutation = (name: 'runOnce' | 'stop' | 'upsert' | 'remove') => ({
     useMutation: (o: { onSuccess: (s: unknown) => void }) => {
       pumpSuccess.set(name, o.onSuccess)
-      return { isPending: false, error: name === 'runOnce' ? state.runError : null, mutate: (i?: unknown) => calls[name](i) }
+      return {
+        isPending: false,
+        error: name === 'runOnce' ? state.runError : null,
+        mutate: (i?: unknown) => calls[name](i),
+        mutateAsync: async (i?: unknown) => {
+          calls[name](i)
+          const id = (i as { id?: string } | undefined)?.id ?? ''
+          state.order.push(`${name}:${id}`)
+          if (state.failOn === `${name}:${id}`) throw new Error('the unit said no')
+        },
+      }
     },
   })
   return {
@@ -76,7 +86,7 @@ beforeEach(() => {
   vi.setSystemTime(at(12))
   data.clear()
   for (const f of Object.values(calls)) f.mockReset()
-  Object.assign(state, { runError: null, historyLoading: false, historyError: null })
+  Object.assign(state, { runError: null, historyLoading: false, historyError: null, failOn: null, order: [] })
   data.set('pump', idle)
   data.set('sensors', { water_level_pct: { value: 71, unit: '%' }, water_distance: { value: 9.4, unit: 'cm' }, pump_w: { value: 0, unit: 'W' }, pump_a: { value: 0, unit: 'A' }, pump_v: { value: 12.3, unit: 'V' } })
   data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16 } } })
@@ -164,6 +174,8 @@ describe('WaterPage: tank and pump', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     expect(screen.getByText('Starting…').closest('button')?.disabled).toBe(true)
     expect(screen.queryByText(/Didn't start/)).toBeNull()
+    // While the pump has its chance to start, the strip keeps its usual line.
+    expect(within(screen.getByTestId('pump-strip')).getByText('Next run 20:00 (Evening watering) · supply 12.3 V')).toBeTruthy()
     act(() => {
       vi.advanceTimersByTime(START_WAIT_MS + 1000)
     })
@@ -261,7 +273,7 @@ describe('WaterPage: pump cycles', () => {
     expect(within(screen.getByTestId('pump-preset-fruiting')).getByTestId('pump-recommended').textContent).toBe('recommended · a fruiting crop is planted')
   })
 
-  it('previews a preset on the strip and the day\'s chart without saving, and applies it in place of the cycles after a confirmation', () => {
+  it('previews a preset on the strip and the day\'s chart without saving, and applies it in place of the cycles after a confirmation', async () => {
     render(<WaterPage />)
     fireEvent.click(screen.getByTestId('pump-preset-mature'))
     expect(screen.getByTestId('pump-preset-mature').getAttribute('aria-pressed')).toBe('true')
@@ -273,9 +285,12 @@ describe('WaterPage: pump cycles', () => {
     const dialog = within(screen.getByRole('dialog'))
     expect(dialog.getByTestId('replaced-cycles').textContent).toBe('08:00 · Morning watering20:00 · Evening watering')
     expect(dialog.getByText(/runs 08:00, 14:00, 20:00, 6 min each, every day/)).toBeTruthy()
-    fireEvent.click(dialog.getByText('Replace'))
-    expect(calls.remove).toHaveBeenCalledWith({ id: 'morning' })
-    expect(calls.remove).toHaveBeenCalledWith({ id: 'evening' })
+    await act(async () => {
+      fireEvent.click(dialog.getByText('Replace'))
+    })
+    // The new cycles first, then the old ones go, one at a time.
+    expect(state.order).toEqual(['upsert:water-mature-0800', 'upsert:water-mature-1400', 'upsert:water-mature-2000', 'remove:morning', 'remove:evening'])
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(calls.upsert.mock.calls.map(c => [(c[0] as { id: string }).id, (c[0] as { name: string }).name, (c[0] as { enabled: boolean }).enabled])).toEqual([
       ['water-mature-0800', 'Mature · 3× 6 min (08:00)', true],
       ['water-mature-1400', 'Mature · 3× 6 min (14:00)', true],
@@ -284,7 +299,7 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.queryByTestId('strip-preview')).toBeNull()
   })
 
-  it('applies straight away with no cycle to replace, and cancels a preview', () => {
+  it('applies straight away with no cycle to replace, and cancels a preview', async () => {
     data.set('schedules', [curve])
     render(<WaterPage />)
     fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
@@ -295,7 +310,9 @@ describe('WaterPage: pump cycles', () => {
     fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
     expect(screen.queryByTestId('strip-preview')).toBeNull()
     fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
-    fireEvent.click(screen.getByText('Apply'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('Apply'))
+    })
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', enabled: true }))
     expect(calls.remove).not.toHaveBeenCalled()
@@ -308,13 +325,69 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.getAllByTestId('pump-applied')).toHaveLength(1)
   })
 
-  it('keeps a cycle the preset re-creates rather than removing it first', () => {
+  it('keeps a cycle the preset re-creates rather than removing it first', async () => {
     data.set('schedules', [{ ...morning, id: 'water-mature-0800' }, evening])
     render(<WaterPage />)
     fireEvent.click(screen.getByTestId('pump-preset-mature'))
     fireEvent.click(screen.getByText('Apply'))
-    fireEvent.click(within(screen.getByRole('dialog')).getByText('Replace'))
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog')).getByText('Replace'))
+    })
     expect(calls.remove.mock.calls).toEqual([[{ id: 'evening' }]])
+  })
+
+  it('stops at the first failure, removing nothing, and keeps the dialog and preview open with the reason', async () => {
+    state.failOn = 'upsert:water-mature-1400'
+    render(<WaterPage />)
+    fireEvent.click(screen.getByTestId('pump-preset-mature'))
+    fireEvent.click(screen.getByText('Apply'))
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog')).getByText('Replace'))
+    })
+    expect(state.order).toEqual(['upsert:water-mature-0800', 'upsert:water-mature-1400'])
+    expect(calls.remove).not.toHaveBeenCalled()
+    expect(within(screen.getByRole('dialog')).getByText('Couldn\'t apply Mature greens & herbs · 3+ weeks: the unit said no')).toBeTruthy()
+    expect(screen.getByTestId('strip-preview')).toBeTruthy()
+  })
+
+  it('shows a failure in the strip when there was nothing to replace', async () => {
+    data.set('schedules', [curve])
+    state.failOn = 'upsert:water-seedlings-0800'
+    render(<WaterPage />)
+    fireEvent.click(screen.getByTestId('pump-preset-seedlings'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('Apply'))
+    })
+    expect(within(screen.getByTestId('strip-preview')).getByText(/^Couldn't apply Seedlings · week 1/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(screen.queryByText(/Couldn't apply/)).toBeNull()
+  })
+
+  it('lets a preview win over an older run error in the strip', () => {
+    state.runError = { message: 'tank too low' }
+    render(<WaterPage />)
+    expect(within(screen.getByTestId('pump-strip')).getByText('tank too low')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('pump-preset-young'))
+    const strip = within(screen.getByTestId('pump-strip'))
+    expect(strip.queryByText('tank too low')).toBeNull()
+    expect(strip.getByText('Apply')).toBeTruthy()
+  })
+
+  it('marks the soak in the first days after sowing, not a daily watering', () => {
+    data.set('grow', { cycle: { id: 'c', startedAt: at(9), endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 0 })
+    render(<WaterPage />)
+    const seedlings = within(screen.getByTestId('pump-preset-seedlings'))
+    expect(seedlings.getByTestId('pump-recommended').textContent).toBe('soak · day 0')
+    expect(seedlings.getByTestId('pump-soak').textContent).toBe('Soak: Gardyn waits a few days to a week after sowing before the second watering.')
+  })
+
+  it('offers a preset\'s own run length in the editor, and keeps any other', () => {
+    data.set('schedules', [{ ...morning, id: 'water-mature-0800', name: 'Mature · 3× 6 min (08:00)', spec: { minute: 480, durationS: 360 } }])
+    render(<WaterPage />)
+    fireEvent.click(screen.getByLabelText('Edit Mature · 3× 6 min (08:00)'))
+    expect(within(screen.getByRole('dialog')).getByRole('tab', { name: '6 min' }).getAttribute('aria-selected')).toBe('true')
+    expect(editorLengths(420)).toEqual([60, 180, 300, 360, 420, 600, 900])
+    expect(editorLengths(300)).toEqual([60, 180, 300, 360, 600, 900])
   })
 
   it('names the next run\'s cycle once, without a preset\'s time in its name', () => {
@@ -458,8 +531,10 @@ describe('WaterPage with WebGL: the tank hero', () => {
     vi.setSystemTime(at(12, 0, 3))
     data.set('runs', [{ scheduleId: 'morning', key: 'm1', firedAt: at(0, 0, 2).toISOString(), result: 'ok' }, { scheduleId: 'day', key: 'd1', firedAt: at(1, 0, 2).toISOString(), result: 'ok' }])
     render(<WaterPage />)
-    // Only pump cycles' runs, about half way along (1 Nov has 25 h: the clocks go back); no "later" ticks off the day's range.
-    expect(screen.getByTestId('tank-3d').textContent).toMatch(/ran 0\.52 · later {2}· preview $/)
+    // Only pump cycles' runs; no "later" ticks off the day's range.
+    // The history spans 48 h from its first sample; the run is the 2nd's local midnight, 24 or 25 h in.
+    const along = ((at(0, 0, 2).getTime() - at(0).getTime()) / (48 * 3_600_000)).toFixed(2)
+    expect(screen.getByTestId('tank-3d').textContent).toContain(`ran ${along} · later  · preview `)
     fireEvent.click(screen.getByRole('tab', { name: '24h' }))
     // The evening cycle at 20:00 is still to come: 8 h into the 12 h left of the day.
     expect(screen.getByTestId('tank-3d').textContent).toMatch(/later 0\.67 · preview $/)

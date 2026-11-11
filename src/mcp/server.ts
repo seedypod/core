@@ -10,9 +10,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { RuleInput } from '../autopilot/schema'
 import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '../scheduler/lightPlan'
+import { dayEnabled, localTime } from '../scheduler/time'
 import { appliedPreset, dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, TIPS_CITATION, WATERING_TIPS } from '../scheduler/pumpPlan'
 import { SensorId } from '../hardware/contract'
-import { dayOn, weekdayOf } from '../lib/days'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
 import { Overrides } from '../server/routers/planner'
@@ -71,12 +71,14 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async () => text({ timezone: (await caller.settings.get()).timezone, presets: LIGHT_PRESETS.map(p => ({ ...p, boostHours: boostHours({ setpoints: p.setpoints }), rating: lightRating(boostHours({ setpoints: p.setpoints })) })) }))
 
   server.registerTool('pump_presets', {
-    description: `Watering starting points by growth stage (seedlings, young plants, mature greens and herbs, large or fruiting), with each one's runs, run-length range, notes and a citation, the preset recommended for this tower with why (days since sowing, or a fruiting crop planted), the preset the pump cycles are now if they match one, today's light window and the unit's timezone. These are community starting points from r/Gardyn owners, not Gardyn's: Gardyn doesn't publish a cadence (Smart Watering adjusts it) and waits a few days to a week after sowing before the second watering (${GARDYN_WATERING_GUIDE}). Check the roots and adjust: dry, brittle roots want more; roots in pooled water before the next cycle want less. Each preset lists the pump schedules to pass to upsert_schedule, one per run; applying a preset means replacing the existing pump cycles (remove_schedule them first), since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
+    description: `Watering starting points by growth stage (seedlings, young plants, mature greens and herbs, large or fruiting), with each one's runs, run-length range, notes and a citation, the preset recommended for this tower with why (days since sowing, or a fruiting crop planted), the preset the pump cycles are now if they match one, today's light window and the unit's timezone. These are community starting points from r/Gardyn owners, not Gardyn's: Gardyn doesn't publish a cadence (Smart Watering adjusts it) and waits a few days to a week after sowing before the second watering (${GARDYN_WATERING_GUIDE}). Check the roots and adjust: dry, brittle roots want more; roots in pooled water before the next cycle want less. Each preset lists the pump schedules to pass to upsert_schedule, one per run; applying a preset means replacing the existing pump cycles (delete_schedule them first), since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
     inputSchema: {},
   }, async () => {
     const [settings, schedules, cycle, pods] = await Promise.all([caller.settings.get(), caller.schedules.list(), caller.grow.current(), caller.grow.pods()])
     const now = (ctx.now ?? (() => new Date()))()
-    const light = lightWindow(schedules.flatMap(s => (s.kind === 'light' && s.enabled && dayOn(s.days, weekdayOf(now)) && 'setpoints' in s.spec ? [s.spec] : [])))
+    // Today on the unit's clock, as the scheduler reads it, not the server process's.
+    const today = localTime(now, settings.timezone)
+    const light = lightWindow(schedules.flatMap(s => (s.kind === 'light' && s.enabled && dayEnabled(s.days, today.weekday) && 'setpoints' in s.spec ? [s.spec] : [])))
     const planted = pods.filter(p => p.status !== 'empty')
     const days = daysSinceSowing(cycle.cycle?.startedAt, planted.map(p => p.plantedAt), now)
     return text({

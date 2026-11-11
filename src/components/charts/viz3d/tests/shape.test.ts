@@ -158,17 +158,26 @@ describe('lightData', () => {
 })
 
 describe('podsData', () => {
-  it('splits pods into towers top to bottom, empty and unmeasured as null, cover clamped', () => {
-    const pods = Array.from({ length: 30 }, (_, i) => ({ slot: 30 - i, empty: (30 - i) % 7 === 0, cover: (30 - i) === 5 ? null : (30 - i) === 6 ? 1.4 : 0.1 }))
-    const d = podsData(pods, 3)
+  it('puts each pod in its tower column as the tower does: slots across the columns, then down', () => {
+    const pods = Array.from({ length: 30 }, (_, i) => ({ slot: 30 - i, empty: (30 - i) === 7, cover: (30 - i) === 5 ? null : (30 - i) === 6 ? 1.4 : (30 - i) / 100 }))
+    const d = podsData(pods)
     expect(d.towers.map(t => t.label)).toEqual(['Tower A', 'Tower B', 'Tower C'])
     expect(d.towers.map(t => t.pods.length)).toEqual([10, 10, 10])
-    expect(d.towers[0]?.pods[4]).toBeNull()
-    expect(d.towers[0]?.pods[5]).toBe(1)
-    expect(d.towers[0]?.pods[6]).toBeNull()
-    expect(d.towers[1]?.pods[0]).toBe(0.1)
-    expect(podsData([], 3).towers).toEqual([])
-    expect(podsData([{ slot: 1, empty: false, cover: 0.2 }], 0).towers).toHaveLength(1)
+    // Column A is slots 1, 4, 7, …, 28, top to bottom.
+    expect(d.towers[0]?.pods.slice(0, 4)).toEqual([0.01, 0.04, null, 0.1])
+    expect(d.towers[1]?.pods[0]).toBe(0.02)
+    expect(d.towers[1]?.pods[1]).toBeNull()
+    expect(d.towers[2]?.pods[1]).toBe(1)
+    expect(d.towers[2]?.pods[9]).toBe(0.3)
+  })
+
+  it('makes a Studio\'s 16 pods two columns of 8, and holes for missing slots', () => {
+    const studio = podsData(Array.from({ length: 16 }, (_, i) => ({ slot: i + 1, empty: false, cover: 0.5 })))
+    expect(studio.towers.map(t => [t.label, t.pods.length])).toEqual([['Tower A', 8], ['Tower B', 8]])
+    expect(podsData([]).towers).toEqual([])
+    // Slot 9 of 9 sits in column A's fifth row; the slots not listed are empty.
+    const gap = podsData([{ slot: 1, empty: false, cover: 0.2 }, { slot: 9, empty: false, cover: 0.3 }])
+    expect(gap.towers.map(t => t.pods)).toEqual([[0.2, null, null, null, 0.3], [null, null, null, null]])
   })
 })
 

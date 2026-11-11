@@ -77,7 +77,10 @@ describe('recommending a preset', () => {
   })
 
   it('picks by stage, and fruiting whenever a fruiting crop is planted, saying why', () => {
-    expect(recommendedPreset(0, ['herb'])).toEqual({ id: 'seedlings', why: 'day 0 since sowing' })
+    // The first days are Gardyn's soak: Seedlings, marked as nothing new to run yet.
+    expect(recommendedPreset(0, ['herb'])).toEqual({ id: 'seedlings', why: 'day 0 since sowing, the soak: Gardyn waits a few days to a week after sowing before the second watering.', soak: true })
+    expect(recommendedPreset(2, [])?.soak).toBe(true)
+    expect(recommendedPreset(3, [])).toEqual({ id: 'seedlings', why: 'day 3 since sowing' })
     expect(recommendedPreset(7, [])?.id).toBe('seedlings')
     expect(recommendedPreset(8, [])?.id).toBe('young')
     expect(recommendedPreset(21, [])?.id).toBe('young')

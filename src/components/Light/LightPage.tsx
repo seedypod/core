@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp, Clock, Hand, Plus } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Badge, Button, Card, GhostIcon } from '@/src/components/ds/core'
 import { Slider, Toggle } from '@/src/components/ds/forms'
@@ -22,7 +22,7 @@ const RATING_TONE: Record<ReturnType<typeof lightRating>, string> = { 'low': 'bg
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 export function LightPage() {
-  const { light: l, level, requested, lightOn, preview, commit, power } = useLightControl()
+  const { light: l, query: lightQuery, level, requested, lightOn, preview, commit, power } = useLightControl()
   const schedules = trpc.schedules.list.useQuery()
   const utils = trpc.useUtils()
   const owner = trpc.light.owner.useQuery(undefined, { refetchInterval: 15_000 })
@@ -34,7 +34,7 @@ export function LightPage() {
   const [adding, setAdding] = useState(false)
   const settings = trpc.settings.get.useQuery()
   const timezone = settings.data?.timezone
-  const curves = (schedules.data ?? []).flatMap(s => asCurve(s) ?? [])
+  const curves = useMemo(() => (schedules.data ?? []).flatMap(s => asCurve(s) ?? []), [schedules.data])
   const now = new Date()
   const minutesNow = now.getHours() * 60 + now.getMinutes()
   const running = runningToday(curves, weekdayOf(now))
@@ -42,7 +42,7 @@ export function LightPage() {
   // With nothing picked, the first curve running today is the open one.
   const open = openId ?? running[0]?.id ?? null
   const nowAt = minutesNow / 15
-  const queries = [schedules, { data: l }]
+  const queries = [schedules, lightQuery]
   const status = vizStatus(queries, today === null)
   const scene = status === 'ready' && today
     ? lightData({ planned: today, nowMin: minutesNow + now.getSeconds() / 60, level: l?.on ? l.level : 0, hold: o?.source === 'manual' && o.manualUntil && l ? holdWindow(l.since, o.manualUntil, now) : null })
@@ -50,7 +50,12 @@ export function LightPage() {
 
   const following = running.length === 1 ? `Following ${running[0]?.name}` : running.length > 1 ? `Following ${running.length} curves` : 'No curve today'
   const holding = o?.source === 'manual' && o.manualUntil ? `held by hand until ${clock(o.manualUntil)}` : o?.source === 'autopilot' ? 'Autopilot is in charge' : null
-  const boostH = running.length ? boostHoursToday(running, BOOST_LEVEL) : null
+  // A day's minutes, once per day's curves, not on every slider move.
+  const weekday = weekdayOf(now)
+  const boostH = useMemo(() => {
+    const today = runningToday(curves, weekday)
+    return today.length ? boostHoursToday(today, BOOST_LEVEL) : null
+  }, [curves, weekday])
   const rating = boostH === null ? null : lightRating(boostH)
 
   return (
@@ -83,7 +88,7 @@ export function LightPage() {
                 {schedules.data === undefined ? <LoadingLine /> : boostH === null || rating === null ? 'Nothing scheduled today' : `${boostH} h at full today · ${rating.charAt(0).toUpperCase()}${rating.slice(1)}`}
               </span>
             </div>
-            <ChartNote status={status} stale={staleSince(queries)} onRetry={() => void schedules.refetch()} />
+            <ChartNote status={status} stale={staleSince(queries)} onRetry={() => queries.forEach(q => void q.refetch())} />
           </div>
           <Chart3D
             kind="light"
@@ -220,7 +225,10 @@ function LightStrip({ on, known, owner: o, running, curves, now, level, resuming
   onCommit: (level: number) => void
 }) {
   const minute = now.getHours() * 60 + now.getMinutes()
-  const tomorrow = new Date(now.getTime() + 86_400_000)
+  const weekday = weekdayOf(now)
+  // Scanning the day's minutes runs once per minute and set of curves, not on every render (a drag renders many).
+  const dims = useMemo(() => nextDim(runningToday(curves, weekday), minute), [curves, weekday, minute])
+  const next = useMemo(() => nextOn(runningToday(curves, weekday), runningToday(curves, (weekday + 1) % 7), minute), [curves, weekday, minute])
   const held = o?.source === 'manual' && o.manualUntil
   const following = running.length === 1 ? running[0]?.name : running.length > 1 ? `${running.length} curves` : null
   let title = known ? (on ? 'Light on' : 'Light off') : 'Light'
@@ -238,11 +246,9 @@ function LightStrip({ on, known, owner: o, running, curves, now, level, resuming
     sub = <span className="truncate">Autopilot is setting the light</span>
   }
   else if (on) {
-    const dims = nextDim(running, minute)
     sub = <span className="truncate">{following ? [`following ${following}`, dims !== null ? `dims at ${fmtClock(dims)}` : null].filter(Boolean).join(' · ') : 'no curve today'}</span>
   }
   else if (known) {
-    const next = nextOn(running, runningToday(curves, weekdayOf(tomorrow)), minute)
     sub = <span className="truncate">{next ? `Next on ${next.tomorrow ? 'tomorrow ' : ''}${fmtClock(next.minute)} (${next.name})` : 'no curve to turn it on'}</span>
   }
   return (

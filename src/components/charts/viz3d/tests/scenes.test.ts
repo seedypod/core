@@ -254,6 +254,54 @@ describe.each(CASES)('$name chart', ({ make, aspect, data }) => {
   })
 })
 
+describe('scenes sized by their data', () => {
+  const visibleSprites = () => {
+    const { scene } = sceneOf()
+    scene.updateMatrixWorld(true)
+    let n = 0
+    scene.traverse((o) => {
+      let on = true
+      for (let p: THREE.Object3D | null = o; p; p = p.parent) on &&= p.visible
+      if (o instanceof THREE.Sprite && on) n++
+    })
+    return n
+  }
+
+  it('draws a Studio as two columns of 8, and back to three for a Home', () => {
+    const el = sized(600, 2.4)
+    const viz = createPodsViz(el, env)
+    viz.setData({ towers: [{ label: 'Tower A', pods: Array(8).fill(0.4) }, { label: 'Tower B', pods: Array(8).fill(null) }] })
+    advance(16)
+    advance(700, 3)
+    // Two tower labels, no third.
+    expect(visibleSprites()).toBe(2)
+    const { scene } = sceneOf()
+    const spheres = () => scene.getObjectsByProperty('type', 'Mesh').filter(m => (m as THREE.Mesh).geometry instanceof THREE.SphereGeometry && m.visible && m.parent?.visible)
+    expect(spheres()).toHaveLength(16)
+    viz.setData(PODS)
+    advance(700, 3)
+    expect(visibleSprites()).toBe(3)
+    expect(spheres()).toHaveLength(30)
+    viz.dispose()
+  })
+
+  it('fits eleven sensor rows in the frame, and hides the readings of rows a shorter list drops', () => {
+    const el = sized(600, 2.5)
+    const viz = createSensorsViz(el, env)
+    const eleven = { ...SENSORS, series: [...SENSORS.series, ...SENSORS.series.slice(0, 3).map((r, i) => ({ ...r, key: `x${i}`, label: ['pH', 'EC', 'Water temperature'][i] as string }))] }
+    viz.setData(eleven)
+    advance(16)
+    advance(700, 3)
+    const m = measure(600, 240)
+    expect(Math.max(-m.lo.x, m.hi.x, -m.lo.y, m.hi.y)).toBeLessThanOrEqual(1)
+    viz.setData({ ...SENSORS, series: SENSORS.series.slice(0, 3) })
+    advance(700, 3)
+    // Three names, three readings and three ticks at most; nothing left over from the eleven.
+    expect(visibleSprites()).toBeLessThanOrEqual(9)
+    viz.dispose()
+  })
+})
+
 describe('the shared base', () => {
   it('stops rendering off screen and resumes, done loading, when scrolled in', () => {
     let seen: (entries: Array<{ isIntersecting: boolean }>) => void = () => {}

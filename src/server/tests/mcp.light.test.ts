@@ -6,8 +6,10 @@ import { createMcpServer } from '../../mcp/server'
 import { MemoryStore } from '../../store/memory'
 import { createCore } from '../bootstrap'
 
-async function mcp() {
-  const core = createCore({ hal: new SimHal({ tickMs: 0 }), store: new MemoryStore(30), version: 'test' })
+async function mcp(o: { now?: () => Date, timezone?: string } = {}) {
+  const store = new MemoryStore(30)
+  if (o.timezone) store.settings.update({ timezone: o.timezone })
+  const core = createCore({ hal: new SimHal({ tickMs: 0 }), store, version: 'test', now: o.now })
   const [a, b] = InMemoryTransport.createLinkedPair()
   await createMcpServer(core.ctx).connect(a)
   const client = new Client({ name: 'test', version: '0' })
@@ -58,9 +60,20 @@ describe('pump presets over MCP', () => {
     const listed = await call<{ schedules: Array<{ id: string, name: string }> }>('list_schedules')
     expect(listed.schedules.map(s => s.id)).toEqual(expect.arrayContaining(['water-mature-0800', 'water-mature-1400', 'water-mature-2000']))
     expect((await call<{ applied: string | null }>('pump_presets')).applied).toBe('mature')
-    // A cycle started today: seedlings, and why.
+    // A cycle started today: the soak, under Seedlings.
     await call('grow_cycle', { action: 'start' })
-    expect((await call<{ recommended: { id: string, why: string } | null }>('pump_presets')).recommended).toEqual({ id: 'seedlings', why: 'day 0 since sowing' })
+    expect((await call<{ recommended: { id: string, why: string, soak?: boolean } | null }>('pump_presets')).recommended).toMatchObject({ id: 'seedlings', soak: true })
+    await client.close()
+  })
+
+  it('reads today on the unit\'s clock, as the scheduler does, not the server\'s', async () => {
+    // 12:00 UTC on Sunday 15 Nov is already Monday 02:00 on Kiritimati (UTC+14); a curve that runs only on Mondays is today's there.
+    const { client, call } = await mcp({ now: () => new Date('2026-11-15T12:00:00Z'), timezone: 'Pacific/Kiritimati' })
+    await call('upsert_schedule', { id: 'mon', kind: 'light', name: 'Mondays', days: 1, spec: { setpoints: [{ minute: 0, level: 0 }, { minute: 600, level: 100 }, { minute: 1200, level: 0 }] } })
+    const got = await call<{ timezone: string, light: { on: number, off: number } | null }>('pump_presets')
+    expect(got.timezone).toBe('Pacific/Kiritimati')
+    // Lit from minute 3 (levels round to whole percent) to 19:58.
+    expect(got.light).toEqual({ on: 3, off: 1198 })
     await client.close()
   })
 })

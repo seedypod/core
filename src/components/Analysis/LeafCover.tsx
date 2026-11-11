@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils'
 import { Chart3D, ChartNote, LoadingLine, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { podsData, type PodsData } from '@/src/components/charts/viz3d/shape'
-import { towerShape } from '@/src/components/Grow/towerLayout'
 import { fmtStamp } from '@/src/lib/timeAgo'
 import { trpc } from '@/src/utils/trpc'
 
@@ -39,7 +38,7 @@ export function LeafCover({ capturedAt }: { capturedAt: string | null }) {
   const rows = all.map(p => ({ slot: p.slot, empty: p.status === 'empty', cover: green.get(p.slot) ?? null }))
   const measured = rows.filter(r => !r.empty && r.cover !== null).length
   const status = vizStatus(queries, all.length === 0)
-  const scene = all.length ? podsData(rows, towerShape(all.length).columns) : null
+  const scene = all.length ? podsData(rows) : null
   return (
     <section aria-label="Leaf cover per pod" className="flex min-w-0 flex-col gap-4 rounded-[14px] border border-line bg-surface p-4 sm:p-5">
       <div className="flex flex-wrap items-baseline gap-3">

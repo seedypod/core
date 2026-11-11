@@ -101,14 +101,20 @@ export function plantCategories(plants: ReadonlyArray<string | null>): Category[
   return plants.flatMap(p => (p ? findPlant(p)?.category ?? [] : []))
 }
 
+/** Days 0 to this after sowing are Gardyn's soak: no second watering yet. */
+export const SOAK_DAYS = 2
+export const SOAK_NOTE = 'Gardyn waits a few days to a week after sowing before the second watering.'
+
 /**
  * The preset for this tower and why: fruiting if any planted plant is a
  * fruiting crop, else by days since sowing (0–7 seedlings, 8–21 young, 22+
- * mature); null with no sowing date.
+ * mature); null with no sowing date. In the soak (days 0–2) it's Seedlings
+ * with `soak` set: nothing new to run yet.
  */
-export function recommendedPreset(days: number | null, categories: readonly Category[]): { id: PumpPresetId, why: string } | null {
+export function recommendedPreset(days: number | null, categories: readonly Category[]): { id: PumpPresetId, why: string, soak?: boolean } | null {
   if (categories.includes('fruiting')) return { id: 'fruiting', why: 'a fruiting crop is planted' }
   if (days === null) return null
+  if (days <= SOAK_DAYS) return { id: 'seedlings', why: `day ${days} since sowing, the soak: ${SOAK_NOTE}`, soak: true }
   return { id: days <= 7 ? 'seedlings' : days <= 21 ? 'young' : 'mature', why: `day ${days} since sowing` }
 }
 

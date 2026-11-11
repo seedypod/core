@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowRight } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { describeAlert } from '@/src/components/Alerts/AlertsPage'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
@@ -31,7 +31,7 @@ export function useToday(now: Date) {
   const previews = trpc.useQueries(t => curves.map(c => t.schedules.previewCurve(c.spec)))
   const curve = mergeCurves(previews.map(p => p.data).filter(d => d !== undefined))
   const setpoints = curves.flatMap(c => c.spec.setpoints)
-  return { curves, cycles, curve, setpoints, jobs: curves.length + cycles.length, schedules }
+  return { curves, cycles, curve, setpoints, jobs: curves.length + cycles.length, schedules, previews }
 }
 
 const TONE: Record<LaneEvent['tone'], string> = { muted: 'bg-fg-3', light: 'bg-light', down: 'bg-pod-attention' }
@@ -90,21 +90,22 @@ export function TodayTimeline() {
     ...(alerts.data ?? []).filter(a => fromToday(a.raisedAt)).map(a => ({ minute: minuteOf(a.raisedAt), label: short(describeAlert(a).title), tone: a.kind.startsWith('reminder_') ? 'muted' as const : 'down' as const })),
   ]
 
-  const laneRef = useRef<HTMLDivElement>(null)
+  // A callback ref: the flat lanes can mount after the first render (the 3D chart losing its context), and are measured then.
+  const [lane, setLane] = useState<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(800)
   useEffect(() => {
-    const el = laneRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth || 800))
-    ro.observe(el)
+    if (!lane || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setWidth(lane.clientWidth || 800))
+    ro.observe(lane)
     return () => ro.disconnect()
-  }, [])
+  }, [lane])
   const placed = layoutEvents(events, width)
   const axis = [[0, '00:00'], [25, '06:00'], [50, '12:00'], [75, '18:00']] as const
   // An hour label gives way to "now" when they'd touch.
   const clear = (pct: number) => (Math.abs(pct - nowPct) / 100) * width > 40
 
-  const queries = [today.schedules, light, tank, air]
+  // The light lane is drawn from the curves' previews, so the chart waits for those too.
+  const queries = [today.schedules, light, tank, air, ...today.previews]
   const status = vizStatus(queries, false)
   const loading = status === 'loading'
   const scene = status === 'ready'
@@ -129,7 +130,7 @@ export function TodayTimeline() {
 
       <div className="grid grid-cols-[110px_minmax(0,1fr)] border-t border-line" role="group" aria-label="Events">
         <div className="py-3 text-sm">Events</div>
-        <div ref={laneRef} className="relative h-16">
+        <div ref={setLane} className="relative h-16">
           <NowLine pct={nowPct} />
           {placed.map(e => (
             <div

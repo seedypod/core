@@ -306,6 +306,20 @@ describe('today timeline', () => {
     expect(within(today).queryByText('nothing else scheduled today')).toBeNull()
   })
 
+  it('keeps loading until the light curve\'s preview has answered too', () => {
+    day()
+    data.set('telemetry.history:air_temp', [])
+    data.delete('schedules.previewCurve')
+    page()
+    const today = () => within(main()).getByRole('region', { name: 'Today' })
+    expect(within(today()).getByText('loading …')).toBeTruthy()
+    cleanup()
+    day()
+    data.set('telemetry.history:air_temp', [])
+    page()
+    expect(within(today()).queryByText('loading …')).toBeNull()
+  })
+
   it('says when nothing else is scheduled, and draws nothing without data', () => {
     data.set('schedules.list', [])
     data.set('light.get', { on: false, level: 0, since: at(6) })

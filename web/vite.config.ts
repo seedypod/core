@@ -25,8 +25,14 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // API_TARGET=http://seedypod.local points the UI at a real unit instead of a local core.
-      '/api': { target: process.env.API_TARGET ?? 'http://127.0.0.1:3000', changeOrigin: !!process.env.API_TARGET },
+      // API_TARGET=http://seedypod.local:3000 points the UI at a real unit instead of a local core. A unit with an
+      // API key wants it on every request: API_KEY (read here, in Node; never VITE_-prefixed, so never in the bundle)
+      // goes on as X-API-Key.
+      '/api': {
+        target: process.env.API_TARGET || 'http://127.0.0.1:3000',
+        changeOrigin: !!process.env.API_TARGET,
+        ...(process.env.API_KEY ? { headers: { 'x-api-key': process.env.API_KEY } } : {}),
+      },
     },
   },
 })
