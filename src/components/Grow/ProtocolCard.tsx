@@ -181,7 +181,8 @@ export function ProtocolCard() {
         </div>
       )}
 
-      <div className="flex flex-col gap-2 px-5 py-4">
+      {/* Sized by the card, never by its cut-short labels, which would otherwise widen the page once they add up. */}
+      <div className="flex flex-col gap-2 px-5 py-4 [contain:inline-size]">
         {/* One row from the sowing day on a wide screen; a column of stages on a phone, so no name is cut to nothing. */}
         <div className="flex flex-col gap-1 min-[640px]:h-16 min-[640px]:flex-row" role="group" aria-label="Stages">
           {r.stages.map((s, i) => {
