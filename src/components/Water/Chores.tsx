@@ -1,6 +1,7 @@
 import { Check } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
 import { cn } from '@/lib/utils'
+import { useChoreActions, useChoreAlerts } from '@/src/components/Care/ChoreItem'
 import { Button, Card, InlineError } from '@/src/components/ds/core'
 import type { AppRouter } from '@/src/server/routers/app'
 import { trpc } from '@/src/utils/trpc'
@@ -22,17 +23,12 @@ export const byUrgency = (rows: readonly ChoreRow[]): ChoreRow[] => [...rows].so
 /**
  * Chores (ADR-0029), each from a reading the unit trusts or a stated calendar
  * guess, with the knowledge notes behind its numbers. Done logs it in the tank
- * log, which is what the chore counts from.
+ * log, which is what the chore counts from, as Needs you does (useChoreActions).
  */
 export function Chores() {
-  const utils = trpc.useUtils()
   const list = trpc.care.chores.useQuery(undefined, { refetchInterval: 5 * 60_000 })
-  const log = trpc.tank.logAction.useMutation({
-    onSuccess: () => {
-      void utils.tank.invalidate()
-      void utils.care.invalidate()
-    },
-  })
+  const actions = useChoreActions()
+  const { ready, alertOf } = useChoreAlerts()
   const rows = byUrgency(list.data ?? [])
   return (
     <div className="flex flex-col gap-2.5" id="chores">
@@ -57,12 +53,12 @@ export function Chores() {
               )}
             </div>
             {(c.state === 'due' || c.state === 'soon') && (
-              <Button icon={Check} className="px-3 py-[7px]" disabled={log.isPending} onClick={() => log.mutate({ kind: c.doneKind, note: '' })}>Done</Button>
+              <Button icon={Check} className="px-3 py-[7px]" disabled={!ready || actions.busy(c.id)} onClick={() => actions.done(c, alertOf(c))}>Done</Button>
             )}
           </div>
         ))}
       </Card>
-      {log.error && <InlineError>{log.error.message}</InlineError>}
+      {actions.error && <InlineError>{actions.error.message}</InlineError>}
     </div>
   )
 }

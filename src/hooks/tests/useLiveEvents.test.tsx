@@ -111,6 +111,18 @@ describe('useLiveEvents', () => {
     expect(invalidated.sort()).toEqual(['devices', 'light', 'sensors'])
   })
 
+  it('hands each event to the listener as it arrives, the latest listener', () => {
+    const first = vi.fn()
+    const second = vi.fn()
+    const { rerender } = renderHook(({ on }) => useLiveEvents(on), { initialProps: { on: first } })
+    send(mutation('tank'))
+    expect(first).toHaveBeenCalledWith(mutation('tank'))
+    rerender({ on: second })
+    send(mutation('pods'))
+    expect(second).toHaveBeenCalledWith(mutation('pods'))
+    expect(first).toHaveBeenCalledOnce()
+  })
+
   it('starts a new burst after a flush', () => {
     renderHook(() => useLiveEvents())
     send(mutation('actuators.light'))

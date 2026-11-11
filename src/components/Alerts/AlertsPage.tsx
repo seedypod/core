@@ -81,6 +81,9 @@ const VIEW: Record<string, { to: string, label: string }> = {
 }
 const PODS = { upper: '1–15', lower: '16–30' } as const
 
+/** The page that shows an alert's part of the tower, and the link's words. */
+export const alertView = (kind: string): { to: string, label: string } | undefined => VIEW[kind]
+
 export const categoryOf = (kind: string): 'hardware' | 'reminder' | 'service' => (HARDWARE.has(kind) ? 'hardware' : kind.startsWith('reminder_') || kind.startsWith('chore_') ? 'reminder' : 'service')
 
 /** Title and detail for an alert; a camera alert names the camera and the pods it covers. */

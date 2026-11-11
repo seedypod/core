@@ -17,12 +17,12 @@ export function careLine(chores: readonly { title: string, state: string }[], is
 
 const TONE = { due: 'bg-pod-attention', soon: 'bg-pod-ready', ok: 'bg-pod-ok' } as const
 
-/** Home's line into Care (ADR-0029): what's due now and any setup issue, linking to the context. */
-export function CareSummary({ className }: { className?: string }) {
+/** Home's line into Care (ADR-0029): what's due now and any setup issue, linking to the context. `chores`, a list already narrowed (skipped ones left out). */
+export function CareSummary({ className, chores: given }: { className?: string, chores?: readonly { title: string, state: string }[] }) {
   const chores = trpc.care.chores.useQuery(undefined, { refetchInterval: 5 * 60_000 })
   const setup = trpc.care.setup.useQuery(undefined, { refetchInterval: 5 * 60_000 })
   if (!chores.data || !setup.data) return null
-  const { text, tone } = careLine(chores.data, setup.data.issues.length)
+  const { text, tone } = careLine(given ?? chores.data, setup.data.issues.length)
   return (
     <Link to="/care" data-testid="care-summary" className={cn('flex items-center gap-2 text-[13px] text-fg-2 hover:text-fg', className)}>
       <ListChecks size={15} strokeWidth={1.75} className="shrink-0" />

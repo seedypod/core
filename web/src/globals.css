@@ -646,6 +646,9 @@ html.dark {
   .lp-toast-out {
     animation-name: sp-toast-fade;
   }
+  .lp-toast-countdown {
+    display: none;
+  }
 }
 
 /* ─── Minimal controls used by the Phase 0 dashboard ─────────────────── */

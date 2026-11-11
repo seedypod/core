@@ -20,6 +20,7 @@ const TOUCHES = new Map<string, readonly Area[]>([
   ['actuators', ['light', 'pump']],
   ['actuators.light', ['light']],
   ['actuators.pump', ['pump']],
+  ['actuators.pump.on', ['pump']],
   // Acknowledging a fault re-enables its actuator.
   ['alerts', ['alerts', 'light', 'pump', 'system']],
   ['analyses', ['vision', 'grow', 'datasets']],
@@ -66,9 +67,14 @@ export const BURST_MS = 250
  * the `sensors.latest` cache and invalidates the queries any other event
  * touches, so the UI is live without polling. A reading for a sensor the cache
  * doesn't know, and a reconnect (it may have missed readings), refetch instead.
+ * `onEvent` sees every event as it arrives, for the snackbars.
  */
-export function useLiveEvents() {
+export function useLiveEvents(onEvent?: (e: CoreEvent) => void) {
   const utils = trpc.useUtils()
+  const listener = useRef(onEvent)
+  useEffect(() => {
+    listener.current = onEvent
+  })
   const pending = useRef(new Set<Area | 'all'>())
   const readings = useRef(new Map<SensorId, Reading>())
   const connected = useRef(false)
@@ -108,6 +114,7 @@ export function useLiveEvents() {
         readings.current.set(e.event.id, e.event.reading)
       }
       schedule()
+      listener.current?.(e)
     },
   })
   // A first attempt that fails can miss readings after the initial fetch, so its retry counts as a reconnect.
