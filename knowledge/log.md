@@ -1,5 +1,9 @@
 # Knowledge update log
 
+## 2026-11-11
+
+- **Creation**: [Watering schedules](watering/schedules.md), pump-cycle starting points by growth stage from Gardyn's first-watering guidance and r/Gardyn owners, behind the Water page's presets and MCP's `pump_presets`.
+
 ## 2026-11-09
 
 - **Creation**: [Gardyn feeding guidance](nutrients/gardyn-feeding-guidance.md) from Gardyn's help centre and blog, and [community nutrients](nutrients/community-nutrients.md) from the r/Gardyn archive and product labels.

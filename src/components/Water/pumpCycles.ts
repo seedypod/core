@@ -94,3 +94,23 @@ export function tankTrend(xs: number[], values: number[]): { topUps: number[], d
   const days = xs.length > 1 ? ((xs.at(-1) as number) - (xs[0] as number)) / 86_400_000 : 0
   return { topUps, dropPerDay: days > 0 ? Math.round(drop / days) : null }
 }
+
+/** The tank's level at a moment: the last sample at or before it, else the first after; null with no samples. */
+export function levelAt(points: ReadonlyArray<{ ts: string, value: number }>, iso: string): number | null {
+  const t = Date.parse(iso)
+  let before: number | null = null
+  let after: number | null = null
+  for (const p of points) {
+    const pt = Date.parse(p.ts)
+    if (pt <= t) before = p.value
+    else if (after === null) after = p.value
+  }
+  return before ?? after
+}
+
+/** A scheduled cycle that fired within two minutes of a run starting started it; its name, or null for a run started by hand. */
+export function runSource(runs: ReadonlyArray<{ scheduleId: string, firedAt: string }>, cycles: ReadonlyArray<Pick<PumpCycle, 'id' | 'name'>>, since: string): string | null {
+  const t = Date.parse(since)
+  const run = runs.find(r => Math.abs(Date.parse(r.firedAt) - t) <= 120_000 && cycles.some(c => c.id === r.scheduleId))
+  return run ? cycles.find(c => c.id === run.scheduleId)?.name ?? null : null
+}

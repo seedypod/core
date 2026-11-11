@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtSpan, fmtWhen, nextFire, nextRun, tankTrend, type PumpCycle } from '../pumpCycles'
+import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtSpan, fmtWhen, levelAt, nextFire, nextRun, runSource, tankTrend, type PumpCycle } from '../pumpCycles'
 
 const cycle = (id: string, minute: number, days = 127, enabled = true): PumpCycle => ({ id, kind: 'pump', name: id, enabled, days, spec: { minute, durationS: 300 } })
 // Sunday 1 Nov 2026, 12:00 local.
@@ -66,5 +66,24 @@ describe('tank', () => {
   it('reads only pump schedules as cycles', () => {
     expect(asCycle({ id: 'p', kind: 'pump', name: 'P', enabled: true, days: 127, spec: { minute: 0, durationS: 60 } })?.spec.durationS).toBe(60)
     expect(asCycle({ id: 'l', kind: 'light', name: 'L', enabled: true, days: 127, spec: { setpoints: [] } })).toBeNull()
+  })
+})
+
+describe('levelAt', () => {
+  const pts = [{ ts: '2026-11-01T10:00:00Z', value: 80 }, { ts: '2026-11-01T11:00:00Z', value: 70 }]
+  it('takes the last sample at or before the moment, else the first after, else none', () => {
+    expect(levelAt(pts, '2026-11-01T10:30:00Z')).toBe(80)
+    expect(levelAt(pts, '2026-11-01T11:00:00Z')).toBe(70)
+    expect(levelAt(pts, '2026-11-01T09:00:00Z')).toBe(80)
+    expect(levelAt([], '2026-11-01T09:00:00Z')).toBeNull()
+  })
+})
+
+describe('runSource', () => {
+  const cycles = [{ id: 'morning', name: 'Morning watering' }]
+  it('names the cycle that fired within two minutes of the run, else none', () => {
+    expect(runSource([{ scheduleId: 'morning', firedAt: '2026-11-01T08:00:00Z' }], cycles, '2026-11-01T08:01:00Z')).toBe('Morning watering')
+    expect(runSource([{ scheduleId: 'morning', firedAt: '2026-11-01T08:00:00Z' }], cycles, '2026-11-01T08:05:00Z')).toBeNull()
+    expect(runSource([{ scheduleId: 'light', firedAt: '2026-11-01T08:00:00Z' }], cycles, '2026-11-01T08:00:00Z')).toBeNull()
   })
 })

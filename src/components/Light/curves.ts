@@ -48,3 +48,39 @@ export function todayLevels(curves: LightCurve[]): number[] | null {
 export function asCurve(s: { id: string, kind: string, name: string, enabled: boolean, days: number, spec: object }): LightCurve | null {
   return s.kind === 'light' && 'setpoints' in s.spec ? { id: s.id, kind: 'light', name: s.name, enabled: s.enabled, days: s.days, spec: s.spec as LightCurve['spec'] } : null
 }
+
+/** The highest level of `curves` at a minute of the day, as the scheduler picks; 0 with none. */
+export const mergedAt = (curves: LightCurve[], minute: number) => Math.max(0, ...curves.map(c => levelAt(c.spec, minute)))
+
+/** Hours today the running curves hold the light at Boost, to the half hour. */
+export function boostHoursToday(curves: LightCurve[], boost: number): number {
+  let minutes = 0
+  for (let m = 0; m < 1440; m++) if (mergedAt(curves, m) >= boost) minutes++
+  return Math.round(minutes / 30) / 2
+}
+
+/** When the light next comes on after `nowMin` and which curve brings it: today's curves, then tomorrow's. */
+export function nextOn(today: LightCurve[], tomorrow: LightCurve[], nowMin: number): { minute: number, name: string, tomorrow: boolean } | null {
+  const find = (curves: LightCurve[], from: number) => {
+    for (let m = from; m < 1440; m++) {
+      if (mergedAt(curves, m) > 0 && mergedAt(curves, (m + 1439) % 1440) === 0) {
+        const by = curves.reduce((a, c) => (levelAt(c.spec, m) > levelAt(a.spec, m) ? c : a))
+        return { minute: m, name: by.name }
+      }
+    }
+    return null
+  }
+  const later = today.length ? find(today, Math.floor(nowMin) + 1) : null
+  if (later) return { ...later, tomorrow: false }
+  const first = tomorrow.length ? find(tomorrow, 0) : null
+  return first && { ...first, tomorrow: true }
+}
+
+/** When the running curves next take the light below its level now, or null if they don't today. */
+export function nextDim(curves: LightCurve[], nowMin: number): number | null {
+  const start = Math.floor(nowMin)
+  const level = mergedAt(curves, start)
+  if (level === 0) return null
+  for (let m = start + 1; m < 1440; m++) if (mergedAt(curves, m) < level) return m
+  return null
+}

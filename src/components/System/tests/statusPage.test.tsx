@@ -299,12 +299,39 @@ describe('today timeline', () => {
     expect(within(events).getByText('Backup').previousElementSibling?.className).toContain('bg-fg-3')
   })
 
+  it('says it is loading until the day\'s requests answer', () => {
+    page()
+    const today = within(main()).getByRole('region', { name: 'Today' })
+    expect(within(today).getByText('loading …')).toBeTruthy()
+    expect(within(today).queryByText('nothing else scheduled today')).toBeNull()
+  })
+
+  it('keeps loading until the light curve\'s preview has answered too', () => {
+    day()
+    data.set('telemetry.history:air_temp', [])
+    data.delete('schedules.previewCurve')
+    page()
+    const today = () => within(main()).getByRole('region', { name: 'Today' })
+    expect(within(today()).getByText('loading …')).toBeTruthy()
+    cleanup()
+    day()
+    data.set('telemetry.history:air_temp', [])
+    page()
+    expect(within(today()).queryByText('loading …')).toBeNull()
+  })
+
   it('says when nothing else is scheduled, and draws nothing without data', () => {
+    data.set('schedules.list', [])
+    data.set('light.get', { on: false, level: 0, since: at(6) })
+    data.set('telemetry.history:water_level_pct', [])
+    data.set('telemetry.history:air_temp', [])
     page()
     const today = within(main()).getByRole('region', { name: 'Today' })
     expect(within(today).getByText('nothing else scheduled today')).toBeTruthy()
     expect(within(today).getByRole('link', { name: /0 jobs/ })).toBeTruthy()
-    expect(within(today).getByTestId('light-past').getAttribute('points')).toBe('')
+    // The light is off now and no curve runs: one point at now, on the floor.
+    expect(within(today).getByTestId('light-past').getAttribute('points')).toBe('750,100')
+    expect(within(today).getByTestId('tank-line').getAttribute('points')).toBe('')
   })
 })
 

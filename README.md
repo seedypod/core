@@ -77,6 +77,8 @@ git lfs pull             # in a clone made without LFS
 ```sh
 pnpm install
 pnpm dev                 # core on :3000, web on :5173
+API_TARGET=http://seedypod.local:3000 pnpm dev:web   # the web UI against a real unit
+API_TARGET=http://seedypod.local:3000 API_KEY=… pnpm dev:web   # … one with an API key (sent by the dev proxy, never bundled)
 pnpm test                # Vitest
 pnpm hal:test            # cargo test
 pnpm lint && pnpm tsc

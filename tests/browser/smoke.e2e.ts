@@ -22,17 +22,22 @@ test('light slider and power toggle drive the HAL', async ({ page }) => {
 
 test('pump run is bounded and reported', async ({ page }) => {
   await page.goto('/water')
-  await page.getByRole('button', { name: 'Run pump' }).click()
+  const strip = page.getByTestId('pump-strip')
+  await strip.getByRole('radio', { name: '1 min' }).click()
+  await strip.getByRole('button', { name: 'Run' }).click()
   await expect(page.getByText(/watering at 30%/)).toBeVisible()
-  await expect(page.getByTestId('run-track')).toContainText(/\d+:\d\d left/)
-  await page.getByRole('button', { name: 'Stop' }).click()
-  await expect(page.getByText('pump idle')).toBeVisible()
+  await expect(strip).toHaveAttribute('data-state', 'running')
+  await expect(strip.getByTestId('run-left')).toHaveText(/^\d+:\d\d$/)
+  await strip.getByRole('button', { name: 'Stop' }).click()
+  await expect(page.getByText(/^pump idle/)).toBeVisible()
+  await expect(strip.getByText('Pump idle')).toBeVisible()
 })
 
 test('water: create, toggle, delete a pump cycle', async ({ page }) => {
   await page.goto('/water')
   const main = page.getByRole('main')
-  await main.getByRole('button', { name: 'Add cycle' }).click()
+  // The starting points are always there; Blank opens the editor.
+  await main.getByTestId('pump-preset-blank').click()
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
   await expect(main.getByText('Watering', { exact: true })).toBeVisible()
   const toggle = main.getByRole('switch', { name: 'Enable Watering' })
@@ -40,7 +45,8 @@ test('water: create, toggle, delete a pump cycle', async ({ page }) => {
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await main.getByRole('button', { name: 'Edit Watering' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-  await expect(main.getByText('No pump cycles')).toBeVisible()
+  await expect(main.getByTestId('pump-preset-seedlings')).toBeVisible()
+  await expect(page.getByTestId('pump-strip').getByText('No watering schedule')).toBeVisible()
 })
 
 test('old /schedule links land on Light, where the curves are', async ({ page }) => {
