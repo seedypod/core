@@ -181,7 +181,7 @@ export function protocolState(t: Tower, now: Date): ProtocolState {
   return { protocol, cycle, sownOn, daysSinceSowing: days, day, stage, heldDays, water, applied, waterStage, own, harvestDay, behind }
 }
 
-/** What the runner did on a tick: the watering move, if any, and the needs-you items to raise. */
+/** What the runner did on a tick: the watering move, if any, and the needs-you items it raised. */
 export interface ProtocolRun {
   followed: FollowChange | null
   notices: Array<{ kind: string, detail: string }>
@@ -201,9 +201,14 @@ export function runProtocol(store: Store, now: Date): ProtocolRun {
   const { protocol, cycle, stage, daysSinceSowing: days } = st
   const run: ProtocolRun = { followed: null, notices: [] }
   if (!stage || days === null) return run
+  // A Then's needs-you item is written before Then is marked done, so one that fails to write is tried again next tick.
+  const notify = (kind: string, detail: string) => {
+    store.alerts.raise(kind, detail, now.toISOString())
+    run.notices.push({ kind, detail })
+  }
   if (cycle?.thenKind === 'remind' && !cycle.thenDoneAt && st.harvestDay !== null && days >= st.harvestDay) {
+    notify(HARVEST_ALERT, `First harvest is about now, day ${days} since sowing, by the catalog. Watering stays on ${protocol.name} maintenance; switch to one of your schedules on Grow if you want a change.`)
     store.grow.setProtocol({ thenDoneAt: now.toISOString() })
-    run.notices.push({ kind: HARVEST_ALERT, detail: `First harvest is about now, day ${days} since sowing, by the catalog. Watering stays on ${protocol.name} maintenance; switch to one of your schedules on Grow if you want a change.` })
   }
   // Watering moves only for a tower with something planted, as Follow always did.
   if (!t.settings.followGrowCycle || !t.planted.length) return run
@@ -222,11 +227,11 @@ export function runProtocol(store: Store, now: Date): ProtocolRun {
       run.followed = { from: st.applied.id, to: null, schedule: { id: entry.id, name: entry.name }, days, detail: `Watering switched to ${entry.name}: maintenance began on day ${days}, as you chose. Use ${preset(stage.water).name} from Your schedules on Grow to go back to the protocol.` }
       return run
     }
-    store.grow.setProtocol({ thenDoneAt: now.toISOString() })
     if (entry && st.own?.id !== entry.id) {
       const why = st.own ? `another of your schedules, ${st.own.name}, is on` : st.water === 'none' ? 'there are no pump cycles' : 'the pump cycles were changed by hand'
-      run.notices.push({ kind: THEN_ALERT, detail: `Maintenance began on day ${days}, but watering didn't switch to ${entry.name}: ${why}. Use it from Your schedules on Grow to switch now.` })
+      notify(THEN_ALERT, `Maintenance began on day ${days}, but watering didn't switch to ${entry.name}: ${why}. Use it from Your schedules on Grow to switch now.`)
     }
+    store.grow.setProtocol({ thenDoneAt: now.toISOString() })
   }
   const water = st.waterStage
   if (!water) return run

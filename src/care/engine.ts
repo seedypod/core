@@ -54,10 +54,8 @@ export class CareEngine {
       events.emit({ kind: 'schedule', action: 'changed', id: followed.schedule ? `follow:schedule:${followed.schedule.name}` : `follow:${followed.to}` })
       events.emit({ kind: 'mutation', path: `alerts.${FOLLOW_ALERT}` })
     }
-    for (const n of notices) {
-      store.alerts.raise(n.kind, n.detail, now.toISOString())
-      events.emit({ kind: 'mutation', path: `alerts.${n.kind}` })
-    }
+    // The runner has written its needs-you items already, before marking each Then done.
+    for (const n of notices) events.emit({ kind: 'mutation', path: `alerts.${n.kind}` })
     const setup = setupReport(store, snap)
     const list = chores(store, snap, now)
     const rows = store.alerts.list()

@@ -39,12 +39,14 @@ const oneDay = (days: number) => days > 0 && (days & (days - 1)) === 0
  * so a preset clipped to the light hours (fruiting) is still recognised after
  * the light schedule changes.
  */
-export function followedPreset(cycles: ReadonlyArray<Pick<Schedule, 'id' | 'enabled' | 'days'> & { spec: Pick<PumpSpec, 'durationS'> }>): PumpPreset | null {
+export function followedPreset(cycles: ReadonlyArray<Pick<Schedule, 'id' | 'enabled' | 'days'> & { spec: Pick<PumpSpec, 'durationS' | 'minute'> }>): PumpPreset | null {
   if (!cycles.length) return null
   const preset = PUMP_PRESETS.find(p => cycles.every(c => c.id.startsWith(`water-${p.slug}-`)))
   if (!preset) return null
   const days = (d: number) => (preset.weekly ? oneDay(d) : d === EVERY_DAY)
-  return cycles.every(c => c.enabled && days(c.days) && c.spec.durationS === preset.durationS) ? preset : null
+  // Still at the time its id was written for (`water-young-1600` at 16:00): a run moved by hand is the person's.
+  const atItsTime = (c: typeof cycles[number]) => c.id.endsWith(`-${hhmm(c.spec.minute).replace(':', '')}`)
+  return cycles.every(c => c.enabled && days(c.days) && c.spec.durationS === preset.durationS && atItsTime(c)) ? preset : null
 }
 
 /** Today's light window, from the curves running today, for fitting a preset's runs to it. */

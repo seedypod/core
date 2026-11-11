@@ -241,6 +241,44 @@ describe('grow protocols (ADR-0030)', () => {
     expect(runProtocol(store, day(22)).followed).toMatchObject({ to: 'mature' })
   })
 
+  it('counts a preset cycle moved to another time as changed by hand: a queued switch leaves it and says so', () => {
+    const store = tower({ cycles: 'young' })
+    store.scheduleLibrary.upsert(summer, 't')
+    setProtocolThen(store, day(15), { kind: 'schedule', scheduleId: 'summer' })
+    const late = store.schedules.list().find(s => s.id === 'water-young-1600')
+    if (late?.kind === 'pump') store.schedules.upsert({ ...late, spec: { ...late.spec, minute: 600 } })
+    expect(protocolReport(store, day(21)).water).toBe('edited')
+    const run = runProtocol(store, day(22))
+    expect(run.followed).toBeNull()
+    expect(run.notices).toEqual([{ kind: THEN_ALERT, detail: expect.stringMatching(/the pump cycles were changed by hand/) }])
+    expect(pumps(store)).toEqual(['water-young-0800', 'water-young-1600'])
+  })
+
+  it('writes a Then\'s needs-you item before marking it done, so one that fails to write is tried again', () => {
+    const blocked = tower({ cycles: 'hand' })
+    blocked.scheduleLibrary.upsert(summer, 't')
+    setProtocolThen(blocked, day(15), { kind: 'schedule', scheduleId: 'summer' })
+    const raise = vi.spyOn(blocked.alerts, 'raise').mockImplementationOnce(() => {
+      throw new Error('card full')
+    })
+    expect(() => runProtocol(blocked, day(22))).toThrow('card full')
+    expect(blocked.grow.current()?.thenDoneAt).toBeNull()
+    expect(runProtocol(blocked, day(22)).notices).toEqual([{ kind: THEN_ALERT, detail: expect.any(String) }])
+    expect(blocked.alerts.list().find(a => a.kind === THEN_ALERT)?.active).toBe(true)
+    expect(blocked.grow.current()?.thenDoneAt).toBe(day(22).toISOString())
+    raise.mockRestore()
+    const remind = tower({ cycles: 'mature' })
+    setProtocolThen(remind, day(25), { kind: 'remind' })
+    vi.spyOn(remind.alerts, 'raise').mockImplementationOnce(() => {
+      throw new Error('card full')
+    })
+    expect(() => runProtocol(remind, day(60))).toThrow('card full')
+    expect(remind.grow.current()?.thenDoneAt).toBeNull()
+    expect(runProtocol(remind, day(60)).notices).toEqual([{ kind: HARVEST_ALERT, detail: expect.any(String) }])
+    expect(remind.alerts.list().find(a => a.kind === HARVEST_ALERT)?.active).toBe(true)
+    expect(remind.grow.current()?.thenDoneAt).toBe(day(60).toISOString())
+  })
+
   it('marks a queued switch done only once its cycles are written, so a failed write tries again', () => {
     const store = tower({ cycles: 'young' })
     store.scheduleLibrary.upsert(summer, 't')

@@ -257,6 +257,13 @@ Neither can bring back an earlier stage.
   `edited`, untouched, exactly as `followGrowCycle` treats it today.
 - Then defaults to `stay`: a grow stays in maintenance until someone chooses
   otherwise.
+- Activating a schedule and moving the watering on are several schedule
+  writes, not one transaction: the store has no transaction API. A write that
+  fails part way leaves cycles that are no preset or schedule as written, which
+  read as `edited`, so the runner makes no further change over them, and a
+  queued switch says in Needs you that it couldn't happen. A preset cycle
+  counts as written only at the time its id names (`water-young-1600` at
+  16:00).
 - One new table (`schedule_library`), eight columns on `grow_cycles` and one
   on `device_settings` (migration 0018). Backups carry them (ADR 0021).
 - A new knowledge note, `knowledge/plants/germination.md`, from Gardyn's
