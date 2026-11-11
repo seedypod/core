@@ -100,7 +100,7 @@ describe('dataset export', () => {
     const root = join(untar(new Uint8Array(await res.arrayBuffer())), 'seedypod-kitchen-gardyn-20261001-20261031')
     expect(readdirSync(root).sort()).toEqual(['README.md', 'analyses.jsonl', 'captures.jsonl', 'grow_cycles.json', 'images', 'labels.jsonl', 'manifest.json', 'pods.json', 'regions.json', 'telemetry.jsonl'])
     const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')) as Record<string, unknown>
-    expect(manifest).toMatchObject({ format: { name: 'seedypod-dataset', version: 1 }, unit: { name: 'Kitchen Gardyn' }, core: 'test', primaryAnalyzer: 'green-threshold', counts: { captures: 3, analyses: 60, telemetry: 1, labels: 5 } })
+    expect(manifest).toMatchObject({ format: { name: 'seedypod-dataset', version: 2 }, unit: { name: 'Kitchen Gardyn' }, core: 'test', primaryAnalyzer: 'green-threshold', counts: { captures: 3, analyses: 60, telemetry: 1, labels: 5 } })
     const captures = readFileSync(join(root, 'captures.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l) as { id: string, image: string | null })
     expect(captures.map(c => [c.id, c.image])).toEqual([['upper-1', 'images/upper-1.jpg'], ['demo-svg', null], ['upper-2', 'images/upper-2.jpg']])
     expect(readdirSync(join(root, 'images')).sort()).toEqual(['upper-1.jpg', 'upper-2.jpg'])
@@ -134,6 +134,7 @@ describe('dataset export', () => {
     expect(readme).toContain('labels.jsonl')
     expect(readme).toContain('`daysSinceSowing`')
     expect(readme).toMatch(/`seeded` \(a yCube in, nothing\s+visible yet\)/)
+    expect(readme).toMatch(/map `seeded` to `empty`/)
   })
 
   it('leaves the stills out on request and rejects a bad window', async () => {

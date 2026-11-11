@@ -126,7 +126,8 @@ pod shows. **Analysis → Label pods** is where you give them.
 
 When a pod is labelled, its plant and sowing date go with the label, so a
 season of labels keeps the right species and age after pods are replanted.
-A plant sown after the photo was taken isn't in it, so it isn't recorded.
+Only a sown pod counts: one that is only planned (no sowing date, or still
+empty), or sown after the photo's day, records no plant.
 Changing a label later keeps the plant it was first given.
 
 The counts above the photo show how many pods carry each label, across every
@@ -153,8 +154,9 @@ with or without the photos. Scripts can use
 `GET /api/datasets/export?from=…&to=…&images=0|1` directly. Everything sits
 under one folder, `seedypod-<unit>-<yyyymmdd from>-<yyyymmdd to>/`:
 
-- `manifest.json`: window, unit, core version, analysers, and row counts
-  (`counts.labels` among them).
+- `manifest.json`: format (`seedypod-dataset` version 2, since `labels.jsonl`
+  gained `seeded` and the plant fields), window, unit, core version,
+  analysers, and row counts (`counts.labels` among them).
 - `captures.jsonl`, `analyses.jsonl` and `telemetry.jsonl`: one record per line.
 - `labels.jsonl`: one labelled pod per line (see below).
 - `regions.json`: every pod's box per camera, as fractions of the frame.
@@ -210,8 +212,9 @@ of photos labelled before, which is right as long as the camera hasn't moved.
 and 64 channels, a global average pool and one dense layer, about 24,000
 weights) that reads each pod's crop shrunk to 64×64 and names its state:
 `empty`, `sprouted`, `growing`, `ready` or `unhealthy`. It has no `seeded`
-class: that label came after the model, so the next training run either adds
-it or maps it onto one of these. Per pod it stores two
+class: that label came after the model, so training maps `seeded` to `empty`
+(nothing visible yet). A six-class model needs the loader
+(`parsePodStateModel`) extended first, since it only accepts these five. Per pod it stores two
 results: `pod_state`, the index of the most likely class (its `detail` names
 it and holds every class's probability), and `pod_state_confidence`, that
 class's probability. The Analysis screen shows the state in a column beside the

@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { daysSinceSowing } from '../../scheduler/pumpPlan'
+import { localTime } from '../../scheduler/time'
 import { POD_LABELS, type PodLabel, type PodLabelCursor } from '../../store/types'
 import { podTrends } from '../../vision/analyze'
 import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
@@ -173,9 +174,12 @@ export const visionRouter = router({
       if (cameraOf(input.slot) !== capture.camera) throw new TRPCError({ code: 'BAD_REQUEST', message: `pod ${input.slot} is not on the ${capture.camera} camera` })
       if (input.label === null) ctx.store.podLabels.remove(input.captureId, input.slot)
       else {
-        // The pod's plant goes with the label, unless it was sown after the photo and so isn't in it.
+        // The pod's plant goes with the label when it was sown by the photo's local day: a pod only
+        // planned (no sowing date, or still empty) or sown after the photo isn't in it. Sowing dates
+        // are days, so a pod sown the same day as the photo counts as in it, even if it went in later.
         const pod = ctx.store.pods.list().find(p => p.slot === input.slot)
-        const shown = pod?.plant && !(pod.plantedAt && Date.parse(pod.plantedAt) > Date.parse(capture.ts)) ? pod : null
+        const day = localTime(new Date(capture.ts), ctx.store.settings.get().timezone).date
+        const shown = pod?.plant && pod.plantedAt && pod.status !== 'empty' && pod.plantedAt.slice(0, 10) <= day ? pod : null
         ctx.store.podLabels.set({
           captureId: input.captureId,
           ts: capture.ts,

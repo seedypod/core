@@ -48,22 +48,23 @@ const ROUND_MS = 5 * 60_000
 const at = (n: number) => `${n * 100}%`
 const srcOf = (path: string, url: string) => (path.startsWith('data:') ? path : `${apiBase()}${url}`)
 
+/** One round of captures: its newest still's time, and each camera's still in it, if it took one. */
+export interface Round { ts: string, upper?: Frame, lower?: Frame }
+
 /**
- * The moments the Both view steps through, newest first: one per round of
- * captures, a round holding at most one still per camera within ROUND_MS of
- * its newest. Each camera shows its newest still at or before the moment.
+ * The rounds the Both view steps through, newest first. A round holds at most
+ * one still per camera, within ROUND_MS of its newest; a camera that took
+ * none in that window has no still in the round, rather than an older one.
  */
-export function moments(frames: Frame[]): string[] {
-  const out: Array<{ ts: string, t: number, cameras: Set<string> }> = []
+export function rounds(frames: Frame[]): Round[] {
+  const out: Round[] = []
   for (const f of [...frames].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))) {
-    const t = Date.parse(f.ts)
     const round = out.at(-1)
-    if (round && !round.cameras.has(f.camera) && round.t - t <= ROUND_MS) round.cameras.add(f.camera)
-    else out.push({ ts: f.ts, t, cameras: new Set([f.camera]) })
+    if (round && !round[f.camera] && Date.parse(round.ts) - Date.parse(f.ts) <= ROUND_MS) round[f.camera] = f
+    else out.push({ ts: f.ts, [f.camera]: f })
   }
-  return out.map(m => m.ts)
+  return out
 }
-const newestBy = (list: Frame[], ts: string) => list.find(f => Date.parse(f.ts) <= Date.parse(ts))
 
 function Dot({ label }: { label: PodLabelValue }) {
   return <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: LABEL_COLOR[label] }} />
@@ -90,7 +91,7 @@ function LabelChips({ value, onPick, clear, ariaLabel }: { value: Brush | null, 
 }
 
 /** One camera's still with a tappable box per pod. */
-function Photo({ camera, frame, regions, labelOf, onTap, compact }: {
+function Photo({ camera, frame, regions, labelOf, onTap, compact, empty }: {
   camera: Camera
   frame: Frame | undefined
   regions: PodRegions
@@ -98,6 +99,8 @@ function Photo({ camera, frame, regions, labelOf, onTap, compact }: {
   onTap: (slot: number) => void
   /** Side by side, where the label's word won't fit a box. */
   compact?: boolean
+  /** What shows without a still. */
+  empty: string
 }) {
   const [ratio, setRatio] = useState(4 / 3)
   const slots = Object.keys(regions).map(Number)
@@ -145,7 +148,7 @@ function Photo({ camera, frame, regions, labelOf, onTap, compact }: {
               </div>
             </>
           )
-        : <div className="flex size-full items-center justify-center p-4 text-center text-[13px] text-fg-3">No photos from this camera yet.</div>}
+        : <div className="flex size-full items-center justify-center p-4 text-center text-[13px] text-fg-3">{empty}</div>}
     </div>
   )
 }
@@ -172,14 +175,18 @@ export function LabelPods({ boxes }: { boxes: (camera: Camera) => PodRegions }) 
   const upperList = trpc.camera.list.useQuery({ camera: 'upper', limit: HISTORY }, { enabled: shown !== 'lower' })
   const lowerList = trpc.camera.list.useQuery({ camera: 'lower', limit: HISTORY }, { enabled: shown !== 'upper' })
   const lists: Record<Camera, Frame[]> = { upper: upperList.data ?? [], lower: lowerList.data ?? [] }
+  const single = shown === 'both' ? null : shown
 
-  const steps = shown === 'both' ? moments([...lists.upper, ...lists.lower]) : lists[shown].map(f => f.ts)
-  const found = opened && shown !== 'both' ? lists[shown].findIndex(f => f.id === opened) : -1
+  const steps: Round[] = single ? lists[single].map(f => ({ ts: f.ts, [single]: f })) : rounds([...lists.upper, ...lists.lower])
+  const found = opened && single ? lists[single].findIndex(f => f.id === opened) : -1
+  // A capture opened from All labels that is older than the tagger's history is fetched on its own.
+  const beyond = !!opened && !!single && found < 0 && (single === 'upper' ? upperList.data : lowerList.data) !== undefined
+  const fetched = trpc.camera.get.useQuery({ id: opened ?? '' }, { enabled: beyond, retry: false })
+  const pinned = beyond ? fetched.data : undefined
   const step = found >= 0 ? found : Math.min(index, Math.max(0, steps.length - 1))
-  const moment = steps[step]
-  const frames: Record<Camera, Frame | undefined> = shown === 'both'
-    ? { upper: moment ? newestBy(lists.upper, moment) : undefined, lower: moment ? newestBy(lists.lower, moment) : undefined }
-    : { upper: shown === 'upper' ? lists.upper[step] : undefined, lower: shown === 'lower' ? lists.lower[step] : undefined }
+  const round: Round | undefined = pinned && single ? { ts: pinned.ts, [single]: pinned } : steps[step]
+  const moment = round?.ts
+  const frames: Record<Camera, Frame | undefined> = { upper: round?.upper, lower: round?.lower }
   const saved = {
     upper: trpc.vision.labels.useQuery({ captureId: frames.upper?.id ?? '' }, { enabled: !!frames.upper }),
     lower: trpc.vision.labels.useQuery({ captureId: frames.lower?.id ?? '' }, { enabled: !!frames.lower }),
@@ -219,14 +226,14 @@ export function LabelPods({ boxes }: { boxes: (camera: Camera) => PodRegions }) 
     setIndex(0)
     setLocal({})
   }
-  const cameras = (shown === 'both' ? ['upper', 'lower'] : [shown]) as Camera[]
+  const cameras: Camera[] = single ? [single] : ['upper', 'lower']
   const pictured = cameras.filter(c => frames[c])
   const slots = pictured.flatMap(c => Object.keys(boxes(c)).map(Number).map(s => [c, s] as const))
   const done = slots.filter(([c, s]) => labelOf(c, s) !== null).length
   const counts = stats.data?.counts
   const total = stats.data?.pods ?? 0
-  // Asked for a capture older than the tagger reaches: say so rather than show another one silently.
-  const missed = !!opened && shown !== 'both' && lists[shown].length > 0 && found < 0
+  // A capture opened from All labels that is gone: say so rather than show another one silently.
+  const missed = beyond && !!fetched.error
 
   return (
     <div className="flex min-w-0 flex-col gap-4 rounded-[14px] border border-line bg-surface p-4 sm:p-5">
@@ -282,12 +289,20 @@ export function LabelPods({ boxes }: { boxes: (camera: Camera) => PodRegions }) 
                           {frames[c] && <span className="font-mono text-[11px]">{` · ${fmtStamp((frames[c] as Frame).ts)}`}</span>}
                         </span>
                       )}
-                      <Photo camera={c} frame={frames[c]} regions={boxes(c)} labelOf={s => labelOf(c, s)} onTap={s => tap(c, s)} compact={shown === 'both'} />
+                      <Photo
+                        camera={c}
+                        frame={frames[c]}
+                        regions={boxes(c)}
+                        labelOf={s => labelOf(c, s)}
+                        onTap={s => tap(c, s)}
+                        compact={!single}
+                        empty={single || !moment ? 'No photos from this camera yet.' : `No ${c} still this round.`}
+                      />
                     </div>
                   ))}
                 </div>
                 <figcaption className="flex items-center gap-2 text-xs text-fg-3">
-                  <GhostIcon icon={ChevronLeft} label="Older photo" disabled={!moment || step >= steps.length - 1} onClick={() => go(step + 1)} />
+                  <GhostIcon icon={ChevronLeft} label="Older photo" disabled={!moment || !!pinned || step >= steps.length - 1} onClick={() => go(step + 1)} />
                   <span className="min-w-0 flex-1 text-center">
                     {moment && pictured.length
                       ? (
@@ -298,9 +313,11 @@ export function LabelPods({ boxes }: { boxes: (camera: Camera) => PodRegions }) 
                         )
                       : '—'}
                   </span>
-                  <GhostIcon icon={ChevronRight} label="Newer photo" disabled={step === 0} onClick={() => go(step - 1)} />
+                  {/* From a capture older than the history, newer is the history's oldest. */}
+                  <GhostIcon icon={ChevronRight} label="Newer photo" disabled={!pinned && step === 0} onClick={() => go(pinned ? steps.length - 1 : step - 1)} />
                 </figcaption>
-                {missed && <span className="text-center text-xs text-fg-3">{`That photo is older than the last ${HISTORY}, so the newest is shown.`}</span>}
+                {pinned && <span className="text-center text-xs text-fg-3">{`Older than the last ${HISTORY} photos: the arrows go back to them.`}</span>}
+                {missed && <span className="text-center text-xs text-fg-3">That photo is no longer kept, so the newest is shown.</span>}
               </figure>
             </>
           )}
@@ -311,16 +328,22 @@ export function LabelPods({ boxes }: { boxes: (camera: Camera) => PodRegions }) 
 
 /** A pod's crop, cut from its still with CSS: the still scaled so the pod's box fills the tile. */
 function Crop({ entry, box }: { entry: Entry, box: PodRegions[number] }) {
+  // The still's shape, so the tile has the pod's: 4:3 until it loads.
+  const [ratio, setRatio] = useState(4 / 3)
   return (
-    <div className="relative w-full overflow-hidden rounded-[6px] bg-code" style={{ aspectRatio: (box.w / box.h) * (4 / 3) }}>
+    <div className="relative w-full overflow-hidden rounded-[6px] bg-code" style={{ aspectRatio: (box.w / box.h) * ratio }}>
       {entry.url
         ? (
             <img
-              src={entry.url.startsWith('data:') ? entry.url : `${apiBase()}${entry.url}`}
+              src={srcOf(entry.url, entry.url)}
               alt={`Pod ${entry.slot} at ${entry.ts}`}
               loading="lazy"
               className="absolute max-w-none"
               style={{ width: at(1 / box.w), height: at(1 / box.h), left: at(-box.x / box.w), top: at(-box.y / box.h) }}
+              onLoad={(e) => {
+                const { naturalWidth: w, naturalHeight: h } = e.currentTarget
+                if (w > 0 && h > 0) setRatio(w / h)
+              }}
             />
           )
         : <span className="flex size-full items-center justify-center p-2 text-center text-[11px] text-fg-3">Photo pruned</span>}

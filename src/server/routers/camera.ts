@@ -11,6 +11,15 @@ export const cameraRouter = router({
     .input(z.object({ camera: Cam.optional(), limit: z.number().int().min(1).max(1000).default(100) }))
     .output(z.array(CaptureOut))
     .query(({ ctx, input }) => ctx.store.captures.list(input.camera, input.limit).map(c => ({ ...c, url: `/api/captures/${c.id}.jpg` }))),
+  get: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/captures/{id}', tags: ['camera'], summary: 'One stored still by id; NOT_FOUND once pruned' } })
+    .input(z.object({ id: z.string() }))
+    .output(CaptureOut)
+    .query(({ ctx, input }) => {
+      const c = ctx.store.captures.get(input.id)
+      if (!c) throw new TRPCError({ code: 'NOT_FOUND', message: `no capture ${input.id}` })
+      return { ...c, url: `/api/captures/${c.id}.jpg` }
+    }),
   capture: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/camera/{camera}/capture', tags: ['camera'], summary: 'Take a still now' } })
     .input(z.object({ camera: Cam }))

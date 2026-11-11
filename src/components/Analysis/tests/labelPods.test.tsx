@@ -2,11 +2,11 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { podRegions } from '@/src/vision/regions'
-import { HISTORY, LabelPods, moments, PAGE } from '../LabelPods'
+import { HISTORY, LabelPods, PAGE, rounds } from '../LabelPods'
 
 const { data, calls, invalidate, mutation, infinite } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { frames: vi.fn(), labels: vi.fn(), setLabel: vi.fn(), labelList: vi.fn(), fetchNextPage: vi.fn() },
+  calls: { frames: vi.fn(), get: vi.fn(), labels: vi.fn(), setLabel: vi.fn(), labelList: vi.fn(), fetchNextPage: vi.fn() },
   invalidate: vi.fn(),
   mutation: { fail: false, error: null as null | { message: string } },
   infinite: { hasNextPage: false, isLoading: false },
@@ -19,6 +19,11 @@ vi.mock('@/src/utils/trpc', () => ({
     camera: { list: { useQuery: (input: { camera: string }, opts?: { enabled?: boolean }) => {
       if (opts?.enabled !== false) calls.frames(input)
       return { data: opts?.enabled === false ? undefined : data.get(`frames:${input.camera}`) }
+    } }, get: { useQuery: (input: { id: string }, opts: { enabled: boolean }) => {
+      if (!opts.enabled) return { data: undefined, error: null }
+      calls.get(input)
+      const got = data.get(`capture:${input.id}`)
+      return { data: got, error: got ? null : { message: `no capture ${input.id}` } }
     } } },
     vision: {
       labels: { useQuery: (input: { captureId: string }, opts?: { enabled?: boolean }) => {
@@ -215,24 +220,35 @@ describe('LabelPods', () => {
     expect(screen.getAllByRole('img').map(i => (i as HTMLImageElement).alt)).toEqual(['upper camera at 2026-11-08T10:00:00Z', 'lower camera at 2026-11-08T10:00:20Z'])
     expect(pod(3).getAttribute('aria-label')).toBe('Pod 3: not labelled')
     fireEvent.click(older)
-    // The lower camera has nothing that old.
+    // The lower camera took nothing that round: an empty slot, not an older still.
     expect(screen.getAllByRole('img')).toHaveLength(1)
-    expect(screen.getByText('No photos from this camera yet.')).toBeTruthy()
+    expect(screen.getByText('No lower still this round.')).toBeTruthy()
+    expect(screen.queryByTestId('label-pods-lower')).toBeNull()
     expect(screen.getByText(/0 of 15 pods labelled/)).toBeTruthy()
     expect(older.disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Newer photo' }))
     expect(screen.getAllByRole('img')).toHaveLength(2)
   })
 
-  it('groups stills into rounds of one per camera, newest first', () => {
-    const f = (camera: 'upper' | 'lower', ts: string) => ({ ...frame(camera, 0), camera, ts })
-    expect(moments([])).toEqual([])
-    expect(moments([
+  it('groups stills into rounds of one per camera, newest first, without reaching past a round', () => {
+    const f = (camera: 'upper' | 'lower', ts: string) => ({ ...frame(camera, 0), id: `${camera}@${ts.slice(11, 19)}`, camera, ts })
+    expect(rounds([])).toEqual([])
+    const got = rounds([
       f('upper', '2026-11-09T10:00:00Z'), f('lower', '2026-11-09T10:00:20Z'),
       f('upper', '2026-11-09T09:00:00Z'), f('lower', '2026-11-09T09:00:20Z'),
       // A still taken by hand, far from a round, and two of one camera close together.
       f('upper', '2026-11-09T09:30:00Z'), f('upper', '2026-11-09T08:00:00Z'), f('upper', '2026-11-09T07:59:00Z'),
-    ])).toEqual(['2026-11-09T10:00:20Z', '2026-11-09T09:30:00Z', '2026-11-09T09:00:20Z', '2026-11-09T08:00:00Z', '2026-11-09T07:59:00Z'])
+      // A lower still more than five minutes from any upper one.
+      f('lower', '2026-11-09T07:50:00Z'),
+    ])
+    expect(got.map(r => [r.ts, r.upper?.id ?? null, r.lower?.id ?? null])).toEqual([
+      ['2026-11-09T10:00:20Z', 'upper@10:00:00', 'lower@10:00:20'],
+      ['2026-11-09T09:30:00Z', 'upper@09:30:00', null],
+      ['2026-11-09T09:00:20Z', 'upper@09:00:00', 'lower@09:00:20'],
+      ['2026-11-09T08:00:00Z', 'upper@08:00:00', null],
+      ['2026-11-09T07:59:00Z', 'upper@07:59:00', null],
+      ['2026-11-09T07:50:00Z', null, 'lower@07:50:00'],
+    ])
   })
 
   it('lists every label as its pod\'s crop, filters them by label, and changes or removes one', () => {
@@ -308,10 +324,12 @@ describe('LabelPods', () => {
     expect(screen.getByText('No labels yet. Tag pods in Tag photos.')).toBeTruthy()
   })
 
-  it('opens a crop\'s photo in the tagger, or says when it is older than the tagger reaches', () => {
+  it('opens a crop\'s photo in the tagger, fetching one older than the history, or says when it is gone', () => {
     data.set('frames:upper', [frame('upper', 0)])
     data.set('frames:lower', [frame('lower', 0), frame('lower', 1)])
-    data.set('list', [entry('lower-1', 'lower', 20, 'ready'), entry('upper-9', 'upper', 2, 'seeded'), entry('upper-gone', 'upper', 4, 'seeded', { url: null })])
+    data.set('list', [entry('lower-1', 'lower', 20, 'ready'), entry('upper-9', 'upper', 2, 'seeded'), entry('upper-gone', 'upper', 4, 'seeded', { url: null }), entry('upper-8', 'upper', 6, 'seeded')])
+    data.set('capture:upper-9', frame('upper', 9))
+    data.set('labels:upper-9', [label('upper-9', 2, 'seeded')])
     render(<LabelPods boxes={boxes} />)
     fireEvent.click(screen.getByRole('tab', { name: 'All labels' }))
     expect((screen.getByRole('button', { name: /^Open pod 4 / }) as HTMLButtonElement).disabled).toBe(true)
@@ -322,10 +340,41 @@ describe('LabelPods', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Newer photo' }))
     expect((screen.getByRole('img') as HTMLImageElement).src).toBe('http://unit/api/captures/lower-0.jpg')
 
+    expect(calls.get).not.toHaveBeenCalled()
+
+    // Older than the history: fetched by id, and taps label that capture.
     fireEvent.click(screen.getByRole('tab', { name: 'All labels' }))
     fireEvent.click(screen.getByRole('button', { name: /^Open pod 2 / }))
     expect(screen.getByRole('tab', { name: 'Upper' }).getAttribute('aria-selected')).toBe('true')
+    expect(calls.get).toHaveBeenLastCalledWith({ id: 'upper-9' })
+    expect((screen.getByRole('img') as HTMLImageElement).src).toBe('http://unit/api/captures/upper-9.jpg')
+    expect(screen.getByText(`Older than the last ${HISTORY} photos: the arrows go back to them.`)).toBeTruthy()
+    expect(pod(2).getAttribute('aria-label')).toBe('Pod 2: seeded')
+    fireEvent.click(pod(5))
+    expect(calls.setLabel).toHaveBeenLastCalledWith({ captureId: 'upper-9', slot: 5, label: 'growing' })
+    expect((screen.getByRole('button', { name: 'Older photo' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Newer photo' }))
     expect((screen.getByRole('img') as HTMLImageElement).src).toBe('http://unit/api/captures/upper-0.jpg')
-    expect(screen.getByText(`That photo is older than the last ${HISTORY}, so the newest is shown.`)).toBeTruthy()
+
+    // Pruned since the list was loaded: the newest is shown, and it says why.
+    fireEvent.click(screen.getByRole('tab', { name: 'All labels' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Open pod 6 / }))
+    expect((screen.getByRole('img') as HTMLImageElement).src).toBe('http://unit/api/captures/upper-0.jpg')
+    expect(screen.getByText('That photo is no longer kept, so the newest is shown.')).toBeTruthy()
+  })
+
+  it('shapes each crop like its still once the still loads', () => {
+    data.set('list', [entry('upper-1', 'upper', 3, 'seeded'), { ...entry('demo', 'upper', 4, 'seeded'), url: 'data:image/svg+xml;utf8,<svg/>' }])
+    render(<LabelPods boxes={boxes} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'All labels' }))
+    const box = boxes('upper')[3] as { w: number, h: number }
+    const [crop, demo] = screen.getAllByRole('img') as HTMLImageElement[]
+    expect(demo?.src).toMatch(/^data:image\/svg/)
+    const tile = (crop as HTMLImageElement).parentElement as HTMLElement
+    expect(parseFloat(tile.style.aspectRatio)).toBeCloseTo((box.w / box.h) * 4 / 3)
+    Object.defineProperty(crop, 'naturalWidth', { value: 1600 })
+    Object.defineProperty(crop, 'naturalHeight', { value: 900 })
+    fireEvent.load(crop as HTMLImageElement)
+    expect(parseFloat(tile.style.aspectRatio)).toBeCloseTo((box.w / box.h) * 16 / 9)
   })
 })

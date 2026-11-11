@@ -158,21 +158,32 @@ describe('vision router (ADR-0019)', () => {
     await expect(c.vision.setLabel({ captureId: 'upper-0', slot: 16, label: 'ready' })).rejects.toThrow(/pod 16 is not on the upper camera/)
   })
 
-  it('keeps the pod\'s plant with each label, but not one sown after the photo', async () => {
+  it('keeps a sown pod\'s plant with each label, but not a planned one or one sown after the photo\'s day', async () => {
     const { c, ctx } = await scored(2)
-    ctx.store.pods.update(3, { plant: 'Basil', plantedAt: '2025-12-20' }, '2025-12-20T00:00:00Z')
-    ctx.store.pods.update(4, { plant: 'Kale', plantedAt: '2026-01-01T12:00:00Z' }, '2026-01-01T12:00:00Z')
-    ctx.store.pods.update(5, { plant: 'Mint', plantedAt: null }, '2026-01-01T12:00:00Z')
-    for (const slot of [3, 4, 5, 6]) await c.vision.setLabel({ captureId: 'upper-0', slot, label: 'seeded' })
+    const sow = (slot: number, plant: string, plantedAt: string | null, status: 'empty' | 'seeded' | 'growing') => ctx.store.pods.update(slot, { plant, plantedAt, status }, '2025-12-20T00:00:00Z')
+    sow(3, 'Basil', '2025-12-20', 'growing')
+    sow(4, 'Kale', '2026-01-02', 'seeded')
+    // Planned by the planner, not sown: a plant but no date, or a date on a pod still empty.
+    sow(5, 'Mint', null, 'seeded')
+    sow(6, 'Thyme', '2025-12-25', 'empty')
+    for (const slot of [3, 4, 5, 6, 7]) await c.vision.setLabel({ captureId: 'upper-0', slot, label: 'seeded' })
     await c.vision.setLabel({ captureId: 'upper-1', slot: 4, label: 'seeded' })
-    expect((await c.vision.labels({ captureId: 'upper-0' })).map(l => [l.slot, l.plant, l.plantedAt])).toEqual([[3, 'Basil', '2025-12-20'], [4, null, null], [5, 'Mint', null], [6, null, null]])
-    expect(await c.vision.labels({ captureId: 'upper-1' })).toMatchObject([{ slot: 4, plant: 'Kale', plantedAt: '2026-01-01T12:00:00Z' }])
+    expect((await c.vision.labels({ captureId: 'upper-0' })).map(l => [l.slot, l.plant, l.plantedAt])).toEqual([[3, 'Basil', '2025-12-20'], [4, null, null], [5, null, null], [6, null, null], [7, null, null]])
+    // Sown the day the photo was taken counts as in it.
+    expect(await c.vision.labels({ captureId: 'upper-1' })).toMatchObject([{ slot: 4, plant: 'Kale', plantedAt: '2026-01-02' }])
+    // The photo's day is the unit's: 00:00 UTC on the 2nd is still the 1st in Los Angeles.
+    ctx.store.settings.update({ timezone: 'America/Los_Angeles' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 4, label: null })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 4, label: 'seeded' })
+    expect(await c.vision.labels({ captureId: 'upper-1' })).toMatchObject([{ slot: 4, plant: null, plantedAt: null }])
+    ctx.store.settings.update({ timezone: 'UTC' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 4, label: 'growing' })
     // A replant later doesn't rewrite what was in the photo.
-    ctx.store.pods.update(3, { plant: 'Dill', plantedAt: '2026-02-01' }, '2026-02-01T00:00:00Z')
+    sow(3, 'Dill', '2026-02-01', 'seeded')
     await c.vision.setLabel({ captureId: 'upper-0', slot: 3, label: 'sprouted' })
     const { labels } = await c.vision.labelList({ camera: 'upper', limit: 10 })
     expect(labels.find(l => l.captureId === 'upper-0' && l.slot === 3)).toMatchObject({ label: 'sprouted', plant: 'Basil', daysSinceSowing: 12, url: '/api/captures/upper-0.jpg' })
-    expect(labels.find(l => l.captureId === 'upper-1' && l.slot === 4)?.daysSinceSowing).toBe(0)
+    expect(labels.find(l => l.captureId === 'upper-1' && l.slot === 4)).toMatchObject({ plant: 'Kale', daysSinceSowing: 0 })
     expect(labels.find(l => l.slot === 5)?.daysSinceSowing).toBeNull()
   })
 

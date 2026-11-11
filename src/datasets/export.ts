@@ -30,7 +30,8 @@ export interface DatasetSummary extends ExportWindow {
   imageBytes: number
 }
 
-export const DATASET_FORMAT = { name: 'seedypod-dataset', version: 1 }
+/** Version 2: `labels.jsonl` gained the `seeded` label and `plant`, `plantedAt` and `daysSinceSowing`. */
+export const DATASET_FORMAT = { name: 'seedypod-dataset', version: 2 }
 
 const DAY = 86_400_000
 const enc = new TextEncoder()
@@ -178,8 +179,10 @@ Exported from a seedypod unit (ADR-0019). Every file covers the window in
 
 Labels are \`empty\` (capped, no yCube), \`seeded\` (a yCube in, nothing
 visible yet), \`sprouted\`, \`growing\`, \`ready\` and \`unhealthy\`. The
-pod-state model's classes are the same minus \`seeded\`, which came later: a
-trainer either adds it as a class or maps it onto one the model has.
+pod-state model's classes are the same minus \`seeded\`, which came later:
+to train the current model, map \`seeded\` to \`empty\` (nothing visible
+yet). A six-class model needs the unit's model loader extended first, since
+it only accepts the five.
 
 Pods 1–15 are seen by the upper camera, 16–30 by the lower. A pod's crop is
 \`image[region.y : region.y + region.h, region.x : region.x + region.w]\`,
