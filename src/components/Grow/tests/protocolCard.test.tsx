@@ -11,7 +11,7 @@ import { ProtocolCard } from '../ProtocolCard'
 const { data, calls, state, success } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   calls: { hold: vi.fn(), release: vi.fn(), advance: vi.fn(), setThen: vi.fn(), activate: vi.fn(), setStart: vi.fn(), startGermination: vi.fn(), create: vi.fn(), update: vi.fn() },
-  state: { startPending: false, startError: null as null | { message: string }, fail: null as null | string },
+  state: { startPending: false, startError: null as null | { message: string }, fail: null as null | string, kept: null as null | string, saveError: null as null | { message: string } },
   success: new Map<string, () => void>(),
 }))
 
@@ -21,8 +21,9 @@ vi.mock('@/src/utils/trpc', () => {
     if (o?.onSuccess) success.set(name, o.onSuccess)
     return {
       isPending: name === 'startGermination' && state.startPending,
-      error: name === 'startGermination' ? state.startError : null,
-      isSuccess: false,
+      error: name === 'startGermination' ? state.startError : name === 'create' ? state.saveError : null,
+      isSuccess: name === 'create' && state.kept !== null,
+      data: { name: state.kept },
       reset: vi.fn(),
       mutate: (i?: unknown) => {
         calls[name](i)
@@ -76,7 +77,7 @@ beforeEach(() => {
   data.clear()
   data.set('settings', { timezone: 'UTC' })
   for (const f of Object.values(calls)) f.mockReset()
-  Object.assign(state, { startPending: false, startError: null, fail: null })
+  Object.assign(state, { startPending: false, startError: null, fail: null, kept: null, saveError: null })
 })
 afterEach(cleanup)
 
@@ -279,7 +280,7 @@ describe('ProtocolCard: light and the tips', () => {
 })
 
 describe('ProtocolCard: the sowing day at the track\'s left end', () => {
-  it('says when the tower was sown, and moves the start to another day', () => {
+  it('says when the tower was sown, and moves the start to another day', async () => {
     show({ at: 2 })
     const sown = within(screen.getByTestId('sown'))
     expect(sown.getByTestId('sown-on').textContent).toBe('Sown Mon 9 Nov')
@@ -289,7 +290,9 @@ describe('ProtocolCard: the sowing day at the track\'s left end', () => {
     expect(input.value).toBe('2026-11-09')
     expect(input.max).toBe(new Date().toISOString().slice(0, 10))
     fireEvent.change(input, { target: { value: '2026-11-08' } })
-    fireEvent.click(sown.getByRole('button', { name: 'Save' }))
+    await act(async () => {
+      fireEvent.click(sown.getByRole('button', { name: 'Save' }))
+    })
     expect(calls.setStart).toHaveBeenCalledWith({ startedAt: '2026-11-08' })
   })
 
@@ -335,6 +338,122 @@ describe('ProtocolCard: the sowing day at the track\'s left end', () => {
     fireEvent.click(within(screen.getByTestId('sown')).getByRole('button', { name: 'Start germination today' }))
     expect(within(screen.getByRole('dialog')).getByText('Couldn\'t start germination: the unit said no')).toBeTruthy()
     expect(screen.getAllByText(/the unit said no/)).toHaveLength(1)
+  })
+})
+
+describe('ProtocolCard: the rest of its ways in and out', () => {
+  it('shows nothing until the report comes, and says the Then slot on hover or focus', () => {
+    const { container } = render(<ProtocolCard />)
+    expect(container.textContent).toBe('')
+    cleanup()
+    show({ then: { thenKind: 'remind' } })
+    const then = screen.getByRole('button', { name: /^Then/ })
+    expect(then.textContent).toBe('Thenremind at first harvest')
+    fireEvent.mouseEnter(then)
+    expect(screen.getByTestId('track-hover').textContent).toBe('Then · remind at first harvest')
+    fireEvent.mouseLeave(then)
+    fireEvent.focus(then)
+    expect(screen.getByTestId('track-hover').textContent).toBe('Then · remind at first harvest')
+    fireEvent.blur(then)
+    expect(screen.getByTestId('track-hover').textContent).toBe('')
+    const young = within(screen.getByRole('group', { name: 'Stages' })).getByRole('button', { name: /^Young plants/ })
+    fireEvent.focus(young)
+    expect(screen.getByTestId('track-hover').textContent).toBe('Young plants · days 14–21 · 2 × 6 min daily · starts Mon 23 Nov')
+    fireEvent.blur(young)
+    expect(screen.getByTestId('track-hover').textContent).toBe('')
+  })
+
+  it('cancels each dialog without acting, and closes the watering one once it\'s done', () => {
+    show({ cycles: 'hand' })
+    fireEvent.click(screen.getByRole('button', { name: 'Advance now' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Advance now' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(calls.advance).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Use Germination watering (replaces your cycles)' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Use Germination watering (replaces your cycles)' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Use Germination watering (replaces your cycles)' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Use Germination watering' }))
+    act(() => success.get('activate')?.())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(calls.activate).toHaveBeenCalledTimes(1)
+    cleanup()
+    // Start germination: Cancel and Escape both close it while nothing is under way.
+    show({ cycle: false })
+    for (const close of [() => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' })), () => fireEvent.keyDown(document, { key: 'Escape' })]) {
+      fireEvent.click(within(screen.getByTestId('sown')).getByRole('button', { name: 'Start germination today' }))
+      close()
+      expect(screen.queryByRole('dialog')).toBeNull()
+    }
+    expect(calls.startGermination).not.toHaveBeenCalled()
+  })
+
+  it('turns Follow on and reads the settings again', () => {
+    show({ follow: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on Follow' }))
+    act(() => success.get('update')?.())
+    expect(calls.update).toHaveBeenCalledWith({ followGrowCycle: true })
+  })
+
+  it('says when there\'s no light at full brightness today', () => {
+    const { r, store } = report()
+    data.set('protocol', r)
+    data.set('schedules', store.schedules.list().filter(s => s.kind === 'pump'))
+    data.set('library', [])
+    render(<ProtocolCard />)
+    expect(within(screen.getByTestId('stage-panel')).getByText('No light at full brightness today')).toBeTruthy()
+  })
+
+  it('says the cycles were kept, or why they couldn\'t be, before replacing them', () => {
+    state.kept = 'Spring'
+    show({ cycles: 'hand' })
+    fireEvent.click(screen.getByRole('button', { name: 'Use Germination watering (replaces your cycles)' }))
+    expect(within(screen.getByRole('dialog')).getByTestId('kept').textContent).toBe('Kept as Spring in Your schedules.')
+    cleanup()
+    Object.assign(state, { kept: null, saveError: { message: 'two cycles start at the same minute' } })
+    show({ cycles: 'hand' })
+    fireEvent.click(screen.getByRole('button', { name: 'Use Germination watering (replaces your cycles)' }))
+    expect(within(screen.getByRole('dialog')).getByText('Couldn\'t save them: two cycles start at the same minute')).toBeTruthy()
+  })
+
+  it('switches at once from the Then slot in maintenance, and offers nothing there without a cycle', () => {
+    show({ cycles: 'mature', at: 30 })
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    const panel = within(screen.getByTestId('then-panel'))
+    expect(panel.getByText('Maintenance has begun, so this switches now.')).toBeTruthy()
+    expect(panel.queryByRole('button', { name: 'Switch now' })).toBeNull()
+    cleanup()
+    show({ cycle: false })
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    for (const radio of within(screen.getByTestId('then-panel')).getAllByRole('radio')) expect((radio as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('names the schedule on the pump only when the library has it', () => {
+    const { r, store } = report({ cycles: 'summer', at: 10 })
+    data.set('protocol', r)
+    data.set('schedules', store.schedules.list())
+    data.set('library', [])
+    render(<ProtocolCard />)
+    expect(screen.getByTestId('protocol-notes').textContent).toMatch(/^On your schedule: the protocol’s watering waits\./)
+  })
+
+  it('changes the queued schedule as it\'s picked, once Then is a switch', () => {
+    show({ then: { thenKind: 'schedule', thenScheduleId: 'summer' } })
+    data.set('library', [{ ...summer, kind: 'own', lastUsedAt: null, active: false, readOnly: false }, { ...summer, id: 'away', name: 'Away', kind: 'own', lastUsedAt: null, active: false, readOnly: false }])
+    cleanup()
+    render(<ProtocolCard />)
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    const picker = screen.getByLabelText('Schedule to switch to') as HTMLSelectElement
+    expect(picker.value).toBe('summer')
+    fireEvent.change(picker, { target: { value: 'away' } })
+    expect(calls.setThen).toHaveBeenLastCalledWith({ kind: 'schedule', scheduleId: 'away', when: 'maintenance' })
+    expect(picker.value).toBe('away')
   })
 })
 
