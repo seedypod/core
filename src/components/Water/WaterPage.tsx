@@ -96,24 +96,26 @@ export function WaterPage() {
           </div>
         </div>
         <div className="flex flex-col gap-3">
-          <h2 className={EYEBROW}>Run now</h2>
-          <SegmentedControl full value={dur} onChange={setDur} options={DURATIONS.map(d => ({ value: d.value, label: d.label }))} ariaLabel="Run length" />
           {p?.on
-            ? <StopButton since={p.since} remainingS={p.remainingS} at={pump.dataUpdatedAt} disabled={stop.isPending} onStop={() => stop.mutate()} />
+            ? <RunTrack since={p.since} remainingS={p.remainingS} at={pump.dataUpdatedAt} stopping={stop.isPending} onStop={() => stop.mutate()} />
             : (
-                <Button
-                  full
-                  variant="primary"
-                  icon={Play}
-                  className="py-2.5 text-sm"
-                  disabled={!!p?.fault || asked !== null}
-                  onClick={() => {
-                    setAsked(Date.now())
-                    runOnce.mutate({ durationS: Number(dur) })
-                  }}
-                >
-                  {asked !== null ? 'Starting…' : 'Run pump'}
-                </Button>
+                <>
+                  <h2 className={EYEBROW}>Run now</h2>
+                  <SegmentedControl full value={dur} onChange={setDur} options={DURATIONS.map(d => ({ value: d.value, label: d.label }))} ariaLabel="Run length" />
+                  <Button
+                    full
+                    variant="primary"
+                    icon={Play}
+                    className="py-2.5 text-sm"
+                    disabled={!!p?.fault || asked !== null}
+                    onClick={() => {
+                      setAsked(Date.now())
+                      runOnce.mutate({ durationS: Number(dur) })
+                    }}
+                  >
+                    {asked !== null ? 'Starting…' : 'Run pump'}
+                  </Button>
+                </>
               )}
           {runOnce.error && <InlineError>{runOnce.error.message}</InlineError>}
           {asked !== null && !p?.on && <NotStarted asked={asked} onGiveUp={() => setAsked(null)} />}
@@ -334,21 +336,45 @@ function useRun(since: string, remainingS: number | null, at: number) {
   return { left, total, done: Math.min(100, Math.max(0, (1 - left / total) * 100)) }
 }
 
-/** Stop, filling with the run as it goes and saying how long is left, so a running pump shows where you pressed. */
-function StopButton({ since, remainingS, at, disabled, onStop }: { since: string, remainingS: number | null, at: number, disabled: boolean, onStop: () => void }) {
+/** The run-length stops, in seconds, as ticks on the running track. */
+const STOPS = DURATIONS.map(d => Number(d.value))
+
+/**
+ * While the pump runs, the duration picker becomes its track: the same stops as
+ * ticks, filled as far as the run has got, the time left above it and Stop
+ * below, so nothing jumps when a run starts.
+ */
+function RunTrack({ since, remainingS, at, stopping, onStop }: { since: string, remainingS: number | null, at: number, stopping: boolean, onStop: () => void }) {
   const run = useRun(since, remainingS, at)
+  const span = Math.max(STOPS[STOPS.length - 1] ?? 900, run?.total ?? 0)
+  const pct = (s: number) => `${Math.min(100, (s / span) * 100)}%`
+  const elapsed = run ? run.total - run.left : 0
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onStop}
-      data-testid="stop-pump"
-      className="relative flex w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-ctl border border-line-2 bg-field py-2.5 text-sm font-medium text-fg hover:bg-active disabled:opacity-60"
-    >
-      {run && <span aria-hidden className="absolute inset-y-0 left-0 bg-tank/35 transition-[width] duration-1000 ease-linear" style={{ width: `${run.done}%` }} />}
-      <Square size={16} className="relative" />
-      <span className="relative">{run ? `Stop · ${fmtCountdown(run.left)} left` : 'Stop'}</span>
-    </button>
+    <div className="flex flex-col gap-3" data-testid="run-track">
+      <div className="flex items-baseline justify-between">
+        <h2 className={cn(EYEBROW, 'flex items-center gap-2 text-tank')}>
+          <span className="size-2 animate-pulse rounded-full bg-tank" />
+          Watering
+        </h2>
+        {run && <span className="font-mono text-[15px] text-fg">{`${fmtCountdown(run.left)} left`}</span>}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <div className="relative h-[46px] overflow-hidden rounded-ctl border border-line-2 bg-field" role="progressbar" aria-label="Watering" aria-valuenow={run ? Math.round(run.done) : undefined} aria-valuemin={0} aria-valuemax={100}>
+          {run && <div className="absolute inset-y-0 left-0 bg-tank/25 transition-[width] duration-1000 ease-linear" style={{ width: pct(elapsed) }} />}
+          {STOPS.slice(0, -1).map(s => <span key={s} className="absolute inset-y-0 w-px bg-line-2" style={{ left: pct(s) }} />)}
+          {run && <span className="absolute inset-y-0 w-0.5 bg-tank transition-[left] duration-1000 ease-linear" style={{ left: pct(elapsed) }} />}
+        </div>
+        <div className="relative h-4 font-mono text-[11px] text-fg-3">
+          {STOPS.map((s, i) => {
+            const last = i === STOPS.length - 1
+            const label = `${s / 60}${last ? ' min' : ''}`
+            const mine = run && Math.abs(run.total - s) < 30
+            return <span key={s} className={cn('absolute', last ? 'right-0' : '-translate-x-1/2', mine && 'text-fg')} style={last ? undefined : { left: pct(s) }}>{label}</span>
+          })}
+        </div>
+      </div>
+      <Button full icon={Square} className="py-2.5 text-sm" disabled={stopping} onClick={onStop} data-testid="stop-pump">Stop pump</Button>
+    </div>
   )
 }
 

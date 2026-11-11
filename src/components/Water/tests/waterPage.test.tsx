@@ -106,9 +106,14 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.getByText(/watering at 30%/).textContent).not.toMatch(/left/)
     expect(screen.queryByTestId('watering')).toBeNull()
     expect(screen.queryByText('Run pump')).toBeNull()
-    // Stop carries the run: the time left, and a fill as far through as it is.
+    // The duration picker becomes the run's track: the time left above, the stops as ticks, the run's own length marked.
+    const track = within(screen.getByTestId('run-track'))
+    expect(track.getByText('2:00 left')).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: '5 min' })).toBeNull()
+    expect(track.getByRole('progressbar', { name: 'Watering' }).getAttribute('aria-valuenow')).toBe('33')
+    expect(track.getByText('15 min')).toBeTruthy()
     const stopButton = screen.getByTestId('stop-pump')
-    expect(stopButton.textContent).toBe('Stop · 2:00 left')
+    expect(stopButton.textContent).toBe('Stop pump')
     fireEvent.click(stopButton)
     expect(calls.stop).toHaveBeenCalled()
   })
@@ -117,7 +122,8 @@ describe('WaterPage: tank and pump', () => {
     data.set('pump', { ...idle, on: true, level: 30, remainingS: null })
     render(<WaterPage />)
     expect(screen.getByText(/watering at 30%/)).toBeTruthy()
-    expect(screen.getByTestId('stop-pump').textContent).toBe('Stop')
+    expect(screen.getByTestId('stop-pump').textContent).toBe('Stop pump')
+    expect(within(screen.getByTestId('run-track')).queryByText(/left$/)).toBeNull()
   })
 
   it('says Starting… after Run, and why when the pump doesn\'t come on', () => {

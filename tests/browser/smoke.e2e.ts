@@ -24,7 +24,7 @@ test('pump run is bounded and reported', async ({ page }) => {
   await page.goto('/water')
   await page.getByRole('button', { name: 'Run pump' }).click()
   await expect(page.getByText(/watering at 30%/)).toBeVisible()
-  await expect(page.getByTestId('stop-pump')).toContainText(/^Stop · \d+:\d\d left$/)
+  await expect(page.getByTestId('run-track')).toContainText(/\d+:\d\d left/)
   await page.getByRole('button', { name: 'Stop' }).click()
   await expect(page.getByText('pump idle')).toBeVisible()
 })
