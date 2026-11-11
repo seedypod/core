@@ -131,6 +131,26 @@ describe('MqttHalClient', () => {
     await expect(still(async () => new Response('', { status: 500 }))).rejects.toThrow('HTTP 500')
   })
 
+  it('fetches a full-size pod-ID still without touching the link counts (#224)', async () => {
+    const urls: string[] = []
+    const answers = [
+      new Response(new Uint8Array(3000), { headers: { 'x-seedypod-damaged-frames': '2' } }),
+      new Response(new Uint8Array(9000)),
+      new Response('no good full-size frame: damaged frame\n', { status: 503 }),
+      new Response('', { status: 404 }),
+    ]
+    const client = new MqttHalClient({ unitId: U, mqtt: new FakeMqtt(), httpBase: 'http://hald', fetchImpl: (async (url: string) => {
+      urls.push(url)
+      return answers.shift()
+    }) as unknown as typeof fetch })
+    await client.captureStill('upper')
+    expect((await client.captureFull('upper')).byteLength).toBe(9000)
+    expect(urls[1]).toBe('http://hald/camera/full/upper.jpg')
+    expect(client.damagedFrames('upper')).toBe(2)
+    await expect(client.captureFull('lower')).rejects.toThrow(/^no good full-size frame: damaged frame$/)
+    await expect(client.captureFull('lower')).rejects.toThrow(/update it/)
+  })
+
   it('picks up what a still says about the link, whether or not it was good', async () => {
     const answers = [
       new Response(new Uint8Array(3000), { headers: { 'x-seedypod-damaged-frames': '2', 'x-seedypod-hub-boots': '8/10' } }),

@@ -172,4 +172,57 @@ describe('CaptureService', () => {
     await svc.capture('lower')
     expect(detail()).toBeUndefined()
   })
+
+  it('takes a full-size pod-ID still beside the regular stills, never as one of them (#224)', async () => {
+    const store = new MemoryStore()
+    const hal = new SimHal({ tickMs: 0 })
+    const regular = vi.fn(async () => frame())
+    hal.captureStill = regular
+    hal.captureFull = async () => frame(8192)
+    const enqueued: string[] = []
+    const stored: string[] = []
+    const analysis = { enqueue: (c: { id: string }) => void enqueued.push(c.id), removeArtifacts: async () => undefined }
+    const sink = new MemorySink()
+    const svc = new CaptureService({ hal, store, sink, minBytes: 1024, analysis, now: () => new Date(5000), onStored: c => void stored.push(c.id) })
+    expect(await svc.podId('upper')).toBeNull()
+    const { still, bytes } = await svc.capturePodId('upper')
+    expect(still).toEqual({ camera: 'upper', ts: new Date(5000).toISOString(), path: 'podid/upper.jpg', bytes: 8192 })
+    expect(bytes.byteLength).toBe(8192)
+    expect((await svc.podId('upper'))?.bytes.byteLength).toBe(8192)
+    expect(await svc.podId('lower')).toBeNull()
+    // Not a capture: nothing listed, scored, announced or taken at the regular size.
+    expect(store.captures.list('upper', 10)).toEqual([])
+    expect(enqueued).toEqual([])
+    expect(stored).toEqual([])
+    expect(regular).not.toHaveBeenCalled()
+    // The regular still is as it was.
+    const c = await svc.capture('upper')
+    expect(c.bytes).toBe(2048)
+    expect(store.captures.list('upper', 10)).toHaveLength(1)
+  })
+
+  it('a failed pod-ID still raises no alert and keeps the last good one', async () => {
+    const store = new MemoryStore()
+    const hal = new SimHal({ tickMs: 0 })
+    let next: Uint8Array | Error = frame(4096)
+    hal.captureFull = async () => {
+      if (next instanceof Error) throw next
+      return next
+    }
+    const svc = new CaptureService({ hal, store, sink: new MemorySink(), minBytes: 1024 })
+    await svc.capturePodId('lower')
+    next = new Error('no good full-size frame: damaged frame')
+    await expect(svc.capturePodId('lower')).rejects.toThrow('damaged frame')
+    next = frame(4096).subarray(0, 3000)
+    await expect(svc.capturePodId('lower')).rejects.toThrow(/no usable full-size image/)
+    expect(store.alerts.list({ activeOnly: true })).toEqual([])
+    expect((await svc.podId('lower'))?.bytes.byteLength).toBe(4096)
+  })
+
+  it('says so when the hardware has no full-size stills', async () => {
+    const hal = new SimHal({ tickMs: 0 })
+    ;(hal as { captureFull?: unknown }).captureFull = undefined
+    const svc = new CaptureService({ hal, store: new MemoryStore(), sink: new MemorySink() })
+    await expect(svc.capturePodId('upper')).rejects.toThrow(/no full-size stills/)
+  })
 })

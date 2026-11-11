@@ -305,6 +305,8 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
             ucfg.retry_delay = std::time::Duration::from_millis(c.capture_retry_ms);
             ucfg.attempt_timeout = std::time::Duration::from_secs(c.capture_timeout_s);
             ucfg.inspect_frames = c.inspect_frames;
+            ucfg.full_resolution = c.full_resolution.clone();
+            ucfg.full_attempt_timeout = std::time::Duration::from_secs(c.full_capture_timeout_s);
             let name = c.name.clone();
             let camera = hal_drivers::uvc::UvcCamera::new(
                 &c.name,

@@ -64,6 +64,14 @@ pub trait Camera: Send {
     fn damaged_frames(&self) -> u32 {
         0
     }
+    /// A still at the sensor's full size, for reading the pods' dot codes
+    /// (#224). Taken only when asked for, never on the regular schedule.
+    fn capture_full(&mut self) -> Result<Vec<u8>, DeviceError> {
+        Err(DeviceError::Other(format!(
+            "{} camera has no full-size still",
+            self.name()
+        )))
+    }
 }
 
 /// One quantity from a device that reports several at once

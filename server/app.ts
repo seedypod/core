@@ -108,6 +108,16 @@ export function createApp({ ctx, staticRoot }: CreateAppOptions) {
     return c.body(body, 200, { 'content-type': 'image/jpeg', 'cache-control': 'no-cache', 'last-modified': new Date(got.capture.ts).toUTCString() })
   })
 
+  // The latest full-size pod-ID still (#224), taken only by camera.capturePodId.
+  app.get('/api/camera/:camera/podid.jpg', async (c) => {
+    const camera = c.req.param('camera')
+    if (camera !== 'upper' && camera !== 'lower') return c.text('not found', 404)
+    const got = await ctx.captures.podId(camera)
+    if (!got) return c.text('no pod-ID still yet', 404)
+    const body = new Uint8Array(got.bytes).buffer as ArrayBuffer
+    return c.body(body, 200, { 'content-type': 'image/jpeg', 'cache-control': 'no-cache', 'last-modified': new Date(got.still.ts).toUTCString() })
+  })
+
   // Dataset export (ADR-0019): a tar streamed entry by entry, so a month of stills never sits in memory.
   app.get('/api/datasets/export', (c) => {
     let w

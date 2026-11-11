@@ -153,6 +153,14 @@ export class MqttHalClient implements HalClient {
     return new Uint8Array(await r.arrayBuffer())
   }
 
+  /** hald's full-size still. It says nothing about the link, so the link counts are left alone. */
+  async captureFull(camera: 'upper' | 'lower'): Promise<Uint8Array> {
+    const r = await this.fetchImpl(`${this.o.httpBase}/camera/full/${camera}.jpg`)
+    if (r.status === 404) throw new Error('this hald has no full-size stills; update it')
+    if (!r.ok) throw new Error((await r.text().catch(() => '')).trim() || `HTTP ${r.status}`)
+    return new Uint8Array(await r.arrayBuffer())
+  }
+
   damagedFrames(camera: 'upper' | 'lower'): number {
     return this.damaged.get(camera) ?? 0
   }
