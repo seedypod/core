@@ -18,11 +18,11 @@ vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
   const { useEffect } = await import('react')
   return {
     ...real,
-    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, pumping: boolean, topUps: number[] } | null, onUnavailable?: () => void }) => {
+    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { marks: { now: string, cutoff: string | null }, pumping: boolean, topUps: number[], runs: number[], upcoming: number[] } | null, onUnavailable?: () => void }) => {
       useEffect(() => {
         if (hero.fail) onUnavailable?.()
       }, [onUnavailable])
-      return <div data-testid="tank-3d" data-state={status} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'}`}</div>
+      return <div data-testid="tank-3d" data-state={status} aria-label={label}>{data && `${data.marks.now} · ${data.marks.cutoff} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'} · ran ${data.runs.map(r => r.toFixed(2)).join(',')} · later ${data.upcoming.map(r => r.toFixed(2)).join(',')}`}</div>
     },
   }
 })
@@ -104,7 +104,7 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.getByText('pump idle · next run 20:00')).toBeTruthy()
     const strip = within(screen.getByTestId('pump-strip'))
     expect(strip.getByText('Pump idle')).toBeTruthy()
-    expect(strip.getByText('Next run 20:00 · supply 12.3 V')).toBeTruthy()
+    expect(strip.getByText('Next run 20:00 (Evening watering) · supply 12.3 V')).toBeTruthy()
     expect(screen.getByText('≈ 13.5 of 19 L')).toBeTruthy()
     expect(screen.getByText('empty · 20 cm')).toBeTruthy()
     expect(screen.getByText('full · 5 cm')).toBeTruthy()
@@ -171,7 +171,7 @@ describe('WaterPage: tank and pump', () => {
     expect(strip.getByText(/Didn't start: the tank reads low \(water distance 86\.9 cm ≥ 16\.0 cm\)/)).toBeTruthy()
     fireEvent.click(strip.getByText('Try again'))
     expect(screen.getByRole('button', { name: 'Run' })).toBeTruthy()
-    expect(strip.getByText('Next run 20:00 · supply 12.3 V')).toBeTruthy()
+    expect(strip.getByText('Next run 20:00 (Evening watering) · supply 12.3 V')).toBeTruthy()
     vi.useRealTimers()
   })
 
@@ -235,11 +235,55 @@ describe('WaterPage: pump cycles', () => {
     expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'evening', enabled: false }))
   })
 
+  it('offers starting points with no cycle yet, and turns on the one picked, one schedule per run', () => {
+    data.set('schedules', [curve])
+    render(<WaterPage />)
+    expect(screen.getByText(/Gardyn doesn’t publish its watering cadence/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Gardyn’s guide' }).getAttribute('href')).toBe('https://help.mygardyn.com/en/articles/4435265')
+    fireEvent.click(screen.getByTestId('pump-preset-twice-10'))
+    expect(calls.upsert).toHaveBeenCalledTimes(2)
+    expect(calls.upsert).toHaveBeenNthCalledWith(1, expect.objectContaining({ kind: 'pump', name: 'Twice a day · 10 min (08:00)', enabled: true, days: 127, spec: { minute: 480, durationS: 600 } }))
+    expect(calls.upsert).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: 'Twice a day · 10 min (17:00)', spec: { minute: 1020, durationS: 600 } }))
+  })
+
+  it('adds later presets switched off, since cycles add up, from Add cycle', () => {
+    render(<WaterPage />)
+    expect(screen.queryByTestId('pump-preset-once-15')).toBeNull()
+    fireEvent.click(screen.getByText('Add cycle'))
+    expect(screen.getByText(/These start switched off/)).toBeTruthy()
+    fireEvent.click(screen.getByTestId('pump-preset-once-15'))
+    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ name: 'Once a day · 15 min (08:00)', enabled: false }))
+    expect(screen.queryByTestId('pump-preset-once-15')).toBeNull()
+  })
+
+  it('names the next run\'s cycle once, without a preset\'s time in its name', () => {
+    data.set('schedules', [{ ...morning, name: 'Once a day · 15 min (08:00)' }])
+    render(<WaterPage />)
+    expect(within(screen.getByTestId('pump-strip')).getByText(/^Next run 08:00 \(Once a day · 15 min\) · supply/)).toBeTruthy()
+  })
+
+  it('says when nothing will water, and leads from the strip to the pump cycles', () => {
+    data.set('schedules', [curve])
+    render(<WaterPage />)
+    const strip = within(screen.getByTestId('pump-strip'))
+    expect(strip.getByText('No watering schedule')).toBeTruthy()
+    expect(screen.getByTestId('pump-strip').textContent).toContain('No watering schedule · supply 12.3 V')
+    const into = vi.fn()
+    const section = document.getElementById('pump-cycles') as HTMLElement
+    section.scrollIntoView = into
+    fireEvent.click(strip.getByText('No watering schedule'))
+    expect(into).toHaveBeenCalled()
+    cleanup()
+    // While the schedules load, it doesn't guess.
+    data.delete('schedules')
+    render(<WaterPage />)
+    expect(screen.queryByText('No watering schedule')).toBeNull()
+  })
+
   it('adds a cycle through the editor, with no Delete until it exists', () => {
     data.set('schedules', [])
     render(<WaterPage />)
-    expect(screen.getByText(/No pump cycles/)).toBeTruthy()
-    fireEvent.click(screen.getByText('Add cycle'))
+    fireEvent.click(screen.getByTestId('pump-preset-blank'))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).queryByText('Delete')).toBeNull()
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Noon' } })
@@ -320,7 +364,7 @@ describe('WaterPage with WebGL: the tank hero', () => {
     expect(screen.getAllByText('71%')).toHaveLength(1)
     expect(screen.getByText('≈ 13.5 of 19 L')).toBeTruthy()
     expect(screen.getByTestId('tank-summary').textContent).toBe('One top-up this week · drops about 14% a day')
-    expect(screen.getByTestId('tank-3d').textContent).toBe('now · 9.4 cm · cutoff 27% · 16 cm · 1 top-up · still')
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/^now · 9\.4 cm · cutoff 27% · 16 cm · 1 top-up · still · ran /)
     // The scale's words are on the glass now: no footer, no flat meter, no separate history card.
     expect(screen.queryByText('empty · 20 cm')).toBeNull()
     expect(screen.queryByRole('meter', { name: 'Tank level' })).toBeNull()
@@ -338,12 +382,24 @@ describe('WaterPage with WebGL: the tank hero', () => {
     data.set('pump', { ...idle, on: true, level: 30, since: at(12, 30, 3).toISOString(), remainingS: 240 })
     render(<WaterPage />)
     expect(screen.getByTestId('tank-summary').textContent).toBe('Down 14% so far this run')
-    expect(screen.getByTestId('tank-3d').textContent).toMatch(/pumping$/)
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/pumping · ran /)
     expect(screen.getByTestId('tank-3d').getAttribute('aria-label')).toMatch(/with the pump running/)
     cleanup()
     data.set('history', [])
     render(<WaterPage />)
     expect(screen.getByTestId('tank-summary').textContent).toBe('Watering now')
+  })
+
+  it('ticks scheduled runs along the week, and today\'s still to come on the day\'s range', () => {
+    // History runs from the 1st 00:00 to the 3rd 00:00; it's noon on the 3rd.
+    vi.setSystemTime(at(12, 0, 3))
+    data.set('runs', [{ scheduleId: 'morning', key: 'm1', firedAt: at(0, 0, 2).toISOString(), result: 'ok' }, { scheduleId: 'day', key: 'd1', firedAt: at(1, 0, 2).toISOString(), result: 'ok' }])
+    render(<WaterPage />)
+    // Only pump cycles' runs, about half way along (1 Nov has 25 h: the clocks go back); no "later" ticks off the day's range.
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/ran 0\.52 · later $/)
+    fireEvent.click(screen.getByRole('tab', { name: '24h' }))
+    // The evening cycle at 20:00 is still to come: 8 h into the 12 h left of the day.
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/later 0\.67$/)
   })
 
   it('holds the readout\'s place while loading and says the history is loading', () => {

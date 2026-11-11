@@ -154,8 +154,9 @@ const NARROW_PX = 560
  * vertical scale: the line (with a soft fill and its top-ups) runs into a
  * cylinder filled to the level now. One dashed cutoff line crosses both and
  * rings the glass; ticks down the glass's right side read full, now, cutoff
- * and empty. While the pump runs, the water this run drew down is a blue
- * tail into the glass, the last x label turns blue, and bubbles rise.
+ * and empty. Scheduled runs tick the foot of the chart (today's still to
+ * come hollow, after now). While the pump runs, the water this run drew down
+ * is a blue tail into the glass, the last x label turns blue, and bubbles rise.
  */
 export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> {
   const x0 = -5.2
@@ -212,6 +213,22 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     b.visible = false
     return { mesh: b, a: (i / 7) * Math.PI * 2, r: R * (0.25 + 0.5 * ((i * 37) % 7) / 7), speed: 0.45 + ((i * 53) % 7) / 14 }
   })
+
+  // Scheduled runs along the foot of the chart: done ones as small blue bars; today's still to come as hollow ones in the gap between now and the glass, which stands for the rest of the day.
+  const RUN_H = 0.14
+  const ranBars = Array.from({ length: 48 }, () => {
+    const m = new T.Mesh(new T.PlaneGeometry(0.035, RUN_H), base.tint(new T.MeshBasicMaterial({ transparent: true, opacity: 0.8, side: T.DoubleSide, depthWrite: false }), 'blue'))
+    m.visible = false
+    base.root.add(m)
+    return m
+  })
+  const comingBars = Array.from({ length: 8 }, () => {
+    const l = base.line([[-0.03, 0, 0], [0.03, 0, 0], [0.03, RUN_H, 0], [-0.03, RUN_H, 0], [-0.03, 0, 0]], 'blue', 0.7)
+    l.visible = false
+    return l
+  })
+  const GAP0 = x0 + W + 0.08
+  const GAP1 = CX - R - 0.08
 
   const c = new T.Color()
   function mark(k: typeof MARKS[number], y: number | null, text: string | null) {
@@ -271,6 +288,16 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     mark('now', shown && data?.current != null ? h : null, words?.now ?? null)
     mark('cutoff', cut, words?.cutoff ?? null)
     mark('empty', shown ? 0 : null, words?.empty ?? null)
+    ranBars.forEach((m, i) => {
+      const at = data?.runs[i]
+      m.visible = shown && at !== undefined
+      if (m.visible && at !== undefined) m.position.set(x0 + at * W, RUN_H / 2, 0.06)
+    })
+    comingBars.forEach((l, i) => {
+      const at = data?.upcoming[i]
+      l.visible = shown && at !== undefined
+      if (l.visible && at !== undefined) l.position.set(GAP0 + at * (GAP1 - GAP0), 0, 0.06)
+    })
     // While watering, "now" at the end of the time axis is blue like the tail.
     const last = tickLabels.length - 1
     ticks.ink(last, pumping ? 'blue' : 'fg3')

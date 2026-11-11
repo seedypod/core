@@ -35,3 +35,21 @@ describe('light schedules over MCP', () => {
     await client.close()
   })
 })
+
+describe('pump presets over MCP', () => {
+  it('offers watering starting points with their schedules, the guide and the unit\'s timezone, and the schedules upsert as they are', async () => {
+    const { client, call } = await mcp()
+    const tools = await client.listTools()
+    const tool = tools.tools.find(t => t.name === 'pump_presets')
+    expect(tool?.description).toMatch(/Gardyn doesn't publish its watering cadence/)
+    expect(tool?.description).toMatch(/Minutes are the unit's local time/)
+    const got = await call<{ timezone: string, guide: string, presets: Array<{ id: string, schedules: Array<{ id: string, kind: string, name: string, spec: { minute: number, durationS: number } }> }> }>('pump_presets')
+    expect(got.timezone).toBe('UTC')
+    expect(got.guide).toBe('https://help.mygardyn.com/en/articles/4435265')
+    expect(got.presets.map(p => [p.id, p.schedules.length])).toEqual([['twice-10', 2], ['thrice-5', 3], ['once-15', 1]])
+    for (const s of got.presets[0]?.schedules ?? []) await call('upsert_schedule', s)
+    const listed = await call<{ schedules: Array<{ id: string, name: string }> }>('list_schedules')
+    expect(listed.schedules.map(s => s.name)).toEqual(expect.arrayContaining(['Twice a day · 10 min (08:00)', 'Twice a day · 10 min (17:00)']))
+    await client.close()
+  })
+})

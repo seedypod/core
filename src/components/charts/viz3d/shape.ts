@@ -31,6 +31,10 @@ export interface TankData {
   pumping: boolean
   /** Where along the window this run began (0..1): from there the line is the water this run drew down. */
   runFrom: number | null
+  /** Scheduled runs in the window, as fractions along it. */
+  runs: number[]
+  /** Runs still to come today, as fractions of the rest of the day (0 now, 1 midnight). */
+  upcoming: number[]
 }
 
 export interface LightData {
@@ -163,8 +167,8 @@ export function todayData(input: {
   }
 }
 
-/** The tank over its window (0–100%), its top-ups, the pump cutoff, where it is now and, while the pump runs, where the run began. */
-export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], marks: TankMarks, pumping?: boolean, runFrom?: number | null }): TankData {
+/** The tank over its window (0–100%), its top-ups, the pump cutoff, where it is now, scheduled runs done and to come, and, while the pump runs, where the run began. */
+export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], marks: TankMarks, pumping?: boolean, runFrom?: number | null, runs?: number[], upcoming?: number[] }): TankData {
   const finite = input.levels.filter(Number.isFinite)
   const current = input.currentPct ?? finite.at(-1) ?? null
   return {
@@ -176,6 +180,8 @@ export function tankData(input: { levels: number[], topUps: number[], cutoffPct:
     marks: input.marks,
     pumping: input.pumping ?? false,
     runFrom: input.pumping && input.runFrom != null ? Math.max(0, Math.min(1, input.runFrom)) : null,
+    runs: (input.runs ?? []).filter(r => r >= 0 && r <= 1),
+    upcoming: (input.upcoming ?? []).filter(r => r > 0 && r <= 1),
   }
 }
 

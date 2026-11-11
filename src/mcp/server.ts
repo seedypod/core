@@ -10,6 +10,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { RuleInput } from '../autopilot/schema'
 import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '../scheduler/lightPlan'
+import { GARDYN_WATERING_GUIDE, presetSchedules, PUMP_PRESETS } from '../scheduler/pumpPlan'
 import { SensorId } from '../hardware/contract'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
@@ -67,6 +68,11 @@ export function createMcpServer(ctx: Context): McpServer {
     description: `Starting points for a light curve, and Gardyn's guidance to judge one by: 14–16 hours a day at full brightness (Boost); dimmed hours don't count towards them; 17 or more stress the plants (bitter leaves, bolting); nights need unbroken dark (${GARDYN_LIGHT_GUIDE}). Each preset has setpoints to pass to upsert_schedule as spec.setpoints, its boostHours and rating. To set a schedule from the tower: read pods and list_schedules, pick or adjust a preset, upsert it, and turn off any other enabled curve (enabled curves stack, highest level wins). Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
     inputSchema: {},
   }, async () => text({ timezone: (await caller.settings.get()).timezone, presets: LIGHT_PRESETS.map(p => ({ ...p, boostHours: boostHours({ setpoints: p.setpoints }), rating: lightRating(boostHours({ setpoints: p.setpoints })) })) }))
+
+  server.registerTool('pump_presets', {
+    description: `Starting points for watering: twice a day for 10 min, three times for 5 or once for 15. They are seedypod's, not Gardyn's: Gardyn doesn't publish its watering cadence (its Smart Watering adjusts it), and after sowing Gardyn waits a few days to a week before the second watering (${GARDYN_WATERING_GUIDE}). Each preset lists the pump schedules to pass to upsert_schedule, one per run time, every day; turn them on only if no pump cycle runs yet, since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
+    inputSchema: {},
+  }, async () => text({ timezone: (await caller.settings.get()).timezone, guide: GARDYN_WATERING_GUIDE, presets: PUMP_PRESETS.map(p => ({ ...p, schedules: presetSchedules(p, { enabled: true, idPrefix: `pump-${p.id}` }) })) }))
 
   server.registerTool('pods', { description: 'The 30 plant pods: slot, plant, planted date, status (empty, seeded, growing, harvest, attention) and notes.', inputSchema: {} }, async () => text(await caller.grow.pods()))
 

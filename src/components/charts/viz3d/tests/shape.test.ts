@@ -108,6 +108,14 @@ describe('tankData', () => {
     expect(t.marks).toBe(marks)
     expect(t.pumping).toBe(false)
     expect(t.runFrom).toBeNull()
+    expect(t.runs).toEqual([])
+    expect(t.upcoming).toEqual([])
+  })
+
+  it('keeps the runs inside the window and the ones still to come today', () => {
+    const t = tankData({ levels: [1, 2], topUps: [], cutoffPct: null, currentPct: null, ticks: [], marks, runs: [-0.1, 0.2, 1, 1.2], upcoming: [0, 0.4, 1.5] })
+    expect(t.runs).toEqual([0.2, 1])
+    expect(t.upcoming).toEqual([0.4])
   })
 
   it('marks where a run began only while the pump runs, inside the window', () => {

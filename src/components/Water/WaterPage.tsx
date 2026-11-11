@@ -13,7 +13,8 @@ import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from 
 import { tankData, type TankMarks } from '@/src/components/charts/viz3d/shape'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
-import { daysLabel, daysToList, listToDays } from '@/src/lib/days'
+import { dayOn, daysLabel, daysToList, listToDays, weekdayOf } from '@/src/lib/days'
+import { GARDYN_WATERING_GUIDE, presetSchedules, PUMP_PRESETS, type PumpPreset } from '@/src/scheduler/pumpPlan'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle, cutoffPct, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
 import { useNow } from '@/src/components/System/useNow'
@@ -40,6 +41,7 @@ export function WaterPage() {
   const remove = trpc.schedules.remove.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const [dur, setDur] = useState<typeof DURATIONS[number]['value']>('300')
   const [editing, setEditing] = useState<PumpCycle | null>(null)
+  const [adding, setAdding] = useState(false)
   // The tank in 3D heads the page; without WebGL the flat meter and the history chart below stand in.
   const [flat, setFlat] = useState(() => !hasWebGL())
   const p = pump.data
@@ -79,7 +81,13 @@ export function WaterPage() {
           pump={p ?? undefined}
           at={pump.dataUpdatedAt}
           readings={s}
-          next={next ? `Next run ${fmtClock(next.cycle.spec.minute)}` : null}
+          // A preset's cycle is named for its time already ("… (08:00)"); the strip says the time once.
+          next={next ? `Next run ${fmtClock(next.cycle.spec.minute)} (${next.cycle.name.replace(/\s*\(\d\d:\d\d\)$/, '')})` : null}
+          unscheduled={schedules.data !== undefined && !next}
+          onSchedule={() => {
+            setAdding(true)
+            document.getElementById('pump-cycles')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+          }}
           source={p?.on ? runSource(runs.data ?? [], cycles, p.since) : null}
           limits={limitsLine}
           dur={dur}
@@ -114,6 +122,9 @@ export function WaterPage() {
                   cutoff={cutoff}
                   current={s.water_level_pct?.value ?? null}
                   run={p?.on ? { since: p.since } : null}
+                  ran={(runs.data ?? []).filter(r => cycles.some(c => c.id === r.scheduleId)).map(r => r.firedAt)}
+                  nowMin={now.getHours() * 60 + now.getMinutes()}
+                  later={cycles.filter(c => c.enabled && dayOn(c.days, weekdayOf(now)) && c.spec.minute > now.getHours() * 60 + now.getMinutes()).map(c => c.spec.minute)}
                   marks={{
                     full: `full · ${cfg ? withUnit(cfg.waterFullCm, 'cm') : '—'}`,
                     now: `now · ${fmt(s.water_distance)}`,
@@ -127,32 +138,44 @@ export function WaterPage() {
         </div>
       </Card>
 
+      <div id="pump-cycles" className="flex scroll-mt-6 items-center gap-3">
+        <h2 className={`${EYEBROW} flex-1`}>Pump cycles</h2>
+        <Button icon={Plus} aria-expanded={adding || cycles.length === 0} onClick={() => setAdding(!adding)}>Add cycle</Button>
+      </div>
+      {(adding || cycles.length === 0) && (
+        <PumpPresets
+          first={cycles.length === 0}
+          onPick={(preset) => {
+            // The first schedule runs straight away; later ones start off, since cycles add up.
+            for (const sch of presetSchedules(preset, { enabled: cycles.length === 0, idPrefix: `pump-${Date.now().toString(36)}` })) upsert.mutate(sch)
+            setAdding(false)
+          }}
+          onBlank={() => {
+            setAdding(false)
+            setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })
+          }}
+        />
+      )}
+      {cycles.length > 0 && (
+        <Card className="gap-0 p-0">
+          {cycles.map(c => (
+            <div key={c.id} className="flex flex-wrap items-center gap-4 border-b border-line px-5 py-4 last:border-0">
+              <span className={cn('w-[76px] font-mono text-xl font-medium', !c.enabled && 'text-fg-3')}>{fmtClock(c.spec.minute)}</span>
+              <button type="button" className="flex min-w-[160px] flex-1 cursor-pointer flex-col gap-[3px] text-left" onClick={() => setEditing(c)}>
+                <span className={cn('text-sm font-medium', !c.enabled && 'text-fg-2')}>{c.name}</span>
+                <span className="text-[12px] text-fg-3">{[fmtMinutes(c.spec.durationS) + (c.spec.level ? ` at ${c.spec.level}%` : ''), daysLabel(c.days)].join(' · ')}</span>
+              </button>
+              <span className="font-mono text-[11px] text-fg-3">{cycleWhen(c, lastRun(c.id), now)}</span>
+              <Toggle on={c.enabled} size="md" label={`Enable ${c.name}`} onChange={enabled => upsert.mutate({ ...c, enabled })} />
+              <GhostIcon icon={MoreHorizontal} label={`Edit ${c.name}`} className="text-fg-3" onClick={() => setEditing(c)} />
+            </div>
+          ))}
+        </Card>
+      )}
+
       <Card className="py-3">
         <CareSummary />
       </Card>
-
-      <div className="flex items-center gap-3">
-        <h2 className={`${EYEBROW} flex-1`}>Pump cycles</h2>
-        <Button icon={Plus} onClick={() => setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })}>Add cycle</Button>
-      </div>
-      {cycles.length === 0
-        ? <Card dashed><p className="text-[13px] text-fg-2">No pump cycles. Each run is bounded by the hardware max-run and refused when the tank is low.</p></Card>
-        : (
-            <Card className="gap-0 p-0">
-              {cycles.map(c => (
-                <div key={c.id} className="flex flex-wrap items-center gap-4 border-b border-line px-5 py-4 last:border-0">
-                  <span className={cn('w-[76px] font-mono text-xl font-medium', !c.enabled && 'text-fg-3')}>{fmtClock(c.spec.minute)}</span>
-                  <button type="button" className="flex min-w-[160px] flex-1 cursor-pointer flex-col gap-[3px] text-left" onClick={() => setEditing(c)}>
-                    <span className={cn('text-sm font-medium', !c.enabled && 'text-fg-2')}>{c.name}</span>
-                    <span className="text-[12px] text-fg-3">{[fmtMinutes(c.spec.durationS) + (c.spec.level ? ` at ${c.spec.level}%` : ''), daysLabel(c.days)].join(' · ')}</span>
-                  </button>
-                  <span className="font-mono text-[11px] text-fg-3">{cycleWhen(c, lastRun(c.id), now)}</span>
-                  <Toggle on={c.enabled} size="md" label={`Enable ${c.name}`} onChange={enabled => upsert.mutate({ ...c, enabled })} />
-                  <GhostIcon icon={MoreHorizontal} label={`Edit ${c.name}`} className="text-fg-3" onClick={() => setEditing(c)} />
-                </div>
-              ))}
-            </Card>
-          )}
 
       {flat && <TankHistory cutoff={cutoff} />}
 
@@ -333,12 +356,17 @@ function RangeTabs({ value, onChange }: { value: Hours, onChange: (v: Hours) => 
  * then the history and the glass on one scale. Without WebGL it calls
  * `onUnavailable`, and the page goes flat.
  */
-function TankBody({ tank, capacityL, cutoff, current, run, marks, onUnavailable }: {
+function TankBody({ tank, capacityL, cutoff, current, run, ran, nowMin, later, marks, onUnavailable }: {
   tank: number | undefined
   capacityL: number | undefined
   cutoff: number | null
   current: number | null
   run: { since: string } | null
+  /** When scheduled runs fired. */
+  ran: string[]
+  /** Minutes of today now, and that the enabled cycles still run at. */
+  nowMin: number
+  later: number[]
   marks: TankMarks
   onUnavailable: () => void
 }) {
@@ -349,8 +377,22 @@ function TankBody({ tank, capacityL, cutoff, current, run, marks, onUnavailable 
   const x1 = t.xs.at(-1) ?? 0
   const runFrom = run && x1 > x0 ? (Date.parse(run.since) - x0) / (x1 - x0) : null
   const ticks = t.values.length > 1 ? [0, 1, 2, 3, 4].map(k => ({ at: k / 5, label: t.label(Math.round((k / 5) * (t.values.length - 1))) })).concat({ at: 1, label: 'now' }) : []
+  // A run fired since the last sample still sits at the end of the line.
+  const along = (iso: string) => (x1 > x0 ? Math.min(1, (Date.parse(iso) - x0) / (x1 - x0)) : -1)
   const scene = status === 'ready'
-    ? tankData({ levels: t.values, topUps: t.topUps, cutoffPct: cutoff, currentPct: current, ticks, marks, pumping: !!run, runFrom })
+    ? tankData({
+        levels: t.values,
+        topUps: t.topUps,
+        cutoffPct: cutoff,
+        currentPct: current,
+        ticks,
+        marks,
+        pumping: !!run,
+        runFrom,
+        runs: ran.map(along),
+        // Today's runs still to come only fit the day's own range.
+        upcoming: t.h <= 24 ? later.map(m => (m - nowMin) / (1440 - nowMin)) : [],
+      })
     : null
   const before = run ? levelAt(t.q.data ?? [], run.since) : null
   const line = run
@@ -383,6 +425,31 @@ function TankBody({ tank, capacityL, cutoff, current, run, marks, onUnavailable 
   )
 }
 
+/** Watering starting points, as Light offers curves: ours, since Gardyn doesn't publish its cadence; Blank opens the editor. */
+function PumpPresets({ first, onPick, onBlank }: { first: boolean, onPick: (p: PumpPreset) => void, onBlank: () => void }) {
+  return (
+    <Card dashed className="gap-3">
+      <p className="text-[13px] text-fg-2 text-pretty">
+        {'These are our starting points: Gardyn doesn’t publish its watering cadence (its Smart Watering adjusts it), and after sowing it waits a few days to a week before the second watering. '}
+        <a href={GARDYN_WATERING_GUIDE} target="_blank" rel="noopener noreferrer" className="underline decoration-line-2 underline-offset-2 hover:text-fg">Gardyn’s guide</a>
+        {first ? '. Start from one of these:' : '. These start switched off, since cycles add up:'}
+      </p>
+      <div className="grid gap-2 min-[720px]:grid-cols-4">
+        {PUMP_PRESETS.map(p => (
+          <button key={p.id} type="button" data-testid={`pump-preset-${p.id}`} onClick={() => onPick(p)} className="flex cursor-pointer flex-col gap-1 rounded-card border border-line bg-surface px-3.5 py-3 text-left hover:border-line-2">
+            <span className="text-sm font-medium">{p.name}</span>
+            <span className="text-[12px] leading-snug text-fg-2">{p.description}</span>
+          </button>
+        ))}
+        <button type="button" data-testid="pump-preset-blank" onClick={onBlank} className="flex cursor-pointer flex-col gap-1 rounded-card border border-dashed border-line-2 px-3.5 py-3 text-left hover:border-fg-3">
+          <span className="text-sm font-medium">Blank</span>
+          <span className="text-[12px] leading-snug text-fg-2">A run time and length of your own. Each run is bounded by the pump’s max run and refused when the tank is low.</span>
+        </button>
+      </div>
+    </Card>
+  )
+}
+
 const CHIP = 'grid size-8 cursor-pointer place-items-center rounded-[7px] border font-mono text-[12px]'
 
 /**
@@ -392,11 +459,14 @@ const CHIP = 'grid size-8 cursor-pointer place-items-center rounded-[7px] border
  * power, a countdown and Stop, and a progress line along its foot. Both states
  * are the same height, so the body below never moves.
  */
-function PumpStrip({ pump: p, at, readings: s, next, source, limits, dur, onDur, starting, notice, stopping, onRun, onStop }: {
+function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, source, limits, dur, onDur, starting, notice, stopping, onRun, onStop }: {
   pump: { on: boolean, level: number, since: string, fault: string | null, remainingS: number | null } | undefined
   at: number
   readings: Partial<Record<SensorId, Reading>>
   next: string | null
+  /** No cycle will run: the subtitle says so and leads to the pump cycles. */
+  unscheduled: boolean
+  onSchedule: () => void
   source: string | null
   limits: string | undefined
   dur: typeof DURATIONS[number]['value']
@@ -432,7 +502,14 @@ function PumpStrip({ pump: p, at, readings: s, next, source, limits, dur, onDur,
               {status(
                 p?.fault ? 'bg-danger' : 'bg-fg-3',
                 p ? (p.fault ? 'Pump fault' : 'Pump idle') : 'Pump',
-                notice ?? <span className="truncate">{p?.fault ?? [next, s.pump_v ? `supply ${fmt(s.pump_v)}` : null].filter(Boolean).join(' · ')}</span>,
+                notice ?? (p?.fault
+                  ? <span className="truncate">{p.fault}</span>
+                  : (
+                      <span className="truncate">
+                        {unscheduled && <button type="button" onClick={onSchedule} className="cursor-pointer border-0 bg-transparent p-0 text-fg-2 underline underline-offset-2 hover:text-fg">No watering schedule</button>}
+                        {[unscheduled ? null : next, s.pump_v ? `supply ${fmt(s.pump_v)}` : null].filter(Boolean).map((t, i) => (unscheduled || i > 0 ? ` · ${t}` : t)).join('')}
+                      </span>
+                    )),
               )}
               <div className="flex h-10 items-center gap-2">
                 <span className="text-[12px] text-fg-3">Run for</span>
