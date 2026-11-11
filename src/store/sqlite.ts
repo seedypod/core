@@ -162,7 +162,8 @@ export class SqliteStore implements Store {
       this.db.update(t.growCycles).set({ issued: JSON.stringify([...c.issued, reminder]) }).where(eq(t.growCycles.id, c.id)).run()
     },
     setProtocol: (patch: Partial<GrowProtocolState>): GrowCycle | null => {
-      const r = this.db.update(t.growCycles).set(patch).where(sql`${t.growCycles.endedAt} IS NULL`).returning().get()
+      const { stageStarts, ...rest } = patch
+      const r = this.db.update(t.growCycles).set({ ...rest, ...(stageStarts ? { stageStarts: JSON.stringify(stageStarts) } : {}) }).where(sql`${t.growCycles.endedAt} IS NULL`).returning().get()
       return r ? rowToCycle(r) : null
     },
     end: (ts: string): GrowCycle | null => {
@@ -500,7 +501,7 @@ function rowToSaved(r: typeof t.scheduleLibrary.$inferSelect): SavedSchedule {
 }
 
 function rowToCycle(r: typeof t.growCycles.$inferSelect): GrowCycle {
-  return { ...r, issued: JSON.parse(r.issued) as string[] }
+  return { ...r, issued: JSON.parse(r.issued) as string[], stageStarts: JSON.parse(r.stageStarts) as Record<string, string> }
 }
 
 function rowToAnalysis(r: typeof t.analysisResults.$inferSelect): AnalysisRow {

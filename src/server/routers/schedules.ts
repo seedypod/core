@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { activateEntry, activeEntryId, libraryEntries, libraryEntry } from '../../care/library'
+import { readTower } from '../../care/tower'
 import { plantSlug } from '../../plants/custom'
 import { LIGHT_PRESETS } from '../../scheduler/lightPlan'
 import { lightLevelAt } from '../../scheduler/scheduler'
@@ -32,8 +33,9 @@ const Entry = z.object({
 
 const now = (ctx: Context) => (ctx.now ?? (() => new Date()))()
 const entries = (ctx: Context) => {
-  const active = activeEntryId(ctx.store)
-  return libraryEntries(ctx.store, now(ctx)).map(e => ({ ...e, active: e.id === active, readOnly: e.kind === 'preset' }))
+  const t = readTower(ctx.store)
+  const active = activeEntryId(t)
+  return libraryEntries(t, now(ctx)).map(e => ({ ...e, active: e.id === active, readOnly: e.kind === 'preset' }))
 }
 const own = (ctx: Context, id: string) => {
   if (id.startsWith('preset:')) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Built-in presets are read-only: duplicate one to change it' })
@@ -70,11 +72,11 @@ const libraryRouter = router({
     .output(Entry)
     .mutation(({ ctx, input }) => {
       const prev = own(ctx, input.id)
-      const wasActive = activeEntryId(ctx.store) === prev.id
+      const wasActive = activeEntryId(readTower(ctx.store)) === prev.id
       const { id, ...patch } = input
       const next = ctx.store.scheduleLibrary.upsert({ id, name: patch.name ?? prev.name, cycles: patch.cycles ?? prev.cycles, lightPresetId: patch.lightPresetId === undefined ? prev.lightPresetId : patch.lightPresetId }, now(ctx).toISOString())
       if (wasActive) {
-        const entry = libraryEntry(ctx.store, next.id, now(ctx))
+        const entry = libraryEntry(readTower(ctx.store), next.id, now(ctx))
         if (entry) activateEntry(ctx.store, entry, now(ctx))
         changed(ctx, id)
       }
@@ -101,7 +103,7 @@ const libraryRouter = router({
     .input(z.object({ id: z.string() }))
     .output(z.array(Entry))
     .mutation(({ ctx, input }) => {
-      const entry = libraryEntry(ctx.store, input.id, now(ctx))
+      const entry = libraryEntry(readTower(ctx.store), input.id, now(ctx))
       if (!entry) throw new TRPCError({ code: 'NOT_FOUND', message: `no schedule ${input.id}` })
       activateEntry(ctx.store, entry, now(ctx))
       changed(ctx, input.id)

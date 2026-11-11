@@ -36,7 +36,7 @@ export const ProtocolOut = z.object({
   canAdvance: z.boolean(),
   hold: z.object({ stageId: z.string(), since: z.string().nullable(), days: z.number() }).nullable(),
   then: z.object({ kind: z.enum(['stay', 'schedule', 'remind']), scheduleId: z.string().nullable(), scheduleName: z.string().nullable(), harvestDay: z.number().nullable(), harvestOn: z.string().nullable(), done: z.boolean() }),
-  water: z.enum(['protocol', 'schedule', 'edited', 'none']),
+  water: z.enum(['preset', 'schedule', 'edited', 'none']),
   activeScheduleId: z.string().nullable(),
   stages: z.array(Stage),
   behind: z.array(z.object({ slot: z.number(), plant: z.string().nullable(), daysBehind: z.number() })),

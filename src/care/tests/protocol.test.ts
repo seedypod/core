@@ -13,6 +13,7 @@ import { PUMP_PRESETS, presetSchedules, type PumpPresetId } from '../../schedule
 import { MemoryStore } from '../../store/memory'
 import { CareEngine } from '../engine'
 import { activateEntry, activeEntryId, libraryEntry } from '../library'
+import { readTower } from '../tower'
 import { advanceProtocol, HARVEST_ALERT, holdProtocol, PROTOCOLS, protocolFor, protocolReport, protocolState, releaseProtocol, runProtocol, setProtocolThen, stageDiff, THEN_ALERT, type ProtocolStage } from '../protocol'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
@@ -83,22 +84,22 @@ describe('grow protocols (ADR-0030)', () => {
 
   it('fixes the track once germination ends, so a fruiting crop planted later doesn\'t switch it', () => {
     const store = tower()
-    expect(protocolState(store, day(3)).protocol.id).toBe('greens-herbs')
+    expect(protocolState(readTower(store), day(3)).protocol.id).toBe('greens-herbs')
     expect(runProtocol(store, day(8)).followed).toMatchObject({ from: 'germination', to: 'seedlings' })
     expect(store.grow.current()?.protocolId).toBe('greens-herbs')
     store.pods.update(2, { plant: 'Red Cherry Tomato', plantedAt: '2026-11-17', status: 'seeded' }, '2026-11-17T12:00:00Z')
-    expect(protocolState(store, day(9)).protocol.id).toBe('greens-herbs')
+    expect(protocolState(readTower(store), day(9)).protocol.id).toBe('greens-herbs')
     // Before germination ends it still goes by the crops.
     const early = tower()
     early.pods.update(2, { plant: 'Red Cherry Tomato', plantedAt: '2026-11-09', status: 'seeded' }, '2026-11-09T12:00:00Z')
-    expect(protocolState(early, day(3)).protocol.id).toBe('fruiting')
+    expect(protocolState(readTower(early), day(3)).protocol.id).toBe('fruiting')
     expect(runProtocol(early, day(8)).followed).toMatchObject({ to: 'fruiting' })
   })
 
   it('reports where the protocol is: stage dates on the unit\'s calendar, the change into each, the water\'s owner', () => {
     const store = tower()
     const r = protocolReport(store, day(2))
-    expect(r).toMatchObject({ following: true, protocol: { id: 'greens-herbs', name: 'Greens & herbs', fixed: false }, sownOn: '2026-11-09', day: 2, stage: 'germination', dayInStage: 2, canAdvance: true, hold: null, water: 'protocol', activeScheduleId: 'preset:germination' })
+    expect(r).toMatchObject({ following: true, protocol: { id: 'greens-herbs', name: 'Greens & herbs', fixed: false }, sownOn: '2026-11-09', day: 2, stage: 'germination', dayInStage: 2, canAdvance: true, hold: null, water: 'preset', activeScheduleId: 'preset:germination' })
     expect(r.stages.map(s => [s.id, s.startsOn, s.state])).toEqual([['germination', '2026-11-09', 'current'], ['seedlings', '2026-11-17', 'next'], ['young', '2026-11-23', 'next'], ['maintenance', '2026-12-01', 'next']])
     expect(r.stages[1]).toMatchObject({ change: 'Watering goes from once a week to once a day, 15 → 10 min.', water: { presetId: 'seedlings', runs: [480], durationS: 600, days: 127, weekly: false }, light: null })
     expect(r.stages[0]?.water).toMatchObject({ days: 1, weekly: true })
@@ -162,9 +163,40 @@ describe('grow protocols (ADR-0030)', () => {
     expect(() => advanceProtocol(bare, day(2))).toThrow(/Nothing is planted/)
   })
 
+  it('keeps the days begun stages ran when Advance and Release move the clock', () => {
+    const store = tower()
+    // Advance on day 2 (Wed 11 Nov), then hold seedlings 10 days.
+    advanceProtocol(store, day(2))
+    holdProtocol(store, day(2))
+    releaseProtocol(store, day(12))
+    expect(store.grow.current()).toMatchObject({ shiftDays: -4, stageStarts: { germination: '2026-11-09', seedlings: '2026-11-11' } })
+    const r = protocolReport(store, day(12))
+    expect(r).toMatchObject({ stage: 'seedlings', day: 8 })
+    expect(r.stages.map(s => [s.id, s.startsOn, s.state])).toEqual([['germination', '2026-11-09', 'done'], ['seedlings', '2026-11-11', 'current'], ['young', '2026-11-27', 'next'], ['maintenance', '2026-12-05', 'next']])
+    // A later Advance records the stage it starts and keeps the rest.
+    advanceProtocol(store, day(13))
+    expect(protocolReport(store, day(13)).stages.map(s => s.startsOn).slice(0, 3)).toEqual(['2026-11-09', '2026-11-11', '2026-11-22'])
+    // Water put ahead of the clock: its stage began no later than today.
+    const ahead = tower({ cycles: 'mature' })
+    expect(protocolReport(ahead, day(3)).stages.at(-1)).toMatchObject({ state: 'current', startsOn: '2026-11-12' })
+  })
+
+  it('offers Advance only where the server takes it: an open cycle, something planted, a stage to go to', () => {
+    expect(protocolReport(tower(), day(2)).canAdvance).toBe(true)
+    expect(protocolReport(tower({ cycles: 'mature' }), day(30)).canAdvance).toBe(false)
+    expect(protocolReport(tower({ cycle: false }), day(2)).canAdvance).toBe(false)
+    // Held, then everything emptied: a stage is held but nothing is planted.
+    const emptied = tower()
+    holdProtocol(emptied, day(2))
+    emptied.pods.update(1, { plant: null, plantedAt: null, status: 'empty' }, day(3).toISOString())
+    const r = protocolReport(emptied, day(3))
+    expect(r).toMatchObject({ stage: 'germination', daysSinceSowing: null, canAdvance: false })
+    expect(() => advanceProtocol(emptied, day(3))).toThrow(/Nothing is planted/)
+  })
+
   it('stays in maintenance by default: nothing fires once it is reached', () => {
     const store = tower({ cycles: 'young' })
-    expect(runProtocol(store, day(22))).toMatchObject({ followed: { to: 'mature' }, switched: null, notices: [] })
+    expect(runProtocol(store, day(22))).toMatchObject({ followed: { to: 'mature' }, notices: [] })
     expect(runProtocol(store, day(200))).toMatchObject({ followed: null, notices: [] })
     expect(pumps(store)).toEqual(['water-mature-0800', 'water-mature-1400', 'water-mature-2000'])
   })
@@ -174,18 +206,19 @@ describe('grow protocols (ADR-0030)', () => {
     store.scheduleLibrary.upsert(summer, 't')
     expect(setProtocolThen(store, day(15), { kind: 'schedule', scheduleId: 'summer', when: 'maintenance' })).toBeNull()
     expect(protocolReport(store, day(15)).then).toMatchObject({ kind: 'schedule', scheduleId: 'summer', scheduleName: 'Summer', done: false })
-    expect(runProtocol(store, day(21)).switched).toBeNull()
+    expect(runProtocol(store, day(21)).followed).toBeNull()
     const run = runProtocol(store, day(22))
-    expect(run).toMatchObject({ switched: 'summer', followed: { from: 'young', to: 'mature', days: 22 } })
-    expect(run.followed?.detail).toMatch(/^Maintenance began on day 22: watering switched to your schedule Summer, as chosen\./)
+    // The change names the schedule put on, not the stage's preset.
+    expect(run.followed).toMatchObject({ from: 'young', to: null, schedule: { id: 'summer', name: 'Summer' }, days: 22 })
+    expect(run.followed?.detail).toMatch(/^Watering switched to Summer: maintenance began on day 22, as you chose\./)
     expect(pumps(store)).toEqual(['water-own-summer-0700', 'water-own-summer-1200', 'water-own-summer-1700', 'water-own-summer-2000'])
     expect(store.scheduleLibrary.get('summer')?.lastUsedAt).toBe(day(22).toISOString())
     const r = protocolReport(store, day(23))
     expect(r).toMatchObject({ water: 'schedule', activeScheduleId: 'summer', stage: 'maintenance', then: { done: true } })
-    expect(runProtocol(store, day(23))).toMatchObject({ followed: null, switched: null, notices: [] })
+    expect(runProtocol(store, day(23))).toMatchObject({ followed: null, notices: [] })
     // The current stage's preset hands watering back to the protocol.
-    activateEntry(store, libraryEntry(store, 'preset:mature', day(24)) ?? (null as never), day(24))
-    expect(protocolReport(store, day(24))).toMatchObject({ water: 'protocol', activeScheduleId: 'preset:mature' })
+    activateEntry(store, libraryEntry(readTower(store), 'preset:mature', day(24)) ?? (null as never), day(24))
+    expect(protocolReport(store, day(24))).toMatchObject({ water: 'preset', activeScheduleId: 'preset:mature' })
   })
 
   it('doesn\'t switch over cycles changed by hand: it says so in Needs you instead', () => {
@@ -193,8 +226,8 @@ describe('grow protocols (ADR-0030)', () => {
     store.scheduleLibrary.upsert(summer, 't')
     setProtocolThen(store, day(15), { kind: 'schedule', scheduleId: 'summer' })
     const run = runProtocol(store, day(22))
-    expect(run.switched).toBeNull()
-    expect(run.notices).toEqual([{ kind: THEN_ALERT, detail: expect.stringMatching(/watering didn't switch to Summer: the pump cycles were changed/) }])
+    expect(run.followed).toBeNull()
+    expect(run.notices).toEqual([{ kind: THEN_ALERT, detail: expect.stringMatching(/watering didn't switch to Summer: the pump cycles were changed by hand\./) }])
     expect(pumps(store)).toEqual(['mine'])
     expect(runProtocol(store, day(23)).notices).toEqual([])
   })
@@ -203,8 +236,8 @@ describe('grow protocols (ADR-0030)', () => {
     const store = tower({ cycles: 'seedlings' })
     store.scheduleLibrary.upsert(summer, 't')
     expect(setProtocolThen(store, day(10), { kind: 'schedule', scheduleId: 'summer', when: 'now' })).toBe('summer')
-    expect(activeEntryId(store)).toBe('summer')
-    expect(runProtocol(store, day(22)).switched).toBeNull()
+    expect(activeEntryId(readTower(store))).toBe('summer')
+    expect(runProtocol(store, day(22)).followed).toBeNull()
     const late = tower({ cycles: 'mature' })
     late.scheduleLibrary.upsert(summer, 't')
     expect(setProtocolThen(late, day(30), { kind: 'schedule', scheduleId: 'summer' })).toBe('summer')
@@ -225,11 +258,71 @@ describe('grow protocols (ADR-0030)', () => {
     expect(() => setProtocolThen(unknown, day(2), { kind: 'remind' })).toThrow(/No planted crop is in the catalog/)
   })
 
-  it('does nothing with Follow the grow cycle off', () => {
+  it('changes no watering with Follow the grow cycle off, but still reminds at first harvest', () => {
     const store = tower({ cycles: 'young' })
+    store.scheduleLibrary.upsert(summer, 't')
     store.settings.update({ followGrowCycle: false })
-    expect(runProtocol(store, day(30))).toEqual({ followed: null, switched: null, notices: [] })
-    expect(protocolReport(store, day(30)).following).toBe(false)
+    setProtocolThen(store, day(15), { kind: 'schedule', scheduleId: 'summer' })
+    expect(runProtocol(store, day(30))).toEqual({ followed: null, notices: [] })
+    expect(pumps(store)).toEqual(['water-young-0800', 'water-young-1600'])
+    expect(protocolReport(store, day(30))).toMatchObject({ following: false, then: { done: false } })
+    setProtocolThen(store, day(30), { kind: 'remind' })
+    expect(runProtocol(store, day(60)).notices).toEqual([{ kind: HARVEST_ALERT, detail: expect.stringMatching(/^First harvest is about now, day 60/) }])
+    expect(pumps(store)).toEqual(['water-young-0800', 'water-young-1600'])
+  })
+
+  it('queues a switch again after going back to the protocol, and fires the new one', () => {
+    const store = tower({ cycles: 'young' })
+    store.scheduleLibrary.upsert(summer, 't')
+    expect(setProtocolThen(store, day(15), { kind: 'schedule', scheduleId: 'summer', when: 'now' })).toBe('summer')
+    expect(protocolReport(store, day(15)).then.done).toBe(true)
+    // Back to the protocol, then queue the same schedule for maintenance.
+    activateEntry(store, libraryEntry(readTower(store), 'preset:young', day(16)) ?? (null as never), day(16))
+    setProtocolThen(store, day(16), { kind: 'schedule', scheduleId: 'summer', when: 'maintenance' })
+    expect(protocolReport(store, day(16)).then).toMatchObject({ kind: 'schedule', done: false })
+    expect(runProtocol(store, day(22)).followed).toMatchObject({ schedule: { id: 'summer' } })
+    expect(protocolReport(store, day(22))).toMatchObject({ water: 'schedule', then: { done: true } })
+    // Choosing the reminder again after it fired doesn't repeat it.
+    const r = tower({ cycles: 'mature' })
+    setProtocolThen(r, day(25), { kind: 'remind' })
+    runProtocol(r, day(60))
+    setProtocolThen(r, day(61), { kind: 'remind' })
+    expect(runProtocol(r, day(62)).notices).toEqual([])
+  })
+
+  it('says why a queued switch didn\'t happen: another schedule, or no cycles; not when it is already on', () => {
+    const store = tower({ cycles: 'young' })
+    store.scheduleLibrary.upsert(summer, 't')
+    store.scheduleLibrary.upsert({ ...summer, id: 'away', name: 'Away', cycles: [{ minute: 480, durationS: 480, days: 127 }] }, 't')
+    setProtocolThen(store, day(15), { kind: 'schedule', scheduleId: 'summer' })
+    activateEntry(store, libraryEntry(readTower(store), 'away', day(16)) ?? (null as never), day(16))
+    expect(runProtocol(store, day(22)).notices[0]?.detail).toMatch(/another of your schedules, Away, is on\./)
+    const none = tower({ cycles: 'none' })
+    none.scheduleLibrary.upsert(summer, 't')
+    setProtocolThen(none, day(15), { kind: 'schedule', scheduleId: 'summer' })
+    expect(runProtocol(none, day(22)).notices[0]?.detail).toMatch(/there are no pump cycles\./)
+    const on = tower({ cycles: 'young' })
+    on.scheduleLibrary.upsert(summer, 't')
+    setProtocolThen(on, day(15), { kind: 'schedule', scheduleId: 'summer' })
+    activateEntry(on, libraryEntry(readTower(on), 'summer', day(16)) ?? (null as never), day(16))
+    expect(runProtocol(on, day(22)).notices).toEqual([])
+  })
+
+  it('counts any built-in preset as a preset, even the other track\'s, and switches over it', () => {
+    // No grow cycle: the track follows the crops, so a tomato flips seedlings watering onto Fruiting.
+    const store = tower({ cycle: false, cycles: 'seedlings' })
+    store.pods.update(2, { plant: 'Red Cherry Tomato', plantedAt: '2026-11-09', status: 'seeded' }, '2026-11-09T12:00:00Z')
+    const r = protocolReport(store, day(10))
+    expect(r).toMatchObject({ protocol: { id: 'fruiting' }, stage: 'maintenance', water: 'preset', activeScheduleId: 'preset:seedlings' })
+    // Never onto the fruiting track from seedlings: the cycles stay.
+    expect(runProtocol(store, day(10)).followed).toBeNull()
+    expect(pumps(store)).toEqual(['water-seedlings-0800'])
+    // A grow cycle on it: a queued switch goes over the other track's preset too.
+    const cycle = tower({ cycles: 'seedlings' })
+    cycle.scheduleLibrary.upsert(summer, 't')
+    cycle.pods.update(2, { plant: 'Red Cherry Tomato', plantedAt: '2026-11-09', status: 'seeded' }, '2026-11-09T12:00:00Z')
+    setProtocolThen(cycle, day(3), { kind: 'schedule', scheduleId: 'summer' })
+    expect(runProtocol(cycle, day(8)).followed).toMatchObject({ from: 'seedlings', schedule: { id: 'summer' } })
   })
 })
 
@@ -238,23 +331,57 @@ describe('your schedules (ADR-0030)', () => {
     const store = tower({ cycles: 'mature' })
     store.schedules.upsert({ ...light, id: 'evening', name: 'Evening', enabled: false })
     store.scheduleLibrary.upsert({ ...summer, id: 'away', name: 'Away', cycles: [{ minute: 480, durationS: 480, days: 127 }], lightPresetId: 'day-14h' }, 't')
-    const away = libraryEntry(store, 'away', day(30))
+    const away = libraryEntry(readTower(store), 'away', day(30))
     if (!away) throw new Error('no away')
     activateEntry(store, away, day(30))
     expect(pumps(store)).toEqual(['water-own-away-0800'])
     expect(store.schedules.list().find(s => s.id === 'water-own-away-0800')).toMatchObject({ name: 'Away · 8 min (08:00)', enabled: true, days: 127, spec: { minute: 480, durationS: 480 } })
     const lights = () => store.schedules.list().filter(s => s.kind === 'light').map(s => [s.id, s.enabled]).sort()
     expect(lights()).toEqual([['evening', false], ['gardyn', false], ['light-own-away', true]])
-    expect(activeEntryId(store)).toBe('away')
+    expect(activeEntryId(readTower(store))).toBe('away')
     // Another schedule with a light takes the place of this one's curve.
     store.scheduleLibrary.upsert({ ...summer, lightPresetId: 'day-16h' }, 't')
-    activateEntry(store, libraryEntry(store, 'summer', day(31)) ?? (null as never), day(31))
+    activateEntry(store, libraryEntry(readTower(store), 'summer', day(31)) ?? (null as never), day(31))
     expect(lights()).toEqual([['evening', false], ['gardyn', false], ['light-own-summer', true]])
     // A cycle paused by hand is no longer the schedule as written.
     const first = store.schedules.list().find(s => s.id === 'water-own-summer-0700')
     if (first) store.schedules.upsert({ ...first, enabled: false })
-    expect(activeEntryId(store)).toBeNull()
+    expect(activeEntryId(readTower(store))).toBeNull()
     expect(protocolReport(store, day(31)).water).toBe('edited')
+  })
+
+  it('turns back on exactly the curves a schedule\'s light turned off when one without a light is used', () => {
+    const store = tower({ cycles: 'mature' })
+    store.schedules.upsert({ ...light, id: 'evening', name: 'Evening', enabled: false })
+    store.scheduleLibrary.upsert({ ...summer, id: 'away', name: 'Away', lightPresetId: 'day-14h' }, 't')
+    store.scheduleLibrary.upsert(summer, 't')
+    const use = (id: string) => activateEntry(store, libraryEntry(readTower(store), id, day(30)) ?? (null as never), day(30))
+    const lights = () => store.schedules.list().filter(s => s.kind === 'light').map(s => [s.id, s.enabled]).sort()
+    use('away')
+    expect(store.settings.get().libraryLightsOff).toEqual(['gardyn'])
+    // A preset has no light: the schedule's curve goes, and only the one it turned off comes back.
+    use('preset:mature')
+    expect(lights()).toEqual([['evening', false], ['gardyn', true]])
+    expect(store.settings.get().libraryLightsOff).toBeNull()
+    use('away')
+    use('summer')
+    expect(lights()).toEqual([['evening', false], ['gardyn', true]])
+    // A curve deleted while it was off just stays gone.
+    use('away')
+    store.schedules.remove('gardyn')
+    use('summer')
+    expect(lights()).toEqual([['evening', false]])
+  })
+
+  it('takes the light off when the active schedule\'s light preset is cleared', async () => {
+    const store = tower({ cycles: 'mature' })
+    const core = createCore({ hal: new SimHal({ tickMs: 0 }), store, events: createEventBus(), version: 'test', now: () => day(30) })
+    const c = createCallerFactory(appRouter)(core.ctx)
+    const away = await c.schedules.library.create({ name: 'Away', cycles: summer.cycles, lightPresetId: 'day-16h' })
+    await c.schedules.library.activate({ id: away.id })
+    expect(store.schedules.list().filter(s => s.kind === 'light' && s.enabled).map(s => s.id)).toEqual(['light-own-away'])
+    await c.schedules.library.update({ id: away.id, lightPresetId: null })
+    expect(store.schedules.list().filter(s => s.kind === 'light').map(s => [s.id, s.enabled])).toEqual([['gardyn', true]])
   })
 
   it('lists yours then the presets read-only, and keeps them through the API: create, update, delete, activate', async () => {

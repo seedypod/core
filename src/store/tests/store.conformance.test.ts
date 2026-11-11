@@ -111,12 +111,18 @@ for (const [name, make] of impls) {
       store = make()
       expect(store.grow.setProtocol({ shiftDays: 2 })).toBeNull()
       const c = store.grow.start('2026-01-01T00:00:00Z')
-      expect(c).toMatchObject({ protocolId: null, shiftDays: 0, holdStageId: null, holdSince: null, thenKind: 'stay', thenScheduleId: null })
+      expect(c).toMatchObject({ protocolId: null, shiftDays: 0, holdStageId: null, holdSince: null, thenKind: 'stay', thenScheduleId: null, thenDoneAt: null, stageStarts: {} })
       store.grow.setProtocol({ protocolId: 'greens-herbs', holdStageId: 'young', holdSince: '2026-01-15T00:00:00Z' })
       expect(store.grow.setProtocol({ shiftDays: -3, thenKind: 'schedule', thenScheduleId: 'summer' })).toMatchObject({ protocolId: 'greens-herbs', shiftDays: -3, holdStageId: 'young', thenKind: 'schedule', thenScheduleId: 'summer' })
-      store.grow.setProtocol({ holdStageId: null, holdSince: null })
-      expect(store.grow.current()).toMatchObject({ id: c.id, shiftDays: -3, holdStageId: null, holdSince: null, thenScheduleId: 'summer' })
-      expect(store.grow.start('2026-03-01T00:00:00Z')).toMatchObject({ protocolId: null, shiftDays: 0, thenKind: 'stay' })
+      store.grow.setProtocol({ holdStageId: null, holdSince: null, thenDoneAt: '2026-01-23T00:00:00Z', stageStarts: { germination: '2026-01-01', seedlings: '2026-01-07' } })
+      expect(store.grow.current()).toMatchObject({ id: c.id, shiftDays: -3, holdStageId: null, holdSince: null, thenScheduleId: 'summer', thenDoneAt: '2026-01-23T00:00:00Z', stageStarts: { germination: '2026-01-01', seedlings: '2026-01-07' } })
+      // Patching other fields keeps the recorded stage days.
+      expect(store.grow.setProtocol({ shiftDays: 0 })?.stageStarts).toEqual({ germination: '2026-01-01', seedlings: '2026-01-07' })
+      expect(store.grow.start('2026-03-01T00:00:00Z')).toMatchObject({ protocolId: null, shiftDays: 0, thenKind: 'stay', thenDoneAt: null, stageStarts: {} })
+      // The curves Your schedules turned off are kept as a list, and null clears it.
+      expect(store.settings.get().libraryLightsOff).toBeNull()
+      expect(store.settings.update({ libraryLightsOff: ['gardyn', 'evening'] }).libraryLightsOff).toEqual(['gardyn', 'evening'])
+      expect(store.settings.update({ libraryLightsOff: null }).libraryLightsOff).toBeNull()
     })
 
     it('your schedules (ADR-0030): upsert keeps createdAt and lastUsedAt, list is oldest first', () => {
@@ -566,7 +572,8 @@ describe('SqliteStore on disk', () => {
       db.prepare('INSERT INTO grow_cycles (id, startedAt) VALUES (?, ?)').run('cycle-1', '2026-11-01T00:00:00.000Z')
       db.close()
       const store = new SqliteStore({ url })
-      expect(store.grow.current()).toMatchObject({ id: 'cycle-1', protocolId: null, shiftDays: 0, holdStageId: null, thenKind: 'stay', thenScheduleId: null })
+      expect(store.grow.current()).toMatchObject({ id: 'cycle-1', protocolId: null, shiftDays: 0, holdStageId: null, thenKind: 'stay', thenScheduleId: null, thenDoneAt: null, stageStarts: {} })
+      expect(store.settings.get().libraryLightsOff).toBeNull()
       expect(store.scheduleLibrary.list()).toEqual([])
       store.close()
     }

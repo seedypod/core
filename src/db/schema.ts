@@ -36,6 +36,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   analysisArtifacts: integer({ mode: 'boolean' }).notNull().default(false),
   /** Move the pump cycles to the next growth stage's watering preset as the plants age. */
   followGrowCycle: integer({ mode: 'boolean' }).notNull().default(true),
+  /** Light curves Your schedules turned off for a schedule's light preset, to turn back on (ADR-0030). */
+  libraryLightsOff: text({ mode: 'json' }).$type<string[]>(),
   /** Bearer token for POST /api/analyses/results; empty = ingest off. */
   analysisIngestToken: text().notNull().default(''),
   /** JSON: pod boxes moved per camera and slot, as fractions of the frame (#143); null = measured defaults. */
@@ -106,6 +108,10 @@ export const growCycles = sqliteTable('grow_cycles', {
   holdSince: text(),
   thenKind: text({ enum: ['stay', 'schedule', 'remind'] }).notNull().default('stay'),
   thenScheduleId: text(),
+  /** When the chosen Then fired; choosing again clears it. */
+  thenDoneAt: text(),
+  /** The day each stage began, JSON { stageId: YYYY-MM-DD }, kept when Advance or Release move the clock. */
+  stageStarts: text().notNull().default('{}'),
 })
 
 export const pods = sqliteTable('pods', {

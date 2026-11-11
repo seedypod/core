@@ -23,10 +23,17 @@ export interface Snack {
 }
 
 const FOLLOW = /^follow:(.+)$/
+const SWITCH = /^follow:schedule:(.+)$/
 
-/** The care engine moved watering on with the grow cycle (`follow:<preset>`), or kept germination on the sowing weekday. */
+/**
+ * The care engine moved watering on with the grow protocol (`follow:<preset>`),
+ * kept germination on the sowing weekday, or made the switch to one of Your
+ * schedules queued for maintenance (`follow:schedule:<name>`).
+ */
 export function followSnack(e: CoreEvent): Snack | null {
   if (e.kind !== 'schedule' || e.action !== 'changed') return null
+  const name = SWITCH.exec(e.id)?.[1]
+  if (name) return { id: 'follow', tone: 'cool', icon: Sprout, title: `Watering switched to ${name}`, detail: 'Maintenance began', view: { to: '/grow', label: 'View' } }
   const to = FOLLOW.exec(e.id)?.[1]
   const preset = PUMP_PRESETS.find(p => p.id === to)
   if (!preset) return null

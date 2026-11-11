@@ -109,7 +109,7 @@ export class MemoryStore implements Store {
         open.endedAt = ts
         open.stage = 'ended'
       }
-      const c: GrowCycle = { id: `cycle-${this.cycles.length + 1}`, startedAt: ts, endedAt: null, stage: 'germination', notes, issued: [], protocolId: null, shiftDays: 0, holdStageId: null, holdSince: null, thenKind: 'stay', thenScheduleId: null }
+      const c: GrowCycle = { id: `cycle-${this.cycles.length + 1}`, startedAt: ts, endedAt: null, stage: 'germination', notes, issued: [], protocolId: null, shiftDays: 0, holdStageId: null, holdSince: null, thenKind: 'stay', thenScheduleId: null, thenDoneAt: null, stageStarts: {} }
       this.cycles.push(c)
       return c
     },
@@ -134,7 +134,7 @@ export class MemoryStore implements Store {
     setProtocol: (patch: Partial<GrowProtocolState>): GrowCycle | null => {
       const c = this.grow.current()
       if (!c) return null
-      Object.assign(c, patch)
+      Object.assign(c, clone(patch))
       return c
     },
     end: (ts: string): GrowCycle | null => {

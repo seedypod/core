@@ -94,11 +94,15 @@ that gap. The existing citation test covers protocols too.
 | `holdStageId`, `holdSince` | The held stage, or both `null` |
 | `thenKind` | `stay`, `schedule` or `remind`; `stay` by default |
 | `thenScheduleId` | The library schedule for `schedule` |
+| `thenDoneAt` | When the chosen Then fired; a new choice clears it |
+| `stageStarts` | JSON `{ stageId: date }`: the day each begun stage began, recorded when Advance or Release moves the clock |
 
 **Protocol day** = days since the grow cycle's sowing date (on the unit's
 calendar, as today) + `shiftDays`. The stage is the one whose `from`–`to`
-holds that day, or the held stage while held. Stage start dates on the track
-are the sowing date + `from` − `shiftDays`.
+holds that day, or the held stage while held. Stages not yet begun start on
+the sowing date + `from` − `shiftDays` (plus the days held so far). Begun
+stages keep the day they began: Advance and Release record those days in
+`stageStarts` before they move the clock, so history never moves.
 
 **Mixed sowing dates.** The protocol counts from the grow cycle, not from each
 pod. `protocol.current` lists each planted pod sown later than that with its
@@ -119,16 +123,19 @@ effect when it is made:
   Queued is the only switch the runner makes on its own, and only because
   someone chose it. Picking "when maintenance begins" while already in
   maintenance switches now.
-- **Remind me at first harvest**: a Needs-you item (alert `protocol_harvest`)
+- **Remind me at first harvest**: a Needs-you item (alert `reminder_first_harvest`)
   on the crops' first-harvest day, from the catalog (`harvestMonths[0]` at the
   planner's 30 days a month, ADR 0024), the latest across planted pods. With no
   catalog crop planted there is no day, and the option says so.
 
-Each fires once per grow cycle, recorded in the cycle's `issued` list like the
-grow reminders. A queued switch applies only over the stage as the protocol
-wrote it; over edited cycles it raises alert `protocol_then` in Needs you
-instead. Deleting the Then
-schedule resets Then to `stay`.
+Each fires once, recorded in `thenDoneAt`. Choosing a Then again clears it,
+so a switch queued after going back to the protocol fires too; choosing the
+reminder again doesn't repeat one that fired. A queued switch applies only
+over a built-in preset as written (either track's); over cycles changed by
+hand, another of your schedules or none, it raises `reminder_schedule_switch`
+in Needs you instead, saying which. Both alerts are `reminder_` kinds, so they
+get Done and Skip and no toast. Deleting the Then schedule resets Then to
+`stay`.
 
 ### 4. Your schedules
 
@@ -140,9 +147,12 @@ one, duplicate it.
 
 Activating a schedule writes its cycles as pump schedules `water-own-<id>-HHMM`
 and removes the other pump cycles. If it names a light preset, it writes that
-curve as `light-own-<id>` and turns the other enabled curves off (not deleted).
-Activation is an explicit choice by a person, so unlike the runner it may
-replace what is there.
+curve as `light-own-<id>` and turns the other enabled curves off (not
+deleted), recording which in `device_settings.libraryLightsOff`. Activating one
+without a light preset, a built-in preset included, or clearing the active
+one's light preset, removes the `light-own-` curve and turns exactly those
+curves back on. Activation is an explicit choice by a person, so unlike the
+runner it may replace what is there.
 
 **Active** is derived, not stored: the library entry or preset the live pump
 cycles are, as written (the same matching as `appliedPreset` and
@@ -166,9 +176,11 @@ care engine's tick. Its rules are the ones that already hold:
 - **Only over its own writing.** A stage's water is applied only when the live
   pump cycles are still an earlier stage's preset as written: all on, the
   preset's days and length (`followedPreset`). It never creates cycles where
-  there are none. Otherwise `protocol.current` reports water as `schedule`
-  (a library entry), `edited` or `none`, and the cycles are left alone. Light, when a
-  stage sets it, follows the same rule against the curve the protocol wrote.
+  there are none. `protocol.current` reports water as `preset` (a built-in
+  preset as written, either track's), `schedule` (a library entry), `edited`
+  (changed by hand) or `none`; only `preset` cycles are ever moved. Light,
+  when a stage sets it, follows the same rule against the curve the protocol
+  wrote.
 - **Germination's weekly run keeps to the sowing weekday**, as today.
 - **Then**, as section 3: a queued switch at maintenance's start, a reminder on
   the harvest day, each once.
@@ -178,8 +190,9 @@ and why (from `stageDiff`), and emits `schedule` `changed` (ADR 0015), as
 today.
 
 **`followGrowCycle`** keeps its column and now means "run the protocol". Off,
-the schedules stay as they are: no stage moves, no Then. The library still
-works by hand.
+the schedules stay as they are: no stage moves and no queued switch. The
+first-harvest reminder still fires, as it changes no watering. The library
+still works by hand.
 
 **Hold and Advance:**
 
@@ -200,7 +213,7 @@ Neither can bring back an earlier stage.
 - `protocol.current`: the protocol, each stage with resolved water (runs,
   length, days), light, feed, checks and its start date on the unit calendar;
   the current stage and day in it; hold; `canAdvance`; Then, with the
-  first-harvest day; water `protocol`, `schedule`, `edited` or `none`; the
+  first-harvest day; water `preset`, `schedule`, `edited` or `none`; the
   pods sown later, with `daysBehind`.
 - `protocol.hold`, `protocol.release`, `protocol.advance`, `protocol.setThen`.
 - `schedules.library.list|create|update|delete|activate`.
@@ -238,8 +251,8 @@ Neither can bring back an earlier stage.
   `edited`, untouched, exactly as `followGrowCycle` treats it today.
 - Then defaults to `stay`: a grow stays in maintenance until someone chooses
   otherwise.
-- One new table (`schedule_library`) and six columns on `grow_cycles`
-  (migration 0018). Backups carry both (ADR 0021).
+- One new table (`schedule_library`), eight columns on `grow_cycles` and one
+  on `device_settings` (migration 0018). Backups carry them (ADR 0021).
 - A new knowledge note, `knowledge/plants/germination.md`, from Gardyn's
   germination tips.
 - The Water page's preset picker becomes the Grow page's protocol track and
@@ -249,11 +262,12 @@ Neither can bring back an earlier stage.
 
 - Protocols, the runner (`runProtocol`), Hold, Advance, Then and `stageDiff`:
   `src/care/protocol.ts`, called from `CareEngine.tick` in place of
-  `followGrowCycle`, which is now the runner's watering move. The engine also
-  reruns on a `grow` mutation, so Advance takes effect at once. The preset
-  moves themselves stay in `src/care/follow.ts`.
+  `followGrowCycle`. The engine also reruns on a `grow` mutation, so Advance
+  takes effect at once. The preset moves themselves stay in
+  `src/care/follow.ts`.
 - Your schedules, activation and the derived active entry:
-  `src/care/library.ts`.
+  `src/care/library.ts`. Both read the store once per request or tick
+  through `src/care/tower.ts`.
 - Store: `GrowCycle` protocol fields, `store.grow.setProtocol`,
   `store.scheduleLibrary.*`, in MemoryStore and SqliteStore with conformance
   tests; migration 0018 (`grow_protocols`).

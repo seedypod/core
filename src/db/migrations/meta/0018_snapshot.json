@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "15319e16-a59f-4a13-bf43-802953618804",
+  "id": "29bf6728-3a87-4537-871b-edc43488e4e2",
   "prevId": "d76f2ac9-ebb1-403c-9ca7-58d2e4dc436b",
   "tables": {
     "alerts": {
@@ -769,6 +769,13 @@
           "autoincrement": false,
           "default": true
         },
+        "libraryLightsOff": {
+          "name": "libraryLightsOff",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "analysisIngestToken": {
           "name": "analysisIngestToken",
           "type": "text",
@@ -988,6 +995,21 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "thenDoneAt": {
+          "name": "thenDoneAt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "stageStarts": {
+          "name": "stageStarts",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
         }
       },
       "indexes": {},

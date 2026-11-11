@@ -33,6 +33,8 @@ export interface DeviceSettings {
   analysisArtifacts: boolean
   /** Move the pump cycles to the next growth stage's watering preset as the plants age. */
   followGrowCycle: boolean
+  /** Light curves Your schedules turned off for a schedule's light preset, to turn back on; null when none. */
+  libraryLightsOff: string[] | null
   analysisIngestToken: string
   /** Pod boxes the owner moved on the cameras' stills (#143); null keeps the measured defaults. */
   podRegions: RegionCalibration | null
@@ -102,11 +104,15 @@ export interface GrowCycle {
   /** What comes after the protocol: stay in maintenance, switch to `thenScheduleId` when maintenance begins, or a reminder at first harvest. */
   thenKind: ThenKind
   thenScheduleId: string | null
+  /** When the chosen Then fired; choosing again clears it. */
+  thenDoneAt: string | null
+  /** The day each stage began on the unit's calendar, recorded when Advance or Release move the clock. */
+  stageStarts: Record<string, string>
 }
 
 export type ThenKind = 'stay' | 'schedule' | 'remind'
 /** The protocol fields of a grow cycle, as `grow.setProtocol` takes them. */
-export type GrowProtocolState = Pick<GrowCycle, 'protocolId' | 'shiftDays' | 'holdStageId' | 'holdSince' | 'thenKind' | 'thenScheduleId'>
+export type GrowProtocolState = Pick<GrowCycle, 'protocolId' | 'shiftDays' | 'holdStageId' | 'holdSince' | 'thenKind' | 'thenScheduleId' | 'thenDoneAt' | 'stageStarts'>
 
 /** One pump cycle of a saved schedule; `days` is the weekday mask (bit 0 = Monday). */
 export interface SavedCycle { minute: number, durationS: number, days: number }
@@ -443,6 +449,7 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   primaryAnalyzer: 'green-threshold',
   analysisArtifacts: false,
   followGrowCycle: true,
+  libraryLightsOff: null,
   analysisIngestToken: '',
   podRegions: null,
   mirrorEndpoint: null,

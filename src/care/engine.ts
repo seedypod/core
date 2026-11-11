@@ -51,7 +51,7 @@ export class CareEngine {
     const { followed, notices } = runProtocol(store, now)
     if (followed) {
       store.alerts.raise(FOLLOW_ALERT, followed.detail, now.toISOString())
-      events.emit({ kind: 'schedule', action: 'changed', id: `follow:${followed.to}` })
+      events.emit({ kind: 'schedule', action: 'changed', id: followed.schedule ? `follow:schedule:${followed.schedule.name}` : `follow:${followed.to}` })
       events.emit({ kind: 'mutation', path: `alerts.${FOLLOW_ALERT}` })
     }
     for (const n of notices) {

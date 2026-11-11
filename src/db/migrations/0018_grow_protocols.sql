@@ -8,9 +8,12 @@ CREATE TABLE `schedule_library` (
 	`lastUsedAt` text
 );
 --> statement-breakpoint
+ALTER TABLE `device_settings` ADD `libraryLightsOff` text;--> statement-breakpoint
 ALTER TABLE `grow_cycles` ADD `protocolId` text;--> statement-breakpoint
 ALTER TABLE `grow_cycles` ADD `shiftDays` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE `grow_cycles` ADD `holdStageId` text;--> statement-breakpoint
 ALTER TABLE `grow_cycles` ADD `holdSince` text;--> statement-breakpoint
 ALTER TABLE `grow_cycles` ADD `thenKind` text DEFAULT 'stay' NOT NULL;--> statement-breakpoint
-ALTER TABLE `grow_cycles` ADD `thenScheduleId` text;
+ALTER TABLE `grow_cycles` ADD `thenScheduleId` text;--> statement-breakpoint
+ALTER TABLE `grow_cycles` ADD `thenDoneAt` text;--> statement-breakpoint
+ALTER TABLE `grow_cycles` ADD `stageStarts` text DEFAULT '{}' NOT NULL;
