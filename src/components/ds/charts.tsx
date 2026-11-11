@@ -55,11 +55,12 @@ export interface LineSeries {
   dots?: boolean
 }
 
-/** A horizontal rule at `value`; `strong` for a reference such as zero. */
+/** A horizontal rule at `value`; `strong` for a reference such as zero; `below`, classes for a band from the rule to the floor (a range that can't be used, say). */
 export interface ChartGuide {
   value: number
   label?: string
   strong?: boolean
+  below?: string
 }
 
 /** A vertical hairline at a fractional point index, e.g. 2.5 between points 2 and 3. */
@@ -107,9 +108,11 @@ export function LineChart({ series, min, max, height = 80, className, xLabel, fo
     return out.trim()
   }
   const labelled = guides.filter(g => g.label)
-  const bare = !xLabel && markers.length === 0 && labelled.length === 0
+  // Bands are HTML under the plot, so their pattern doesn't stretch with the viewBox.
+  const banded = guides.filter(g => g.below)
+  const bare = !xLabel && markers.length === 0 && labelled.length === 0 && banded.length === 0
   const svg = (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className={cn('block', bare && className)}>
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className={cn('block', !bare && 'relative', bare && className)}>
       {guides.map(g => (
         <line
           key={`guide-${g.value}`}
@@ -170,6 +173,9 @@ export function LineChart({ series, min, max, height = 80, className, xLabel, fo
   const values = idx === null ? [] : series.map((s, i) => (Number.isFinite(s.data[idx]) ? format(s.data[idx], i) : null)).filter((v): v is string => v !== null)
   return (
     <div className={cn('relative', className)} onPointerMove={xLabel ? hover.onPointerMove : undefined} onPointerLeave={xLabel ? hover.onPointerLeave : undefined}>
+      {banded.map(g => (
+        <div key={`band-${g.value}`} aria-hidden data-testid="chart-band" className={cn('pointer-events-none absolute inset-x-0', g.below)} style={{ top: yOf(g.value), height: Math.max(0, yOf(lo) - yOf(g.value)) }} />
+      ))}
       {svg}
       {labelled.map(g => (
         <span key={`guide-${g.value}`} aria-hidden className="pointer-events-none absolute right-full -translate-y-1/2 whitespace-nowrap pr-1.5 font-mono text-[10px] leading-3 text-fg-3" style={{ top: yOf(g.value) }}>

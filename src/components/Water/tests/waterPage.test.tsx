@@ -122,7 +122,8 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.getByText('≈ 13.5 of 19 L')).toBeTruthy()
     expect(screen.getByText('empty · 20 cm')).toBeTruthy()
     expect(screen.getByText('full · 5 cm')).toBeTruthy()
-    expect(screen.getByText('pump cutoff 27%')).toBeTruthy()
+    // The scale's and the history's keys to the hatching.
+    expect(screen.getAllByText('unusable · below pump cutoff 27%')).toHaveLength(2)
     expect(screen.getByText('9.4 cm')).toBeTruthy()
     // The pump's limits are Run's tooltip.
     expect(strip.getByRole('button', { name: 'Run' }).getAttribute('title')).toBe('Up to 15 min per run at 30% duty. Won\'t start below 16 cm of water.')
@@ -236,6 +237,30 @@ describe('WaterPage: tank and pump', () => {
     expect(within(screen.getByTestId('pump-strip')).getByText('Pump')).toBeTruthy()
     expect(screen.getByText('empty')).toBeTruthy()
     expect(screen.queryByText(/pump cutoff/)).toBeNull()
+    expect(screen.queryByTestId('tank-reserve')).toBeNull()
+    expect(screen.getByRole('meter', { name: 'Tank level' }).getAttribute('aria-description')).toBeNull()
+  })
+
+  it('hatches the water under the pump cutoff as unusable, on the meter and under the history\'s cutoff line', () => {
+    render(<WaterPage />)
+    // (20 − 16) / (20 − 5) of the tank.
+    expect(screen.getByTestId('tank-reserve').style.width).toBe('27%')
+    expect(screen.getByTestId('tank-reserve').className).toContain('tank-reserve')
+    expect(screen.getByRole('meter', { name: 'Tank level' }).getAttribute('aria-description')).toBe('The bottom 27%, below the pump cutoff, is hatched: the pump won\'t draw it.')
+    // From the cutoff line down to the floor of the 160 px plot (4 px padding each side).
+    const band = screen.getByTestId('chart-band')
+    expect(band.className).toContain('tank-reserve')
+    expect(Number.parseFloat(band.style.top)).toBeCloseTo(4 + 0.73 * 152)
+    expect(Number.parseFloat(band.style.height)).toBeCloseTo(0.27 * 152)
+    // Above the cutoff the pump can still draw.
+    expect(screen.queryByTestId('tank-in-reserve')).toBeNull()
+  })
+
+  it('says the pump won\'t start once the level is down in the hatched reserve', () => {
+    data.set('sensors', { ...(data.get('sensors') as object), water_level_pct: { value: 27, unit: '%' } })
+    render(<WaterPage />)
+    expect(screen.getByTestId('tank-in-reserve').textContent).toBe('Below the pump cutoff · the pump won\'t start')
+    expect(screen.getByRole('meter', { name: 'Tank level' }).firstElementChild?.className).toContain('opacity-60')
   })
 })
 
@@ -504,6 +529,9 @@ describe('WaterPage with WebGL: the tank hero', () => {
     expect(screen.getByText('≈ 13.5 of 19 L')).toBeTruthy()
     expect(screen.getByTestId('tank-summary').textContent).toBe('One top-up this week · drops about 14% a day')
     expect(screen.getByTestId('tank-3d').textContent).toMatch(/^now · 9\.4 cm · cutoff 27% · 16 cm · 1 top-up · still · ran /)
+    // The glass hatches the reserve; the key and the label say what it is.
+    expect(screen.getByText('unusable · below pump cutoff 27%')).toBeTruthy()
+    expect(screen.getByTestId('tank-3d').getAttribute('aria-label')).toBe('Tank at 71%, and its level over the last week. The bottom 27%, below the pump cutoff, is hatched: the pump won\'t draw it.')
     // The scale's words are on the glass now: no footer, no flat meter, no separate history card.
     expect(screen.queryByText('empty · 20 cm')).toBeNull()
     expect(screen.queryByRole('meter', { name: 'Tank level' })).toBeNull()

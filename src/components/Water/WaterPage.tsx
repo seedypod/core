@@ -148,9 +148,10 @@ export function WaterPage() {
           {flat
             ? (
                 <>
-                  <TankReadout tank={tank} capacityL={cfg?.tankCapacityL} />
-                  <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100}>
-                    <div className="h-full rounded-full bg-tank transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
+                  <TankReadout tank={tank} capacityL={cfg?.tankCapacityL} reserve={inReserve(tank, cutoff)} />
+                  <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100} aria-description={reserveWords(cutoff)}>
+                    <div className={cn('h-full rounded-full bg-tank transition-[width] duration-700', inReserve(tank, cutoff) && 'opacity-60')} style={{ width: `${tank ?? 0}%` }} />
+                    {cutoff !== null && <div aria-hidden data-testid="tank-reserve" className="tank-reserve absolute inset-y-0 left-0 rounded-l-full" style={{ width: `${cutoff}%` }} />}
                     {cutoff !== null && <div className="absolute -top-1 h-[18px] w-px bg-pod-ready" style={{ left: `${cutoff}%` }} />}
                   </div>
                   <TankScale cutoff={cutoff} emptyCm={cfg?.waterEmptyCm} fullCm={cfg?.waterFullCm} />
@@ -363,21 +364,42 @@ function useTankHistory(hours: Hours) {
 }
 
 /** The level now in big type, and about how much water that is. */
-function TankReadout({ tank, capacityL }: { tank: number | undefined, capacityL: number | undefined }) {
+/** Whether the level is down in the reserve under the pump cutoff, where the pump won't start. */
+function inReserve(tank: number | undefined, cutoff: number | null): boolean {
+  return tank !== undefined && cutoff !== null && tank <= cutoff
+}
+
+/** The hatching in words, for the meter and the charts. */
+function reserveWords(cutoff: number | null): string | undefined {
+  return cutoff === null ? undefined : `The bottom ${cutoff}%, below the pump cutoff, is hatched: the pump won't draw it.`
+}
+
+function TankReadout({ tank, capacityL, reserve = false }: { tank: number | undefined, capacityL: number | undefined, reserve?: boolean }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
       <span className="font-mono text-[44px] font-medium leading-none"><Pending loading={tank === undefined} sample="100%">{`${tank}%`}</Pending></span>
       {tank !== undefined && capacityL !== undefined && <span className="text-[13px] text-fg-2">{`≈ ${toDisplay(Math.round(capacityL * tank / 10) / 10, 'L').value} of ${withUnit(capacityL, 'L')}`}</span>}
+      {reserve && <span className="text-[13px] font-medium text-pod-ready" data-testid="tank-in-reserve">{'Below the pump cutoff · the pump won\'t start'}</span>}
     </div>
+  )
+}
+
+/** The key to the hatching: the water under the pump cutoff, which the pump won't draw. */
+function ReserveLegend({ cutoff }: { cutoff: number }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pod-ready">
+      <span aria-hidden className="tank-reserve h-2.5 w-3.5 rounded-[2px]" />
+      {`unusable · below pump cutoff ${cutoff}%`}
+    </span>
   )
 }
 
 /** Empty, the pump cutoff and full, under the meter or the scene. */
 function TankScale({ cutoff, emptyCm, fullCm }: { cutoff: number | null, emptyCm: number | undefined, fullCm: number | undefined }) {
   return (
-    <div className={AXIS}>
+    <div className={cn(AXIS, 'items-center')}>
       <span>{emptyCm !== undefined ? `empty · ${withUnit(emptyCm, 'cm')}` : 'empty'}</span>
-      {cutoff !== null && <span className="text-pod-ready">{`pump cutoff ${cutoff}%`}</span>}
+      {cutoff !== null && <ReserveLegend cutoff={cutoff} />}
       <span>{fullCm !== undefined ? `full · ${withUnit(fullCm, 'cm')}` : 'full'}</span>
     </div>
   )
@@ -487,7 +509,7 @@ function TankBody({ hours, onHours, preview, tank, capacityL, cutoff, current, r
     <>
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <TankReadout tank={tank} capacityL={capacityL} />
+          <TankReadout tank={tank} capacityL={capacityL} reserve={inReserve(tank, cutoff)} />
           <span className={cn('min-h-[18px] text-[12px]', run ? 'text-tank' : 'text-fg-3')} data-testid="tank-summary">
             {status === 'loading' && !run ? <LoadingLine /> : t.values.length > 1 || run ? line : ''}
           </span>
@@ -501,11 +523,12 @@ function TankBody({ hours, onHours, preview, tank, capacityL, cutoff, current, r
         kind="tank"
         data={scene}
         status={status}
-        label={`Tank at ${tank ?? '—'}%, and its level over the last ${t.h <= 24 ? 'day' : t.h <= 168 ? 'week' : 'month'}${run ? ', with the pump running' : ''}`}
+        label={[`Tank at ${tank ?? '—'}%, and its level over the last ${t.h <= 24 ? 'day' : t.h <= 168 ? 'week' : 'month'}${run ? ', with the pump running' : ''}.`, reserveWords(cutoff)].filter(Boolean).join(' ')}
         message={status === 'error' ? `Couldn't load the tank history: ${t.q.error?.message ?? ''}` : 'No tank level recorded in this window.'}
         fallback={null}
         onUnavailable={onUnavailable}
       />
+      {cutoff !== null && status === 'ready' && <div className="flex justify-end"><ReserveLegend cutoff={cutoff} /></div>}
     </>
   )
 }
@@ -760,7 +783,7 @@ function TankHistory({ cutoff }: { cutoff: number | null }) {
                 height={160}
                 min={0}
                 max={100}
-                guides={cutoff !== null ? [{ value: cutoff }] : []}
+                guides={cutoff !== null ? [{ value: cutoff, below: 'tank-reserve' }] : []}
                 series={[
                   { data: values, color: 'var(--meter)', fill: true, width: 1.5 },
                   { data: values.map((v, i) => (topUps.includes(i) ? v : Number.NaN)), color: 'var(--pod-ok)', dots: true, width: 4 },
@@ -771,6 +794,7 @@ function TankHistory({ cutoff }: { cutoff: number | null }) {
               <div className={AXIS} aria-hidden>
                 {ticks.map((i, k) => <span key={k}>{label(i)}</span>)}
               </div>
+              {cutoff !== null && <div className="flex justify-end" aria-description={reserveWords(cutoff)}><ReserveLegend cutoff={cutoff} /></div>}
             </>
           ))}
       {stats && (

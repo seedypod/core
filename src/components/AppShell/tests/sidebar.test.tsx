@@ -48,6 +48,17 @@ describe('Sidebar', () => {
     expect(screen.queryByText('Tank · watering')).toBeNull()
   })
 
+  it('hatches the tank\'s meter under the pump cutoff once the cutoff and calibration are known', () => {
+    data.set('sensors.latest', { water_level_pct: { value: 71, unit: '%' } })
+    render(<Sidebar status={online} />)
+    expect(screen.queryByTestId('meter-reserve')).toBeNull()
+    cleanup()
+    data.set('system.info', { system: { caps: { sensors: [] }, limits: { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16 } } })
+    data.set('settings.get', { waterFullCm: 5, waterEmptyCm: 20 })
+    render(<Sidebar status={online} />)
+    expect(screen.getByTestId('meter-reserve').style.width).toBe('27%')
+  })
+
   it('says the tank is watering while the pump runs', () => {
     data.set('sensors.latest', { water_level_pct: { value: 71, unit: '%' } })
     data.set('pump.get', { on: true, level: 30, remainingS: 200 })
@@ -109,10 +120,10 @@ describe('Sidebar', () => {
 
   it('adds a water line for installed water-quality probes only', () => {
     data.set('sensors.latest', { ph: { value: 6.1, unit: 'pH' }, ec: { value: 1.4, unit: 'mS/cm' } })
-    data.set('system.info', { system: { caps: { sensors: ['air_temp', 'ph', 'ec'] } } })
+    data.set('system.info', { system: { caps: { sensors: ['air_temp', 'ph', 'ec'] }, limits: { waterLowCm: null } } })
     const { rerender } = render(<Sidebar status={online} />)
     expect(screen.getByText('pH 6.1 · EC 1.4 mS/cm').closest('a')?.getAttribute('href')).toBe('/sensors')
-    data.set('system.info', { system: { caps: { sensors: ['air_temp'] } } })
+    data.set('system.info', { system: { caps: { sensors: ['air_temp'] }, limits: { waterLowCm: null } } })
     rerender(<Sidebar status={online} />)
     expect(screen.queryByText(/^pH /)).toBeNull()
   })
