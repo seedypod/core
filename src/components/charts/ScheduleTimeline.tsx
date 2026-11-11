@@ -6,7 +6,7 @@ import { holdWindow, mergedAt, nextDim, nextOn, runningToday, type LightCurve } 
 import { fmtDay, fmtMinutes, nextRun, type PumpCycle } from '@/src/components/Water/pumpCycles'
 import { fmtIn } from '@/src/components/System/statusData'
 import { useNow } from '@/src/components/System/useNow'
-import { dayOn } from '@/src/lib/days'
+import { dayOn, daysLabel } from '@/src/lib/days'
 import { localTime, systemZone } from '@/src/scheduler/time'
 
 const DAY = 1440
@@ -62,6 +62,8 @@ interface Mark {
   title: string
   kind: 'light' | 'water' | 'preview' | 'run' | 'hold'
   muted?: boolean
+  /** A run's days, said under its times in the tooltip. */
+  days?: number
   from?: number
   to?: number
 }
@@ -78,8 +80,8 @@ function lightMark(s: Segment, muted: boolean): Mark {
   return { start: s.start, end: s.end, label: ramp ? '' : `${s.from}%`, title: `Light ${level} · ${span(s.start, s.end)}${muted ? ' · not running today' : ''}`, kind: 'light', muted, from: s.from, to: s.to }
 }
 
-function runMark(minute: number, durationS: number, title: string, kind: Mark['kind'], muted?: boolean): Mark {
-  return { start: minute, end: minute + durationS / 60, label: fmtMinutes(durationS), title: `${title} · ${span(minute, minute + durationS / 60)} · ${fmtMinutes(durationS)}`, kind, muted }
+function runMark(minute: number, durationS: number, title: string, kind: Mark['kind'], muted: boolean, days: number): Mark {
+  return { start: minute, end: minute + durationS / 60, label: fmtMinutes(durationS), title: `${title} · ${span(minute, minute + durationS / 60)} · ${fmtMinutes(durationS)}`, kind, muted, days }
 }
 
 /** A mark past midnight, drawn to 24:00 with its tail from 00:00; the title keeps its true times. */
@@ -134,7 +136,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   }
   const waterMarks: Mark[] = cycles.flatMap((c) => {
     const today = c.enabled && dayOn(c.days, weekday)
-    return clipToDay(runMark(c.spec.minute, c.spec.durationS, `${c.name}${today ? '' : c.enabled ? ' · not today' : ' · off'}`, 'water', !today))
+    return clipToDay(runMark(c.spec.minute, c.spec.durationS, `${c.name}${today ? '' : c.enabled ? ' · not today' : ' · off'}`, 'water', !today, c.days))
   })
   if (pumpRun) {
     const from = Math.max(0, minuteOf(pumpRun.since))
@@ -143,7 +145,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   }
   // A weekly preset runs only on its day: elsewhere its row says when it next does.
   const previewToday = !preview?.days || dayOn(preview.days, weekday)
-  const previewMarks = preview ? (previewToday ? preview.runs.flatMap(m => clipToDay(runMark(m, preview.durationS, `Preview: ${preview.name}`, 'preview'))) : []) : null
+  const previewMarks = preview ? (previewToday ? preview.runs.flatMap(m => clipToDay(runMark(m, preview.durationS, `Preview: ${preview.name}`, 'preview', false, preview.days ?? 127))) : []) : null
   const previewNext = !previewToday ? preview?.next ?? null : null
 
   // What's next, by the same helpers as the pages' strips and subtitles, so they all agree.
@@ -348,6 +350,7 @@ function Row({ id, name, sub, title, marks, note, width, active, onActive, laneR
             style={{ left: tipLeft, width: tipW }}
           >
             {open.title}
+            {open.days !== undefined && <span className="block text-fg-2" data-testid="timeline-tip-days">{daysLabel(open.days)}</span>}
           </span>
         )}
       </div>

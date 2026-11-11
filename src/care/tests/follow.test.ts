@@ -72,7 +72,7 @@ describe('watering follows the grow cycle', () => {
     store.grow.start('2026-11-12T08:00:00Z', 'Again')
     const change = followGrowCycle(store, day(4))
     expect(change).toMatchObject({ from: 'germination', to: 'germination', days: 1 })
-    expect(change?.detail).toMatch(/^Germination's weekly run moved to Thu, the sowing weekday: day 1 since sowing\./)
+    expect(change?.detail).toMatch(/^Germination's weekly run moved to Thursdays, the sowing weekday: day 1 since sowing\./)
     expect(store.schedules.list().find(s => s.kind === 'pump')).toMatchObject({ id: 'water-germination-0800', days: 1 << 3 })
     expect(followGrowCycle(store, day(5))).toBeNull()
     // A germination cycle on two days isn't the preset as written: left alone.

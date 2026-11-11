@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, Card, GhostIcon, InlineError, Skeleton } from '@/src/components/ds/core'
 import { LineChart } from '@/src/components/ds/charts'
-import { DayPicker, SegmentedControl, TextField, Toggle } from '@/src/components/ds/forms'
+import { DayPicker, SegmentedControl, TextField, Toggle, WeekdayDots } from '@/src/components/ds/forms'
 import { Modal } from '@/src/components/ds/feedback'
 import { fmtClock, fmtDate, fmtTime } from '@/src/components/charts/format'
 import { bin } from '@/src/components/charts/TimeChart'
@@ -221,6 +221,7 @@ export function WaterPage() {
         light={light}
         recommended={recommended}
         sown={sown}
+        sowDay={sowDay}
         follow={!!cfg?.followGrowCycle}
         nextWeekly={(preset) => {
           const at = nextPresetRun(preset, light, sowDay, now, zone)
@@ -242,7 +243,10 @@ export function WaterPage() {
               <span className={cn('w-[76px] font-mono text-xl font-medium', !c.enabled && 'text-fg-3')}>{fmtClock(c.spec.minute)}</span>
               <button type="button" className="flex min-w-[160px] flex-1 cursor-pointer flex-col gap-[3px] text-left" onClick={() => setEditing(c)}>
                 <span className={cn('text-sm font-medium', !c.enabled && 'text-fg-2')}>{c.name}</span>
-                <span className="text-[12px] text-fg-3">{[fmtMinutes(c.spec.durationS) + (c.spec.level ? ` at ${c.spec.level}%` : ''), daysLabel(c.days)].join(' · ')}</span>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-fg-3">
+                  {fmtMinutes(c.spec.durationS) + (c.spec.level ? ` at ${c.spec.level}%` : '')}
+                  <WeekdayDots days={c.days} />
+                </span>
               </button>
               <span className="font-mono text-[11px] text-fg-3">{cycleWhen(c, lastRun(c.id), now, zone)}</span>
               <Toggle on={c.enabled} size="md" label={`Enable ${c.name}`} onChange={enabled => upsert.mutate({ ...c, enabled })} />
@@ -293,7 +297,7 @@ export function WaterPage() {
           <ul className="flex flex-col gap-1 font-mono text-[12px]" data-testid="replaced-cycles">
             {cycles.map(c => <li key={c.id}>{`${fmtClock(c.spec.minute)} · ${c.name}`}</li>)}
           </ul>
-          {previewing && previewRuns && <p>{`And ${previewing.name} runs ${previewRuns.map(fmtClock).join(', ')}, ${fmtMinutes(previewing.durationS)} each, ${previewing.weekly ? `once a week (${daysLabel(presetDays(previewing, sowDay))})` : 'every day'}.`}</p>}
+          {previewing && previewRuns && <p>{`And ${previewing.name} runs ${previewRuns.map(fmtClock).join(', ')}, ${fmtMinutes(previewing.durationS)} each, ${previewing.weekly ? `once a week, on ${daysLabel(presetDays(previewing, sowDay))}` : 'every day'}.`}</p>}
           {missed && previewing === missed && <MissedRun preset={missed} busy={!!p?.on || asked !== null} onRun={() => runNow(missed.durationS)} />}
           {applyError && <InlineError>{applyError}</InlineError>}
         </div>
@@ -593,10 +597,12 @@ function MissedRun({ preset, busy, onRun }: { preset: PumpPreset, busy: boolean,
   )
 }
 
-function PumpPresets({ light, recommended, sown, follow, nextWeekly, missed, applied, previewing, onPreview }: {
+function PumpPresets({ light, recommended, sown, sowDay, follow, nextWeekly, missed, applied, previewing, onPreview }: {
   light: { on: number, off: number } | null
   recommended: { id: PumpPresetId, why: string } | null
   sown: number | null
+  /** The sowing weekday (0 = Monday): a weekly preset's day. */
+  sowDay: number
   /** Watering follows the grow cycle, so the stages are a path it moves along. */
   follow: boolean
   /** When a weekly preset's run next comes round if applied: "today", "Mon 16 Nov". */
@@ -638,6 +644,7 @@ function PumpPresets({ light, recommended, sown, follow, nextWeekly, missed, app
                       : mine && recommended && <span className="w-fit rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-pod-ok" data-testid="pump-recommended" title={`Recommended: ${recommended.why}`}>{`recommended · ${recommended.why}`}</span>}
                   </span>
                 )}
+                <WeekdayDots days={presetDays(p, sowDay)} />
                 <DayStrip runs={runs} light={light} />
                 <span className="font-mono text-[11px] text-fg-2">{p.weekly ? `${runs.length} × ${mins} min once a week` : `${runs.length} × ${mins} min = ${dailyMinutes(runs.length, p.durationS)} min a day`}</span>
                 {next && <span className="font-mono text-[11px] text-fg-2" data-testid="pump-next">{`next: ${next}`}</span>}

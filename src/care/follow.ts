@@ -88,6 +88,6 @@ export function followGrowCycle(store: Store, now: Date): FollowChange | null {
   for (const c of cycles) if (!next.some(s => s.id === c.id)) store.schedules.remove(c.id)
   const runs = next.map(s => fmt(s.spec.minute)).join(', ')
   const min = Math.round((next[0]?.spec.durationS ?? 0) / 60)
-  const when = preset.weekly ? `, ${daysLabel(next[0]?.days ?? 0)} each week` : ''
+  const when = preset.weekly ? `, ${daysLabel(next[0]?.days ?? 0)}` : ''
   return { from: current.id, to: rec.id, days, detail: `Watering moved to ${preset.name}: ${next.length} × ${min} min (${runs}${when}), day ${days} since sowing. Turn off "Follow the grow cycle" on Water to keep a schedule as it is.` }
 }

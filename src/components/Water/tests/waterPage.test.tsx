@@ -320,7 +320,10 @@ describe('WaterPage: pump cycles', () => {
     expect(rows).toEqual(['Enable Morning watering', 'Enable Evening watering'])
     expect(screen.getByText('ran 4 h ago')).toBeTruthy()
     expect(screen.getByText('next in 8 h')).toBeTruthy()
-    expect(screen.getByText('5 min at 50% · Every day')).toBeTruthy()
+    // Each row's length, and its week with the days lit.
+    const evening = screen.getByText('5 min at 50%')
+    expect(within(evening).getByTestId('weekday-dots').getAttribute('aria-label')).toBe('Runs every day')
+    expect(within(evening).getByText('Every day')).toBeTruthy()
     fireEvent.click(screen.getByRole('switch', { name: 'Enable Evening watering' }))
     expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'evening', enabled: false }))
   })
@@ -462,6 +465,11 @@ describe('WaterPage: pump cycles', () => {
     expect(germination.getByTestId('pump-recommended').textContent).toBe('recommended · day 0 since sowing')
     expect(germination.getByText('1 × 15 min once a week')).toBeTruthy()
     expect(germination.getByTestId('pump-next').textContent).toBe('next: Sun 8 Nov')
+    // Its week lights the sowing weekday; the daily presets light every day.
+    const week = germination.getByTestId('weekday-dots')
+    expect(week.getAttribute('aria-label')).toBe('Runs on Sundays')
+    expect(week.querySelectorAll('[data-on]')).toHaveLength(1)
+    expect(within(screen.getByTestId('pump-preset-young')).getByTestId('weekday-dots').getAttribute('aria-label')).toBe('Runs every day')
     expect(screen.queryAllByTestId('pump-stage')).toHaveLength(0)
     fireEvent.click(screen.getByTestId('pump-preset-germination'))
     // Sunday is its day, so the timeline draws today's run.
@@ -488,7 +496,7 @@ describe('WaterPage: pump cycles', () => {
     fireEvent.click(screen.getByTestId('pump-preset-germination'))
     fireEvent.click(within(screen.getByTestId('pump-strip')).getByText('Apply'))
     expect(within(screen.getByRole('dialog')).getByTestId('pump-missed')).toBeTruthy()
-    expect(within(screen.getByRole('dialog')).getByText(/15 min each, once a week \(Sun\)/)).toBeTruthy()
+    expect(within(screen.getByRole('dialog')).getByText(/15 min each, once a week, on Sundays/)).toBeTruthy()
     cleanup()
     // Once today's germination run has happened, or before 08:00, there's nothing to ask.
     data.set('runs', [{ scheduleId: 'water-germination-0800', key: 'g', firedAt: at(8).toISOString(), result: 'ok' }])
