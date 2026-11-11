@@ -28,7 +28,7 @@ function CoverBars({ data }: { data: PodsData | null }) {
   )
 }
 
-/** Leaf cover per pod from the primary analyser, tower by tower; empty pods stay grey. */
+/** Leaf cover per pod from the primary analyser, tower by tower, with the latest frame's time at the right; empty pods are bare grey stubs. */
 export function LeafCover({ capturedAt }: { capturedAt: string | null }) {
   const pods = trpc.grow.pods.useQuery()
   const trends = trpc.vision.podTrends.useQuery()
@@ -41,14 +41,15 @@ export function LeafCover({ capturedAt }: { capturedAt: string | null }) {
   const scene = all.length ? podsData(rows) : null
   return (
     <section aria-label="Leaf cover per pod" className="flex min-w-0 flex-col gap-4 rounded-[14px] border border-line bg-surface p-4 sm:p-5">
-      <div className="flex flex-wrap items-baseline gap-3">
-        <span className="text-[15px] font-medium">Leaf cover per pod</span>
-        <span className="min-w-[180px] flex-1 text-xs text-fg-3">
-          {status === 'loading'
-            ? <LoadingLine />
-            : `${measured} of ${all.length} pods measured${capturedAt ? ` · photo ${fmtStamp(capturedAt)}` : ''}`}
-        </span>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+        <div className="flex min-w-[200px] flex-1 flex-col gap-[3px]">
+          <span className="text-[15px] font-medium">Leaf cover per pod</span>
+          <span className="text-xs text-fg-3">
+            {status === 'loading' ? <LoadingLine /> : 'Sphere size is leaf cover from the latest frame. Grey pods are empty.'}
+          </span>
+        </div>
         <ChartNote status={status} stale={staleSince(queries)} onRetry={() => queries.forEach(q => void q.refetch?.())} />
+        {capturedAt && <span className="font-mono text-[11px] text-fg-3" data-testid="leaf-cover-frame">{fmtStamp(capturedAt)}</span>}
       </div>
       <Chart3D
         kind="pods"

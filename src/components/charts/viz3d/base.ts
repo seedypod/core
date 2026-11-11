@@ -20,7 +20,7 @@ export interface Viz<D> {
   dispose: () => void
 }
 
-export type Ink = Tone | 'skeleton' | 'grid' | 'fg1' | 'fg2' | 'fg3' | 'tank'
+export type Ink = Tone | 'skeleton' | 'grid' | 'fg1' | 'fg2' | 'fg3' | 'tank' | 'edge' | 'stub'
 
 /** Each ink's token in web/src/globals.css, and the design's colour if the token is missing. */
 const TOKENS: Record<Ink, [string, string]> = {
@@ -36,6 +36,8 @@ const TOKENS: Record<Ink, [string, string]> = {
   fg2: ['--text-2', '#b8af9c'],
   fg3: ['--text-3', '#847c6b'],
   tank: ['--tank-fill', '#a7d3f2'],
+  edge: ['--viz-edge', '#5a5446'],
+  stub: ['--viz-stub', '#4a4638'],
 }
 
 const FOV = 26

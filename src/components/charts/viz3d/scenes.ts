@@ -5,7 +5,7 @@
  */
 import type * as THREE from 'three'
 import { createBase, floorGrid, inkMix, ribbon, type Base, type BaseSpec, type Env, type Frame, type Ink, type Label, type Viz } from './base'
-import { clamp01, lerp, pointEase, pulse } from './motion'
+import { clamp01, easeOutCubic, lerp, pointEase } from './motion'
 import { DAY_TICKS, type LightData, type PodsData, type SensorsData, type Tick, type TankData, type TodayData, type Tone } from './shape'
 
 /** Tick labels along x: the first starts at its tick, the last ends at its, the rest centre on theirs, so none hangs past the ends. */
@@ -485,65 +485,74 @@ export function createLightViz(container: HTMLElement, env?: Env): Viz<LightData
 
 // ── Leaf cover per pod ───────────────────────────────────────────────────
 
-export const PODS_SPEC: BaseSpec = { need: 10, camera: { position: [0, 2.1, 10.8], target: [0, 1.45, 0] }, bounds: [[-3.9, -0.4, -0.66], [3.9, 3.4, 0.7]] }
+export const PODS_SPEC: BaseSpec = { need: 10.5, camera: { position: [0, 0.5, 13], target: [0, -0.15, 0] }, bounds: [[-5.2, -2.85, -1.25], [5.2, 2.3, 1.25]] }
 
 /**
- * The tower's columns of pods, as many as the data has (a Home's three of 10,
- * a Studio's two of 8; three of 10 while loading); each pod a sphere sized by
- * its leaf cover, an empty one a small grey bead.
+ * The tower's columns as wire-edged tapered posts, one per column the data
+ * has (a Home's three of 10, a Studio's two of 8; three of 10 while
+ * loading), "Tower 1…" under each. Each pod is a stub off its column, turned
+ * a little further round each row, holding a wireframe leaf sized by its leaf
+ * cover; an empty pod is the grey stub alone. While loading the leaves pulse
+ * small in turn, then grow to their cover and turn green in a sweep.
  */
 export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> {
-  const GAP = 3.2
-  const TOP = 3.1
-  const PITCH = 0.31
-  const RADIUS = 0.42
+  const TOP_Y = 1.8
+  const PITCH = 0.4
   let data: PodsData | null = null
   let count = 0
   let per = 0
   const base = createBase(container, PODS_SPEC, draw, env)
   const T = base.THREE
-  const sphere = new T.SphereGeometry(1, 18, 12)
-  const towers: Array<{ group: THREE.Group, post: THREE.Mesh, label: Label, pods: Array<{ mesh: THREE.Mesh, arm: THREE.Line }> }> = []
+  const column = new T.CylinderGeometry(0.2, 0.26, 4.3, 24)
+  const edges = new T.EdgesGeometry(column)
+  const stubGeo = new T.CylinderGeometry(0.09, 0.09, 0.3, 12)
+  const ico = new T.IcosahedronGeometry(1, 1)
+  const wire = new T.WireframeGeometry(ico)
+  interface Pod { holder: THREE.Group, leaf: THREE.Group, line: THREE.LineBasicMaterial, fill: THREE.MeshBasicMaterial }
+  const towers: Array<{ group: THREE.Group, label: Label, pods: Pod[] }> = []
 
-  function tower(t: number) {
+  function tower(k: number) {
     const group = new T.Group()
     base.root.add(group)
-    // The post reaches from the floor to just above the top pod; shorter columns end lower down it.
-    const post = new T.Mesh(new T.CylinderGeometry(0.05, 0.05, TOP + 0.25, 10), base.tint(new T.MeshBasicMaterial(), 'grid'))
-    post.position.y = (TOP + 0.25) / 2
-    group.add(post)
-    group.add(base.ring(0.62, [0, 0, 0], 'grid'))
-    const label = base.label(`Tower ${String.fromCharCode(65 + t)}`, { ink: 'fg2', size: 0.2, align: 'center', valign: 'top', priority: 3 })
+    group.add(new T.Mesh(column, base.tint(new T.MeshBasicMaterial(), 'grid')), new T.LineSegments(edges, base.tint(new T.LineBasicMaterial(), 'edge')))
+    const label = base.label(`Tower ${k + 1}`, { ink: 'fg3', size: 0.22, align: 'center', valign: 'middle', priority: 3 })
     base.root.add(label.sprite)
-    return { group, post, label, pods: [] as Array<{ mesh: THREE.Mesh, arm: THREE.Line }> }
+    return { group, label, pods: [] as Pod[] }
   }
-  function pod(t: number, k: number, group: THREE.Group) {
-    const a = k * ((Math.PI * 2) / 5) + t * 0.7
-    const mesh = new T.Mesh(sphere, new T.MeshBasicMaterial({ transparent: true }))
-    const at = new T.Vector3(Math.cos(a) * RADIUS, TOP - k * PITCH, Math.sin(a) * RADIUS)
-    mesh.position.copy(at)
-    const arm = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(0, at.y, 0), at]), base.tint(new T.LineBasicMaterial({ transparent: true, opacity: 0.8 }), 'grid'))
-    group.add(mesh, arm)
-    return { mesh, arm }
+  function pod(k: number, i: number, group: THREE.Group): Pod {
+    // Each row turns a little further round the column; the stub lies along the holder's x.
+    const holder = new T.Group()
+    holder.rotation.y = i * 2.4 + k
+    holder.position.y = TOP_Y - i * PITCH
+    const stub = new T.Mesh(stubGeo, base.tint(new T.MeshBasicMaterial(), 'stub'))
+    stub.rotation.z = Math.PI / 2
+    stub.position.x = 0.36
+    const line = new T.LineBasicMaterial({ transparent: true })
+    const fill = new T.MeshBasicMaterial({ transparent: true, opacity: 0.22, depthWrite: false })
+    const leaf = new T.Group()
+    leaf.add(new T.Mesh(ico, fill), new T.LineSegments(wire, line))
+    holder.add(stub, leaf)
+    group.add(holder)
+    return { holder, leaf, line, fill }
   }
-  /** `n` columns of `rows` pods, centred; the rest of the pool hidden. */
+  /** `n` columns of `rows` pods, spread across the scene; the rest of the pool hidden. */
   function layout(n: number, rows: number) {
     if (n === count && rows === per) return
     count = n
     per = rows
     while (towers.length < n) towers.push(tower(towers.length))
-    towers.forEach((tw, t) => {
-      const on = t < n
+    const gap = n <= 2 ? 4 : 3.2
+    towers.forEach((tw, k) => {
+      const on = k < n
       tw.group.visible = on
       tw.label.setVisible(on)
       if (!on) return
-      const x = (t - (n - 1) / 2) * GAP
+      const x = (k - (n - 1) / 2) * gap
       tw.group.position.set(x, 0, 0)
-      tw.label.sprite.position.set(x, -0.12, 0.7)
-      while (tw.pods.length < rows) tw.pods.push(pod(t, tw.pods.length, tw.group))
-      tw.pods.forEach((p, k) => {
-        p.mesh.visible = k < rows
-        p.arm.visible = k < rows
+      tw.label.sprite.position.set(x, -2.6, 0)
+      while (tw.pods.length < rows) tw.pods.push(pod(k, tw.pods.length, tw.group))
+      tw.pods.forEach((p, i) => {
+        p.holder.visible = i < rows
       })
     })
     base.invalidate()
@@ -553,25 +562,30 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
   const c = new T.Color()
   function draw(f: Frame): boolean {
     const shown = f.state === 'ready' && data !== null
-    const total = count * per
-    towers.forEach((tw, t) => {
-      if (t >= count) return
-      const cover = data?.towers[t]?.pods ?? []
-      if (data?.towers[t]) tw.label.setText(data.towers[t].label)
-      tw.pods.forEach((p, k) => {
-        if (k >= per) return
-        const i = t * per + k
-        const idle = 0.075 * (f.state === 'loading' && !f.reduced ? 0.8 + 0.45 * pulse(i, f.t) : 1)
-        const v = cover[k]
-        const has = shown && k < cover.length
-        const e = has ? pointEase(f.p, i, total) : 0
-        const r = has && v !== null && v !== undefined ? 0.07 + 0.17 * Math.sqrt(v) : 0.075
-        p.mesh.visible = !shown || k < cover.length
-        p.arm.visible = p.mesh.visible
-        p.mesh.scale.setScalar(lerp(idle, r, e))
-        const mat = p.mesh.material as THREE.MeshBasicMaterial
-        mat.color.copy(inkMix(base, 'green', v === null || v === undefined ? 0 : e, c))
-        mat.opacity = f.state === 'error' ? 0.35 : f.state === 'empty' ? 0.5 : 1
+    const total = Math.max(1, count * per)
+    const inks = base.inks()
+    towers.forEach((tw, k) => {
+      if (k >= count) return
+      const cover = data?.towers[k]?.pods ?? []
+      if (data?.towers[k]) tw.label.setText(data.towers[k].label)
+      tw.pods.forEach((p, i) => {
+        if (i >= per) return
+        const idx = k * per + i
+        const v = shown ? cover[i] : undefined
+        // The sweep: each leaf turns a beat after the one before it.
+        const e = shown ? easeOutCubic(f.p * 1.6 - (idx / total) * 0.6) : 0
+        const skeleton = f.state === 'loading' && !f.reduced ? 0.07 + 0.03 * Math.sin(f.t * 4 - idx * 0.5) : 0.07
+        // An empty or unmeasured pod has no leaf: it shrinks away as the data lands.
+        const to = typeof v === 'number' ? 0.05 + v * 0.3 : 0
+        const scale = skeleton * (1 - e) + to * e
+        p.leaf.visible = scale > 0.002
+        p.leaf.scale.setScalar(Math.max(0.001, scale))
+        p.leaf.position.x = 0.52 + scale
+        c.copy(inks.edge).lerp(inks.green, typeof v === 'number' ? e : 0)
+        p.line.color.copy(c)
+        p.fill.color.copy(c)
+        p.line.opacity = f.state === 'error' ? 0.35 : 1
+        p.fill.opacity = f.state === 'error' ? 0.08 : 0.22
       })
     })
     return false
