@@ -1,7 +1,7 @@
 import { withUnit } from '@/src/lib/sensorMeta'
 import { toDisplay } from '@/src/lib/units'
 import { CalendarClock, MoreHorizontal, Play, Plus, Square } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, Card, GhostIcon, InlineError, Skeleton } from '@/src/components/ds/core'
 import { LineChart } from '@/src/components/ds/charts'
@@ -9,8 +9,9 @@ import { DayPicker, SegmentedControl, TextField, Toggle } from '@/src/components
 import { Modal } from '@/src/components/ds/feedback'
 import { fmtClock, fmtDate, fmtTime } from '@/src/components/charts/format'
 import { bin } from '@/src/components/charts/TimeChart'
-import { Chart3D, ChartNote, LoadingLine, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
+import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { tankData } from '@/src/components/charts/viz3d/shape'
+import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { daysLabel, daysToList, listToDays } from '@/src/lib/days'
 import { trpc } from '@/src/utils/trpc'
@@ -39,6 +40,8 @@ export function WaterPage() {
   const remove = trpc.schedules.remove.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const [dur, setDur] = useState<typeof DURATIONS[number]['value']>('300')
   const [editing, setEditing] = useState<PumpCycle | null>(null)
+  // The tank in 3D heads the page; without WebGL the flat meter and the history chart below stand in.
+  const [flat, setFlat] = useState(() => !hasWebGL())
   const p = pump.data
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const limits = system.data?.system?.limits
@@ -67,62 +70,59 @@ export function WaterPage() {
         </div>
       </div>
 
-      <Card tone={p?.fault ? 'danger' : undefined} className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-7 p-[22px]">
-        <div className="flex flex-col gap-3.5">
-          <div className="flex items-baseline gap-2.5">
-            <span className="font-mono text-[44px] font-medium leading-none">{tank === undefined ? '…' : `${tank}%`}</span>
-            {tank !== undefined && cfg && <span className="text-[13px] text-fg-2">{`≈ ${toDisplay(Math.round(cfg.tankCapacityL * tank / 10) / 10, 'L').value} of ${withUnit(cfg.tankCapacityL, 'L')}`}</span>}
-          </div>
-          <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100}>
-            <div className="h-full rounded-full bg-tank transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
-            {cutoff !== null && <div className="absolute -top-1 h-[18px] w-px bg-pod-ready" style={{ left: `${cutoff}%` }} />}
-          </div>
-          <div className={AXIS}>
-            <span>{cfg ? `empty · ${withUnit(cfg.waterEmptyCm, 'cm')}` : 'empty'}</span>
-            {cutoff !== null && <span className="text-pod-ready">{`pump cutoff ${cutoff}%`}</span>}
-            <span>{cfg ? `full · ${withUnit(cfg.waterFullCm, 'cm')}` : 'full'}</span>
-          </div>
-          <div className="flex flex-wrap gap-5 border-t border-line pt-2.5 font-mono text-[12px] text-fg-3">
-            <span>
-              {'distance '}
-              <span className="text-fg">{fmt(s.water_distance)}</span>
-            </span>
-            <span>
-              {'pump '}
-              <span className="text-fg">{`${fmt(s.pump_w)} · ${fmt(s.pump_a)}`}</span>
-            </span>
-            <span>
-              {'supply '}
-              <span className="text-fg">{fmt(s.pump_v)}</span>
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-col gap-3">
-          {p?.on
-            ? <RunTrack since={p.since} remainingS={p.remainingS} at={pump.dataUpdatedAt} stopping={stop.isPending} onStop={() => stop.mutate()} />
+      <Card tone={p?.fault ? 'danger' : undefined} className="@container p-[22px]">
+        <div className={flat ? 'grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-7' : 'grid gap-7 @min-[680px]:grid-cols-[minmax(0,1fr)_minmax(240px,280px)]'}>
+          {flat
+            ? (
+                <div className="flex flex-col gap-3.5">
+                  <TankReadout tank={tank} capacityL={cfg?.tankCapacityL} />
+                  <div className="relative h-2.5 rounded-full bg-line" role="meter" aria-label="Tank level" aria-valuenow={tank ?? 0} aria-valuemin={0} aria-valuemax={100}>
+                    <div className="h-full rounded-full bg-tank transition-[width] duration-700" style={{ width: `${tank ?? 0}%` }} />
+                    {cutoff !== null && <div className="absolute -top-1 h-[18px] w-px bg-pod-ready" style={{ left: `${cutoff}%` }} />}
+                  </div>
+                  <TankScale cutoff={cutoff} emptyCm={cfg?.waterEmptyCm} fullCm={cfg?.waterFullCm} />
+                  <TankStats readings={s} />
+                </div>
+              )
             : (
-                <>
-                  <h2 className={EYEBROW}>Run now</h2>
-                  <SegmentedControl full value={dur} onChange={setDur} options={DURATIONS.map(d => ({ value: d.value, label: d.label }))} ariaLabel="Run length" />
-                  <Button
-                    full
-                    variant="primary"
-                    icon={Play}
-                    className="py-2.5 text-sm"
-                    disabled={!!p?.fault || asked !== null}
-                    onClick={() => {
-                      setAsked(Date.now())
-                      runOnce.mutate({ durationS: Number(dur) })
-                    }}
-                  >
-                    {asked !== null ? 'Starting…' : 'Run pump'}
-                  </Button>
-                </>
+                <TankHero
+                  tank={tank}
+                  capacityL={cfg?.tankCapacityL}
+                  cutoff={cutoff}
+                  current={s.water_level_pct?.value ?? null}
+                  pumping={!!p?.on}
+                  scale={<TankScale cutoff={cutoff} emptyCm={cfg?.waterEmptyCm} fullCm={cfg?.waterFullCm} />}
+                  stats={<TankStats readings={s} />}
+                  onUnavailable={() => setFlat(true)}
+                />
               )}
-          {runOnce.error && <InlineError>{runOnce.error.message}</InlineError>}
-          {asked !== null && !p?.on && <NotStarted asked={asked} onGiveUp={() => setAsked(null)} />}
-          {asked !== null && p?.on && <Started onSeen={() => setAsked(null)} />}
-          {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${fmtMinutes(limits.pumpMaxRunS)} per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.`}</p>}
+          <div className="flex flex-col gap-3">
+            {p?.on
+              ? <RunTrack since={p.since} remainingS={p.remainingS} at={pump.dataUpdatedAt} stopping={stop.isPending} onStop={() => stop.mutate()} />
+              : (
+                  <>
+                    <h2 className={EYEBROW}>Run now</h2>
+                    <SegmentedControl full value={dur} onChange={setDur} options={DURATIONS.map(d => ({ value: d.value, label: d.label }))} ariaLabel="Run length" />
+                    <Button
+                      full
+                      variant="primary"
+                      icon={Play}
+                      className="py-2.5 text-sm"
+                      disabled={!!p?.fault || asked !== null}
+                      onClick={() => {
+                        setAsked(Date.now())
+                        runOnce.mutate({ durationS: Number(dur) })
+                      }}
+                    >
+                      {asked !== null ? 'Starting…' : 'Run pump'}
+                    </Button>
+                  </>
+                )}
+            {runOnce.error && <InlineError>{runOnce.error.message}</InlineError>}
+            {asked !== null && !p?.on && <NotStarted asked={asked} onGiveUp={() => setAsked(null)} />}
+            {asked !== null && p?.on && <Started onSeen={() => setAsked(null)} />}
+            {limits && <p className="text-[12px] leading-normal text-fg-3 text-pretty">{`Up to ${fmtMinutes(limits.pumpMaxRunS)} per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.`}</p>}
+          </div>
         </div>
       </Card>
 
@@ -153,7 +153,7 @@ export function WaterPage() {
             </Card>
           )}
 
-      <TankHistory cutoff={cutoff} current={s.water_level_pct?.value ?? null} />
+      {flat && <TankHistory cutoff={cutoff} />}
 
       <div className="flex flex-col gap-2.5">
         <h2 className={EYEBROW}>Recent runs</h2>
@@ -236,10 +236,10 @@ export function WaterPage() {
 }
 
 const RANGES = [{ value: '24', label: '24h' }, { value: '168', label: '7d' }, { value: '720', label: '30d' }] as const
+type Hours = typeof RANGES[number]['value']
 
-/** Tank level over a range, with each top-up marked and the drain rate between them, beside the tank now with its pump cutoff. */
-function TankHistory({ cutoff, current }: { cutoff: number | null, current: number | null }) {
-  const [hours, setHours] = useState<typeof RANGES[number]['value']>('168')
+/** The tank's history over a range: levels binned onto an even grid, its top-ups and drain rate, min / avg / max, and the words for them. */
+function useTankHistory(hours: Hours) {
   const h = Number(hours)
   const q = trpc.telemetry.history.useQuery({ sensor: 'water_level_pct', hours: h, maxPoints: 300 }, { refetchInterval: 60_000 })
   const raw = (q.data ?? []).map(p => p.value)
@@ -258,10 +258,110 @@ function TankHistory({ cutoff, current }: { cutoff: number | null, current: numb
     h <= 24 ? ' today.' : h <= 168 ? ' this week.' : ' this month.',
     dropPerDay ? ` Drops about ${dropPerDay}% a day.` : '',
   ].join('')
-  const status = vizStatus([q], values.length === 0)
-  const scene = status === 'ready' ? tankData({ levels: values, topUps, cutoffPct: cutoff, currentPct: current, ticks: ticks.map((i, k) => ({ at: k / 4, label: label(i) })) }) : null
-  const flat = (
-    <>
+  return { q, h, xs, values, topUps, stats, label, ticks, summary }
+}
+
+/** The level now in big type, and about how much water that is. */
+function TankReadout({ tank, capacityL }: { tank: number | undefined, capacityL: number | undefined }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+      <span className="font-mono text-[44px] font-medium leading-none"><Pending loading={tank === undefined} sample="100%">{`${tank}%`}</Pending></span>
+      {tank !== undefined && capacityL !== undefined && <span className="text-[13px] text-fg-2">{`≈ ${toDisplay(Math.round(capacityL * tank / 10) / 10, 'L').value} of ${withUnit(capacityL, 'L')}`}</span>}
+    </div>
+  )
+}
+
+/** Empty, the pump cutoff and full, under the meter or the scene. */
+function TankScale({ cutoff, emptyCm, fullCm }: { cutoff: number | null, emptyCm: number | undefined, fullCm: number | undefined }) {
+  return (
+    <div className={AXIS}>
+      <span>{emptyCm !== undefined ? `empty · ${withUnit(emptyCm, 'cm')}` : 'empty'}</span>
+      {cutoff !== null && <span className="text-pod-ready">{`pump cutoff ${cutoff}%`}</span>}
+      <span>{fullCm !== undefined ? `full · ${withUnit(fullCm, 'cm')}` : 'full'}</span>
+    </div>
+  )
+}
+
+/** The sensor's distance to the water, and the pump's power, current and supply. */
+function TankStats({ readings: s }: { readings: Partial<Record<SensorId, Reading>> }) {
+  return (
+    <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-2.5 font-mono text-[12px] text-fg-3">
+      <span>
+        {'distance '}
+        <span className="text-fg">{fmt(s.water_distance)}</span>
+      </span>
+      <span>
+        {'pump '}
+        <span className="text-fg">{`${fmt(s.pump_w)} · ${fmt(s.pump_a)}`}</span>
+      </span>
+      <span>
+        {'supply '}
+        <span className="text-fg">{fmt(s.pump_v)}</span>
+      </span>
+    </div>
+  )
+}
+
+/**
+ * The head of the Water page with WebGL: the level now over the tank in 3D,
+ * a glass cylinder filled to it and ringed at the pump cutoff, linked to the
+ * level over the range with each top-up marked. Bubbles rise while the pump
+ * runs. Without WebGL it calls `onUnavailable`, and the page goes flat.
+ */
+function TankHero({ tank, capacityL, cutoff, current, pumping, scale, stats, onUnavailable }: {
+  tank: number | undefined
+  capacityL: number | undefined
+  cutoff: number | null
+  current: number | null
+  pumping: boolean
+  scale: ReactNode
+  stats: ReactNode
+  onUnavailable: () => void
+}) {
+  const [hours, setHours] = useState<Hours>('168')
+  const t = useTankHistory(hours)
+  const status = vizStatus([t.q], t.values.length === 0)
+  const scene = status === 'ready'
+    ? tankData({ levels: t.values, topUps: t.topUps, cutoffPct: cutoff, currentPct: current, ticks: t.ticks.map((i, k) => ({ at: k / 4, label: t.label(i) })), pumping })
+    : null
+  return (
+    <div className="flex min-w-0 flex-col gap-3" data-testid="tank-hero">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <TankReadout tank={tank} capacityL={capacityL} />
+        <SegmentedControl size="sm" ariaLabel="Tank level range" value={hours} options={RANGES} onChange={setHours} className="font-mono" />
+      </div>
+      <div className="flex min-h-[18px] flex-wrap items-center gap-3 text-[12px] text-fg-3">
+        {status === 'loading' ? <LoadingLine /> : t.values.length > 1 && <span data-testid="tank-summary">{t.summary}</span>}
+        <ChartNote status={status} stale={staleSince([t.q])} onRetry={() => void t.q.refetch()} />
+      </div>
+      <Chart3D
+        kind="tank"
+        data={scene}
+        status={status}
+        label={`Tank at ${tank ?? '—'}%, and its level over the last ${t.h <= 24 ? 'day' : t.h <= 168 ? 'week' : 'month'}${pumping ? ', with the pump running' : ''}`}
+        message={status === 'error' ? `Couldn't load the tank history: ${t.q.error?.message ?? ''}` : 'No tank level recorded in this window.'}
+        fallback={null}
+        onUnavailable={onUnavailable}
+      />
+      {scale}
+      {stats}
+    </div>
+  )
+}
+
+/** Without WebGL: the tank's level over a range as a flat chart, with each top-up marked and the drain rate between them. */
+function TankHistory({ cutoff }: { cutoff: number | null }) {
+  const [hours, setHours] = useState<Hours>('168')
+  const { q, h, xs, values, topUps, stats, label, ticks, summary } = useTankHistory(hours)
+  return (
+    <Card className="gap-3.5 p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-1 flex-col gap-[3px]">
+          <span className="text-[15px] font-medium">Tank level</span>
+          {values.length > 1 && <span className="text-[12px] text-fg-3" data-testid="tank-summary">{summary}</span>}
+        </div>
+        <SegmentedControl size="sm" ariaLabel="Tank level range" value={hours} options={RANGES} onChange={setHours} className="font-mono" />
+      </div>
       {q.isLoading && <Skeleton className="h-[160px] w-full" />}
       {q.error && <InlineError>{`Couldn't load the tank history: ${q.error.message}`}</InlineError>}
       {!q.isLoading && !q.error && (values.length === 0
@@ -285,26 +385,6 @@ function TankHistory({ cutoff, current }: { cutoff: number | null, current: numb
               </div>
             </>
           ))}
-    </>
-  )
-  return (
-    <Card className="gap-3.5 p-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex flex-1 flex-col gap-[3px]">
-          <span className="text-[15px] font-medium">Tank level</span>
-          {status === 'loading' ? <LoadingLine className="text-[12px]" /> : values.length > 1 && <span className="text-[12px] text-fg-3" data-testid="tank-summary">{summary}</span>}
-        </div>
-        <ChartNote status={status} stale={staleSince([q])} onRetry={() => void q.refetch()} />
-        <SegmentedControl size="sm" ariaLabel="Tank level range" value={hours} options={RANGES} onChange={setHours} className="font-mono" />
-      </div>
-      <Chart3D
-        kind="tank"
-        data={scene}
-        status={status}
-        label={`Tank level over the last ${h <= 24 ? 'day' : h <= 168 ? 'week' : 'month'}, beside the tank now`}
-        message={status === 'error' ? `Couldn't load the tank history: ${q.error?.message ?? ''}` : 'No tank level recorded in this window.'}
-        fallback={flat}
-      />
       {stats && (
         <div className="flex flex-wrap gap-6 border-t border-line pt-2.5 font-mono text-[12px] text-fg-3" data-testid="tank-stats">
           {(['min', 'avg', 'max'] as const).map(k => (

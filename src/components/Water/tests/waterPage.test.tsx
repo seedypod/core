@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as Chart3DModule from '@/src/components/charts/viz3d/Chart3D'
 import { START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
@@ -9,6 +10,22 @@ const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   pumpSuccess: new Map<string, (s: unknown) => void>(),
   state: { ackError: null as null | { message: string }, runError: null as null | { message: string }, historyLoading: false, historyError: null as null | { message: string } },
 }))
+
+// The hero's 3D tank as a stub showing what it was handed, or giving up as a browser without WebGL would.
+const hero = vi.hoisted(() => ({ fail: false }))
+vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
+  const real = await orig<typeof Chart3DModule>()
+  const { useEffect } = await import('react')
+  return {
+    ...real,
+    Chart3D: ({ status, data, label, onUnavailable }: { status: string, label: string, data: { currentLabel: string, cutoffLabel: string | null, pumping: boolean, topUps: number[] } | null, onUnavailable?: () => void }) => {
+      useEffect(() => {
+        if (hero.fail) onUnavailable?.()
+      }, [onUnavailable])
+      return <div data-testid="tank-3d" data-state={status} aria-label={label}>{data && `${data.currentLabel} · ${data.cutoffLabel} · ${data.topUps.length} top-up · ${data.pumping ? 'pumping' : 'still'}`}</div>
+    },
+  }
+})
 
 // Care has its own tests; the Water page only points at it.
 vi.mock('@/src/components/Care/CareSummary', () => ({ CareSummary: () => null }))
@@ -263,5 +280,56 @@ describe('WaterPage: history', () => {
     data.set('history', [{ ts: at(0).toISOString(), value: 50 }, { ts: at(1).toISOString(), value: 49 }, { ts: at(2).toISOString(), value: 70 }, { ts: at(3).toISOString(), value: 90 }])
     render(<WaterPage />)
     expect(screen.getByTestId('tank-summary').textContent).toMatch(/^2 top-ups/)
+  })
+})
+
+describe('WaterPage with WebGL: the tank hero', () => {
+  beforeEach(() => {
+    vi.stubGlobal('WebGLRenderingContext', function WebGLRenderingContext() {})
+    hero.fail = false
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('heads the page with the 3D tank, its readout, scale and stats, beside the run column, and drops the flat chart', () => {
+    render(<WaterPage />)
+    const top = screen.getByTestId('tank-hero')
+    expect(within(top).getByText('71%')).toBeTruthy()
+    expect(within(top).getByText('≈ 13.5 of 19 L')).toBeTruthy()
+    expect(within(top).getByText('pump cutoff 27%')).toBeTruthy()
+    expect(within(top).getByText('9.4 cm')).toBeTruthy()
+    expect(within(top).getByTestId('tank-summary').textContent).toBe('One top-up this week. Drops about 14% a day.')
+    expect(within(top).getByTestId('tank-3d').textContent).toBe('71% · cutoff 27% · 1 top-up · still')
+    expect(screen.queryByRole('meter', { name: 'Tank level' })).toBeNull()
+    expect(screen.queryByTestId('tank-stats')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Run pump' })).toBeTruthy()
+    fireEvent.click(within(top).getByRole('tab', { name: '24h' }))
+    expect(calls.history).toHaveBeenLastCalledWith({ sensor: 'water_level_pct', hours: 24, maxPoints: 300 })
+  })
+
+  it('shows the pump running in the scene and keeps the run track beside it', () => {
+    data.set('pump', { ...idle, on: true, level: 30, since: at(11, 59).toISOString(), remainingS: 240 })
+    render(<WaterPage />)
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/pumping$/)
+    expect(screen.getByTestId('tank-3d').getAttribute('aria-label')).toMatch(/with the pump running/)
+  })
+
+  it('holds the readout\'s place while loading and says the history is loading', () => {
+    data.delete('sensors')
+    state.historyLoading = true
+    render(<WaterPage />)
+    const top = screen.getByTestId('tank-hero')
+    expect(within(top).getByText('loading …')).toBeTruthy()
+    expect(within(top).getByText('100%').className).toContain('animate-pulse')
+    expect(within(top).getByTestId('tank-3d').getAttribute('data-state')).toBe('loading')
+  })
+
+  it('goes back to the flat meter and history chart when the 3D tank can\'t run', () => {
+    hero.fail = true
+    render(<WaterPage />)
+    expect(screen.queryByTestId('tank-hero')).toBeNull()
+    expect(screen.getByRole('meter', { name: 'Tank level' })).toBeTruthy()
+    expect(screen.getByTestId('tank-stats').textContent).toBe('min 60%avg 77%max 92%')
   })
 })
