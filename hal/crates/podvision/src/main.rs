@@ -28,8 +28,16 @@ struct Args {
     #[arg(long)]
     pods: String,
     /// A pod-state weights file to run, as ID=PATH. Repeat for each revision.
-    #[arg(long = "model", value_name = "ID=PATH", required = true)]
+    #[arg(
+        long = "model",
+        value_name = "ID=PATH",
+        required_unless_present = "codes",
+        conflicts_with = "codes"
+    )]
     models: Vec<String>,
+    /// Read each pod's yCube dot code from a full-size pod-ID still instead (#224).
+    #[arg(long)]
+    codes: bool,
     /// Decode scale: auto (from the crops), or 1, 2, 4 or 8.
     #[arg(long, default_value = "auto")]
     scale: String,
@@ -40,6 +48,19 @@ fn main() {
     if let Err(e) = run(args) {
         eprintln!("podvision: {e:#}");
         std::process::exit(1);
+    }
+}
+
+/// The still from a path, or stdin for `-`.
+fn read_still(image: &str) -> Result<Vec<u8>> {
+    if image == "-" {
+        let mut b = Vec::new();
+        std::io::stdin()
+            .read_to_end(&mut b)
+            .context("can't read the still from stdin")?;
+        Ok(b)
+    } else {
+        std::fs::read(image).with_context(|| format!("can't read {image}"))
     }
 }
 
@@ -61,6 +82,13 @@ fn run(args: Args) -> Result<()> {
             ))
         })
         .collect::<Result<BTreeMap<_, _>>>()?;
+    if args.codes {
+        let out = podvision::read_codes(&read_still(&args.image)?, &pods)?;
+        let mut stdout = std::io::stdout().lock();
+        serde_json::to_writer(&mut stdout, &out)?;
+        writeln!(stdout)?;
+        return Ok(());
+    }
     let mut models = Vec::with_capacity(args.models.len());
     for m in &args.models {
         let (id, path) = m
@@ -72,16 +100,7 @@ fn run(args: Args) -> Result<()> {
         let model = Model::parse(&text).with_context(|| format!("model {id} ({})", path.display()))?;
         models.push((id.to_string(), model));
     }
-    let bytes = if args.image == "-" {
-        let mut b = Vec::new();
-        std::io::stdin()
-            .read_to_end(&mut b)
-            .context("can't read the still from stdin")?;
-        b
-    } else {
-        std::fs::read(&args.image).with_context(|| format!("can't read {}", args.image))?
-    };
-    let out = podvision::run(&bytes, &pods, &models, scale)?;
+    let out = podvision::run(&read_still(&args.image)?, &pods, &models, scale)?;
     let mut stdout = std::io::stdout().lock();
     serde_json::to_writer(&mut stdout, &out)?;
     writeln!(stdout)?;
