@@ -21,7 +21,7 @@ import { trpc } from '@/src/utils/trpc'
 import { asCycle, cycleWhen, fmtCountdown, fmtDay, fmtMinutes, fmtWhen, levelAt, nextPresetRun, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
 import { useNow } from '@/src/components/System/useNow'
 import { useTankReserve } from './useTankReserve'
-import { CareSummary } from '@/src/components/Care/CareSummary'
+import { DueChores } from '@/src/components/Care/ChoreItem'
 import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
@@ -256,9 +256,7 @@ export function WaterPage() {
         </Card>
       )}
 
-      <Card className="py-3">
-        <CareSummary />
-      </Card>
+      <DueChores />
 
       {flat && <TankHistory cutoff={cutoff} />}
 

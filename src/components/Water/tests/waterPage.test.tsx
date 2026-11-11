@@ -27,8 +27,9 @@ vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
   }
 })
 
-// Care has its own tests; the Water page only points at it.
+// Care has its own tests; the Water page only points at it, and shows the due chores' rows the sidebar shares.
 vi.mock('@/src/components/Care/CareSummary', () => ({ CareSummary: () => null }))
+vi.mock('@/src/components/Care/ChoreItem', () => ({ DueChores: () => <div data-testid="due-chores" /> }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
@@ -130,6 +131,11 @@ describe('WaterPage: tank and pump', () => {
     expect(screen.getByText('9.4 cm')).toBeTruthy()
     // The pump's limits are Run's tooltip.
     expect(strip.getByRole('button', { name: 'Run' }).getAttribute('title')).toBe('Up to 15 min per run at 30% duty. Won\'t start below 16 cm of water.')
+  })
+
+  it('shows the due chores with the rows the sidebar\'s Needs you shares', () => {
+    render(<WaterPage />)
+    expect(screen.getByTestId('due-chores')).toBeTruthy()
   })
 
   it('finds the next run on the unit\'s clock, not the browser\'s', () => {

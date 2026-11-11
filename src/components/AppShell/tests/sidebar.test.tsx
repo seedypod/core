@@ -13,7 +13,17 @@ vi.mock('@/src/components/Search/CommandPalette', () => ({ SidebarSearch: () => 
 
 vi.mock('@/src/utils/trpc', () => {
   const proc = (p: string) => ({ useQuery: () => ({ data: data.get(p) }) })
-  const router = (prefix: string): unknown => new Proxy({}, { get: (_, k: string) => (k === 'useQuery' ? proc(prefix).useQuery : router(prefix ? `${prefix}.${k}` : k)) })
+  // Needs you's chore rows carry Done and Skip; their actions are tested with the row (choreItem.test.tsx).
+  const mutation = () => ({ mutate: () => {}, isPending: false, isSuccess: false, error: null })
+  const router = (prefix: string): unknown => new Proxy({}, {
+    get: (_, k: string) => {
+      if (k === 'useQuery') return proc(prefix).useQuery
+      if (k === 'useMutation') return mutation
+      if (k === 'useUtils') return () => router('')
+      if (k === 'invalidate') return () => {}
+      return router(prefix ? `${prefix}.${k}` : k)
+    },
+  })
   return { trpc: router('') }
 })
 
@@ -172,6 +182,7 @@ describe('Sidebar', () => {
       { id: 'thin', title: 'Thin seedlings', state: 'due', basis: 'timeline', reason: 'Calendar guess, no recent photos of the young pods: 15 d since the oldest young pod was planted.' },
       { id: 'feed', title: 'Feed', state: 'soon', basis: 'reading', reason: 'EC 1.25' },
     ])
+    data.set('alerts.list', [{ id: 7, kind: 'chore_top_off', active: true, detail: '', raisedAt: '', clearedAt: null, acknowledgedAt: null, dismissedAt: null }])
     render(<Sidebar status={online} />)
     expect(screen.getByText('Needs you')).toBeTruthy()
     const top = screen.getByText('Top off the tank').closest('a') as HTMLElement
@@ -182,6 +193,11 @@ describe('Sidebar', () => {
     expect(thin.getAttribute('href')).toBe('/care')
     expect(within(thin).getByText('calendar')).toBeTruthy()
     expect(screen.queryByText('Feed')).toBeNull()
+    // The shared chore row, as on Water: Done on each, Skip where a reading raised an alert to skip.
+    const row = within(screen.getByTestId('needs-chore-top_off'))
+    expect(row.getByRole('button', { name: 'Done' })).toBeTruthy()
+    expect(row.getByRole('button', { name: 'Skip' })).toBeTruthy()
+    expect(within(screen.getByTestId('needs-chore-thin')).queryByRole('button', { name: 'Skip' })).toBeNull()
   })
 
   it('groups the pages, marks the current one, and carries the cycle, Autopilot and alert count', () => {

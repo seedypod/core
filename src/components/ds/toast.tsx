@@ -1,13 +1,22 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NOTICE_BAR, NOTICE_TEXT, type Notice } from './notice'
 
-/** A toast is a success / info notice: no actions, no X. */
-export type ToastNotice = Pick<Notice, 'id' | 'tone' | 'icon' | 'title' | 'detail'> & { kind: 'success' | 'info' }
+/**
+ * A toast says something just happened: a success / info notice, with an X and
+ * at most one optional action ("View", "Undo"). `urgent` (a fault that stopped
+ * hardware) is announced as an alert instead of politely.
+ */
+export type ToastNotice = Pick<Notice, 'id' | 'tone' | 'icon' | 'title' | 'detail'> & {
+  kind: 'success' | 'info'
+  action?: { label: string, onClick: () => void }
+  urgent?: boolean
+}
 
-export const TOAST_DURATION_MS = 4000
+export const TOAST_DURATION_MS = 6000
 /** Enter and leave both take this long (globals.css sp-toast-in / sp-toast-out). */
 export const TOAST_ANIMATION_MS = 250
 
@@ -54,9 +63,10 @@ export function useToast(): { show: (notice: ToastNotice) => void } {
 
 /**
  * One toast at a time; later toasts wait in a queue, and showing the id that is
- * already up replaces it. Each lasts `duration` (4s), paused while hovered or
- * focused. The region overlays the page: centred on the content column on
- * desktop (past the 224px sidebar), above the tab bar on phones.
+ * already up replaces it. Each lasts `duration` (6s), paused while hovered or
+ * focused; its action or X ends it early. The region overlays the page: centred
+ * on the content column on desktop (past the 244px sidebar), above the tab bar
+ * on phones.
  */
 export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { children: ReactNode, duration?: number }) {
   const [state, dispatch] = useReducer(reducer, { current: null, queue: [], leaving: false })
@@ -94,15 +104,16 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
 
   const value = useMemo(() => ({ show }), [show])
   const entry = state.current
+  const close = () => dispatch({ type: 'expire' })
 
   return (
     <ToastContext.Provider value={value}>
       {children}
       <div
-        role="status"
-        aria-live="polite"
+        role={entry?.notice.urgent ? 'alert' : 'status'}
+        aria-live={entry?.notice.urgent ? 'assertive' : 'polite'}
         data-testid="toast-region"
-        className="pointer-events-none fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom,0px))] z-50 flex justify-center px-4 min-[900px]:bottom-6 min-[900px]:left-[224px]"
+        className="pointer-events-none fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom,0px))] z-50 flex justify-center px-4 min-[900px]:bottom-6 min-[900px]:left-[244px]"
       >
         {entry && (
           <div
@@ -121,10 +132,26 @@ export function ToastProvider({ children, duration = TOAST_DURATION_MS }: { chil
             )}
           >
             <entry.notice.icon size={17} className={cn('shrink-0', NOTICE_TEXT[entry.notice.tone])} />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p>{entry.notice.title}</p>
               {entry.notice.detail && <p className="text-[13px] text-fg-2">{entry.notice.detail}</p>}
             </div>
+            {entry.notice.action && (
+              <button
+                type="button"
+                data-testid="toast-action"
+                onClick={() => {
+                  entry.notice.action?.onClick()
+                  close()
+                }}
+                className="shrink-0 cursor-pointer rounded-ctl border-0 bg-transparent px-2 py-1 text-[13px] font-medium text-fg underline underline-offset-2 hover:bg-line"
+              >
+                {entry.notice.action.label}
+              </button>
+            )}
+            <button type="button" aria-label="Dismiss" onClick={close} className="-mr-1.5 shrink-0 cursor-pointer rounded-ctl border-0 bg-transparent p-1 text-fg-3 hover:bg-line hover:text-fg">
+              <X size={15} />
+            </button>
             <span
               aria-hidden
               data-testid="toast-countdown"
