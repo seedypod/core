@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
-import { Box, Camera, ChevronDown, LayoutGrid, X } from 'lucide-react'
+import { ArrowLeftRight, Box, Camera, ChevronDown, LayoutGrid, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Button } from '@/src/components/ds/core'
+import { Button, InlineError } from '@/src/components/ds/core'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { cn } from '@/lib/utils'
 import { apiBase, trpc } from '@/src/utils/trpc'
@@ -85,6 +85,9 @@ export function GrowPage() {
   const setStage = trpc.grow.setStage.useMutation({ onSuccess: () => utils.grow.invalidate() })
   const updatePod = trpc.grow.updatePod.useMutation({ onSuccess: () => utils.grow.invalidate() })
   const markHarvested = trpc.grow.markHarvested.useMutation({ onSuccess: () => utils.grow.invalidate() })
+  const swapPods = trpc.grow.swapPods.useMutation({ onSuccess: () => utils.grow.invalidate() })
+  // The pod whose yCube moved, while the one it swapped with is being picked.
+  const [swapping, setSwapping] = useState<number | null>(null)
   const trends = trpc.vision.podTrends.useQuery()
   const sensors = trpc.sensors.latest.useQuery()
   const light = trpc.light.get.useQuery()
@@ -115,7 +118,15 @@ export function GrowPage() {
   })
   const towers = towersOf(towerPods)
   const shownOf = new Map(towerPods.map(p => [p.slot, podShown(p)]))
+  const swap = (a: number, b: number) => {
+    setSwapping(null)
+    if (a === b) return
+    swapPods.mutate({ a, b })
+    setSelected(b)
+    setDraft(null)
+  }
   const select = (slot: number) => {
+    if (swapping !== null) return swap(swapping, slot)
     setSelected(slot)
     setDraft(null)
   }
@@ -184,6 +195,14 @@ export function GrowPage() {
 
       <div className="flex flex-wrap items-start gap-5">
         <div className="min-w-0 flex-1 basis-[480px]">
+          {swapping !== null && (
+            <div data-testid="swap-banner" className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[10px] border border-line-2 bg-active/60 px-3 py-2 text-[13px]">
+              <ArrowLeftRight size={16} className="shrink-0 text-fg-2" />
+              <span className="flex-1">{`Pick the pod to swap pod ${swapping}${all.find(p => p.slot === swapping)?.plant ? ` (${all.find(p => p.slot === swapping)?.plant})` : ''} with.`}</span>
+              <Button className="px-3 py-[5px] text-[13px]" onClick={() => setSwapping(null)}>Cancel</Button>
+            </div>
+          )}
+          {swapPods.error && <InlineError>{swapPods.error.message}</InlineError>}
           {shown === 'tower' && (
             <TowerView
               pods={towerPods}
@@ -210,6 +229,13 @@ export function GrowPage() {
                       <button
                         key={p.slot}
                         type="button"
+                        draggable
+                        onDragStart={e => e.dataTransfer.setData('text/plain', String(p.slot))}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          swap(Number(e.dataTransfer.getData('text/plain')), p.slot)
+                        }}
                         onClick={() => select(p.slot)}
                         aria-pressed={picked}
                         aria-label={`${p.slot} ${p.plant ?? 'empty'}`}
@@ -253,12 +279,13 @@ export function GrowPage() {
                   onRevert={() => setDraft(null)}
                   onHarvested={() => markHarvested.mutate({ slot: draft.slot })}
                   onDismiss={() => updatePod.mutate({ slot: draft.slot, status: 'growing' }, { onSuccess: () => setDraft(null) })}
+                  onSwap={() => setSwapping(draft.slot)}
                 />
               )
             : (
                 <div className="flex flex-col gap-1">
                   <div className="text-[15px] font-medium">Pods</div>
-                  <p className="text-[13px] text-fg-2">{`Click a pod ${shown === 'tower' ? 'on the tower' : 'in the list'} to see and edit it.`}</p>
+                  <p className="text-[13px] text-fg-2">{`Click a pod ${shown === 'tower' ? 'on the tower' : 'in the list'} to see and edit it.${shown === 'pods' ? ' Drag one onto another to swap them after moving their yCubes.' : ''}`}</p>
                 </div>
               )}
         </aside>
@@ -342,7 +369,7 @@ function Row({ label, children, last }: { label: string, children: ReactNode, la
 
 const INLINE = 'min-w-0 flex-1 bg-transparent text-right text-fg outline-none placeholder:text-fg-3'
 
-function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, saving, onChange, onClose, onSave, onRevert, onHarvested, onDismiss }: {
+function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, saving, onChange, onClose, onSave, onRevert, onHarvested, onDismiss, onSwap }: {
   pod: PodState
   tower: string
   /** Leaf cover gained a day, from the harvest outlook. */
@@ -359,6 +386,8 @@ function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, sav
   onRevert: () => void
   onHarvested: () => void
   onDismiss: () => void
+  /** Start picking the pod to swap this one with. */
+  onSwap: () => void
 }) {
   const shown = podShown(pod)
   const form = podForm(pod)
@@ -454,6 +483,7 @@ function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, sav
               </Link>
               {shown === 'ready' && <Button onClick={onHarvested}>Mark harvested</Button>}
               {shown === 'attention' && <Button className="text-fg-2" onClick={onDismiss}>Dismiss</Button>}
+              <Button icon={ArrowLeftRight} onClick={onSwap} title="After moving its yCube to another pod">Swap</Button>
             </div>
           )}
     </>
