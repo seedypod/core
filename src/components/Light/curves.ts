@@ -1,4 +1,5 @@
 import { dayOn } from '@/src/lib/days'
+import { lightDay, type LightDay } from '@/src/scheduler/lightPlan'
 import { localTime, systemZone } from '@/src/scheduler/time'
 
 export interface Setpoint { minute: number, level: number }
@@ -28,13 +29,6 @@ export function levelAt(spec: { setpoints: Setpoint[] }, minute: number): number
   return last.level
 }
 
-/** Hours a day the curve has the light on at all, to the half hour. */
-export function litHours(spec: { setpoints: Setpoint[] }): number {
-  let lit = 0
-  for (let m = 0; m < 1440; m++) if (levelAt(spec, m) > 0) lit++
-  return Math.round(lit / 30) / 2
-}
-
 /** The curves that run today: enabled, and today is one of their days. */
 export function runningToday(curves: LightCurve[], weekday: number): LightCurve[] {
   return curves.filter(c => c.enabled && dayOn(c.days, weekday))
@@ -53,12 +47,8 @@ export function asCurve(s: { id: string, kind: string, name: string, enabled: bo
 /** The highest level of `curves` at a minute of the day, as the scheduler picks; 0 with none. */
 export const mergedAt = (curves: LightCurve[], minute: number) => Math.max(0, ...curves.map(c => levelAt(c.spec, minute)))
 
-/** Hours today the running curves hold the light at Boost, to the half hour. */
-export function boostHoursToday(curves: LightCurve[], boost: number): number {
-  let minutes = 0
-  for (let m = 0; m < 1440; m++) if (mergedAt(curves, m) >= boost) minutes++
-  return Math.round(minutes / 30) / 2
-}
+/** Today's light from the running curves, as the scheduler merges them. */
+export const lightToday = (curves: LightCurve[]): LightDay => lightDay(m => mergedAt(curves, m))
 
 /** When the light next comes on after `nowMin` and which curve brings it: today's curves, then tomorrow's. */
 export function nextOn(today: LightCurve[], tomorrow: LightCurve[], nowMin: number): { minute: number, name: string, tomorrow: boolean } | null {

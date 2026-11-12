@@ -24,15 +24,15 @@ async function mcp(o: { now?: () => Date, timezone?: string } = {}) {
 describe('light schedules over MCP', () => {
   it('offers Gardyn presets with their rating, and rates the curves it lists', async () => {
     const { client, call } = await mcp()
-    const presets = await call<{ timezone: string, presets: { id: string, boostHours: number, rating: string, setpoints: unknown[] }[] }>('light_presets')
+    const presets = await call<{ timezone: string, presets: { id: string, fullHours: number, litHours: number, rating: string, setpoints: unknown[] }[] }>('light_presets')
     expect(presets.timezone).toBe('UTC')
-    expect(presets.presets.map(p => [p.id, p.boostHours, p.rating])).toEqual([['day-15h', 15, 'great'], ['day-14h', 14, 'great'], ['day-16h', 16, 'great']])
+    expect(presets.presets.map(p => [p.id, p.fullHours, p.litHours, p.rating])).toEqual([['day-15h', 15, 15.5, 'great'], ['day-14h', 14, 14.5, 'great'], ['day-16h', 16, 16.5, 'great'], ['gentle-14h', 14, 16, 'great']])
 
     const day = presets.presets[0]
     await call('upsert_schedule', { id: 'day', kind: 'light', name: 'Day', spec: { setpoints: day?.setpoints } })
     await call('upsert_schedule', { id: 'water', kind: 'pump', name: 'Water', spec: { minute: 480, durationS: 300 } })
-    const listed = await call<{ timezone: string, schedules: Array<{ id: string, boostHours?: number, rating?: string }> }>('list_schedules')
-    expect(listed.schedules.find(s => s.id === 'day')).toMatchObject({ boostHours: 15, rating: 'great' })
+    const listed = await call<{ timezone: string, schedules: Array<{ id: string, fullHours?: number, litHours?: number, rating?: string }> }>('list_schedules')
+    expect(listed.schedules.find(s => s.id === 'day')).toMatchObject({ fullHours: 15, litHours: 15.5, rating: 'great' })
     expect(listed.schedules.find(s => s.id === 'water')).not.toHaveProperty('rating')
     await client.close()
   })

@@ -233,13 +233,13 @@ describe('LightPage: when the light can\'t be read', () => {
 })
 
 describe('LightPage: curves', () => {
-  it('shows today’s curve with its Boost hours and rating, and says so when none runs', () => {
+  it('shows today’s curve with its hours of full light and rating, and says so when none runs', () => {
     data.set('schedules', [daylight, pump])
     render(<LightPage />)
     expect(screen.getByText('Following Daylight curve')).toBeTruthy()
     expect(screen.getAllByText('24:00').filter(e => !e.closest('[data-testid="schedule-timeline"]'))).toHaveLength(1)
-    // 85% all day is no Boost.
-    expect(screen.getByTestId('light-summary').textContent).toBe('0 h at full today · Low')
+    // 85% for most of 15 hours counts as 11.5 of full light.
+    expect(screen.getByTestId('light-summary').textContent).toBe('11.5 h of full light today · Low')
     cleanup()
     data.set('schedules', [boost])
     render(<LightPage />)
@@ -256,13 +256,21 @@ describe('LightPage: curves', () => {
     expect(within(screen.getByTestId('light-summary')).getByTestId('loading-line')).toBeTruthy()
   })
 
+  it('says when the light is on long enough to make lettuce and herbs bolt, however dim', () => {
+    // 50% from 04:00 to 22:00: 9 hours of full light, but 18 on.
+    data.set('schedules', [{ ...daylight, spec: { setpoints: [{ minute: 239, level: 0 }, { minute: 240, level: 50 }, { minute: 1320, level: 50 }, { minute: 1321, level: 0 }] } }])
+    render(<LightPage />)
+    expect(screen.getByTestId('light-summary').textContent).toBe('9 h of full light today · Low · on 18 h, long enough to make lettuce and herbs bolt')
+    expect(screen.getByText('4 setpoints · Every day · on 18 h, 9 h of full light · long enough to make lettuce and herbs bolt')).toBeTruthy()
+  })
+
   it('lists each curve, opens the running one, and toggles one on at once', () => {
     data.set('schedules', [daylight, boost])
     render(<LightPage />)
     const day = screen.getByText('Daylight curve').closest('button') as HTMLElement
     expect(within(day).getByText('ACTIVE')).toBeTruthy()
-    // 85% all day is no Boost at all, so Gardyn would rate it low.
-    expect(within(day).getByText('4 setpoints · Every day · 15 h of light, 0 h at full')).toBeTruthy()
+    // 85% for most of 15 hours is 11.5 of full light, short of Gardyn's 14.
+    expect(within(day).getByText('4 setpoints · Every day · on 15 h, 11.5 h of full light')).toBeTruthy()
     expect(within(day).getByTestId('rating-daylight').textContent).toBe('low')
     expect(screen.getByText('3 setpoints · Weekends · off')).toBeTruthy()
     expect(screen.getByText('editing Daylight curve')).toBeTruthy()
