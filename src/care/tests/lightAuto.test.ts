@@ -50,4 +50,14 @@ describe('Auto on and off', () => {
     expect((await c.schedules.setAuto({ on: false })).changed).toEqual(['auto', 'day'])
     expect(lights(store as MemoryStore)).toEqual([['auto', false], ['day', true]])
   })
+
+  it('takes the light at once, ending a hand\'s hold, rather than at the next minute\'s tick', async () => {
+    const { c } = core()
+    await c.light.set({ level: 20 })
+    expect(await c.light.owner()).toMatchObject({ source: 'manual', level: 20 })
+    await c.schedules.setAuto({ on: true })
+    // 18:00 UTC, inside a 14 h day centred on 12:00 with no place set.
+    expect(await c.light.owner()).toMatchObject({ source: 'schedule', level: 100, manualUntil: null })
+    expect(await c.light.get()).toMatchObject({ on: true, level: 100 })
+  })
 })

@@ -12,7 +12,8 @@ test('home shows the tower with the cycle and pod counts over it, and the API an
 })
 
 test('the light slider turns the light on from 0 and off back at 0', async ({ page }) => {
-  // Start from off: an earlier test may have left the light on.
+  // By hand, so Auto is off (a new garden starts on it, and it locks the slider); then from off.
+  await page.request.post('/api/schedules/auto', { data: { on: false } })
   await page.request.post('/api/light', { data: { on: false } })
   await page.goto('/light')
   const slider = page.getByLabel('Brightness')

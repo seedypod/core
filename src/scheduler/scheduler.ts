@@ -53,6 +53,16 @@ export function lightLevelAt(spec: LightSpec, minute: number): number | null {
   return clamp(last.level)
 }
 
+/** The light the running curves ask for at `minute`: the highest wins (lets a "boost" schedule overlay a base curve); null with none. */
+export function curveTarget(running: Schedule[], minute: number): number | null {
+  let target: number | null = null
+  for (const s of running.filter((s): s is Schedule & { spec: LightSpec } => s.kind === 'light')) {
+    const lvl = lightLevelAt(s.spec, minute)
+    if (lvl !== null) target = target === null ? lvl : Math.max(target, lvl)
+  }
+  return target
+}
+
 /** Rewrite each sun-following curve's setpoints for the day of `now`, where they've moved; returns the ids rewritten. */
 export function refollowSun(store: Store, now: Date, autoHours?: SunHours): string[] {
   const settings = store.settings.get()
@@ -104,12 +114,7 @@ export class Scheduler {
     for (const id of refollowSun(store, now, this.deps.autoHours?.())) this.deps.events.emit({ kind: 'schedule', action: 'changed', id })
     const schedules = store.schedules.list().filter(s => s.enabled && dayEnabled(s.days, lt.weekday))
 
-    // Light: the highest active curve wins (lets a "boost" schedule overlay a base curve).
-    let lightTarget: number | null = null
-    for (const s of schedules.filter((s): s is Schedule & { spec: LightSpec } => s.kind === 'light')) {
-      const lvl = lightLevelAt(s.spec, lt.minute)
-      if (lvl !== null) lightTarget = lightTarget === null ? lvl : Math.max(lightTarget, lvl)
-    }
+    const lightTarget = curveTarget(schedules, lt.minute)
     if (this.deps.light) {
       // The arbiter decides whether the curve or a higher source (manual, Autopilot) owns the light.
       if (lightTarget !== this.lastLightApplied) this.deps.events.emit({ kind: 'schedule', action: 'fired', id: 'light-curve' })
