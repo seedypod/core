@@ -14,6 +14,7 @@ import { GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HO
 import { localTime, systemZone, zoneAbbr } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle } from '@/src/components/Water/pumpCycles'
+import { unitPlace, type Place } from '@/src/scheduler/place'
 import type { SunDay } from '@/src/scheduler/sun'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
@@ -90,7 +91,7 @@ export function LightPage() {
           level={lightOn || requested ? level : 0}
           auto={autoOn}
           sun={sun}
-          placed={settings.data?.latitude != null}
+          place={unitPlace({ ...settings.data, timezone: zone })}
           onAuto={on => setAuto.mutate({ on })}
           resuming={resume.isPending}
           onResume={() => resume.mutate()}
@@ -238,7 +239,7 @@ type Owner = { source: 'manual' | 'autopilot' | 'schedule' | null, manualUntil: 
  * right. It tints amber while the light is on. A change here holds for 30
  * minutes, as before.
  */
-function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, auto, sun, placed, onAuto, resuming, onResume, onPower, onPreview, onCommit }: {
+function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, auto, sun, place, onAuto, resuming, onResume, onPower, onPreview, onCommit }: {
   on: boolean
   known: boolean
   owner: Owner
@@ -252,9 +253,9 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   level: number
   /** Whether Auto runs the light, and switching it. */
   auto: boolean
-  /** Today's sun, when a curve follows it; and whether the unit has a place to see it from. */
+  /** Today's sun, when a curve follows it; and where the unit sees it from, set or guessed from its timezone. */
   sun: SunDay | null
-  placed: boolean
+  place: Place | null
   onAuto: (on: boolean) => void
   resuming: boolean
   onResume: () => void
@@ -289,8 +290,8 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
     const off = [...pts].reverse().find(p => p.level === 0 && pts.some(q => q.minute < p.minute && q.level > 0))
     sub = (
       <span className="truncate" data-testid="auto-sub">
-        {placed && sun
-          ? [`sunrise ${sun.sunrise === null ? '–' : fmtClock(sun.sunrise)}`, `sunset ${sun.sunset === null ? '–' : fmtClock(sun.sunset)}`, up && off ? `light ${fmtClock(up.minute)}–${fmtClock(off.minute)}` : null].filter(Boolean).join(' · ')
+        {place && sun
+          ? [`sunrise ${sun.sunrise === null ? '–' : fmtClock(sun.sunrise)}`, `sunset ${sun.sunset === null ? '–' : fmtClock(sun.sunset)}`, up && off ? `light ${fmtClock(up.minute)}–${fmtClock(off.minute)}` : null, place.source === 'timezone' ? `near ${place.city}` : null].filter(Boolean).join(' · ')
           : (
               <>
                 {'centred on 12:00 · '}

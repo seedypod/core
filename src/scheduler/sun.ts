@@ -10,6 +10,7 @@
  */
 import type { LightSetpoint, LightSpec, SunFollow } from '../store/types'
 import type { SunHours } from './lightPlan'
+import { unitPlace } from './place'
 import { localTime } from './time'
 
 const rad = Math.PI / 180
@@ -65,16 +66,15 @@ export function sunSetpoints(sun: SunFollow, w: { on: number, off: number }): Li
   ]
 }
 
-/** Without a location the day is the curve's shortest, centred on 12:00. */
+/** Without a location or a zone to guess one from (UTC), the day is the curve's shortest, centred on 12:00. */
 const NO_PLACE = { noon: 720, day: 0 }
 
 /** A sun-following spec with its setpoints for the day of `now`, or the spec as it was when it doesn't follow the sun. An Auto curve takes its hours from `auto`. */
 export function followSun(spec: LightSpec, place: { latitude: number | null, longitude: number | null, timezone: string }, now: Date, auto?: SunHours): LightSpec {
   if (!spec.sun) return spec
   const sun = spec.sun.auto && auto ? { ...spec.sun, minHours: auto.minHours, maxHours: auto.maxHours } : spec.sun
-  const here = place.latitude !== null && place.longitude !== null
-    ? sunDay(localTime(now, place.timezone).date, place.latitude, place.longitude, place.timezone)
-    : NO_PLACE
+  const at = unitPlace(place)
+  const here = at ? sunDay(localTime(now, place.timezone).date, at.latitude, at.longitude, place.timezone) : NO_PLACE
   return { ...spec, setpoints: sunSetpoints(sun, sunWindow(sun, here)) }
 }
 

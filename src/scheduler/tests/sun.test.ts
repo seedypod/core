@@ -71,6 +71,12 @@ describe('followSun', () => {
     expect(Math.abs((setpoints[3]?.minute ?? 0) - at(19, 24))).toBeLessThanOrEqual(2)
   })
 
+  it('without a location, follows the timezone\'s city', () => {
+    const { setpoints } = followSun(spec, { latitude: null, longitude: null, timezone: 'America/Los_Angeles' }, new Date('2026-11-12T18:00:00Z'))
+    // Los Angeles' midday is 11:37 PST: 14 hours about it from 04:37, its ramp starting half an hour before.
+    expect(Math.abs((setpoints[0]?.minute ?? 0) - at(4, 7))).toBeLessThanOrEqual(2)
+  })
+
   it('without a place, runs minHours centred on 12:00', () => {
     expect(followSun(spec, { latitude: null, longitude: null, timezone: 'UTC' }, new Date('2026-11-12T18:00:00Z')).setpoints).toEqual(sunSetpoints(DEFAULT_SUN, { on: 300, off: 1140 }))
   })

@@ -4,6 +4,7 @@ import { Button, GhostIcon } from '@/src/components/ds/core'
 import { DayPicker, Slider, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
 import { fmtClock } from '@/src/components/charts/format'
 import { daysToList, listToDays } from '@/src/lib/days'
+import { unitPlace } from '@/src/scheduler/place'
 import { followSun, sunDay } from '@/src/scheduler/sun'
 import { localTime, systemZone } from '@/src/scheduler/time'
 import type { SunFollow } from '@/src/store/types'
@@ -77,8 +78,9 @@ function SunControls({ sun, onChange }: { sun: SunFollow, onChange: (sun: SunFol
   const settings = trpc.settings.get.useQuery()
   const auto = trpc.schedules.autoLight.useQuery(undefined, { enabled: !!sun.auto })
   const place = { latitude: settings.data?.latitude ?? null, longitude: settings.data?.longitude ?? null, timezone: settings.data?.timezone ?? systemZone() }
+  const at = unitPlace(place)
   const now = new Date()
-  const today = place.latitude !== null && place.longitude !== null ? sunDay(localTime(now, place.timezone).date, place.latitude, place.longitude, place.timezone) : null
+  const today = at ? sunDay(localTime(now, place.timezone).date, at.latitude, at.longitude, place.timezone) : null
   const [rise, , , dark] = followSun({ setpoints: [], sun }, place, now, auto.data).setpoints
   const shift = sun.shiftMin === 0 ? 'on midday' : `${hm(Math.abs(sun.shiftMin))} ${sun.shiftMin > 0 ? 'later' : 'earlier'}`
   const row = 'flex flex-wrap items-center justify-between gap-3 border-b border-line py-2 text-[13px]'
@@ -86,7 +88,7 @@ function SunControls({ sun, onChange }: { sun: SunFollow, onChange: (sun: SunFol
     <div className="flex flex-col">
       <p className="pb-2 text-[13px] text-fg-2 text-pretty" data-testid="sun-today">
         {today
-          ? `Today: sunrise ${today.sunrise === null ? '–' : fmtClock(today.sunrise)}, sunset ${today.sunset === null ? '–' : fmtClock(today.sunset)}, ${hm(today.day)} of daylight. `
+          ? `Today${at?.source === 'timezone' ? ` near ${at.city} (from the timezone)` : ''}: sunrise ${today.sunrise === null ? '–' : fmtClock(today.sunrise)}, sunset ${today.sunset === null ? '–' : fmtClock(today.sunset)}, ${hm(today.day)} of daylight. `
           : 'Set the unit’s location in Settings to follow sunrise and sunset; until then the day centres on 12:00. '}
         {rise && dark && `The light comes up from ${fmtClock(rise.minute)} and is off by ${fmtClock(dark.minute)}.`}
       </p>

@@ -1,5 +1,6 @@
 import { dayOn } from '@/src/lib/days'
 import { lightDay, type LightDay } from '@/src/scheduler/lightPlan'
+import { unitPlace } from '@/src/scheduler/place'
 import { sunDay, type SunDay } from '@/src/scheduler/sun'
 import type { SunFollow } from '@/src/store/types'
 import { localTime, systemZone } from '@/src/scheduler/time'
@@ -85,8 +86,9 @@ export function holdWindow(sinceIso: string, untilIso: string, now: Date, timezo
   return { fromMin: minutes(sinceIso), untilMin: minutes(untilIso) }
 }
 
-/** Today's sun when a running curve follows it and the unit has a place to see it from; null otherwise. */
+/** Today's sun when a running curve follows it and the unit has a place to see it from, set or its timezone's; null otherwise. */
 export function sunToday(running: LightCurve[], place: { latitude?: number | null, longitude?: number | null }, timezone: string, now: Date): SunDay | null {
-  if (!running.some(c => c.spec.sun) || place.latitude == null || place.longitude == null) return null
-  return sunDay(localTime(now, timezone).date, place.latitude, place.longitude, timezone)
+  const at = unitPlace({ ...place, timezone })
+  if (!running.some(c => c.spec.sun) || !at) return null
+  return sunDay(localTime(now, timezone).date, at.latitude, at.longitude, timezone)
 }

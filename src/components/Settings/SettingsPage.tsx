@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
-import { Archive, BellRing, Camera, ChevronDown, Cloud, CloudUpload, Download, Droplets, HardDrive, House, Info, KeyRound, Radio, RefreshCw, Ruler, Settings2, Wifi } from 'lucide-react'
+import { Archive, BellRing, Camera, ChevronDown, Cloud, CloudUpload, Download, Droplets, HardDrive, House, Info, KeyRound, LocateFixed, Radio, RefreshCw, Ruler, Settings2, Wifi } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { RestorePanel, RestoreProgress } from '@/src/components/Backup/RestorePanel'
 import { Button, KeyValue } from '@/src/components/ds/core'
@@ -14,6 +14,7 @@ import type { inferRouterOutputs } from '@trpc/server'
 import type { AppRouter } from '@/src/server/routers/app'
 import { withUnit } from '@/src/lib/sensorMeta'
 import { displayUnit, fromDisplay, toDisplay, unitSystem } from '@/src/lib/units'
+import { unitPlace } from '@/src/scheduler/place'
 import { apiBase, trpc } from '@/src/utils/trpc'
 
 type SettingsView = inferRouterOutputs<AppRouter>['settings']['get']
@@ -110,22 +111,47 @@ export function parsePlace(text: string): { latitude: number, longitude: number 
   return { latitude, longitude }
 }
 
-function LocationField({ latitude, longitude, onChange }: { latitude: number | null, longitude: number | null, onChange: (latitude: number | null, longitude: number | null) => void }) {
+/** Whether this page may ask the browser where the device is: only over https or on localhost. */
+const canLocate = () => typeof window !== 'undefined' && window.isSecureContext && typeof navigator !== 'undefined' && 'geolocation' in navigator
+
+function LocationField({ latitude, longitude, timezone, onChange }: { latitude: number | null, longitude: number | null, timezone: string, onChange: (latitude: number | null, longitude: number | null) => void }) {
   const [text, setText] = useState(latitude !== null && longitude !== null ? `${latitude}, ${longitude}` : '')
+  const [locating, setLocating] = useState<'asking' | string | null>(null)
   const place = parsePlace(text)
+  const guess = unitPlace({ timezone })
+  const put = (v: string) => {
+    setText(v)
+    const next = parsePlace(v)
+    if (next !== undefined) onChange(next?.latitude ?? null, next?.longitude ?? null)
+  }
+  const locate = () => {
+    setLocating('asking')
+    navigator.geolocation.getCurrentPosition(
+      // To two places, about a kilometre: plenty for the sun, and no closer than it needs.
+      (pos) => {
+        setLocating(null)
+        put(`${Math.round(pos.coords.latitude * 100) / 100}, ${Math.round(pos.coords.longitude * 100) / 100}`)
+      },
+      e => setLocating(e.code === e.PERMISSION_DENIED ? 'The browser wasn’t allowed to share its location.' : 'The browser couldn’t find its location.'),
+      { enableHighAccuracy: false, timeout: 15_000, maximumAge: 600_000 },
+    )
+  }
+  const hint = place === undefined
+    ? 'Two numbers, latitude then longitude, like 37.77, -122.42'
+    : locating && locating !== 'asking'
+      ? locating
+      : place === null
+        ? (guess ? `Empty: near ${guess.city}, from the timezone.` : 'Empty: set a timezone or a location to follow the sun.')
+        : undefined
   return (
-    <TextField
-      aria-label="Location"
-      className="w-60"
-      placeholder="37.77, -122.42"
-      value={text}
-      hint={place === undefined ? 'Two numbers, latitude then longitude, like 37.77, -122.42' : undefined}
-      onChange={(v) => {
-        setText(v)
-        const next = parsePlace(v)
-        if (next !== undefined) onChange(next?.latitude ?? null, next?.longitude ?? null)
-      }}
-    />
+    <div className="flex flex-col items-end gap-1.5">
+      <TextField aria-label="Location" className="w-60" placeholder={guess ? `${guess.latitude}, ${guess.longitude}` : '37.77, -122.42'} value={text} hint={hint} onChange={put} />
+      {canLocate() && (
+        <Button size="sm" variant="ghost" icon={LocateFixed} disabled={locating === 'asking'} onClick={locate}>
+          {locating === 'asking' ? 'Locating…' : 'Use this device’s location'}
+        </Button>
+      )}
+    </div>
   )
 }
 
@@ -191,8 +217,8 @@ function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
                 <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-2" />
               </span>
             </Row>
-            <Row label="Location" sub="Latitude, longitude: for light curves that follow sunrise and sunset. A nearby city's are close enough.">
-              <LocationField latitude={(d.latitude ?? null) as number | null} longitude={(d.longitude ?? null) as number | null} onChange={(latitude, longitude) => setD({ ...d, latitude, longitude })} />
+            <Row label="Location" sub="Latitude, longitude, for Auto's sunrise and sunset. Left empty, it's your timezone's city; a nearby city's coordinates are close enough.">
+              <LocationField latitude={(d.latitude ?? null) as number | null} longitude={(d.longitude ?? null) as number | null} timezone={str('timezone')} onChange={(latitude, longitude) => setD({ ...d, latitude, longitude })} />
             </Row>
             <Row label="Units" sub="Temperature, tank volume and water depth"><SegmentedControl size="sm" ariaLabel="Units" value={str('temperatureUnit') as 'C' | 'F'} options={[{ value: 'C', label: '°C · L · cm' }, { value: 'F', label: '°F · gal · in' }]} onChange={v => setD({ ...d, temperatureUnit: v })} /></Row>
           </Section>

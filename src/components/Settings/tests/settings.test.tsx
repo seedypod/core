@@ -272,6 +272,39 @@ describe('Settings: header and section nav', () => {
     expect(calls.update.mock.calls[1]?.[0]).toMatchObject({ latitude: null, longitude: null })
   })
 
+  it('left empty, says the timezone\'s city stands in, and offers its coordinates as the placeholder', () => {
+    data.set('settings', { ...settings, timezone: 'America/Los_Angeles' })
+    render(<SettingsPage />)
+    expect((screen.getByLabelText('Location') as HTMLInputElement).placeholder).toBe('34.05, -118.24')
+    expect(screen.getByText('Empty: near Los Angeles, from the timezone.')).toBeTruthy()
+    cleanup()
+    data.set('settings', settings)
+    render(<SettingsPage />)
+    expect(screen.getByText('Empty: set a timezone or a location to follow the sun.')).toBeTruthy()
+  })
+
+  it('asks the browser where the device is only where it may, and fills the field to two places', () => {
+    render(<SettingsPage />)
+    // jsdom is no secure context, as http://seedypod.local isn't.
+    expect(screen.queryByRole('button', { name: /Use this device/ })).toBeNull()
+    cleanup()
+    vi.stubGlobal('isSecureContext', true)
+    const getCurrentPosition = vi.fn((ok: (p: { coords: { latitude: number, longitude: number } }) => void) => ok({ coords: { latitude: 37.774929, longitude: -122.419416 } }))
+    Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition }, configurable: true })
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Use this device’s location' }))
+    expect((screen.getByLabelText('Location') as HTMLInputElement).value).toBe('37.77, -122.42')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.update.mock.calls.at(-1)?.[0]).toMatchObject({ latitude: 37.77, longitude: -122.42 })
+    cleanup()
+    getCurrentPosition.mockImplementation(((_: unknown, fail: (e: { code: number, PERMISSION_DENIED: number }) => void) => fail({ code: 1, PERMISSION_DENIED: 1 })) as never)
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Use this device’s location' }))
+    expect(screen.getByText('The browser wasn’t allowed to share its location.')).toBeTruthy()
+    Reflect.deleteProperty(navigator, 'geolocation')
+    vi.unstubAllGlobals()
+  })
+
   it('reads a place only inside the globe', () => {
     expect(parsePlace(' 37.77 , -122.42 ')).toEqual({ latitude: 37.77, longitude: -122.42 })
     expect(parsePlace('')).toBeNull()
