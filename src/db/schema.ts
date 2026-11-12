@@ -10,6 +10,9 @@ export const deviceSettings = sqliteTable('device_settings', {
   id: integer().primaryKey().default(1),
   unitName: text().notNull().default('Gardyn'),
   timezone: text().notNull().default('UTC'),
+  /** For light curves that follow the sun; null until set. */
+  latitude: real(),
+  longitude: real(),
   temperatureUnit: text({ enum: ['C', 'F'] }).notNull().default('C'),
   /** Tank calibration: sensor→surface distance when full / empty (cm). */
   waterFullCm: real().notNull().default(5),

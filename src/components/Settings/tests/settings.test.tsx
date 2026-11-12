@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setUnitSystem } from '@/src/lib/units'
-import { SettingsPage } from '../SettingsPage'
+import { parsePlace, SettingsPage } from '../SettingsPage'
 
 const { data, calls } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
@@ -36,7 +36,7 @@ vi.mock('@/src/utils/trpc', () => {
 })
 
 const settings = {
-  unitName: 'Gardyn', timezone: 'UTC', temperatureUnit: 'C', waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19,
+  unitName: 'Gardyn', timezone: 'UTC', latitude: null, longitude: null, temperatureUnit: 'C', waterFullCm: 5, waterEmptyCm: 20, tankCapacityL: 19,
   thinningReminderDays: 14, rootCheckReminderDays: 21, harvestReminderDays: 35, nutrientReminderDays: 7,
   mqttUrl: null, mqttUsername: null, mqttTlsEnabled: false, mqttTlsInsecure: false, captureIntervalMin: 60,
   primaryAnalyzer: 'green-threshold', analysisArtifacts: false, mirrorEndpoint: null, mirrorBucket: null, mirrorRegion: 'auto', mirrorPrefix: '', mirrorAccessKeyId: null,
@@ -250,6 +250,32 @@ describe('Settings: header and section nav', () => {
     expect(screen.getByTestId('unsaved').textContent).toBe('2 unsaved changes')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(calls.update.mock.calls[0]?.[0]).toMatchObject({ waterFullCm: 5.5, timezone: 'America/Los_Angeles' })
+  })
+
+  it('saves the unit\'s location from one field, and says what it wants until it reads as one', () => {
+    render(<SettingsPage />)
+    const location = screen.getByLabelText('Location') as HTMLInputElement
+    expect(location.value).toBe('')
+    fireEvent.change(location, { target: { value: '37.77' } })
+    expect(screen.getByText('Two numbers, latitude then longitude, like 37.77, -122.42')).toBeTruthy()
+    expect(screen.queryByTestId('unsaved')).toBeNull()
+    fireEvent.change(location, { target: { value: '37.77, -122.42' } })
+    expect(screen.queryByText(/^Two numbers/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.update.mock.calls[0]?.[0]).toMatchObject({ latitude: 37.77, longitude: -122.42 })
+    cleanup()
+    data.set('settings', { ...settings, latitude: 51.5, longitude: -0.13 })
+    render(<SettingsPage />)
+    expect((screen.getByLabelText('Location') as HTMLInputElement).value).toBe('51.5, -0.13')
+    fireEvent.change(screen.getByLabelText('Location'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.update.mock.calls[1]?.[0]).toMatchObject({ latitude: null, longitude: null })
+  })
+
+  it('reads a place only inside the globe', () => {
+    expect(parsePlace(' 37.77 , -122.42 ')).toEqual({ latitude: 37.77, longitude: -122.42 })
+    expect(parsePlace('')).toBeNull()
+    expect([parsePlace('91, 0'), parsePlace('0, 181'), parsePlace('a, b'), parsePlace('1, 2, 3')]).toEqual([undefined, undefined, undefined, undefined])
   })
 
   it('keeps a timezone the browser does not list', () => {

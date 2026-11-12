@@ -1,9 +1,12 @@
 import { z } from 'zod'
+import { refollowSun } from '../../scheduler/scheduler'
 import { publicProcedure, router } from '../trpc'
 
 export const SettingsSchema = z.object({
   unitName: z.string().min(1).max(40),
   timezone: z.string().min(1),
+  latitude: z.number().min(-90).max(90).nullable(),
+  longitude: z.number().min(-180).max(180).nullable(),
   temperatureUnit: z.enum(['C', 'F']),
   waterFullCm: z.number().min(0).max(100),
   waterEmptyCm: z.number().min(0).max(100),
@@ -56,6 +59,10 @@ export const settingsRouter = router({
     .mutation(({ ctx, input }) => {
       const s = ctx.store.settings.update(input)
       ctx.events.emit({ kind: 'mutation', path: 'settings' })
+      // A new place or zone moves today's sunrise and sunset.
+      if ('latitude' in input || 'longitude' in input || 'timezone' in input) {
+        for (const id of refollowSun(ctx.store, (ctx.now ?? (() => new Date()))())) ctx.events.emit({ kind: 'schedule', action: 'changed', id })
+      }
       return publicView(s)
     }),
 })

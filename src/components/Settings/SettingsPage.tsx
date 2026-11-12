@@ -100,6 +100,35 @@ function timezones(current: string): string[] {
   return all.includes(current) ? all : [current, ...all]
 }
 
+/** "37.77, -122.42" to a place, null for an empty field, undefined while it isn't one yet. */
+export function parsePlace(text: string): { latitude: number, longitude: number } | null | undefined {
+  if (!text.trim()) return null
+  const parts = text.split(',').map(p => Number(p.trim()))
+  const [latitude, longitude] = parts
+  if (parts.length !== 2 || latitude === undefined || longitude === undefined || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return undefined
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return undefined
+  return { latitude, longitude }
+}
+
+function LocationField({ latitude, longitude, onChange }: { latitude: number | null, longitude: number | null, onChange: (latitude: number | null, longitude: number | null) => void }) {
+  const [text, setText] = useState(latitude !== null && longitude !== null ? `${latitude}, ${longitude}` : '')
+  const place = parsePlace(text)
+  return (
+    <TextField
+      aria-label="Location"
+      className="w-60"
+      placeholder="37.77, -122.42"
+      value={text}
+      hint={place === undefined ? 'Two numbers, latitude then longitude, like 37.77, -122.42' : undefined}
+      onChange={(v) => {
+        setText(v)
+        const next = parsePlace(v)
+        if (next !== undefined) onChange(next?.latitude ?? null, next?.longitude ?? null)
+      }}
+    />
+  )
+}
+
 function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
   s: SettingsView
   coreVersion?: string
@@ -161,6 +190,9 @@ function SettingsForm({ s, coreVersion, coreHost, system, onSave, saving }: {
                 </select>
                 <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-2" />
               </span>
+            </Row>
+            <Row label="Location" sub="Latitude, longitude: for light curves that follow sunrise and sunset. A nearby city's are close enough.">
+              <LocationField latitude={(d.latitude ?? null) as number | null} longitude={(d.longitude ?? null) as number | null} onChange={(latitude, longitude) => setD({ ...d, latitude, longitude })} />
             </Row>
             <Row label="Units" sub="Temperature, tank volume and water depth"><SegmentedControl size="sm" ariaLabel="Units" value={str('temperatureUnit') as 'C' | 'F'} options={[{ value: 'C', label: '°C · L · cm' }, { value: 'F', label: '°F · gal · in' }]} onChange={v => setD({ ...d, temperatureUnit: v })} /></Row>
           </Section>

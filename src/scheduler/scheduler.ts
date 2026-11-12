@@ -11,6 +11,7 @@ import type { LightArbiter } from '../control/light'
 import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
 import type { LightSpec, PumpSpec, Schedule, Store } from '../store/types'
+import { followSun } from './sun'
 import { dayEnabled, localTime } from './time'
 
 export interface SchedulerDeps {
@@ -49,6 +50,20 @@ export function lightLevelAt(spec: LightSpec, minute: number): number | null {
   return clamp(last.level)
 }
 
+/** Rewrite each sun-following curve's setpoints for the day of `now`, where they've moved; returns the ids rewritten. */
+export function refollowSun(store: Store, now: Date): string[] {
+  const settings = store.settings.get()
+  const changed: string[] = []
+  for (const s of store.schedules.list()) {
+    if (s.kind !== 'light' || !('setpoints' in s.spec) || !s.spec.sun) continue
+    const spec = followSun(s.spec, settings, now)
+    if (JSON.stringify(spec.setpoints) === JSON.stringify(s.spec.setpoints)) continue
+    store.schedules.upsert({ id: s.id, kind: s.kind, name: s.name, enabled: s.enabled, days: s.days, spec })
+    changed.push(s.id)
+  }
+  return changed
+}
+
 export interface TickResult {
   lightTarget: number | null
   pumpFired: string[]
@@ -82,6 +97,8 @@ export class Scheduler {
     const settings = store.settings.get()
     const now = this.now()
     const lt = localTime(now, settings.timezone)
+    // Sunrise and sunset move a minute or two a day; a curve following them moves with them.
+    for (const id of refollowSun(store, now)) this.deps.events.emit({ kind: 'schedule', action: 'changed', id })
     const schedules = store.schedules.list().filter(s => s.enabled && dayEnabled(s.days, lt.weekday))
 
     // Light: the highest active curve wins (lets a "boost" schedule overlay a base curve).

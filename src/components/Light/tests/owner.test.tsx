@@ -305,6 +305,20 @@ describe('LightPage: curves', () => {
     expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'New curve', enabled: false }))
   })
 
+  it('adds a curve that follows the sun, which the server fills in, and says so on its card', () => {
+    render(<LightPage />)
+    expect(screen.getByTestId('preset-sun').textContent).toMatch(/14–16 hours of full light once the unit’s location is set\.$/)
+    fireEvent.click(screen.getByTestId('preset-sun'))
+    expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'Follow the sun', enabled: true, spec: { setpoints: [], sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0 } } }))
+    cleanup()
+    data.set('settings', { timezone: 'America/Los_Angeles', latitude: 37.77, longitude: -122.42 })
+    data.set('schedules', [{ ...daylight, name: 'Sun', spec: { ...spec, sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0 } } }])
+    render(<LightPage />)
+    expect(screen.getByText(/^Follows the sun · Every day · on 15 h/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Add curve'))
+    expect(screen.getByTestId('preset-sun').textContent).toMatch(/14–16 hours of full light\.$/)
+  })
+
   it('warns while the unit keeps UTC, since curves run on its clock', () => {
     data.set('settings', { timezone: 'UTC' })
     render(<LightPage />)

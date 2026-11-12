@@ -5,10 +5,13 @@ import { readTower } from '../../care/tower'
 import { plantSlug } from '../../plants/custom'
 import { LIGHT_PRESETS } from '../../scheduler/lightPlan'
 import { lightLevelAt } from '../../scheduler/scheduler'
+import { followSun } from '../../scheduler/sun'
 import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
 
-const LightSpec = z.object({ setpoints: z.array(z.object({ minute: z.number().int().min(0).max(1439), level: z.number().min(0).max(100) })).max(24) })
+const SunFollow = z.object({ minHours: z.number().min(1).max(20), maxHours: z.number().min(1).max(20), rampMin: z.number().int().min(0).max(240), shiftMin: z.number().int().min(-360).max(360) })
+  .refine(s => s.minHours <= s.maxHours, { message: 'minHours is more than maxHours' })
+const LightSpec = z.object({ setpoints: z.array(z.object({ minute: z.number().int().min(0).max(1439), level: z.number().min(0).max(100) })).max(24), sun: SunFollow.optional() })
 const PumpSpec = z.object({ minute: z.number().int().min(0).max(1439), durationS: z.number().int().positive().max(3600), level: z.number().min(1).max(100).optional() })
 
 /** trpc-to-openapi needs a ZodObject input, so the kind/spec pairing is checked in a refinement. */
@@ -122,7 +125,10 @@ export const schedulesRouter = router({
     .input(ScheduleSchema)
     .output(ScheduleOut)
     .mutation(({ ctx, input }) => {
-      const row = ctx.store.schedules.upsert(input as Parameters<typeof ctx.store.schedules.upsert>[0])
+      // A sun-following curve gets today's setpoints now, not at the next tick.
+      const settings = ctx.store.settings.get()
+      const spec = 'setpoints' in input.spec ? followSun(input.spec, settings, now(ctx)) : input.spec
+      const row = ctx.store.schedules.upsert({ ...input, spec } as Parameters<typeof ctx.store.schedules.upsert>[0])
       ctx.events.emit({ kind: 'schedule', action: 'changed', id: input.id })
       return row
     }),
