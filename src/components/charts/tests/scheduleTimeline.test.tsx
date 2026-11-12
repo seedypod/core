@@ -92,13 +92,13 @@ describe('ScheduleTimeline', () => {
     unmount()
     render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" />)
     expect(screen.queryByTestId('timeline-next')).toBeNull()
-    expect(screen.getByRole('group').getAttribute('aria-label')).toBe('Today on the unit\'s clock, now 22:00. Water: no pump runs. Light: no light scheduled.')
+    expect(screen.getByRole('group').getAttribute('aria-label')).toBe('Today on the unit\'s clock, now 22:00 UTC. Water: no pump runs. Light: no light scheduled.')
   })
 
-  it('draws the now line in the unit\'s zone, not the browser\'s', () => {
+  it('draws the now line in the unit\'s zone, not the browser\'s, and names the zone', () => {
     render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="America/New_York" />)
     // 14:00 UTC is 09:00 in New York in November.
-    expect(screen.getByTestId('timeline-now-label').textContent).toBe('now 09:00')
+    expect(screen.getByTestId('timeline-now-label').textContent).toBe('now 09:00 EST')
     expect(screen.getByTestId('timeline-now').style.left).toBe(`${(540 / 1440) * 100}%`)
   })
 
@@ -169,7 +169,7 @@ describe('ScheduleTimeline', () => {
   it('drops the end of the axis late in the evening, where the now pill sits over it', () => {
     vi.setSystemTime(new Date('2026-11-10T23:10:00Z'))
     const { container } = render(<ScheduleTimeline lead="water" curves={[]} cycles={[]} timezone="UTC" />)
-    expect(container.querySelector('[aria-hidden].relative.h-5')?.textContent).toBe('00:0003:0006:0009:0012:0015:0018:0021:00now 23:10')
+    expect(container.querySelector('[aria-hidden].relative.h-5')?.textContent).toBe('00:0003:0006:0009:0012:0015:0018:0021:00now 23:10 UTC')
   })
 
   const phone = () => {
@@ -189,7 +189,7 @@ describe('ScheduleTimeline', () => {
     const { container } = render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('a', 480, 600), cycle('b', 490, 600)]} timezone="UTC" />)
     const axis = container.querySelector('[aria-hidden].relative.h-5')
     // 12:00 and 18:00 sit under the now pill at 14:00.
-    expect(axis?.textContent).toBe('00:0006:0024:00now 14:00')
+    expect(axis?.textContent).toBe('00:0006:0024:00now 14:00 UTC')
     const [a, b] = screen.getAllByTestId('label-water')
     // Ten minutes apart on 300 px: the first run's label would run into the second.
     expect(a?.className).toContain('invisible')
@@ -202,8 +202,8 @@ describe('ScheduleTimeline', () => {
     vi.setSystemTime(new Date('2026-11-10T23:58:00Z'))
     render(<ScheduleTimeline lead="water" curves={[]} cycles={[cycle('A long-named late watering cycle', 1430, 600)]} timezone="UTC" />)
     const pill = screen.getByTestId('timeline-now-label')
-    // 300 px of lane, a 72 px pill: no further right than 228 px.
-    expect(pill.style.left).toBe('228px')
+    // 300 px of lane, a 98 px pill for "now 23:58 UTC": no further right than 202 px.
+    expect(pill.style.left).toBe('202px')
     fireEvent.click(screen.getAllByTestId('mark-water')[0] as HTMLElement)
     const tip = screen.getByRole('tooltip')
     const left = Number.parseFloat(tip.style.left)

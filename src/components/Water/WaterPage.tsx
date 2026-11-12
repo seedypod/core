@@ -1,35 +1,32 @@
 import { withUnit } from '@/src/lib/sensorMeta'
 import { toDisplay } from '@/src/lib/units'
-import { CalendarClock, MoreHorizontal, Play, Plus, Square } from 'lucide-react'
+import { Play, Square } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { Button, Card, GhostIcon, InlineError, Skeleton } from '@/src/components/ds/core'
+import { Button, Card, InlineError, Skeleton } from '@/src/components/ds/core'
 import { LineChart } from '@/src/components/ds/charts'
-import { DayPicker, SegmentedControl, TextField, Toggle, WeekdayDots } from '@/src/components/ds/forms'
-import { Modal } from '@/src/components/ds/feedback'
+import { SegmentedControl } from '@/src/components/ds/forms'
 import { fmtClock, fmtDate, fmtTime } from '@/src/components/charts/format'
 import { bin } from '@/src/components/charts/TimeChart'
 import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { tankData, type TankMarks } from '@/src/components/charts/viz3d/shape'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
-import { dayOn, daysToList, listToDays } from '@/src/lib/days'
+import { dayOn } from '@/src/lib/days'
 import { pumpFault } from '@/src/lib/pumpFault'
 import { localTime, systemZone } from '@/src/scheduler/time'
-import { daysSinceSowing, PUMP_PRESETS, type PumpPreset } from '@/src/scheduler/pumpPlan'
-import { followedPreset } from '@/src/care/follow'
-import { asCurve } from '@/src/components/Light/curves'
+import { daysSinceSowing, lightWindow, PUMP_PRESETS, type PumpPreset } from '@/src/scheduler/pumpPlan'
+import { asCurve, runningToday } from '@/src/components/Light/curves'
+import { ProtocolCard } from '@/src/components/Grow/ProtocolCard'
 import { trpc } from '@/src/utils/trpc'
-import { asCycle, cycleWhen, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend, type PumpCycle } from './pumpCycles'
+import { asCycle, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend } from './pumpCycles'
 import { useNow } from '@/src/components/System/useNow'
 import { useTankReserve } from './useTankReserve'
-import { ProtocolLine } from './ProtocolLine'
+import { YourSchedules } from './YourSchedules'
 import { DueChores } from '@/src/components/Care/ChoreItem'
 import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 
 const DURATIONS = [{ value: '60', label: '1 min' }, { value: '300', label: '5 min' }, { value: '600', label: '10 min' }, { value: '900', label: '15 min' }] as const
-/** The editor's run lengths, in seconds: the presets' among them, so a 6-minute preset cycle reads as itself. */
-const CYCLE_DURATIONS = [60, 180, 300, 360, 600, 900]
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
 
@@ -45,15 +42,9 @@ export function WaterPage() {
   const [asked, setAsked] = useState<number | null>(null)
   const runOnce = trpc.pump.runOnce.useMutation({ onSuccess: () => utils.pump.invalidate(), onError: () => setAsked(null) })
   const stop = trpc.pump.stop.useMutation({ onSuccess: () => utils.pump.invalidate() })
-  // The grow protocol reads the pump cycles (whose watering it is), so its line here is read again with them.
-  const cyclesChanged = () => {
-    void utils.schedules.invalidate()
-    void utils.protocol.invalidate()
-  }
-  const upsert = trpc.schedules.upsert.useMutation({ onSuccess: cyclesChanged })
-  const remove = trpc.schedules.remove.useMutation({ onSuccess: cyclesChanged })
+  const protocol = trpc.protocol.current.useQuery()
+  const library = trpc.schedules.library.list.useQuery()
   const [dur, setDur] = useState<typeof DURATIONS[number]['value']>('300')
-  const [editing, setEditing] = useState<PumpCycle | null>(null)
   const [hours, setHours] = useState<Hours>('168')
   const grow = trpc.grow.current.useQuery()
   const pods = trpc.grow.pods.useQuery()
@@ -82,17 +73,12 @@ export function WaterPage() {
   const cycleStart = grow.data?.cycle ? Date.parse(grow.data.cycle.startedAt) : null
   const ranToday = (runs.data ?? []).some(r => germination && r.scheduleId.startsWith(`water-${germination.slug}-`) && localTime(new Date(r.firedAt), zone).date === today && (cycleStart === null || Date.parse(r.firedAt) >= cycleStart))
   const missed = germination && sown === 0 && nowMin >= (germination.minutes[0] ?? 0) && !ranToday ? germination : null
-  // Running by the same rule Follow goes by: every cycle the preset's, on, on its days, its length. Paused or trimmed, they're your own.
-  const running = followedPreset(cycles)
   const runNow = (durationS: number) => {
     setAsked(Date.now())
     runOnce.mutate({ durationS })
   }
-  const lastRun = (id: string) => {
-    const r = (runs.data ?? []).find(r => r.scheduleId === id)
-    return r ? new Date(r.firedAt) : null
-  }
-  const isNew = !!editing && !cycles.some(c => c.id === editing.id)
+  // Today's light on the unit's clock, the band every schedule's day is drawn on.
+  const light = lightWindow(runningToday(curves, weekday).map(c => c.spec))
 
   // The strip below says what the current guard measured; up here, which fault it is.
   const pumpLine = p ? (p.on ? `watering at ${p.level}%` : p.fault ? `pump fault: ${pumpFault(p.fault).reason}` : 'pump idle') : '…'
@@ -171,21 +157,6 @@ export function WaterPage() {
         </div>
       </Card>
 
-      <div id="pump-cycles" className="flex scroll-mt-6 flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex min-w-0 flex-1 basis-[12rem] flex-wrap items-center gap-x-2 gap-y-1">
-          <h2 className={EYEBROW}>Pump cycles</h2>
-          {/* What runs now: a preset by name, or cycles of your own; nothing with none. */}
-          {cycles.length > 0 && (
-            <span className="flex items-center gap-1.5 text-[12px] text-fg-2" data-testid="pump-running">
-              <span className="text-fg-3">·</span>
-              {running && <span className="size-2 shrink-0 rounded-full bg-tank" />}
-              {running ? `${running.name} running` : 'custom cycles'}
-            </span>
-          )}
-        </div>
-        <FollowToggle />
-        <Button icon={Plus} onClick={() => setEditing({ id: `pump-${Date.now().toString(36)}`, kind: 'pump', name: 'Watering', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })}>Add custom cycle</Button>
-      </div>
       <ScheduleTimeline
         lead="water"
         curves={curves}
@@ -193,28 +164,17 @@ export function WaterPage() {
         timezone={cfg?.timezone}
         pumpRun={p?.on ? { since: p.since, remainingS: p.remainingS } : null}
       />
-      {/* Which stage of the grow protocol the cycles are on, and when they next change: set on Grow. */}
-      <ProtocolLine />
       {missed && <MissedRun preset={missed} busy={!!p?.on || asked !== null} onRun={() => runNow(missed.durationS)} />}
-      {cycles.length > 0 && (
-        <Card className="gap-0 p-0" data-testid="pump-cycle-list">
-          {cycles.map(c => (
-            <div key={c.id} className="flex flex-wrap items-center gap-4 border-b border-line px-5 py-4 last:border-0">
-              <span className={cn('w-[76px] font-mono text-xl font-medium', !c.enabled && 'text-fg-3')}>{fmtClock(c.spec.minute)}</span>
-              <button type="button" className="flex min-w-[160px] flex-1 cursor-pointer flex-col gap-[3px] text-left" onClick={() => setEditing(c)}>
-                <span className={cn('text-sm font-medium', !c.enabled && 'text-fg-2')}>{c.name}</span>
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-fg-3">
-                  {fmtMinutes(c.spec.durationS) + (c.spec.level ? ` at ${c.spec.level}%` : '')}
-                  <WeekdayDots days={c.days} />
-                </span>
-              </button>
-              <span className="font-mono text-[11px] text-fg-3">{cycleWhen(c, lastRun(c.id), now, zone)}</span>
-              <Toggle on={c.enabled} size="md" label={`Enable ${c.name}`} onChange={enabled => upsert.mutate({ ...c, enabled })} />
-              <GhostIcon icon={MoreHorizontal} label={`Edit ${c.name}`} className="text-fg-3" onClick={() => setEditing(c)} />
-            </div>
-          ))}
-        </Card>
-      )}
+      {/* The protocol while it's the one watering (or could be); once one of yours is on, the schedules card opens on it instead. */}
+      {protocol.data && protocol.data.water !== 'schedule' && <ProtocolCard />}
+      <YourSchedules
+        protocol={protocol.data}
+        entries={library.data ?? []}
+        live={cycles}
+        light={light}
+        limits={limits ? { pumpMaxRunS: limits.pumpMaxRunS, pumpMaxDuty: limits.pumpMaxDuty } : null}
+        zone={zone}
+      />
 
       <DueChores />
 
@@ -237,72 +197,8 @@ export function WaterPage() {
           })}
         </Card>
       </div>
-
-      <Modal
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        title={editing?.name ?? ''}
-        icon={CalendarClock}
-        footer={editing && (
-          <div className="flex gap-2">
-            <Button
-              variant="primary"
-              onClick={() => {
-                upsert.mutate(editing)
-                setEditing(null)
-              }}
-            >
-              Save
-            </Button>
-            <Button onClick={() => setEditing(null)}>Cancel</Button>
-            {!isNew && (
-              <Button
-                variant="danger"
-                className="ml-auto"
-                onClick={() => {
-                  remove.mutate({ id: editing.id })
-                  setEditing(null)
-                }}
-              >
-                Delete
-              </Button>
-            )}
-          </div>
-        )}
-      >
-        {editing && (
-          <div className="flex flex-col gap-4">
-            <TextField label="Name" mono={false} value={editing.name} onChange={v => setEditing({ ...editing, name: v })} />
-            <label className="flex flex-col gap-1.5 text-xs text-fg-2">
-              Time
-              <input
-                type="time"
-                className="lp-btn font-mono"
-                value={fmtClock(editing.spec.minute)}
-                onChange={(e) => {
-                  const [h, m] = e.target.value.split(':').map(Number)
-                  setEditing({ ...editing, spec: { ...editing.spec, minute: (h ?? 0) * 60 + (m ?? 0) } })
-                }}
-              />
-            </label>
-            <div className="flex flex-col gap-1.5 text-xs text-fg-2">
-              Duration
-              <SegmentedControl value={String(editing.spec.durationS)} options={editorLengths(editing.spec.durationS).map(d => ({ value: String(d), label: fmtMinutes(d) }))} onChange={v => setEditing({ ...editing, spec: { ...editing.spec, durationS: Number(v) } })} />
-            </div>
-            <div className="flex flex-col gap-1.5 text-xs text-fg-2">
-              Days
-              <DayPicker value={daysToList(editing.days)} onChange={v => setEditing({ ...editing, days: listToDays(v) })} />
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   )
-}
-
-/** The editor's lengths, with a cycle's own if it's none of them, so editing never changes it unasked. */
-export function editorLengths(current: number): number[] {
-  return CYCLE_DURATIONS.includes(current) ? CYCLE_DURATIONS : [...CYCLE_DURATIONS, current].sort((a, b) => a - b)
 }
 
 const RANGES = [{ value: '24', label: '24h' }, { value: '168', label: '7d' }, { value: '720', label: '30d' }] as const
@@ -750,22 +646,5 @@ function NotStarted({ asked, onGiveUp, children }: { asked: number, onGiveUp: ()
       <span className="truncate text-danger" title={`Didn't start: ${why}.`}>{`Didn't start: ${why}.`}</span>
       <button type="button" className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-danger underline" onClick={onGiveUp}>Try again</button>
     </>
-  )
-}
-
-/** Whether the unit moves its pump cycles to each growth stage's preset by itself (src/care/follow.ts). */
-function FollowToggle() {
-  const utils = trpc.useUtils()
-  const settings = trpc.settings.get.useQuery()
-  const update = trpc.settings.update.useMutation({ onSuccess: () => {
-    void utils.settings.invalidate()
-    void utils.protocol.invalidate()
-  } })
-  const on = settings.data?.followGrowCycle ?? false
-  return (
-    <span className="flex items-center gap-2 text-[13px] text-fg-2" title="As the plants age, move the cycles on to the next stage's preset, never back. Cycles you set by hand are left alone. While on, germination's weekly run keeps to the sowing weekday.">
-      Follow the grow cycle
-      <Toggle on={on} size="md" label="Follow the grow cycle" disabled={!settings.data || update.isPending} onChange={followGrowCycle => update.mutate({ followGrowCycle })} />
-    </span>
   )
 }

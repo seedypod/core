@@ -33,20 +33,26 @@ test('pump run is bounded and reported', async ({ page }) => {
   await expect(strip.getByText('Pump idle')).toBeVisible()
 })
 
-test('water: create, toggle, delete a pump cycle', async ({ page }) => {
+test('water: use a preset, add a one-off cycle by hand, and it reads as Edited', async ({ page }) => {
   await page.goto('/water')
   const main = page.getByRole('main')
-  // The starting points are always there; Add custom cycle opens the editor.
-  await main.getByRole('button', { name: 'Add custom cycle' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
-  await expect(main.getByText('Watering', { exact: true })).toBeVisible()
-  const toggle = main.getByRole('switch', { name: 'Enable Watering' })
-  await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
-  await main.getByRole('button', { name: 'Edit Watering' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-  await expect(main.getByTestId('protocol-line')).toBeVisible()
   await expect(page.getByTestId('pump-strip').getByText('No watering schedule')).toBeVisible()
+  // The protocol's last stage is always there to use.
+  const list = main.getByTestId('your-schedules')
+  const mature = list.getByTestId('schedule-row').filter({ hasText: 'Mature greens & herbs' })
+  await mature.getByRole('button', { name: 'Use' }).click()
+  await expect(mature).toContainText('ACTIVE')
+  await mature.getByRole('button', { name: 'More for Mature greens & herbs' }).click()
+  await page.getByRole('menuitem', { name: 'Adjust the cycles' }).click()
+  const editor = main.getByTestId('schedule-editor')
+  await editor.getByRole('button', { name: 'Add cycle' }).click()
+  await editor.getByRole('button', { name: 'Apply' }).click()
+  await expect(list.getByTestId('schedule-edited')).toContainText('4 × 6 min · every day')
+  await expect(page.getByTestId('pump-strip').getByText('No watering schedule')).toHaveCount(0)
+  // Back to no pump cycles, as the other specs expect.
+  for (const s of (await (await page.request.get('/api/schedules')).json()) as Array<{ id: string, kind: string }>) {
+    if (s.kind === 'pump') expect((await page.request.delete(`/api/schedules/${s.id}`)).ok()).toBe(true)
+  }
 })
 
 test('old /schedule links land on Light, where the curves are', async ({ page }) => {
@@ -58,7 +64,7 @@ test('old /schedule links land on Light, where the curves are', async ({ page })
 test('grow: start a cycle and edit a pod', async ({ page }) => {
   await page.goto('/grow')
   await page.getByRole('button', { name: 'Start cycle' }).click()
-  await expect(page.getByRole('main').getByText('Day 0')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Cycle' }).getByText('Day 0', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '1 empty', exact: true }).click()
   await page.getByLabel('Plant').fill('Basil')
   await page.getByRole('button', { name: 'Save' }).click()
