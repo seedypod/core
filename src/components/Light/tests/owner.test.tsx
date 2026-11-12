@@ -319,6 +319,29 @@ describe('LightPage: curves', () => {
     expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'New curve', enabled: false }))
   })
 
+  it('while Auto runs, locks the slider, shows a breathing sun, and says what sunrise and sunset make of today', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    // 10:00 PST on 12 November.
+    vi.setSystemTime(new Date('2026-11-12T18:00:00Z'))
+    const sun = { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0, auto: true }
+    const autoSpec = { setpoints: [{ minute: 264, level: 0 }, { minute: 324, level: 100 }, { minute: 1134, level: 100 }, { minute: 1194, level: 0 }], sun }
+    data.set('schedules', [{ ...daylight, id: 'auto', name: 'Auto', spec: autoSpec }])
+    data.set('settings', { timezone: 'America/Los_Angeles', latitude: 37.7749, longitude: -122.4194 })
+    render(<LightPage />)
+    const strip = screen.getByTestId('light-strip')
+    expect(strip.dataset.auto).toBe('true')
+    expect(strip.className).toContain('light-auto')
+    expect(within(strip).getByText('Auto · Light on')).toBeTruthy()
+    expect((screen.getByLabelText('Brightness') as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByTestId('auto-sub').textContent).toMatch(/^sunrise 06:4\d · sunset 17:0\d · light 04:24–19:54$/)
+    cleanup()
+    data.set('settings', { timezone: 'America/Los_Angeles', latitude: null, longitude: null })
+    render(<LightPage />)
+    expect(screen.getByTestId('auto-sub').textContent).toBe('centred on 12:00 · set a location to follow the sun')
+    expect(screen.getByRole('link', { name: 'set a location' }).getAttribute('href')).toBe('/settings#unit')
+    vi.useRealTimers()
+  })
+
   it('switches Auto from the strip, not the presets', () => {
     data.set('schedules', [daylight])
     render(<LightPage />)

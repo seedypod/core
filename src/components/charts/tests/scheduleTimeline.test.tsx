@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LightCurve } from '@/src/components/Light/curves'
 import type { PumpCycle } from '@/src/components/Water/pumpCycles'
@@ -100,6 +100,20 @@ describe('ScheduleTimeline', () => {
     // 14:00 UTC is 09:00 in New York in November.
     expect(screen.getByTestId('timeline-now-label').textContent).toBe('now 09:00 EST')
     expect(screen.getByTestId('timeline-now').style.left).toBe(`${(540 / 1440) * 100}%`)
+  })
+
+  it('marks sunrise and sunset on the light row when the light follows the sun', () => {
+    render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" sun={{ sunrise: 408, sunset: 1021 }} />)
+    expect(screen.getByTestId('legend-sun').textContent).toBe('sunrise 06:48 · sunset 17:01')
+    expect(screen.getByTestId('sun-sunrise').style.left).toBe(`${(408 / 1440) * 100}%`)
+    expect(screen.getByTestId('sun-sunset').style.left).toBe(`${(1021 / 1440) * 100}%`)
+    expect(Number.parseFloat(screen.getByTestId('sun-daylight').style.width)).toBeCloseTo(((1021 - 408) / 1440) * 100)
+    expect(within(screen.getByTestId('schedule-timeline')).getByText('Auto')).toBeTruthy()
+    expect(screen.getByRole('group').getAttribute('aria-label')).toContain('The light follows the sun: sunrise 06:48 · sunset 17:01.')
+    cleanup()
+    render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" />)
+    expect(screen.queryByTestId('legend-sun')).toBeNull()
+    expect(screen.queryByTestId('sun-sunrise')).toBeNull()
   })
 
   it('mutes cycles that are off or not today, with the legend saying so', () => {

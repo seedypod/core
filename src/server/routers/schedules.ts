@@ -5,7 +5,8 @@ import { autoLight, setAuto } from '../../care/lightAuto'
 import { readTower } from '../../care/tower'
 import { plantSlug } from '../../plants/custom'
 import { LIGHT_PRESETS } from '../../scheduler/lightPlan'
-import { lightLevelAt } from '../../scheduler/scheduler'
+import { curveTarget, lightLevelAt } from '../../scheduler/scheduler'
+import { dayEnabled, localTime } from '../../scheduler/time'
 import { followSun } from '../../scheduler/sun'
 import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
@@ -151,9 +152,16 @@ export const schedulesRouter = router({
     .meta({ openapi: { method: 'POST', path: '/schedules/auto', tags: ['schedules'], summary: 'Turn Auto light on or off' } })
     .input(z.object({ on: z.boolean() }))
     .output(z.object({ on: z.boolean(), changed: z.array(z.string()) }))
-    .mutation(({ ctx, input }) => {
-      const changed = setAuto(ctx.store, input.on, now(ctx))
+    .mutation(async ({ ctx, input }) => {
+      const at = now(ctx)
+      const changed = setAuto(ctx.store, input.on, at)
       for (const id of changed) ctx.events.emit({ kind: 'schedule', action: 'changed', id })
+      // Switching Auto hands the light back from a hand's hold, and the curves take it now rather than at the next minute's tick.
+      const lt = localTime(at, ctx.store.settings.get().timezone)
+      await ctx.light.setSchedule(curveTarget(ctx.store.schedules.list().filter(s => s.enabled && dayEnabled(s.days, lt.weekday)), lt.minute))
+      await ctx.light.resume()
+      await ctx.light.idle()
+      ctx.events.emit({ kind: 'mutation', path: 'actuators.light' })
       return { on: input.on, changed }
     }),
   /** Preview a light curve as 96 samples (every 15 min) for charts. */

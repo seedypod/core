@@ -16,7 +16,7 @@ import { dayOn } from '@/src/lib/days'
 import { pumpFault } from '@/src/lib/pumpFault'
 import { localTime, systemZone } from '@/src/scheduler/time'
 import { daysSinceSowing, lightWindow, PUMP_PRESETS, type PumpPreset } from '@/src/scheduler/pumpPlan'
-import { asCurve, runningToday } from '@/src/components/Light/curves'
+import { asCurve, runningToday, sunToday } from '@/src/components/Light/curves'
 import { ProtocolCard } from '@/src/components/Grow/ProtocolCard'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource, tankTrend } from './pumpCycles'
@@ -163,6 +163,7 @@ export function WaterPage() {
         cycles={cycles}
         timezone={cfg?.timezone}
         pumpRun={p?.on ? { since: p.since, remainingS: p.remainingS } : null}
+        sun={sunToday(runningToday(curves, weekday), cfg ?? {}, zone, now)}
       />
       {missed && <MissedRun preset={missed} busy={!!p?.on || asked !== null} onRun={() => runNow(missed.durationS)} />}
       {/* The protocol while it's the one watering (or could be); once one of yours is on, the schedules card opens on it instead. */}

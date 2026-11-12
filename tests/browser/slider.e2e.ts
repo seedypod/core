@@ -4,6 +4,8 @@ test.use({ hasTouch: true, isMobile: true, viewport: { width: 412, height: 700 }
 
 /** Where the slider's track sits, and a finger to move along it. */
 async function open(page: Page) {
+  // Auto locks the slider; these drive it by hand.
+  await page.request.post('/api/schedules/auto', { data: { on: false } })
   await page.request.post('/api/light', { data: { level: 40 } })
   await page.goto('/light')
   const slider = page.getByLabel('Brightness')

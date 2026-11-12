@@ -685,3 +685,39 @@ html.dark {
 @media (prefers-reduced-motion: reduce) {
   .lp-wireframe .lp-draw > *, .lp-wireframe .lp-pod-in { animation: none; opacity: 1; stroke-dashoffset: 0; }
 }
+
+/* Auto on the Light strip: a slow warm sheen passing across it, the sun moving through the day,
+   and its sun icon breathing. Reduced motion keeps them still. */
+.light-auto {
+  position: relative;
+  overflow: hidden;
+}
+.light-auto > * {
+  position: relative;
+}
+.light-auto::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 35%, color-mix(in oklab, var(--color-light) 16%, transparent) 50%, transparent 65%);
+  background-size: 300% 100%;
+  animation: light-auto-sheen 7s ease-in-out infinite;
+}
+@keyframes light-auto-sheen {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+.light-auto-sun {
+  animation: light-auto-pulse 2.6s ease-in-out infinite;
+}
+@keyframes light-auto-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(0.9); filter: drop-shadow(0 0 0 transparent); }
+  50% { opacity: 1; transform: scale(1.08); filter: drop-shadow(0 0 5px var(--color-light)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .light-auto::before,
+  .light-auto-sun {
+    animation: none;
+  }
+}

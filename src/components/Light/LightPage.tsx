@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Clock, Hand, Plus } from 'lucide-react'
+import { ChevronDown, ChevronUp, Clock, Hand, Plus, Sun } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
@@ -14,9 +14,10 @@ import { GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HO
 import { localTime, systemZone, zoneAbbr } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle } from '@/src/components/Water/pumpCycles'
+import type { SunDay } from '@/src/scheduler/sun'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
-import { asCurve, holdWindow, levelAt, lightToday, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
+import { asCurve, holdWindow, levelAt, lightToday, nextDim, nextOn, runningToday, SAMPLE_MINUTES, sunToday, todayLevels, type LightCurve } from './curves'
 
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
@@ -53,6 +54,7 @@ export function LightPage() {
   }), [curves])
   const hours = hoursByDay[weekday] ?? null
   const running = runningToday(curves, weekday)
+  const sun = sunToday(running, settings.data ?? {}, zone, now)
   const today = todayLevels(running)
   // With nothing picked, the first curve running today is the open one.
   const open = openId ?? running[0]?.id ?? null
@@ -87,6 +89,8 @@ export function LightPage() {
           // Off reads as the slider at 0, unless a level has just been asked for.
           level={lightOn || requested ? level : 0}
           auto={autoOn}
+          sun={sun}
+          placed={settings.data?.latitude != null}
           onAuto={on => setAuto.mutate({ on })}
           resuming={resume.isPending}
           onResume={() => resume.mutate()}
@@ -149,6 +153,7 @@ export function LightPage() {
         cycles={(schedules.data ?? []).flatMap(s => asCycle(s) ?? [])}
         timezone={timezone}
         hold={o?.source === 'manual' && o.manualUntil && l ? { since: l.since, until: o.manualUntil, level: l.on ? l.level : 0 } : null}
+        sun={sun}
       />
 
       <div className="flex items-center gap-3">
@@ -233,7 +238,7 @@ type Owner = { source: 'manual' | 'autopilot' | 'schedule' | null, manualUntil: 
  * right. It tints amber while the light is on. A change here holds for 30
  * minutes, as before.
  */
-function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, auto, onAuto, resuming, onResume, onPower, onPreview, onCommit }: {
+function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, auto, sun, placed, onAuto, resuming, onResume, onPower, onPreview, onCommit }: {
   on: boolean
   known: boolean
   owner: Owner
@@ -247,6 +252,9 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   level: number
   /** Whether Auto runs the light, and switching it. */
   auto: boolean
+  /** Today's sun, when a curve follows it; and whether the unit has a place to see it from. */
+  sun: SunDay | null
+  placed: boolean
   onAuto: (on: boolean) => void
   resuming: boolean
   onResume: () => void
@@ -259,7 +267,7 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   const next = useMemo(() => nextOn(runningToday(curves, weekday), runningToday(curves, (weekday + 1) % 7), minute), [curves, weekday, minute])
   const held = o?.source === 'manual' && o.manualUntil
   const following = running.length === 1 ? running[0]?.name : running.length > 1 ? `${running.length} curves` : null
-  let title = known ? (on ? 'Light on' : 'Light off') : 'Light'
+  let title = known ? `${auto ? 'Auto · ' : ''}${on ? 'Light on' : 'Light off'}` : 'Light'
   let sub: ReactNode = null
   if (held) {
     title = `Held by hand until ${clock(o.manualUntil ?? '', zone)}`
@@ -273,6 +281,26 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   else if (o?.source === 'autopilot') {
     sub = <span className="truncate">Autopilot is setting the light</span>
   }
+  else if (auto) {
+    // What Auto made of today: when the light comes up and goes off, from sunrise and sunset.
+    const curve = running.find(c => c.spec.sun?.auto)
+    const pts = curve ? [...curve.spec.setpoints].sort((a, b) => a.minute - b.minute) : []
+    const up = pts.find(p => p.level === 0 && pts.some(q => q.minute > p.minute && q.level > 0))
+    const off = [...pts].reverse().find(p => p.level === 0 && pts.some(q => q.minute < p.minute && q.level > 0))
+    sub = (
+      <span className="truncate" data-testid="auto-sub">
+        {placed && sun
+          ? [`sunrise ${sun.sunrise === null ? '–' : fmtClock(sun.sunrise)}`, `sunset ${sun.sunset === null ? '–' : fmtClock(sun.sunset)}`, up && off ? `light ${fmtClock(up.minute)}–${fmtClock(off.minute)}` : null].filter(Boolean).join(' · ')
+          : (
+              <>
+                {'centred on 12:00 · '}
+                <Link to="/settings" hash="unit" className="text-fg underline underline-offset-2">set a location</Link>
+                {' to follow the sun'}
+              </>
+            )}
+      </span>
+    )
+  }
   else if (on) {
     sub = <span className="truncate">{following ? [`following ${following}`, dims !== null ? `dims at ${fmtClock(dims)}` : null].filter(Boolean).join(' · ') : 'no curve today'}</span>
   }
@@ -283,10 +311,11 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
     <div
       data-testid="light-strip"
       data-state={on ? 'on' : 'off'}
-      className={cn('flex flex-col gap-3 border-b border-line px-[22px] py-3.5 @min-[620px]:flex-row @min-[620px]:items-center @min-[620px]:justify-between', on ? 'bg-light/10' : 'bg-active/40')}
+      data-auto={auto ? 'true' : undefined}
+      className={cn('flex flex-col gap-3 border-b border-line px-[22px] py-3.5 @min-[620px]:flex-row @min-[620px]:items-center @min-[620px]:justify-between', on ? 'bg-light/10' : 'bg-active/40', auto && !held && 'light-auto')}
     >
       <div className="flex h-11 min-w-0 items-center gap-3">
-        {held ? <Hand size={14} className="shrink-0 text-light" /> : <span className={cn('size-2.5 shrink-0 rounded-full', on ? 'bg-light' : 'bg-fg-3')} />}
+        {held ? <Hand size={14} className="shrink-0 text-light" /> : auto ? <Sun size={16} className={cn('light-auto-sun shrink-0', on ? 'text-light' : 'text-fg-3')} aria-hidden /> : <span className={cn('size-2.5 shrink-0 rounded-full', on ? 'bg-light' : 'bg-fg-3')} />}
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-[15px] font-medium leading-tight">{title}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-fg-3">{sub}</span>
@@ -298,9 +327,9 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
           Auto
         </label>
         {/* One slider for both: all the way down is off. */}
-        <div className="flex items-center gap-2.5" title="A change here holds for 30 minutes, then the curve or Autopilot takes over again.">
+        <div className="flex items-center gap-2.5" title={auto ? 'Auto sets the brightness from sunrise and sunset. Turn Auto off to set it by hand.' : 'A change here holds for 30 minutes, then the curve or Autopilot takes over again.'}>
           <div className="w-[200px] max-w-[40vw]">
-            <Slider value={level} step={5} marks={[25, 50, 75]} onChange={onPreview} onCommit={v => (v === 0 ? onPower(false) : onCommit(v))} label="Brightness" />
+            <Slider value={level} step={5} disabled={auto} marks={[25, 50, 75]} onChange={onPreview} onCommit={v => (v === 0 ? onPower(false) : onCommit(v))} label="Brightness" />
           </div>
           <span className="w-9 text-right font-mono text-[12px] text-fg-2" data-testid="strip-level">{level > 0 ? `${level}%` : 'Off'}</span>
         </div>

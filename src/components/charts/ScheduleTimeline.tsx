@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Sun } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card } from '@/src/components/ds/core'
 import { fmtClock } from '@/src/components/charts/format'
@@ -101,6 +102,8 @@ export interface ScheduleTimelineProps {
   hold?: { since: string, until: string, level: number } | null
   /** The pump running now. */
   pumpRun?: { since: string, remainingS: number | null } | null
+  /** Today's sunrise and sunset (minutes of the unit's day) when the light follows the sun. */
+  sun?: { sunrise: number | null, sunset: number | null } | null
 }
 
 /**
@@ -112,7 +115,7 @@ export interface ScheduleTimelineProps {
  * hatched and dimmed as forecast. The header says what's next, and each mark
  * has its exact times on hover, tap or focus.
  */
-export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun }: ScheduleTimelineProps) {
+export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun, sun }: ScheduleTimelineProps) {
   const nowMs = useNow(30_000)
   const now = new Date(nowMs)
   const zone = timezone ?? systemZone()
@@ -200,7 +203,8 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   const muted = [...lightMarks, ...waterMarks].some(m => m.muted)
 
   const describe = (marks: Mark[], none: string) => (marks.length ? marks.map(m => m.title).join('; ') : none)
-  const summary = `Today on the unit's clock, ${nowText}. ${rows.map(r => `${r.name}: ${describe(r.marks, r.id === 'light' ? 'no light scheduled' : 'no pump runs')}`).join('. ')}.`
+  const sunWords = sun && sun.sunrise !== null && sun.sunset !== null ? `sunrise ${fmtClock(sun.sunrise)} · sunset ${fmtClock(sun.sunset)}` : null
+  const summary = `Today on the unit's clock, ${nowText}.${sunWords ? ` The light follows the sun: ${sunWords}.` : ''} ${rows.map(r => `${r.name}: ${describe(r.marks, r.id === 'light' ? 'no light scheduled' : 'no pump runs')}`).join('. ')}.`
 
   return (
     <Card className="gap-3" data-testid="schedule-timeline">
@@ -208,6 +212,12 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
         <span className="text-[15px] font-medium">Today</span>
         {nextLine && <span className="font-mono text-xs text-fg-2" data-testid="timeline-next">{nextLine}</span>}
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-fg-2">
+          {sunWords && (
+            <span className="flex items-center gap-1.5 text-light" data-testid="legend-sun">
+              <Sun size={11} aria-hidden />
+              {sunWords}
+            </span>
+          )}
           <span className="flex items-center gap-1.5" data-testid="legend-ahead">
             <span className="h-2 w-3.5 rounded-[2px] border border-line-2 bg-active" style={AHEAD} />
             ahead
@@ -233,7 +243,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
           {ticks.map(t => <span key={t} className="absolute inset-y-0 w-px bg-grid" style={{ left: `${pctOf(t)}%` }} />)}
         </div>
         {rows.map((r, i) => (
-          <Row key={r.id} id={r.id} name={r.name} marks={r.marks} nowPct={nowPct} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
+          <Row key={r.id} id={r.id} name={r.name} sub={r.id === 'light' && sun ? 'Auto' : undefined} sun={r.id === 'light' ? sun : null} marks={r.marks} nowPct={nowPct} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
         ))}
 
         <span />
@@ -257,9 +267,11 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   )
 }
 
-function Row({ id, name, marks, nowPct, width, active, onActive, laneRef }: {
+function Row({ id, name, sub, sun, marks, nowPct, width, active, onActive, laneRef }: {
   id: string
   name: string
+  sub?: string
+  sun?: ScheduleTimelineProps['sun']
   marks: Mark[]
   /** Where now is across the lane: what's right of it is still ahead. */
   nowPct: number
@@ -298,8 +310,16 @@ function Row({ id, name, marks, nowPct, width, active, onActive, laneRef }: {
     <>
       <div className="flex min-w-0 flex-col leading-tight">
         <span className="truncate text-[13px]">{name}</span>
+        {sub && <span className="truncate text-[10px] text-light">{sub}</span>}
       </div>
       <div ref={laneRef} className="relative rounded-[2px] bg-active/60" style={{ height: LANE_H }} data-testid={`lane-${id}`}>
+        {/* The sun's own day under the light: a warm line from sunrise to sunset, and a dashed mark at each. */}
+        {sun && sun.sunrise !== null && sun.sunset !== null && (
+          <span aria-hidden data-testid="sun-daylight" className="pointer-events-none absolute bottom-0 z-[3] h-[3px] rounded-full bg-light/80" style={{ left: `${pctOf(sun.sunrise)}%`, width: `${pctOf(sun.sunset) - pctOf(sun.sunrise)}%` }} />
+        )}
+        {sun && ([['sunrise', sun.sunrise], ['sunset', sun.sunset]] as const).map(([k, m]) => m !== null && (
+          <span key={k} aria-hidden data-testid={`sun-${k}`} className="pointer-events-none absolute -inset-y-1 z-[3] border-l border-dashed border-light" style={{ left: `${pctOf(m)}%` }} />
+        ))}
         {placed.map(({ m, key, leftPx, widthPx }) => (
           <button
             key={key}
