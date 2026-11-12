@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as Chart3DModule from '@/src/components/charts/viz3d/Chart3D'
-import { editorLengths, START_WAIT_MS, WaterPage } from '../WaterPage'
+import { START_WAIT_MS, WaterPage } from '../WaterPage'
 
 const { data, calls, state, pumpSuccess } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
@@ -30,8 +30,13 @@ vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
 // Care has its own tests; the Water page only points at it, and shows the due chores' rows the sidebar shares.
 vi.mock('@/src/components/Care/CareSummary', () => ({ CareSummary: () => null }))
 vi.mock('@/src/components/Care/ChoreItem', () => ({ DueChores: () => <div data-testid="due-chores" /> }))
-// The protocol's line has its own tests; here it only has its place.
-vi.mock('../ProtocolLine', () => ({ ProtocolLine: () => <div data-testid="protocol-line" /> }))
+// The protocol card and Your schedules have their own tests; here they only have their places, and what the page hands the list.
+vi.mock('@/src/components/Grow/ProtocolCard', () => ({ ProtocolCard: () => <div data-testid="protocol-card" /> }))
+vi.mock('../YourSchedules', () => ({
+  YourSchedules: ({ live, light, limits, entries, zone }: { live: Array<{ id: string }>, light: unknown, limits: unknown, entries: unknown[], zone: string }) => (
+    <section id="pump-cycles" data-testid="your-schedules" data-live={live.map(c => c.id).join(',')} data-light={JSON.stringify(light)} data-limits={JSON.stringify(limits)} data-entries={entries.length} data-zone={zone} />
+  ),
+}))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
@@ -69,7 +74,8 @@ vi.mock('@/src/utils/trpc', () => {
         o?.onSuccess?.()
       } }) } },
       grow: { current: query('grow'), pods: query('pods') },
-      schedules: { list: query('schedules'), recentRuns: query('runs'), upsert: mutation('upsert'), remove: mutation('remove') },
+      schedules: { list: query('schedules'), recentRuns: query('runs'), upsert: mutation('upsert'), remove: mutation('remove'), library: { list: query('library') } },
+      protocol: { current: query('protocol') },
       telemetry: {
         history: {
           useQuery: (input: unknown) => {
@@ -333,52 +339,40 @@ describe('WaterPage: tank and pump', () => {
   })
 })
 
-describe('WaterPage: pump cycles', () => {
-  it('lists cycles by time with their last or next run, and toggles one at once', () => {
+describe('WaterPage: the protocol and Your schedules', () => {
+  it('puts the protocol card over Your schedules, and hands the list the live cycles, today\'s light and the pump\'s limits', () => {
+    const light = { ...curve, spec: { setpoints: [{ minute: 359, level: 0 }, { minute: 360, level: 100 }, { minute: 1260, level: 100 }, { minute: 1261, level: 0 }] } }
+    data.set('schedules', [evening, light, morning])
+    data.set('protocol', { water: 'preset' })
+    data.set('library', [{ id: 'preset:mature' }])
+    data.set('settings', { ...(data.get('settings') as object), timezone: 'UTC' })
     render(<WaterPage />)
-    const rows = screen.getAllByRole('switch').map(s => s.getAttribute('aria-label')).filter(l => l?.startsWith('Enable '))
-    expect(rows).toEqual(['Enable Morning watering', 'Enable Evening watering'])
-    expect(screen.getByText('ran 4 h ago')).toBeTruthy()
-    expect(screen.getByText('next in 8 h')).toBeTruthy()
-    // Each row's length, and its week with the days lit.
-    const evening = screen.getByText('5 min at 50%')
-    expect(within(evening).getByTestId('weekday-dots').getAttribute('aria-label')).toBe('Runs every day')
-    expect(within(evening).getByText('Every day')).toBeTruthy()
-    fireEvent.click(screen.getByRole('switch', { name: 'Enable Evening watering' }))
-    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'evening', enabled: false }))
-    // The protocol reads the pump cycles: whose watering it is, so its line is read again.
-    act(() => pumpSuccess.get('upsert')?.({}))
-    expect(calls.invalidateProtocol).toHaveBeenCalled()
+    const list = screen.getByTestId('your-schedules')
+    expect(screen.getByTestId('protocol-card').compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // By time, as the pump runs them.
+    expect(list.dataset.live).toBe('morning,evening')
+    expect(JSON.parse(list.dataset.light ?? '')).toEqual({ on: 360, off: 1261 })
+    expect(JSON.parse(list.dataset.limits ?? '')).toEqual({ pumpMaxRunS: 900, pumpMaxDuty: 30 })
+    expect(list.dataset.entries).toBe('1')
+    expect(list.dataset.zone).toBe('UTC')
+    // No more cycle list, Follow toggle or Add custom cycle here: the card and the list have them.
+    expect(screen.queryByText('Add custom cycle')).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Follow the grow cycle' })).toBeNull()
   })
 
-  it('marks the preset the cycles already are', () => {
-    data.set('schedules', [curve, { ...morning, id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', spec: { minute: 480, durationS: 600 } }])
+  it('leaves the protocol card out once watering is on one of yours, and until the protocol is known', () => {
+    data.set('protocol', { water: 'schedule' })
     render(<WaterPage />)
-    // The section header names it.
-    expect(screen.getByTestId('pump-running').textContent).toBe('·Seedlings running')
+    expect(screen.queryByTestId('protocol-card')).toBeNull()
+    expect(screen.getByTestId('your-schedules')).toBeTruthy()
     cleanup()
-    // Cycles of your own say so; none, nothing.
-    data.set('schedules', [curve, morning])
+    data.delete('protocol')
+    data.delete('library')
+    data.delete('system')
     render(<WaterPage />)
-    expect(screen.getByTestId('pump-running').textContent).toBe('·custom cycles')
-    cleanup()
-    data.set('schedules', [curve])
-    render(<WaterPage />)
-    expect(screen.queryByTestId('pump-running')).toBeNull()
-  })
-
-  it('counts a preset as running only as Follow does: paused, trimmed or re-timed, the cycles are your own', () => {
-    const seedlings = { ...morning, id: 'water-seedlings-0800', name: 'Seedlings · once a day 10 min (08:00)', spec: { minute: 480, durationS: 600 } }
-    for (const changed of [{ ...seedlings, enabled: false }, { ...seedlings, days: 31 }, { ...seedlings, spec: { minute: 480, durationS: 420 } }]) {
-      data.set('schedules', [curve, changed])
-      render(<WaterPage />)
-      expect(screen.getByTestId('pump-running').textContent).toBe('·custom cycles')
-      cleanup()
-    }
-    // Germination counts on any one weekday, as Follow keeps it.
-    data.set('schedules', [curve, { ...morning, id: 'water-germination-0800', name: 'Germination · once a week 15 min (08:00)', days: 1 << 4, spec: { minute: 480, durationS: 900 } }])
-    render(<WaterPage />)
-    expect(screen.getByTestId('pump-running').textContent).toBe('·Germination running')
+    expect(screen.queryByTestId('protocol-card')).toBeNull()
+    expect(screen.getByTestId('your-schedules').dataset.entries).toBe('0')
+    expect(screen.getByTestId('your-schedules').dataset.limits).toBe('null')
   })
 
   it('says plainly when the sowing day\'s germination run has gone by, and offers it by hand', () => {
@@ -414,15 +408,6 @@ describe('WaterPage: pump cycles', () => {
     expect(screen.queryByTestId('pump-missed')).toBeNull()
   })
 
-  it('offers a preset\'s own run length in the editor, and keeps any other', () => {
-    data.set('schedules', [{ ...morning, id: 'water-mature-0800', name: 'Mature · 3× 6 min (08:00)', spec: { minute: 480, durationS: 360 } }])
-    render(<WaterPage />)
-    fireEvent.click(screen.getByLabelText('Edit Mature · 3× 6 min (08:00)'))
-    expect(within(screen.getByRole('dialog')).getByRole('tab', { name: '6 min' }).getAttribute('aria-selected')).toBe('true')
-    expect(editorLengths(420)).toEqual([60, 180, 300, 360, 420, 600, 900])
-    expect(editorLengths(300)).toEqual([60, 180, 300, 360, 600, 900])
-  })
-
   it('names the next run\'s cycle once, without a preset\'s time in its name', () => {
     data.set('schedules', [{ ...morning, name: 'Once a day · 15 min (08:00)' }])
     render(<WaterPage />)
@@ -445,35 +430,6 @@ describe('WaterPage: pump cycles', () => {
     data.delete('schedules')
     render(<WaterPage />)
     expect(screen.queryByText('No watering schedule')).toBeNull()
-  })
-
-  it('adds a custom cycle through the editor, with no Delete until it exists', () => {
-    data.set('schedules', [])
-    render(<WaterPage />)
-    // No preset cards: the stages are the grow protocol's, on Grow, and the line here leads there.
-    expect(screen.queryAllByTestId(/^pump-preset-/)).toHaveLength(0)
-    expect(screen.getByTestId('protocol-line')).toBeTruthy()
-    fireEvent.click(screen.getByText('Add custom cycle'))
-    const dialog = screen.getByRole('dialog')
-    expect(within(dialog).queryByText('Delete')).toBeNull()
-    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Noon' } })
-    fireEvent.change(within(dialog).getByLabelText('Time'), { target: { value: '12:30' } })
-    fireEvent.click(within(dialog).getByRole('tab', { name: '3 min' }))
-    fireEvent.click(within(dialog).getByText('S', { selector: 'button:last-child' }))
-    fireEvent.click(within(dialog).getByText('Save'))
-    expect(calls.upsert).toHaveBeenCalledWith(expect.objectContaining({ kind: 'pump', name: 'Noon', days: 63, spec: { minute: 750, durationS: 180 } }))
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('edits or deletes a cycle from its menu', () => {
-    render(<WaterPage />)
-    fireEvent.click(screen.getByLabelText('Edit Morning watering'))
-    fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete'))
-    expect(calls.remove).toHaveBeenCalledWith({ id: 'morning' })
-    fireEvent.click(screen.getByText('Evening watering'))
-    fireEvent.click(within(screen.getByRole('dialog')).getByText('Cancel'))
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(calls.upsert).not.toHaveBeenCalled()
   })
 })
 
@@ -606,16 +562,5 @@ describe('WaterPage with WebGL: the tank hero', () => {
     expect(screen.getByRole('meter', { name: 'Tank level' })).toBeTruthy()
     expect(screen.getByTestId('tank-stats').textContent).toBe('min 60%avg 77%max 92%')
     expect(screen.getByTestId('pump-strip')).toBeTruthy()
-  })
-
-  it('turns following the grow cycle on and off', () => {
-    data.set('settings', { ...(data.get('settings') as object), followGrowCycle: true })
-    render(<WaterPage />)
-    const toggle = screen.getByRole('switch', { name: 'Follow the grow cycle' })
-    expect(toggle.getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(toggle)
-    expect(calls.updateSettings).toHaveBeenCalledWith({ followGrowCycle: false })
-    // The protocol's line reads Follow, so it's read again.
-    expect(calls.invalidateProtocol).toHaveBeenCalled()
   })
 })
