@@ -1,9 +1,39 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { daysSinceSowing } from '../../scheduler/pumpPlan'
+import { localTime } from '../../scheduler/time'
+import { POD_CODE, POD_LABELS, type PodLabel, type PodLabelCursor } from '../../store/types'
+import { podCodeViews } from '../../vision/podCodes'
+import { podOrder, swapPodRecords } from '../../vision/podOrder'
 import { podTrends } from '../../vision/analyze'
+import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
 import { publicProcedure, router } from '../trpc'
 
-const Trend = z.object({ slot: z.number(), green: z.number().nullable(), verdict: z.enum(['growing', 'stalled', 'declining', 'unknown']), slope: z.number(), samples: z.number() })
+const Code = z.string().regex(POD_CODE, 'a code is four of o | / h')
+const CodeView = z.object({
+  slot: z.number(),
+  camera: z.enum(['upper', 'lower']),
+  code: z.string(),
+  confidence: z.number(),
+  ts: z.string(),
+  confirmed: z.string().nullable(),
+  recorded: z.string().nullable(),
+})
+const CodePair = z.object({ code: z.string(), plant: z.string(), confirmedAt: z.string() })
+const CodesOut = z.object({ available: z.boolean(), pods: z.array(CodeView), pairs: z.array(CodePair) })
+const Swap = z.tuple([z.number(), z.number()])
+const OrderOut = z.object({
+  slots: z.array(z.object({ slot: z.number(), code: z.string(), tower: z.string(), record: z.string().nullable(), plan: z.string().nullable() })),
+  recordSwaps: z.array(Swap),
+  recordsUnresolved: z.array(z.number()),
+  moves: z.array(Swap),
+  movesUnresolved: z.array(z.number()),
+  plan: z.object({ id: z.string(), name: z.string() }).nullable(),
+  unknown: z.number(),
+  key: z.string(),
+})
+const ReadOut = z.array(z.object({ camera: z.enum(['upper', 'lower']), ts: z.string().nullable(), read: z.number(), error: z.string().nullable() }))
+const Trend = z.object({ slot: z.number(), green: z.number().nullable(), verdict: z.enum(['growing', 'stalled', 'declining', 'unknown']), slope: z.number(), samples: z.number(), recent: z.array(z.number()) })
 const Metric = z.object({ name: z.string(), label: z.string(), unit: z.string().optional(), description: z.string() })
 const Source = z.enum(['device', 'remote'])
 const Analyzer = z.object({
@@ -13,6 +43,8 @@ const Analyzer = z.object({
   description: z.string(),
   metrics: z.array(Metric),
   runsOn: z.array(Source),
+  /** Why an on-device analyser is off, e.g. no weights file (#185). */
+  disabled: z.string().optional(),
   source: Source,
   primary: z.boolean(),
   rows: z.number(),
@@ -40,6 +72,32 @@ const Result = z.object({
   detail: z.record(z.string(), z.unknown()).nullable(),
   artifact: z.string().nullable(),
 })
+const CameraName = z.enum(['upper', 'lower'])
+const Region = z.object({ slot: z.number().int(), x: z.number().min(0).max(1), y: z.number().min(0).max(1), w: z.number().gt(0).max(1), h: z.number().gt(0).max(1) })
+const CameraRegions = z.object({ camera: CameraName, calibrated: z.boolean(), regions: z.array(Region.extend({ moved: z.boolean() })) })
+
+/** One camera's boxes as rows, each marked moved when it isn't the measured default. */
+function regionRows(camera: Camera, own: PodRegions | undefined) {
+  const boxes = podRegions(camera, { [camera]: own })
+  return { camera, calibrated: !!own && Object.keys(own).length > 0, regions: cameraSlots(camera).map(slot => ({ slot, ...(boxes[slot] as PodRegions[number]), moved: !!own?.[slot] })) }
+}
+
+const LabelValue = z.enum(POD_LABELS)
+const Label = z.object({ captureId: z.string(), ts: z.string(), camera: CameraName, slot: z.number(), label: LabelValue, labelledAt: z.string(), plant: z.string().nullable(), plantedAt: z.string().nullable() })
+/** A label with the pod's age when the photo was taken and where its photo is (null once pruned). */
+const LabelEntry = Label.extend({ daysSinceSowing: z.number().nullable(), url: z.string().nullable() })
+
+/** A page cursor is the last row's `ts|captureId|slot`. */
+const cursorOf = (l: PodLabel) => `${l.ts}|${l.captureId}|${l.slot}`
+function parseCursor(c: string): PodLabelCursor {
+  const parts = c.split('|')
+  const slot = Number(parts.pop())
+  const [ts, ...id] = parts
+  if (!ts || !id.length || !Number.isInteger(slot)) throw new TRPCError({ code: 'BAD_REQUEST', message: `bad cursor ${c}` })
+  return { ts, captureId: id.join('|'), slot }
+}
+const LabelCounts = z.object(Object.fromEntries(POD_LABELS.map(l => [l, z.number()])) as Record<typeof POD_LABELS[number], z.ZodNumber>)
+
 const Point = z.object({ ts: z.string(), value: z.number(), captureId: z.string() })
 
 export const visionRouter = router({
@@ -97,5 +155,142 @@ export const visionRouter = router({
       catch (e) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: (e as Error).message })
       }
+    }),
+  labels: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/captures/{captureId}/labels', tags: ['vision'], summary: 'The grower\'s label for each pod in one capture (empty, seeded, sprouted, growing, ready or unhealthy), with the pod\'s plant when it was labelled' } })
+    .input(z.object({ captureId: z.string() }))
+    .output(z.array(Label))
+    .query(({ ctx, input }) => ctx.store.podLabels.forCapture(input.captureId)),
+  labelStats: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/labels', tags: ['vision'], summary: 'How many pods carry each label, and the labelled captures, newest first' } })
+    .input(z.object({ limit: z.number().int().min(1).max(500).default(50) }).optional())
+    .output(z.object({ counts: LabelCounts, pods: z.number(), captures: z.array(z.object({ captureId: z.string(), ts: z.string(), camera: CameraName, pods: z.number() })) }))
+    .query(({ ctx, input }) => {
+      const counts = ctx.store.podLabels.counts()
+      return { counts, pods: Object.values(counts).reduce((n, c) => n + c, 0), captures: ctx.store.podLabels.captures(input?.limit ?? 50) }
+    }),
+  labelList: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/labels/pods', tags: ['vision'], summary: 'Every labelled pod, newest photo first, with its plant and age then; pass next back as cursor for the following page' } })
+    .input(z.object({ label: LabelValue.optional(), camera: CameraName.optional(), limit: z.number().int().min(1).max(500).default(60), cursor: z.string().optional() }))
+    .output(z.object({ labels: z.array(LabelEntry), next: z.string().nullable() }))
+    .query(({ ctx, input }) => {
+      const rows = ctx.store.podLabels.list({ label: input.label, camera: input.camera, limit: input.limit + 1, before: input.cursor ? parseCursor(input.cursor) : undefined })
+      const page = rows.slice(0, input.limit)
+      const urls = new Map<string, string | null>()
+      const urlOf = (id: string) => {
+        if (!urls.has(id)) {
+          const c = ctx.store.captures.get(id)
+          urls.set(id, c ? (c.path.startsWith('data:') ? c.path : `/api/captures/${c.id}.jpg`) : null)
+        }
+        return urls.get(id) ?? null
+      }
+      return {
+        labels: page.map(l => ({ ...l, daysSinceSowing: daysSinceSowing(null, [l.plantedAt], new Date(l.ts), 'UTC'), url: urlOf(l.captureId) })),
+        next: rows.length > input.limit && page.length ? cursorOf(page[page.length - 1] as PodLabel) : null,
+      }
+    }),
+  setLabel: publicProcedure
+    .meta({ openapi: { method: 'PUT', path: '/vision/captures/{captureId}/labels/{slot}', tags: ['vision'], summary: 'Label one pod in a capture for training (ADR-0019); null clears the label' } })
+    .input(z.object({ captureId: z.string(), slot: z.number().int().min(1).max(30), label: LabelValue.nullable() }))
+    .output(z.object({ captureId: z.string(), slot: z.number(), label: LabelValue.nullable() }))
+    .mutation(({ ctx, input }) => {
+      // A pruned photo's labels can still be changed or removed: they carry its time and camera.
+      const capture = ctx.store.captures.get(input.captureId) ?? ctx.store.podLabels.forCapture(input.captureId)[0]
+      if (!capture) throw new TRPCError({ code: 'NOT_FOUND', message: `no capture ${input.captureId}` })
+      if (cameraOf(input.slot) !== capture.camera) throw new TRPCError({ code: 'BAD_REQUEST', message: `pod ${input.slot} is not on the ${capture.camera} camera` })
+      if (input.label === null) ctx.store.podLabels.remove(input.captureId, input.slot)
+      else {
+        // The pod's plant goes with the label when it was sown by the photo's local day: a pod only
+        // planned (no sowing date, or still empty) or sown after the photo isn't in it. Sowing dates
+        // are days, so a pod sown the same day as the photo counts as in it, even if it went in later.
+        const pod = ctx.store.pods.list().find(p => p.slot === input.slot)
+        const day = localTime(new Date(capture.ts), ctx.store.settings.get().timezone).date
+        const shown = pod?.plant && pod.plantedAt && pod.status !== 'empty' && pod.plantedAt.slice(0, 10) <= day ? pod : null
+        ctx.store.podLabels.set({
+          captureId: input.captureId,
+          ts: capture.ts,
+          camera: capture.camera,
+          slot: input.slot,
+          label: input.label,
+          labelledAt: (ctx.now?.() ?? new Date()).toISOString(),
+          plant: shown?.plant ?? null,
+          plantedAt: shown?.plantedAt ?? null,
+        })
+      }
+      ctx.events.emit({ kind: 'mutation', path: 'labels' })
+      return { captureId: input.captureId, slot: input.slot, label: input.label }
+    }),
+  podCodes: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/pod-codes', tags: ['vision'], summary: 'yCube dot codes (#224): each pod a code was read under, with the plant the owner confirmed for it (or null) and its record\'s plant; and every confirmed code → plant pair' } })
+    .output(CodesOut)
+    .query(({ ctx }) => ({ available: ctx.podCodes.available, pods: podCodeViews(ctx.store) as Array<z.infer<typeof CodeView>>, pairs: ctx.store.podCodes.pairs() })),
+  readPodCodes: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/vision/pod-codes/read', tags: ['vision'], summary: 'Take a full-size pod-ID still on each camera and read its dot codes (#224); slow on a Pi Zero' } })
+    .output(ReadOut)
+    .mutation(({ ctx }) => {
+      if (!ctx.podCodes.available) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'podvision isn\'t installed, so dot codes can\'t be read' })
+      return ctx.podCodes.readAll()
+    }),
+  confirmPodCode: publicProcedure
+    .meta({ openapi: { method: 'PUT', path: '/vision/pod-codes/{code}', tags: ['vision'], summary: 'Say which plant a dot code is (#224): confirms a guess or corrects it. Records and plans are left alone' } })
+    .input(z.object({ code: Code, plant: z.string().trim().min(1).max(80) }))
+    .output(CodePair)
+    .mutation(({ ctx, input }) => {
+      const pair = ctx.podCodes.confirm(input.code, input.plant, (ctx.now?.() ?? new Date()).toISOString())
+      ctx.events.emit({ kind: 'mutation', path: 'podCodes' })
+      return pair
+    }),
+  forgetPodCode: publicProcedure
+    .meta({ openapi: { method: 'DELETE', path: '/vision/pod-codes/{code}', tags: ['vision'], summary: 'Forget a confirmed dot code → plant pair (#224)' } })
+    .input(z.object({ code: Code }))
+    .output(z.object({ forgotten: z.boolean() }))
+    .mutation(({ ctx, input }) => {
+      const forgotten = ctx.store.podCodes.forget(input.code)
+      if (forgotten) ctx.events.emit({ kind: 'mutation', path: 'podCodes' })
+      return { forgotten }
+    }),
+  podOrder: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/pod-order', tags: ['vision'], summary: 'Pods out of order (#224): where a confirmed dot code disagrees with the pod record or the active plan, with the record swaps that match the tower and the physical swaps that match the plan; null when all agree' } })
+    .output(OrderOut.nullable())
+    .query(({ ctx }) => podOrder(ctx.store)),
+  fixPodOrder: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/vision/pod-order/fix', tags: ['vision'], summary: 'Update the pod records to match the tower (#224): applies the record swaps shown for `key`; each plant keeps its sowing date and status' } })
+    .input(z.object({ key: z.string() }))
+    .output(z.object({ swapped: z.array(Swap), unresolved: z.array(z.number()) }))
+    .mutation(({ ctx, input }) => {
+      const order = podOrder(ctx.store)
+      if (!order || order.key !== input.key) throw new TRPCError({ code: 'CONFLICT', message: 'what\'s out of order has changed since it was shown; look again' })
+      const ts = (ctx.now?.() ?? new Date()).toISOString()
+      for (const [a, b] of order.recordSwaps) swapPodRecords(ctx.store, a, b, ts)
+      if (order.recordSwaps.length) ctx.events.emit({ kind: 'mutation', path: 'pods' })
+      return { swapped: order.recordSwaps, unresolved: order.recordsUnresolved }
+    }),
+  regions: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/regions', tags: ['vision'], summary: 'Each pod\'s box on each camera\'s stills, as fractions of the frame: the measured defaults or the owner\'s calibration' } })
+    .output(z.array(CameraRegions))
+    .query(({ ctx }) => {
+      const own = ctx.store.settings.get().podRegions
+      return CAMERAS.map(c => regionRows(c, own?.[c]))
+    }),
+  setRegions: publicProcedure
+    .meta({ openapi: { method: 'PUT', path: '/vision/regions/{camera}', tags: ['vision'], summary: 'Calibrate one camera\'s pod boxes; boxes left out keep their defaults, and null resets the camera' } })
+    .input(z.object({ camera: CameraName, regions: z.array(Region).max(15).nullable() }))
+    .output(CameraRegions)
+    .mutation(({ ctx, input }) => {
+      const slots = cameraSlots(input.camera)
+      const stray = input.regions?.find(r => !slots.includes(r.slot))
+      if (stray) throw new TRPCError({ code: 'BAD_REQUEST', message: `pod ${stray.slot} is not on the ${input.camera} camera` })
+      const own: PodRegions = {}
+      for (const { slot, ...box } of input.regions ?? []) {
+        const r = clampRegion(box)
+        const d = DEFAULT_REGIONS[input.camera][slot] as PodRegions[number]
+        // A box put back where it started is a default again, not a calibration.
+        if (r.x !== d.x || r.y !== d.y || r.w !== d.w || r.h !== d.h) own[slot] = r
+      }
+      const others = Object.entries(ctx.store.settings.get().podRegions ?? {}).filter(([c]) => c !== input.camera)
+      const all = Object.fromEntries(Object.keys(own).length > 0 ? [...others, [input.camera, own]] : others)
+      ctx.store.settings.update({ podRegions: Object.keys(all).length > 0 ? all : null })
+      ctx.events.emit({ kind: 'mutation', path: 'regions' })
+      return regionRows(input.camera, own)
     }),
 })

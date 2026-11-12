@@ -4,12 +4,15 @@
  * camera frames (SVGs standing in for JPEGs). Deterministic so the demo looks
  * the same every load.
  */
-import type { SimHal } from '../hardware/sim'
+import type { HalClient } from '../hardware/types'
+import { planLayout, sowingPlan } from '../plants/planner'
 import type { AnalysisRow, Store, TelemetryPoint } from '../store/types'
+import { exgOtsu, greenThreshold } from '../vision/analyzer'
 
-const PLANTS = ['Butterhead Lettuce', 'Genovese Basil', 'Arugula', 'Red Russian Kale', 'Cherry Tomato', 'Thai Basil', 'Mint', 'Swiss Chard', 'Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
+/** Catalog names, so the planner and the plant pages know every seeded pod. */
+const PLANTS = ['Butterhead', 'Basil', 'Arugula', 'Kale', 'Red Cherry Tomato', 'Sweet Thai Basil', 'Mint', 'Red Swiss Chard', 'Green Bok Choy', 'Jalapeño', 'Cilantro', 'Dill']
 
-export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
+export function seedDemo(store: Store, hal: HalClient, now = new Date()): void {
   const day = 86_400_000
   const started = new Date(now.getTime() - 19 * day)
   store.settings.update({ unitName: 'Kitchen Gardyn', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', captureIntervalMin: 60, setupComplete: true })
@@ -32,6 +35,19 @@ export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
     const status = slot === 9 ? 'attention' : slot <= 6 ? 'harvest' : 'growing'
     store.pods.update(slot, { plant, plantedAt: started.toISOString().slice(0, 10), status, notes: slot === 9 ? 'Yellowing lower leaves — check nutrients' : '' }, now.toISOString())
   }
+
+  // A saved plan for the six free pods (bottom rows), not yet applied, so the Plan screen has something to show.
+  const refill = [{ plantId: 'butterhead', count: 3 }, { plantId: 'mint', count: 1 }, { plantId: 'chives', count: 1 }, { plantId: 'oregano', count: 1 }]
+  const taken = Object.fromEntries(store.pods.list().filter(p => p.status !== 'empty').map(p => [p.slot, 'planted']))
+  store.plans.save({ id: 'demo-refill', name: 'Refill the bottom rows', model: 'home', mode: 'staggered', request: refill, layout: planLayout({ model: 'home', plants: refill, occupied: taken }), sowing: sowingPlan(refill, now) })
+
+  // Harvest windows for some of the crops, as an agent would fill them in (ADR-0022); the rest lean on the camera.
+  const profile = (name: string, harvestMinDays: number, harvestMaxDays: number, targetCover: number) => store.plants.upsert({ name, harvestMinDays, harvestMaxDays, targetCover, notes: '', source: 'agent' }, now.toISOString())
+  profile('Arugula', 17, 25, 0.4)
+  profile('Basil', 25, 35, 0.35)
+  profile('Kale', 30, 45, 0.45)
+  profile('Bok Choy', 30, 40, 0.45)
+  profile('Cilantro', 21, 30, 0.3)
 
   // A week of telemetry at 15-min resolution with a daily rhythm.
   const pts: TelemetryPoint[] = []
@@ -74,6 +90,17 @@ export function seedDemo(store: Store, hal: SimHal, now = new Date()): void {
   void hal.setActuator('light', { on: true, level: 85 })
 }
 
+/**
+ * `SEED_DEMO=1` on the server: the same story in a real database, so the
+ * simulator has history to test against (backups, restores, charts). Only a
+ * database nobody has set up is seeded, so a restart never doubles it.
+ */
+export function seedIfFresh(store: Store, hal: HalClient, now = new Date()): boolean {
+  if (store.settings.get().setupComplete || store.grow.current()) return false
+  seedDemo(store, hal, now)
+  return true
+}
+
 function frameSvg(camera: 'upper' | 'lower', dayAge: number): string {
   const g = Math.min(1, dayAge / 30)
   const leaves = Array.from({ length: 6 }, (_, i) => {
@@ -95,10 +122,10 @@ function demoAnalyses(captureId: string, camera: 'upper' | 'lower', ts: string, 
   return Array.from({ length: 15 }, (_, k) => first + k).flatMap((slot) => {
     const vigour = 0.55 + ((slot * 37) % 10) / 20
     const base = Math.min(0.95, g * vigour * 0.9)
-    const row = { captureId, ts, camera, version: 1, source: 'device' as const, slot, metric: 'green_fraction', artifact: null }
+    const row = { captureId, ts, camera, source: 'device' as const, slot, metric: 'green_fraction', artifact: null }
     return [
-      { ...row, analyzer: 'green-threshold', value: Math.round(base * 1000) / 1000, detail: null },
-      { ...row, analyzer: 'exg-otsu', value: Math.round(Math.min(0.97, base * 1.08 + 0.01) * 1000) / 1000, detail: { threshold: 141 } },
+      { ...row, analyzer: greenThreshold.id, version: greenThreshold.version, value: Math.round(base * 1000) / 1000, detail: null },
+      { ...row, analyzer: exgOtsu.id, version: exgOtsu.version, value: Math.round(Math.min(0.97, base * 1.08 + 0.01) * 1000) / 1000, detail: { threshold: 141 } },
     ]
   })
 }

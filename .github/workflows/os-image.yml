@@ -1,0 +1,87 @@
+name: OS image
+
+# Builds the ready-to-flash image (scripts/build-image). dev-release.yml and release.yml
+# call this and publish it to their release, from the same run's hald, better-sqlite3
+# and tarball. A pull request only runs it when the build itself changes, and manual
+# runs and pull requests build on dev-latest's assets and keep the image as an artifact.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The release to publish to
+        type: string
+        required: true
+      branch:
+        description: What the image updates from, dev or main
+        type: string
+        required: true
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/os-image.yml
+      - scripts/build-image
+      - scripts/image/**
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: seedypod OS image
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write # to attach the image to the release
+    # This outlasts the gap between pushes, so a new push mustn't cancel it or no image
+    # would ever land. The newest push waits its turn and older ones drop out of the queue.
+    concurrency:
+      group: os-image-${{ inputs.tag || github.ref }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch this run's hald, podvision, better-sqlite3 and tarball
+        if: inputs.tag != ''
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '{hald-arm-unknown-linux-gnueabihf,podvision-arm-unknown-linux-gnueabihf,better-sqlite3-armv6,seedypod-core}'
+          merge-multiple: true
+          path: assets
+
+      - name: Take them from dev-latest, with this branch's scripts
+        if: inputs.tag == ''
+        run: |
+          mkdir assets
+          gh release download dev-latest --dir assets --pattern 'hald-arm-*' --pattern 'podvision-arm-*' --pattern 'better-sqlite3-*' --pattern seedypod-core.tar.gz
+          mkdir "$RUNNER_TEMP/core"
+          tar xzf assets/seedypod-core.tar.gz -C "$RUNNER_TEMP/core"
+          cp -rf scripts/. "$RUNNER_TEMP/core/scripts/"
+          tar czf assets/seedypod-core.tar.gz -C "$RUNNER_TEMP/core" .
+
+      - name: Set up ARM emulation
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm
+
+      - name: Build
+        env:
+          BRANCH: ${{ inputs.branch || 'dev' }}
+          URL_BASE: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || 'dev-latest' }}
+        run: scripts/build-image assets out --branch "$BRANCH" --url-base "$URL_BASE"
+
+      - name: Publish
+        if: inputs.tag != ''
+        run: gh release upload "$TAG" out/seedypod-os* --clobber
+
+      - uses: actions/upload-artifact@v6
+        if: inputs.tag == ''
+        with:
+          name: seedypod-os
+          path: out/seedypod-os*
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error

@@ -6,20 +6,29 @@
 import type { AutopilotEngine } from '../autopilot/engine'
 import type { BackupService } from '../backup/service'
 import type { RestoreClient } from '../backup/restore'
+import type { UpdateClient } from '../update/client'
 import { createAutopilot } from '../autopilot/instance'
 import { CaptureService, MemorySink, type BlobSink } from '../camera/captures'
+import { CareEngine } from '../care/engine'
 import type { MirroredSink } from '../camera/mirrorSink'
 import { LightArbiter } from '../control/light'
+import type { DatabaseInspector } from '../db/inspect'
 import { GrowEngine } from '../grow/grow'
 import type { HalClient } from '../hardware/types'
+import type { HomeKitControl } from '../homekit/types'
 import { createEventBus, type EventBus } from '../lib/eventBus'
+import type { LoggingControl } from '../logging/policy'
+import type { BridgeStatus } from '../mqtt/bridge'
 import { SimWifi, type Wifi } from '../network/wifi'
 import { Scheduler } from '../scheduler/scheduler'
 import type { Store } from '../store/types'
-import { FlashMeter, type FlashSource } from '../telemetry/flash'
+import { FlashMeter, type DiskUsage, type FlashSource } from '../telemetry/flash'
 import { Recorder } from '../telemetry/recorder'
+import { TelemetryRetention } from '../telemetry/retention'
 import type { Executor } from '../vision/execute'
+import type { ModelRegistry } from '../vision/registry'
 import { AnalysisService } from '../vision/service'
+import { PodCodeService, type CodeReader } from '../vision/podCodes'
 import type { Context } from './context'
 
 export interface CoreOptions {
@@ -36,14 +45,37 @@ export interface CoreOptions {
   captureMinBytes?: number
   /** Where capture analysis runs; defaults to this thread (tests, browser demo). */
   analysisExecutor?: Executor
+  /** Pod-state model revisions (#186). */
+  models?: ModelRegistry
+  /** The native pod-state runner (#191), when it's installed; node hosts only. */
+  podvision?: Context['podvision']
+  /** Reads yCube dot codes from pod-ID stills (#224): podvision, when it's installed. */
+  codeReader?: CodeReader | null
   /** NetworkManager on a unit; an in-memory stand-in for tests and the demo. */
   wifi?: Wifi
   /** Downloads, nightly bucket uploads and the staleness alert (ADR-0021); node hosts only. */
   backup?: BackupService
   /** Restores a backup through the root helper (ADR-0021); node hosts only. */
   restore?: RestoreClient
+  /** Updates core and hald through the root helper (ADR-0026); node hosts only. */
+  update?: UpdateClient
+  /** Reads hald's boot log; node hosts only. */
+  bootLog?: () => Promise<string | null>
   /** The SD card's write counter (ADR-0021); omitted off a Pi. */
   flashSource?: FlashSource | null
+  /** Metadata about the database for the Database view; a real scan on node hosts, sample data in the demo. */
+  database?: DatabaseInspector
+  /** Used and free space where DATA_DIR lives; node hosts only. */
+  disk?: () => DiskUsage | null
+  /** The Home Assistant bridge's state; node hosts only. */
+  bridge?: () => BridgeStatus
+  /** How much core and hald log; node hosts only. */
+  logging?: LoggingControl
+  host?: Context['host']
+  /** False while the clock can't be believed yet (no RTC, NTP hasn't answered); node hosts only. */
+  clockTrusted?: () => boolean
+  /** HomeKit (ADR 0023); node hosts only. Attached to the context here, unpublished on stop. */
+  homekit?: HomeKitControl & { attach(ctx: Context): void, shutdown(): Promise<void> }
 }
 
 export interface Core {
@@ -51,6 +83,7 @@ export interface Core {
   recorder: Recorder
   scheduler: Scheduler
   grow: GrowEngine
+  care: CareEngine
   autopilot: AutopilotEngine
   stop(): Promise<void>
 }
@@ -68,26 +101,34 @@ export function createCore(o: CoreOptions): Core {
   })
   const sink = o.sink ?? new MemorySink()
   const analysis = new AnalysisService({ store: o.store, sink, events, executor: o.analysisExecutor })
-  const captures = new CaptureService({ hal: o.hal, store: o.store, sink, now: o.now, minBytes: o.captureMinBytes, analysis })
+  // Scheduled stills too, so the UI and Home Assistant's camera pick them up.
+  const captures = new CaptureService({ hal: o.hal, store: o.store, sink, now: o.now, minBytes: o.captureMinBytes, analysis, onStored: () => events.emit({ kind: 'mutation', path: 'captures' }) })
   // The light's single owner: manual > Autopilot > schedule (ADR-0020).
   const light = new LightArbiter({ hal: o.hal, now: () => (o.now?.() ?? new Date()).getTime(), log: m => console.warn(m) })
-  const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, log: m => console.warn(m) })
-  const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, now: o.now })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, mirror: o.mirror, backup: o.backup, restore: o.restore, flash, wifi, light, autopilot, version: o.version, now: o.now }
+  const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
+  const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
+  const podCodes = new PodCodeService({ store: o.store, captures, reader: o.codeReader ?? null, log: m => console.warn(m), onRead: () => events.emit({ kind: 'mutation', path: 'podCodes' }) })
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, podCodes, mirror: o.mirror, backup: o.backup, restore: o.restore, update: o.update, bootLog: o.bootLog, homekit: o.homekit, models: o.models, podvision: o.podvision, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
-  const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now })
+  const retention = new TelemetryRetention({ store: o.store, now: o.now })
+  const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now, clockTrusted: o.clockTrusted })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })
+  const care = new CareEngine({ store: o.store, hal: o.hal, events, now: o.now })
 
   let growTimer: ReturnType<typeof setInterval> | null = null
   if (o.startServices) {
     recorder.start()
+    retention.start()
     scheduler.start()
     autopilot.start()
     flash.start()
     o.backup?.start()
     grow.tick()
     growTimer = setInterval(() => grow.tick(), 15 * 60_000)
+    care.start()
     captures.start(o.store.settings.get().captureIntervalMin)
+    podCodes.start(() => o.now?.() ?? new Date(), () => o.store.settings.get().timezone)
     events.subscribe((e) => {
       if (e.kind === 'mutation' && e.path === 'settings') captures.start(o.store.settings.get().captureIntervalMin)
     })
@@ -98,18 +139,23 @@ export function createCore(o: CoreOptions): Core {
     recorder,
     scheduler,
     grow,
+    care,
     autopilot,
     async stop() {
+      await o.homekit?.shutdown()
       unsubHal()
       scheduler.stop()
       autopilot.stop()
       light.close()
       captures.stop()
+      podCodes.stop()
       flash.stop()
       o.backup?.stop()
       await analysis.idle()
+      await retention.stop()
       recorder.stop()
       if (growTimer) clearInterval(growTimer)
+      care.stop()
       await o.hal.close()
       o.store.close()
     },

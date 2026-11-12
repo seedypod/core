@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Format follows sleepypod/core (`# ADR NNNN: Title`, Status/Date, Context, Decision, Consequences, amendments appended) with OKF frontmatter on top. `status: stable` = Accepted, `draft` = Proposed.
+Format follows [sleepypod/core](https://sleepypod.github.io/) (`# ADR NNNN: Title`, Status/Date, Context, Decision, Consequences, amendments appended) with OKF frontmatter on top. `status: stable` = Accepted, `draft` = Proposed.
 
 - [0001 New repository and naming](0001-new-repository.md)
 - [0002 License](0002-license.md)
@@ -22,4 +22,13 @@ Format follows sleepypod/core (`# ADR NNNN: Title`, Status/Date, Context, Decisi
 - [0018 Runtime sensor inventory](0018-runtime-sensor-inventory.md)
 - [0019 Pluggable capture analysis](0019-pluggable-capture-analysis.md)
 - [0020 Autopilot — reactive automations](0020-autopilot-reactive-automations.md)
-- [0021 SD card wear and fast recovery](0021-sd-card-wear-and-recovery.md) — phases 1–3 accepted, phase 4 (SD image) proposed
+- [0021 SD card wear and fast recovery](0021-sd-card-wear-and-recovery.md) — phases 1–3 accepted, phase 4 (SD image) built as amended
+- [0022 Harvest outlook from the camera, with optional plant profiles](0022-harvest-outlook.md)
+- [0023 HomeKit bridge and per-unit identity](0023-homekit.md)
+- [0024 Pod planner and Gardyn plant catalog](0024-pod-planner.md)
+- [0025 Accessory sensor nodes](0025-accessory-sensor-nodes.md) — proposed
+- [0026 One-click update from the web UI](0026-web-update.md)
+- [0027 Cameras in HomeKit and Home Assistant](0027-camera-exposure.md)
+- [0028 Camera capture format for image analysis](0028-camera-capture-format.md) — proposed
+- [0029 Care engine and agent boundary](0029-care-engine-and-agent-boundary.md) — proposed
+- [0030 Grow protocols](0030-grow-protocols.md) — proposed

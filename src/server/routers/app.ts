@@ -4,17 +4,25 @@ import { alertsRouter } from './alerts'
 import { automationsRouter } from './automations'
 import { backupRouter } from './backup'
 import { cameraRouter } from './camera'
+import { careRouter } from './care'
 import { datasetsRouter } from './datasets'
+import { modelsRouter } from './models'
 import { devicesRouter } from './devices'
 import { eventsRouter } from './events'
 import { growRouter } from './grow'
+import { homekitRouter } from './homekit'
 import { networkRouter } from './network'
+import { plannerRouter } from './planner'
+import { plantsRouter } from './plants'
+import { protocolRouter } from './protocol'
 import { schedulesRouter } from './schedules'
 import { sensorsRouter } from './sensors'
 import { settingsRouter } from './settings'
 import { storageRouter } from './storage'
 import { systemRouter } from './system'
+import { tankRouter } from './tank'
 import { telemetryRouter } from './telemetry'
+import { updateRouter } from './update'
 import { visionRouter } from './vision'
 
 export const appRouter = router({
@@ -29,11 +37,19 @@ export const appRouter = router({
   schedules: schedulesRouter,
   automations: automationsRouter,
   grow: growRouter,
+  protocol: protocolRouter,
+  care: careRouter,
+  tank: tankRouter,
+  plants: plantsRouter,
+  planner: plannerRouter,
   camera: cameraRouter,
   vision: visionRouter,
   datasets: datasetsRouter,
+  models: modelsRouter,
   storage: storageRouter,
   backup: backupRouter,
+  update: updateRouter,
+  homekit: homekitRouter,
   alerts: alertsRouter,
   events: eventsRouter,
 })

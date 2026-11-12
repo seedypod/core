@@ -1,0 +1,1 @@
+ALTER TABLE `device_settings` ADD `followGrowCycle` integer DEFAULT true NOT NULL;

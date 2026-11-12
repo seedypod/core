@@ -1,0 +1,1 @@
+ALTER TABLE `device_settings` ADD `homekitEnabled` integer DEFAULT false NOT NULL;

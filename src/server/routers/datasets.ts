@@ -9,7 +9,7 @@ export const datasetsRouter = router({
   summary: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/datasets/summary', tags: ['datasets'], summary: 'What a dataset export of this window would contain (download it from GET /api/datasets/export)' } })
     .input(WindowInput.optional())
-    .output(z.object({ from: z.string(), to: z.string(), images: z.boolean(), captures: z.number(), analyses: z.number(), telemetry: z.number(), imageBytes: z.number() }))
+    .output(z.object({ from: z.string(), to: z.string(), images: z.boolean(), captures: z.number(), analyses: z.number(), telemetry: z.number(), labels: z.number(), imageBytes: z.number() }))
     .query(({ ctx, input }) => {
       try {
         return summarize(ctx, resolveWindow(ctx.now?.() ?? new Date(), input ?? {}))

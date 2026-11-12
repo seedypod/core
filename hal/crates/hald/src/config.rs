@@ -25,6 +25,8 @@ pub struct Config {
     pub mqtt_password: Option<String>,
     pub http_bind: String,
     pub telemetry_interval_s: u64,
+    /// How long a full swing of the light takes; 0 for no fade.
+    pub light_fade_ms: u64,
     /// Where `state.json` (last light level, dose ledgers) is kept.
     pub state_dir: PathBuf,
     pub pins: Pins,
@@ -34,6 +36,7 @@ pub struct Config {
     pub button: Button,
     pub dosing: Dosing,
     pub ha: HomeAssistant,
+    pub usb_recovery: UsbRecovery,
     pub mdns: bool,
     pub camera: Vec<CameraEntry>,
     pub sensor: Vec<SensorEntry>,
@@ -81,8 +84,19 @@ pub struct Limits {
     pub pump_max_duty: f64,
     pub water_low_cm: Option<f64>,
     pub over_temp_c: Option<f64>,
+    /// Below this pump current (A) the running pump is pulling air. Unset (the
+    /// default until a wet and a dry run are measured) or no INA219: off.
+    pub pump_dry_current_a: Option<f64>,
+    /// How long the current must stay below `pump_dry_current_a` to stop the pump.
+    pub pump_dry_after_s: u64,
+    /// How long after a start the current isn't judged, while the pump spins up.
+    pub pump_dry_grace_s: u64,
     pub distance_samples: usize,
     pub distance_timeout_ms: u64,
+    /// Quiet time between pings, so one doesn't hear the last one's echo.
+    pub distance_gap_ms: u64,
+    /// A ping further than this is a stray echo, not water. Unset: the empty depth plus half again.
+    pub distance_max_cm: Option<f64>,
 }
 
 /// Distance from the ranger to the surface when full / empty (cm).
@@ -106,6 +120,31 @@ pub struct Button {
     pub pump_run_s: u64,
 }
 
+/// `hald --usb-recover`, for a USB hub that didn't enumerate at boot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UsbRecovery {
+    pub enabled: bool,
+    /// Seconds after boot before an empty bus counts as a failure.
+    pub boot_wait_s: u64,
+    /// Root hub re-probes before anything else. Some hubs have connected late after
+    /// them; whether they helped or the wait did is still being tested.
+    pub attempts: u32,
+    /// Seconds to wait for the bus to fill after each re-probe.
+    pub settle_s: u64,
+    /// Reboots in a row to try for a missing hub. 0, the default, turns this off
+    /// until the timing is proved on a unit. The count only resets when the hub is
+    /// seen, so a power cycle doesn't start it again.
+    pub reboot_attempts: u32,
+    /// Looks at the pump and dosers before rebooting, and the wait between looks.
+    /// Long enough to outlast a full pump run; after that this boot goes without.
+    pub busy_checks: u32,
+    pub busy_wait_s: u64,
+    /// WARNING: has no effect, and must not get one back: binding `dwc_otg` again
+    /// segfaults the kernel. It stays only so a `hal.toml` that sets it still loads.
+    pub rebind_controller: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Dosing {
@@ -124,6 +163,10 @@ pub struct HomeAssistant {
     pub prefix: String,
 }
 
+/// Which camera each hub port feeds, confirmed with markers on a 3.0. Only a
+/// default for naming a lone camera: pins in the udev rules always win.
+pub const STOCK_CAMERA_PORTS: [(&str, &str); 2] = [("upper", "1-1.3:1.0"), ("lower", "1-1.4:1.0")];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CameraEntry {
@@ -133,17 +176,81 @@ pub struct CameraEntry {
     /// Used while `device` doesn't exist, e.g. before the udev rules are installed.
     #[serde(default)]
     pub fallback: Option<PathBuf>,
+    /// The sensor's own 4:3 shape, so nothing is cropped, at a size a Pi Zero
+    /// decodes and re-encodes in a few seconds.
     #[serde(default = "default_resolution")]
     pub resolution: String,
+    /// Always sent: left unset, each camera keeps whatever format it last used.
+    #[serde(default = "default_palette")]
+    pub palette: String,
     #[serde(default = "default_skip")]
     pub skip_frames: u32,
+    /// Tries per still; the worst case is about `attempts × attempt_timeout_s`.
+    #[serde(default = "default_capture_attempts")]
+    pub capture_attempts: u32,
+    /// Wait before retry N is this times N.
+    #[serde(default = "default_capture_retry_ms")]
+    pub capture_retry_ms: u64,
+    /// `fswebcam` is killed after this long.
+    #[serde(default = "default_capture_timeout_s")]
+    pub capture_timeout_s: u64,
+    /// Check each raw frame for tearing. Turn off only if a camera's good
+    /// frames are being refused; damaged frames then reach the store.
+    #[serde(default = "default_inspect_frames")]
+    pub inspect_frames: bool,
+    /// The pod-ID still's size (#224), taken only when core asks for one.
+    #[serde(default = "default_full_resolution")]
+    pub full_resolution: String,
+    /// `fswebcam` is killed after this long on a pod-ID still.
+    #[serde(default = "default_full_capture_timeout_s")]
+    pub full_capture_timeout_s: u64,
 }
 
 fn default_resolution() -> String {
-    "1280x720".into()
+    "1280x960".into()
+}
+fn default_palette() -> String {
+    "MJPEG".into()
 }
 fn default_skip() -> u32 {
     15
+}
+fn default_capture_attempts() -> u32 {
+    3
+}
+fn default_capture_retry_ms() -> u64 {
+    1000
+}
+fn default_capture_timeout_s() -> u64 {
+    15
+}
+fn default_inspect_frames() -> bool {
+    true
+}
+fn default_full_resolution() -> String {
+    "2592x1944".into()
+}
+fn default_full_capture_timeout_s() -> u64 {
+    60
+}
+
+impl CameraEntry {
+    fn stock(name: &str, fallback: &str) -> Self {
+        Self {
+            name: name.into(),
+            device: format!("/dev/seedypod/camera-{name}").into(),
+            fallback: Some(fallback.into()),
+            resolution: default_resolution(),
+            palette: default_palette(),
+            skip_frames: default_skip(),
+            capture_attempts: default_capture_attempts(),
+            capture_retry_ms: default_capture_retry_ms(),
+            capture_timeout_s: default_capture_timeout_s(),
+            inspect_frames: default_inspect_frames(),
+            full_resolution: default_full_resolution(),
+            full_capture_timeout_s: default_full_capture_timeout_s(),
+        }
+    }
 }
 
 /// Known sensor kinds (`hald --check` rejects anything else).
@@ -207,6 +314,7 @@ impl Default for Config {
             mqtt_password: None,
             http_bind: "0.0.0.0:3001".into(),
             telemetry_interval_s: 10,
+            light_fade_ms: 800,
             state_dir: PathBuf::from("/var/lib/seedypod"),
             pins: Pins::default(),
             i2c: I2c::default(),
@@ -215,22 +323,11 @@ impl Default for Config {
             button: Button::default(),
             dosing: Dosing::default(),
             ha: HomeAssistant::default(),
+            usb_recovery: UsbRecovery::default(),
             mdns: true,
             camera: vec![
-                CameraEntry {
-                    name: "upper".into(),
-                    device: "/dev/seedypod/camera-upper".into(),
-                    fallback: Some("/dev/video0".into()),
-                    resolution: default_resolution(),
-                    skip_frames: default_skip(),
-                },
-                CameraEntry {
-                    name: "lower".into(),
-                    device: "/dev/seedypod/camera-lower".into(),
-                    fallback: Some("/dev/video2".into()),
-                    resolution: default_resolution(),
-                    skip_frames: default_skip(),
-                },
+                CameraEntry::stock("upper", "/dev/video0"),
+                CameraEntry::stock("lower", "/dev/video2"),
             ],
             sensor: Vec::new(),
             actuator: Vec::new(),
@@ -241,11 +338,12 @@ impl Default for Config {
 
 impl Default for Pins {
     fn default() -> Self {
-        // BCM numbering, from iot-root/garden-of-eden config.py.
+        // BCM numbering, from iot-root/garden-of-eden config.py; pins and the
+        // 20 kHz light PWM match the stock Gardyn 3.0 firmware.
         Self {
             light_pwm: 18,
             light_pwm_channel: 0,
-            light_hz: 8000,
+            light_hz: 20_000,
             pump_pwm: 24,
             pump_hz: 50,
             distance_trigger: 26,
@@ -267,7 +365,8 @@ impl Default for I2c {
             ezo_ph: 0x63,
             ezo_ec: 0x64,
             ezo_rtd: 0x66,
-            ina219_shunt_ohms: 0.1,
+            // The stock Gardyn firmware calibrates against a 0.08 Ω shunt.
+            ina219_shunt_ohms: 0.08,
             ina219_max_amps: 3.2,
         }
     }
@@ -279,9 +378,16 @@ impl Default for Limits {
             pump_max_run_s: 900,
             pump_max_duty: 30.0,
             water_low_cm: Some(16.0),
-            over_temp_c: Some(36.0),
+            // The board runs ~47 °C with the lights at 100 %; stock sets the
+            // PCT2075 alert at 70 °C.
+            over_temp_c: Some(65.0),
+            pump_dry_current_a: None,
+            pump_dry_after_s: 5,
+            pump_dry_grace_s: 3,
             distance_samples: 5,
             distance_timeout_ms: 60,
+            distance_gap_ms: 60,
+            distance_max_cm: None,
         }
     }
 }
@@ -291,6 +397,21 @@ impl Default for Tank {
         Self {
             full_cm: 5.0,
             empty_cm: 20.0,
+        }
+    }
+}
+
+impl Default for UsbRecovery {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            boot_wait_s: 90,
+            attempts: 2,
+            settle_s: 20,
+            reboot_attempts: 0,
+            busy_checks: 20,
+            busy_wait_s: 60,
+            rebind_controller: false,
         }
     }
 }
@@ -338,6 +459,9 @@ impl From<&Limits> for PumpLimits {
             max_duty: l.pump_max_duty,
             water_low_cm: l.water_low_cm,
             over_temp_c: l.over_temp_c,
+            dry_current_a: l.pump_dry_current_a,
+            dry_current_s: l.pump_dry_after_s,
+            dry_grace_s: l.pump_dry_grace_s,
         }
     }
 }
@@ -424,7 +548,8 @@ impl Config {
                 trigger: None,
                 echo: None,
                 optional: true,
-                active_low: Some(false),
+                // PCT2075 OS is active-low at power-up (OS_POL = 0): the idle line reads high.
+                active_low: Some(true),
             },
         ]
     }
@@ -460,6 +585,9 @@ impl Config {
         if self.telemetry_interval_s == 0 {
             errs.push("telemetry_interval_s must be ≥ 1".into());
         }
+        if self.light_fade_ms > 60_000 {
+            errs.push("light_fade_ms must be ≤ 60000".into());
+        }
         if self.http_bind.parse::<std::net::SocketAddr>().is_err() {
             errs.push(format!("http_bind {:?} is not host:port", self.http_bind));
         }
@@ -474,6 +602,17 @@ impl Config {
         if self.limits.pump_max_run_s == 0 {
             errs.push("limits.pump_max_run_s must be ≥ 1".into());
         }
+        if let Some(a) = self.limits.pump_dry_current_a {
+            if !(a > 0.0 && a < self.i2c.ina219_max_amps) {
+                errs.push(format!(
+                    "limits.pump_dry_current_a must be above 0 and below i2c.ina219_max_amps ({})",
+                    self.i2c.ina219_max_amps
+                ));
+            }
+        }
+        if self.limits.pump_dry_after_s == 0 {
+            errs.push("limits.pump_dry_after_s must be ≥ 1".into());
+        }
         if self.limits.distance_samples == 0 {
             errs.push("limits.distance_samples must be ≥ 1".into());
         }
@@ -487,6 +626,12 @@ impl Config {
         for c in &self.camera {
             if !names.insert(c.name.clone()) {
                 errs.push(format!("camera {:?} listed twice", c.name));
+            }
+            if c.capture_timeout_s == 0 {
+                errs.push(format!("camera {:?}: capture_timeout_s must be ≥ 1", c.name));
+            }
+            if c.full_capture_timeout_s == 0 {
+                errs.push(format!("camera {:?}: full_capture_timeout_s must be ≥ 1", c.name));
             }
         }
         let mut addrs = std::collections::BTreeMap::new();
@@ -553,13 +698,14 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # mqtt_password = ""
 # http_bind = "0.0.0.0:3001"
 # telemetry_interval_s = 10
+# light_fade_ms = 800     # how long a full swing of the light takes; 0 for no fade
 # state_dir = "/var/lib/seedypod"
 # mdns = true
 
 [pins]
 # light_pwm = 18          # hardware PWM
 # light_pwm_channel = 0   # 0 on Pi <= 4; GPIO18 is channel 2 on a Pi 5
-# light_hz = 8000
+# light_hz = 20000
 # pump_pwm = 24           # software PWM
 # pump_hz = 50
 # distance_trigger = 26
@@ -576,16 +722,23 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # ezo_ph = 0x63           # Atlas EZO (Phase 6, only with [[sensor]] entries)
 # ezo_ec = 0x64
 # ezo_rtd = 0x66
-# ina219_shunt_ohms = 0.1
+# ina219_shunt_ohms = 0.08
 # ina219_max_amps = 3.2
 
 [limits]
 # pump_max_run_s = 900    # every pump run is bounded (ADR-0009)
 # pump_max_duty = 30.0    # the board browns out above ~30 %
 # water_low_cm = 16.0     # dry-run interlock; comment out to disable
-# over_temp_c = 36.0      # PCB cutoff; comment out to disable
+# over_temp_c = 65.0      # PCB cutoff; comment out to disable
+# pump_dry_current_a = 1.2 # pump current guard: off until set (needs the ina219). Stops a running
+#                          # pump that draws less than this, past the grace, for pump_dry_after_s.
+#                          # Set it below the wet current at the lowest duty you run.
+# pump_dry_after_s = 5
+# pump_dry_grace_s = 3    # spin-up after a start, not judged
 # distance_samples = 5    # median of N pings
 # distance_timeout_ms = 60
+# distance_gap_ms = 60    # between pings, so one doesn't hear the last one's echo
+# distance_max_cm = 30.0  # further is a stray echo; default tank.empty_cm × 1.5
 
 [tank]
 # full_cm = 5.0           # ranger-to-surface distance when full
@@ -611,6 +764,15 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # discovery = true
 # prefix = "homeassistant"
 
+# [usb_recovery]          # reboot to try again when the USB hub didn't come up
+# enabled = true
+# boot_wait_s = 90
+# reboot_attempts = 0     # reboots in a row; 0 (the default) turns this off
+# busy_checks = 20        # waits for the pump and dosers to finish first,
+# busy_wait_s = 60        # then leaves this boot alone
+# attempts = 2            # root hub re-probes before any reboot
+# settle_s = 20
+
 # Cameras get stable names from udev rules keyed on their USB port
 # (`hald --list-cameras`, `hald --camera-rules`); /dev/videoN is only a
 # fallback because the numbering can swap across reboots.
@@ -618,8 +780,15 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # name = "upper"
 # device = "/dev/seedypod/camera-upper"
 # fallback = "/dev/video0"
-# resolution = "1280x720"
+# resolution = "1280x960"
+# palette = "MJPEG"
 # skip_frames = 15
+# capture_attempts = 3
+# capture_retry_ms = 1000
+# capture_timeout_s = 15
+# inspect_frames = true
+# full_resolution = "2592x1944"   # pod-ID stills only, when core asks (#224)
+# full_capture_timeout_s = 60
 # [[camera]]
 # name = "lower"
 # device = "/dev/seedypod/camera-lower"
@@ -695,6 +864,13 @@ mod tests {
     }
 
     #[test]
+    fn stock_over_temp_line_is_active_low() {
+        let stock = Config::default().sensors();
+        let alert = stock.iter().find(|s| s.kind == "over_temp_alert").unwrap();
+        assert_eq!(alert.active_low, Some(true));
+    }
+
+    #[test]
     fn explicit_tables_replace_the_stock_list() {
         let c: Config = toml::from_str(
             r#"
@@ -743,14 +919,77 @@ pin = 5
     }
 
     #[test]
+    fn a_capture_timeout_of_zero_would_kill_every_capture_and_is_refused() {
+        let c: Config = toml::from_str(
+            r#"
+[[camera]]
+name = "upper"
+device = "/dev/video0"
+capture_timeout_s = 0
+"#,
+        )
+        .unwrap();
+        assert!(c.validate().iter().any(|e| e.contains("capture_timeout_s")));
+    }
+
+    #[test]
+    fn a_camera_takes_full_size_pod_id_stills_by_default() {
+        let c: Config = toml::from_str(
+            r#"
+[[camera]]
+name = "upper"
+device = "/dev/video0"
+"#,
+        )
+        .unwrap();
+        assert_eq!(c.camera[0].resolution, "1280x960");
+        assert_eq!(c.camera[0].full_resolution, "2592x1944");
+        assert_eq!(c.camera[0].full_capture_timeout_s, 60);
+        assert!(c.validate().is_empty());
+        let c: Config = toml::from_str(
+            r#"
+[[camera]]
+name = "upper"
+device = "/dev/video0"
+full_capture_timeout_s = 0
+"#,
+        )
+        .unwrap();
+        assert!(c.validate().iter().any(|e| e.contains("full_capture_timeout_s")));
+    }
+
+    /// `install-hal --version <older>` runs an older hald on a file written by a
+    /// newer one, and unknown sections are refused: hald then crash-loops, and takes
+    /// pump and light control with it. New sections must stay commented out.
+    #[test]
+    fn the_default_file_stays_readable_by_a_hald_without_usb_recovery() {
+        let keys: toml::Table = toml::from_str(DEFAULT_CONFIG_TOML).unwrap();
+        assert!(!keys.contains_key("usb_recovery"));
+        let c: Config = toml::from_str(DEFAULT_CONFIG_TOML).unwrap();
+        assert!(c.usb_recovery.enabled);
+        // An unattended reboot is opt-in (AGENTS.md: auto-recovery is default-off).
+        assert_eq!(c.usb_recovery.reboot_attempts, 0);
+    }
+
+    /// Dropping the key would make a `hal.toml` that set it crash-loop hald.
+    #[test]
+    fn a_hal_toml_that_set_rebind_controller_still_loads() {
+        let c: Config = toml::from_str("[usb_recovery]\nrebind_controller = true\n").unwrap();
+        assert!(c.usb_recovery.rebind_controller);
+    }
+
+    #[test]
     fn validate_flags_unknown_kinds_missing_fields_and_bad_values() {
         let c: Config = toml::from_str(
             r#"
 telemetry_interval_s = 0
+light_fade_ms = 60001
 http_bind = "nope"
 mqtt_url = "http://x"
 [limits]
 pump_max_duty = 150
+pump_dry_current_a = 5.0
+pump_dry_after_s = 0
 [tank]
 full_cm = 30
 [[sensor]]
@@ -782,9 +1021,12 @@ kind = "pwm_pump"
         let joined = errs.join("\n");
         for needle in [
             "telemetry_interval_s",
+            "light_fade_ms",
             "http_bind",
             "mqtt_url",
             "pump_max_duty",
+            "pump_dry_current_a must be above 0 and below i2c.ina219_max_amps (3.2)",
+            "pump_dry_after_s must be ≥ 1",
             "tank.full_cm",
             "unknown kind \"bme280\"",
             "(ina219): addr required",
@@ -820,6 +1062,21 @@ kind = "pwm_pump"
         let c = Config::default();
         let p: PumpLimits = (&c.limits).into();
         assert_eq!(p.max_duty, 30.0);
+        // No baseline yet: the current guard ships off, with the guard's own timings.
+        let guard = PumpLimits::default();
+        assert_eq!(p.dry_current_a, None);
+        assert_eq!(
+            (p.dry_current_s, p.dry_grace_s),
+            (guard.dry_current_s, guard.dry_grace_s)
+        );
+        let on: Config =
+            toml::from_str("[limits]\npump_dry_current_a = 1.2\npump_dry_after_s = 4\n").unwrap();
+        let p: PumpLimits = (&on.limits).into();
+        assert_eq!(
+            (p.dry_current_a, p.dry_current_s, p.dry_grace_s),
+            (Some(1.2), 4, 3)
+        );
+        assert!(on.validate().is_empty());
         let d: DoseLimits = (&c.dosing).into();
         assert_eq!(d, DoseLimits::default());
         let t: hal_core::derived::TankGeometry = (&c.tank).into();

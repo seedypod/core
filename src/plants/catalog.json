@@ -1,0 +1,2686 @@
+{
+ "version": 1,
+ "generatedFrom": [
+  "scripts/plants/gardyn-zone-guide.txt",
+  "scripts/plants/gardyn-store-ycubes.txt"
+ ],
+ "sources": {
+  "zone": "https://help.mygardyn.com/en/articles/11547329",
+  "zoneMap": "https://help.mygardyn.com/en/articles/11567361",
+  "store": "https://mygardyn.com/collections/ycubes",
+  "succession": "https://help.mygardyn.com/en/articles/1782337"
+ },
+ "categoryHarvestMedians": {
+  "green": [
+   1,
+   2
+  ],
+  "fruiting": [
+   3,
+   4
+  ],
+  "herb": [
+   2,
+   3
+  ],
+  "lettuce": [
+   1,
+   2
+  ],
+  "vegetable": [
+   2,
+   2
+  ],
+  "flower": [
+   2,
+   3
+  ],
+  "legume": [
+   2,
+   3
+  ]
+ },
+ "plants": [
+  {
+   "id": "american-mustard",
+   "name": "American Mustard",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "arugula",
+   "name": "Arugula",
+   "category": "green",
+   "zone": "low",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "light",
+   "succession": "fast-greens",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "arugula",
+   "inStore": true
+  },
+  {
+   "id": "banana-pepper",
+   "name": "Banana Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "bountiful",
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "banana-peppers",
+   "inStore": true
+  },
+  {
+   "id": "bare-root-strawberries",
+   "name": "Bare Root Strawberries",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "basil",
+   "name": "Basil",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "basil",
+   "inStore": true
+  },
+  {
+   "id": "bi-color-sunflower",
+   "name": "Bi-Color Sunflower",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "black-pearl-pepper",
+   "name": "Black Pearl Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "black-viola",
+   "name": "Black Viola",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "blue-cornflower",
+   "name": "Blue Cornflower",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "blush-hibiscus",
+   "name": "Blush Hibiscus",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "borage",
+   "name": "Borage",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "breen",
+   "name": "Breen",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "breen-lettuce",
+   "inStore": true
+  },
+  {
+   "id": "bronze-arrow",
+   "name": "Bronze Arrow",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "bulls-blood-beets",
+   "name": "Bull's Blood Beets",
+   "category": "vegetable",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "bunching-onions",
+   "name": "Bunching Onions",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "bunching-onions",
+   "inStore": true
+  },
+  {
+   "id": "burrito-pepper",
+   "name": "Burrito Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "buttercrunch",
+   "name": "Buttercrunch",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "buttercrunch",
+   "inStore": true
+  },
+  {
+   "id": "butterhead",
+   "name": "Butterhead",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "butterhead",
+   "inStore": true
+  },
+  {
+   "id": "candy-cane-pepper",
+   "name": "Candy Cane Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "canna-flower",
+   "name": "Canna Flower",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "cape-gooseberry",
+   "name": "Cape Gooseberry",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": true,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "cardinale",
+   "name": "Cardinale",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "catnip",
+   "name": "Catnip",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "catnip",
+   "inStore": true
+  },
+  {
+   "id": "celery",
+   "name": "Celery",
+   "category": "vegetable",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "celery",
+   "inStore": true
+  },
+  {
+   "id": "celosia-mix",
+   "name": "Celosia Mix",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "chamomile",
+   "name": "Chamomile",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "chervil",
+   "name": "Chervil",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "chives",
+   "name": "Chives",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "chives",
+   "inStore": true
+  },
+  {
+   "id": "cilantro",
+   "name": "Cilantro",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "light",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "cilantro",
+   "inStore": true
+  },
+  {
+   "id": "collard-greens",
+   "name": "Collard Greens",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "cucumber",
+   "name": "Cucumber",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "generous",
+   "succession": "fast-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": "bottomCenter",
+   "gardynHandle": "cucumbers",
+   "inStore": true
+  },
+  {
+   "id": "dianthus",
+   "name": "Dianthus",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "dianthus",
+   "inStore": true
+  },
+  {
+   "id": "dill",
+   "name": "Dill",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "dill",
+   "inStore": true
+  },
+  {
+   "id": "dragon-beans",
+   "name": "Dragon Beans",
+   "category": "legume",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "light",
+   "succession": "fast-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "dragon-beans",
+   "inStore": true
+  },
+  {
+   "id": "endive-lettuce",
+   "name": "Endive Lettuce",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "endive-lettuce",
+   "inStore": true
+  },
+  {
+   "id": "fairytale-eggplant",
+   "name": "Fairytale Eggplant",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "generous",
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "fairytale-eggplant",
+   "inStore": true
+  },
+  {
+   "id": "fiesta-gitana",
+   "name": "Fiesta Gitana",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "flashy-trout-back",
+   "name": "Flashy Trout Back",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "flashy-lettuce",
+   "inStore": true
+  },
+  {
+   "id": "fuchsia-snapdragon",
+   "name": "Fuchsia Snapdragon",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "garlic-chives",
+   "name": "Garlic Chives",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "goliath-pepper",
+   "name": "Goliath Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "green-beans",
+   "name": "Green Beans",
+   "category": "legume",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "light",
+   "succession": "fast-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "green-beans",
+   "inStore": true
+  },
+  {
+   "id": "green-bok-choy",
+   "name": "Green Bok Choy",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "bok-choy",
+   "inStore": true
+  },
+  {
+   "id": "green-cabbage",
+   "name": "Green Cabbage",
+   "category": "vegetable",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "green-cabbage",
+   "inStore": true
+  },
+  {
+   "id": "green-mustard",
+   "name": "Green Mustard",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "green-mustard",
+   "inStore": true
+  },
+  {
+   "id": "green-salanova",
+   "name": "Green Salanova",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "green-salanova",
+   "inStore": true
+  },
+  {
+   "id": "green-tatsoi",
+   "name": "Green Tatsoi",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "green-tatsoi",
+   "inStore": true
+  },
+  {
+   "id": "holy-basil",
+   "name": "Holy Basil",
+   "category": "herb",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "holy-basil",
+   "inStore": true
+  },
+  {
+   "id": "hon-tsai-tai",
+   "name": "Hon Tsai Tai",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "hungarian-hot-wax-pepper",
+   "name": "Hungarian Hot Wax Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "iceberg",
+   "name": "Iceberg",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "iceberg-lettuce",
+   "inStore": true
+  },
+  {
+   "id": "italian-parsley",
+   "name": "Italian Parsley",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "bountiful",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "italian-parsley",
+   "inStore": true
+  },
+  {
+   "id": "jalapeno",
+   "name": "Jalapeño",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "bountiful",
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "jalapenos",
+   "inStore": true
+  },
+  {
+   "id": "kale",
+   "name": "Kale",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "kale",
+   "inStore": true
+  },
+  {
+   "id": "kale-lacinato",
+   "name": "Kale Lacinato",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "kale-lacinato",
+   "inStore": true
+  },
+  {
+   "id": "lavender",
+   "name": "Lavender",
+   "category": "herb",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "lavender",
+   "inStore": true
+  },
+  {
+   "id": "lemon-balm",
+   "name": "Lemon Balm",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "lemon-hot-pepper",
+   "name": "Lemon Hot Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "lemongrass",
+   "name": "Lemongrass",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "lime-basil",
+   "name": "Lime Basil",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "lollo-rossa",
+   "name": "Lollo Rossa",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "mammoth-basil",
+   "name": "Mammoth Basil",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "marietta-marigold",
+   "name": "Marietta Marigold",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "red-marietta-marigold",
+   "inStore": true
+  },
+  {
+   "id": "matilda",
+   "name": "Matilda",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "mini-broccoli",
+   "name": "Mini Broccoli",
+   "category": "vegetable",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "mini-cauliflower",
+   "name": "Mini Cauliflower",
+   "category": "vegetable",
+   "zone": "high",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "light",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "mini-cauliflower",
+   "inStore": true
+  },
+  {
+   "id": "mini-eggplant",
+   "name": "Mini Eggplant",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "mini-okra",
+   "name": "Mini Okra",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-fruiting",
+   "successionInferred": true,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "mini-pumpkin",
+   "name": "Mini Pumpkin",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-fruiting",
+   "successionInferred": true,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "mini-squash",
+   "name": "Mini Squash",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-fruiting",
+   "successionInferred": true,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "mint",
+   "name": "Mint",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "bountiful",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "mint",
+   "inStore": true
+  },
+  {
+   "id": "monte-carlo",
+   "name": "Monte Carlo",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "muir-lettuce",
+   "name": "Muir Lettuce",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "muir-lettuce",
+   "inStore": true
+  },
+  {
+   "id": "nasturtium",
+   "name": "Nasturtium",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "night-scented-stock",
+   "name": "Night-Scented Stock",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "oregano",
+   "name": "Oregano",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "light",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "oregano",
+   "inStore": true
+  },
+  {
+   "id": "peas",
+   "name": "Peas",
+   "category": "legume",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "generous",
+   "succession": "fast-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "peas",
+   "inStore": true
+  },
+  {
+   "id": "perpetual-spinach",
+   "name": "Perpetual Spinach",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "perpetual-spinach",
+   "inStore": true
+  },
+  {
+   "id": "pink-celery",
+   "name": "Pink Celery",
+   "category": "vegetable",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "pink-petunia",
+   "name": "Pink Petunia",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "poblano-pepper",
+   "name": "Poblano Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "portulaca-mix",
+   "name": "Portulaca Mix",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "purple-basil",
+   "name": "Purple Basil",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "purple-basil",
+   "inStore": true
+  },
+  {
+   "id": "purple-beans",
+   "name": "Purple Beans",
+   "category": "legume",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "purple-bok-choy",
+   "name": "Purple Bok Choy",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "purple-bok-choy",
+   "inStore": true
+  },
+  {
+   "id": "purple-campanula",
+   "name": "Purple Campanula",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "purple-campanula",
+   "inStore": true
+  },
+  {
+   "id": "purple-cayenne-pepper",
+   "name": "Purple Cayenne Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "purple-kohlrabi",
+   "name": "Purple Kohlrabi",
+   "category": "vegetable",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "light",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "purple-kohlrabi",
+   "inStore": true
+  },
+  {
+   "id": "purple-petunia",
+   "name": "Purple Petunia",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "bountiful",
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "purple-petunia",
+   "inStore": true
+  },
+  {
+   "id": "purple-snapdragon",
+   "name": "Purple Snapdragon",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "bountiful",
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "purple-snapdragon",
+   "inStore": true
+  },
+  {
+   "id": "purslane",
+   "name": "Purslane",
+   "category": "green",
+   "zone": "low",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "radicchio",
+   "name": "Radicchio",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "radio-calendula",
+   "name": "Radio Calendula",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "radio-calendula",
+   "inStore": true
+  },
+  {
+   "id": "red-amaranth",
+   "name": "Red Amaranth",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "red-amaranth",
+   "inStore": true
+  },
+  {
+   "id": "red-cherry-tomato",
+   "name": "Red Cherry Tomato",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "expert",
+   "yield": "bountiful",
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "cherry-tomatoes",
+   "inStore": true
+  },
+  {
+   "id": "red-hibiscus",
+   "name": "Red Hibiscus",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "red-impatiens",
+   "name": "Red Impatiens",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "red-mini-strawberries",
+   "name": "Red Mini Strawberries",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "bountiful",
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "mini-strawberries",
+   "inStore": true
+  },
+  {
+   "id": "red-mustard",
+   "name": "Red Mustard",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "fast-greens",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "red-mustard",
+   "inStore": true
+  },
+  {
+   "id": "red-oak-leaf-lettuce",
+   "name": "Red Oak Leaf Lettuce",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "red-romaine",
+   "name": "Red Romaine",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "red-sails-lettuce",
+   "name": "Red Sails Lettuce",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "red-sails",
+   "inStore": true
+  },
+  {
+   "id": "red-salad-bowl",
+   "name": "Red Salad Bowl",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "red-salad-bowl",
+   "inStore": true
+  },
+  {
+   "id": "red-sorrel",
+   "name": "Red Sorrel",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "red-sorrel",
+   "inStore": true
+  },
+  {
+   "id": "red-swiss-chard",
+   "name": "Red Swiss Chard",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "red-swiss-chard",
+   "inStore": true
+  },
+  {
+   "id": "red-tatsoi",
+   "name": "Red Tatsoi",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "red-tatsoi",
+   "inStore": true
+  },
+  {
+   "id": "romaine",
+   "name": "Romaine",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "romaine",
+   "inStore": true
+  },
+  {
+   "id": "rosemary",
+   "name": "Rosemary",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "light",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "rosemary",
+   "inStore": true
+  },
+  {
+   "id": "rouge-dhiver",
+   "name": "Rouge d'Hiver",
+   "category": "lettuce",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "sage",
+   "name": "Sage",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "sage",
+   "inStore": true
+  },
+  {
+   "id": "savory",
+   "name": "Savory",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "savory",
+   "inStore": true
+  },
+  {
+   "id": "scarlet-snapdragon",
+   "name": "Scarlet Snapdragon",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "shishito-pepper",
+   "name": "Shishito Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "shiso",
+   "name": "Shiso",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "sorrel",
+   "name": "Sorrel",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "stevia",
+   "name": "Stevia",
+   "category": "herb",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "stevia",
+   "inStore": true
+  },
+  {
+   "id": "stock-flower",
+   "name": "Stock Flower",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "stock-flower",
+   "inStore": true
+  },
+  {
+   "id": "sunflower",
+   "name": "Sunflower",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "light",
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "sunflower",
+   "inStore": true
+  },
+  {
+   "id": "sweet-marjoram",
+   "name": "Sweet Marjoram",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "sweet-marjoram",
+   "inStore": true
+  },
+  {
+   "id": "sweet-pepper",
+   "name": "Sweet Pepper",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": "expert",
+   "yield": "bountiful",
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": "sweet-peppers",
+   "inStore": true
+  },
+  {
+   "id": "sweet-thai-basil",
+   "name": "Sweet Thai Basil",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "sweet-thai-basil",
+   "inStore": true
+  },
+  {
+   "id": "tarragon",
+   "name": "Tarragon",
+   "category": "herb",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "tarragon",
+   "inStore": true
+  },
+  {
+   "id": "thai-eggplant",
+   "name": "Thai Eggplant",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "thyme",
+   "name": "Thyme",
+   "category": "herb",
+   "zone": "low",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "bountiful",
+   "succession": "long-greens-herbs",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "thyme",
+   "inStore": true
+  },
+  {
+   "id": "tokyo-bekana",
+   "name": "Tokyo Bekana",
+   "category": "green",
+   "zone": "high",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "tokyo-bekana",
+   "inStore": true
+  },
+  {
+   "id": "torenia",
+   "name": "Torenia",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "intermediate",
+   "yield": "bountiful",
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "torenia",
+   "inStore": true
+  },
+  {
+   "id": "viola",
+   "name": "Viola",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "violet-impatiens",
+   "name": "Violet Impatiens",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "bountiful",
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "violet-impatiens",
+   "inStore": true
+  },
+  {
+   "id": "wasabi-greens",
+   "name": "Wasabi Greens",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "watercress",
+   "name": "Watercress",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "watercress",
+   "inStore": true
+  },
+  {
+   "id": "wheatgrass",
+   "name": "Wheatgrass",
+   "category": "green",
+   "zone": "low",
+   "harvestMonths": [
+    1,
+    2
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "wheatgrass",
+   "inStore": true
+  },
+  {
+   "id": "white-kohlrabi",
+   "name": "White Kohlrabi",
+   "category": "vegetable",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    2
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-greens",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "white-petunia",
+   "name": "White Petunia",
+   "category": "flower",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "yellow-beans",
+   "name": "Yellow Beans",
+   "category": "legume",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "fast-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "yellow-cherry-tomato",
+   "name": "Yellow Cherry Tomato",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "large",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "yellow-mini-strawberry",
+   "name": "Yellow Mini Strawberry",
+   "category": "fruiting",
+   "zone": "high",
+   "harvestMonths": [
+    3,
+    4
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "long-fruiting",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  },
+  {
+   "id": "yellow-snapdragon",
+   "name": "Yellow Snapdragon",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": "intermediate",
+   "yield": "bountiful",
+   "succession": "flowers",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "yellow-snapdragon",
+   "inStore": true
+  },
+  {
+   "id": "yellow-swiss-chard",
+   "name": "Yellow Swiss Chard",
+   "category": "green",
+   "zone": "medium",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": false,
+   "careLevel": "beginner",
+   "yield": "generous",
+   "succession": "long-greens-herbs",
+   "successionInferred": false,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": "yellow-swiss-chard",
+   "inStore": true
+  },
+  {
+   "id": "zinnia",
+   "name": "Zinnia",
+   "category": "flower",
+   "zone": "high",
+   "harvestMonths": [
+    2,
+    3
+   ],
+   "harvestEstimated": true,
+   "careLevel": null,
+   "yield": null,
+   "succession": "flowers",
+   "successionInferred": true,
+   "size": "normal",
+   "placement": null,
+   "gardynHandle": null,
+   "inStore": false
+  }
+ ]
+}

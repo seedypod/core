@@ -1,8 +1,11 @@
-<p align="center">
-  <img src="web/public/favicon.svg" width="72" alt="" />
-</p>
-<h1 align="center">seedypod</h1>
-<p align="center"><strong>Truly own your Gardyn.</strong> Local, cloud-free control for Gardyn hydroponic towers.</p>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/public/brand/dark/horizontal.png" />
+    <source media="(prefers-color-scheme: light)" srcset="web/public/brand/light/horizontal.png" />
+    <img src="web/public/brand/light/horizontal.png" width="320" alt="seedypod" />
+  </picture>
+</h1>
+<p align="center"><strong>Your garden, your rules.</strong> seedypod replaces the Gardyn cloud with software on the tower's own Raspberry Pi: light, water, sensors and cameras on your network, Autopilot and camera growth analysis, an MCP server so AI agents can plan your pods, and HomeKit and Home Assistant built in.</p>
 <p align="center">
   <a href="https://github.com/seedypod/core/actions/workflows/test.yml"><img src="https://github.com/seedypod/core/actions/workflows/test.yml/badge.svg?branch=dev" alt="CI" /></a>
   <a href="https://github.com/seedypod/core/actions/workflows/rust.yml"><img src="https://github.com/seedypod/core/actions/workflows/rust.yml/badge.svg?branch=dev" alt="HAL (Rust)" /></a>
@@ -16,11 +19,15 @@
   <a href="https://seedypod.vercel.app">Live demo</a> ·
   <a href="https://seedypod.github.io/getting-started/">Get started</a> ·
   <a href="https://seedypod.github.io/core/">User guide</a> ·
+  <a href="https://seedypod.github.io/ios/">iPhone app</a> ·
   <a href="https://seedypod.github.io/developers/">Developer docs</a> ·
   <a href="https://github.com/seedypod/core/issues">Issues</a>
 </p>
+<p align="center">
+  <img src="docs/media/web-ui-home.webp" width="880" alt="The seedypod web UI's Home screen: the tower in 3D under its lit grow light, on day 19 of a grow with 19 pods ready to harvest (demo data)" />
+</p>
 
-A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seedypod replaces the cloud with software that runs on that Pi. There's no account and no telemetry, and nothing leaves your LAN unless you turn it on. It's a sibling of [sleepypod](https://github.com/sleepypod).
+A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seedypod replaces the cloud with software that runs on that Pi. There's no account and no telemetry, and nothing leaves your LAN unless you turn it on. It's a sibling of [sleepypod](https://sleepypod.github.io/).
 
 **No Gardyn? [Try the live demo](https://seedypod.vercel.app).** It runs the real web UI against a simulated tower in your browser.
 
@@ -35,29 +42,43 @@ A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seed
 
 - **Light and water:** light curves and pump cycles, with a 30-minute manual hold.
 - **Autopilot:** WHEN/IF/THEN rules over live readings. Rules run as dry-runs until you arm them, and a backtest shows what one would have done.
-- **Grow tracking:** grow cycles with reminders, a 30-pod layout, and camera captures with per-pod growth trends.
+- **Grow tracking:** grow cycles with reminders, the tower in 3D (pods colored by status and sized by measured growth, the tank's water level, the light bars at their level) or as a table, and camera captures with per-pod growth trends.
 - **Probes:** add pH, EC and water-temperature probes from the app, with guided calibration.
 - **Integrations:** Home Assistant over MQTT, MCP for agents, optional capture mirroring to S3-compatible storage, and dataset export.
+- **iPhone app:** the tower in 3D, pod cards, light, water and alerts, from [seedypod/ios](https://github.com/seedypod/ios). It finds core over Bonjour; see [the app's docs](https://seedypod.github.io/ios/).
 - **Wi-Fi setup:** hold the button for 10 seconds to start a setup hotspot.
 - **SD card care:** logs and swap stay in RAM, a meter shows the card's writes per day, and nightly backups go to your bucket. A dead card is a reflash plus **Welcome → Restore from a backup**.
 
-> **Status:** the software is complete and tested against the simulator, but it hasn't run on a real Gardyn yet. Confirming the pin map on hardware is the next step. See [`docs/hardware/pin-map.md`](docs/hardware/pin-map.md).
+> **Status:** running on a real Gardyn 3.0 (Pi Zero W) since 2026-11-06. Verified on that unit: both installers and seedypod OS, the grow light, the sensors, both cameras with image analysis, HomeKit pairing and the web UI. Not yet verified, because its tank is still empty: a pump run and the water-level reading against water. The cameras' USB hub still comes up on only some boots. See the [bring-up notes](docs/HANDOFF.md#7-real-unit-bring-up-2026-11-06) and the [hardware map](docs/hardware/pin-map.md).
 
 ## Install
 
-Back up the stock microSD card first, then follow [docs/INSTALLATION.md](docs/INSTALLATION.md). On a fresh Raspberry Pi OS:
+Back up the stock microSD card first, then follow [docs/INSTALLATION.md](docs/INSTALLATION.md). The quickest way is to [flash seedypod OS](docs/INSTALLATION.md#flash-seedypod-os-recommended), which has everything on it. On a fresh Raspberry Pi OS Lite, or to update, install the hardware daemon, then core:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install-hal | bash
 curl -fsSL https://raw.githubusercontent.com/seedypod/core/main/scripts/install | bash
 ```
 
+Both run on the original Pi Zero W that Gardyn ships and on a Pi Zero 2 W. Core prefers Node 24, which needs a 64-bit OS; on a 32-bit Pi, such as the Zero W, the installer uses Node 22 instead. Node 22 gets security fixes until April 2027, so a Zero 2 W (about $15, a drop-in swap) on 64-bit Raspberry Pi OS is the long-term setup. `scripts/install --check` says which Node a machine gets; [Which Pi](docs/INSTALLATION.md#which-pi) has the details.
+
 ## Development
 
-No hardware is needed. `pnpm dev` runs core against a simulated HAL.
+No hardware is needed. `pnpm dev` runs core against a simulated HAL. Use the Node in `.node-version` (24); CI also tests on Node 22, the version 32-bit Pis run, so keep to APIs both have.
+
+The logo and icon PNGs under `web/public/brand/` are stored with [Git LFS](https://git-lfs.com). Install it before you clone, or the images check out as small text pointer files and the app shows broken logos. A unit doesn't need LFS: `scripts/install` downloads a tarball that CI builds with the images in it.
+
+```sh
+brew install git-lfs     # or your package manager
+git lfs install          # once per machine
+git lfs pull             # in a clone made without LFS
+```
 
 ```sh
 pnpm install
 pnpm dev                 # core on :3000, web on :5173
+API_TARGET=http://seedypod.local:3000 pnpm dev:web   # the web UI against a real unit
+API_TARGET=http://seedypod.local:3000 API_KEY=… pnpm dev:web   # … one with an API key (sent by the dev proxy, never bundled)
 pnpm test                # Vitest
 pnpm hal:test            # cargo test
 pnpm lint && pnpm tsc

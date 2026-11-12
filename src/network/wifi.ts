@@ -38,6 +38,14 @@ const SETUP_CON = 'seedypod-setup'
 const WIFI_CON = 'seedypod-wifi'
 /** NetworkManager's address for the host side of a shared connection. */
 const SETUP_URL = 'http://10.42.0.1:3000/wifi'
+/**
+ * `status` costs two nmcli spawns, about a second on a Pi Zero W's one core,
+ * and System › Status, the sidebar and the Wi-Fi screen all ask on timers. An
+ * answer this young is reused as it is.
+ */
+const STATUS_FRESH_MS = 15_000
+/** Older than fresh but younger than this, it is still served while a new read runs behind it, so a poll never waits on nmcli. */
+const STATUS_MAX_AGE_MS = 120_000
 
 export function validateCredentials(ssid: string, password?: string): string | null {
   const bytes = new TextEncoder().encode(ssid).length
@@ -97,6 +105,8 @@ export class NmcliWifi implements Wifi {
   private setupUntil: Date | null = null
   private setupTimer: unknown = null
   private lastError: string | null = null
+  private known: { at: number, status: WifiStatus } | null = null
+  private reading: Promise<WifiStatus> | null = null
   /** The background switch started by `connect`, for tests. */
   pending: Promise<void> = Promise.resolve()
 
@@ -123,6 +133,34 @@ export class NmcliWifi implements Wifi {
   }
 
   async status(): Promise<WifiStatus> {
+    const known = this.known
+    const age = known ? this.now().getTime() - known.at : Infinity
+    if (known && age < STATUS_FRESH_MS) return known.status
+    const reading = this.read()
+    return known && age < STATUS_MAX_AGE_MS ? known.status : reading
+  }
+
+  /** One read at a time; a read overtaken by `forget` leaves nothing behind. */
+  private read(): Promise<WifiStatus> {
+    if (this.reading) return this.reading
+    const reading: Promise<WifiStatus> = this.readStatus().then((status) => {
+      if (this.reading === reading) {
+        this.reading = null
+        this.known = { at: this.now().getTime(), status }
+      }
+      return status
+    })
+    this.reading = reading
+    return reading
+  }
+
+  /** Core just changed the network, so what it knew about it no longer holds. */
+  private forget(): void {
+    this.known = null
+    this.reading = null
+  }
+
+  private async readStatus(): Promise<WifiStatus> {
     let dev: string
     try {
       dev = await this.o.run(['-t', '-f', 'GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS', 'device', 'show', this.ifname])
@@ -160,6 +198,7 @@ export class NmcliWifi implements Wifi {
     this.setupUntil = new Date(this.now().getTime() + minutes * 60_000)
     // Never leave an open hotspot up: it closes on its own and the unit rejoins its saved network.
     this.setupTimer = this.schedule(() => void this.stopSetup().catch(() => undefined), minutes * 60_000)
+    this.forget()
     return this.status()
   }
 
@@ -167,6 +206,7 @@ export class NmcliWifi implements Wifi {
     this.clearSetupTimer()
     await this.o.run(['connection', 'down', SETUP_CON]).catch(() => '')
     await this.o.run(['device', 'connect', this.ifname]).catch(() => '')
+    this.forget()
     return this.status()
   }
 
@@ -177,6 +217,7 @@ export class NmcliWifi implements Wifi {
     await this.o.run(['connection', 'add', 'type', 'wifi', 'ifname', this.ifname, 'con-name', WIFI_CON, 'autoconnect', 'yes', 'ssid', ssid,
       ...(password ? ['wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.psk', password] : [])])
     this.lastError = null
+    this.forget()
     this.pending = new Promise<void>((resolve) => {
       this.schedule(() => {
         void (async () => {
@@ -190,6 +231,7 @@ export class NmcliWifi implements Wifi {
             this.lastError = `couldn't join ${ssid}: ${(e as Error).message}`
             await this.startSetup().catch(() => undefined)
           }
+          this.forget()
           resolve()
         })()
       }, this.o.switchDelayMs ?? 2000)

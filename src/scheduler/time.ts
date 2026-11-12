@@ -28,6 +28,19 @@ export function localTime(now: Date, timezone: string): LocalTime {
   }
 }
 
+/** The zone's short name at `now`, as a clock prints it: PST, EDT, UTC, GMT+5:30. */
+export function zoneAbbr(now: Date, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'short' }).formatToParts(now).find(p => p.type === 'timeZoneName')?.value ?? timezone
+  }
+  catch {
+    return 'UTC'
+  }
+}
+
+/** The zone this process runs in: a fallback until the unit's is known. */
+export const systemZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
 export function dayEnabled(mask: number, weekday: number): boolean {
   return (mask & (1 << weekday)) !== 0
 }

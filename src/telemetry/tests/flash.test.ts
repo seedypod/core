@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MemoryStore } from '../../store/memory'
 import { FlashMeter, SECTOR_BYTES, sectorsWritten } from '../flash'
-import { nodeFlashSource } from '../flashSource'
+import { nodeDiskUsage, nodeFlashSource } from '../flashSource'
 
 const STAT = '/sys/block/mmcblk0/stat'
 // reads completed, merged, sectors read, ms reading, writes completed, merged, sectors written, …
@@ -41,7 +41,33 @@ describe('nodeFlashSource', () => {
   })
 })
 
+describe('nodeDiskUsage', () => {
+  it('reads used and free space off statfs, free being what an unprivileged writer gets', () => {
+    const statfs = (() => ({ bsize: 4096, blocks: 1000, bfree: 300, bavail: 250 })) as never
+    expect(nodeDiskUsage('/data', statfs)()).toEqual({ usedBytes: 700 * 4096, freeBytes: 250 * 4096 })
+  })
+
+  it('is null when the directory cannot be stat-ed', () => {
+    expect(nodeDiskUsage('/no/such/dir/for/seedypod')()).toBeNull()
+  })
+
+  it('stats a real directory', () => {
+    const d = nodeDiskUsage('.')()
+    expect(d?.freeBytes).toBeGreaterThan(0)
+    expect(d?.usedBytes).toBeGreaterThan(0)
+  })
+})
+
 describe('FlashMeter', () => {
+  it('reports disk space with or without the write counter', () => {
+    const disk = () => ({ usedBytes: 10, freeBytes: 90 })
+    expect(new FlashMeter({ store: new MemoryStore(), source: null, disk }).status()).toMatchObject({ available: false, usedBytes: 10, freeBytes: 90 })
+    expect(new FlashMeter({ store: new MemoryStore(), source: null }).status()).toMatchObject({ usedBytes: null, freeBytes: null })
+    const store = new MemoryStore()
+    const source = { statPath: STAT, read: (p: string) => (p === STAT ? stat(8) : null), uptimeS: () => 60 }
+    expect(new FlashMeter({ store, source, disk }).status()).toMatchObject({ available: true, usedBytes: 10, freeBytes: 90 })
+  })
+
   it('stores the bytes written between samples', () => {
     const r = rig({ sectors: 1000 })
     expect(r.meter.sample()).toMatchObject({ sectors: 1000, bytes: 0 })

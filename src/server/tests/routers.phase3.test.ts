@@ -56,10 +56,27 @@ describe('phase 3 routers', () => {
   it('camera capture surfaces a missing camera as SERVICE_UNAVAILABLE and lists captures with URLs', async () => {
     const { c, hal } = caller()
     await expect(c.camera.capture({ camera: 'upper' })).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' })
-    hal.captureStill = async () => new Uint8Array(4096)
+    const still = new Uint8Array(4096)
+    still.set([0xFF, 0xD8])
+    still.set([0xFF, 0xD9], 4094)
+    hal.captureStill = async () => still
     const cap = await c.camera.capture({ camera: 'lower' })
     expect(cap.url).toMatch(/^\/api\/captures\/lower-.*\.jpg$/)
     expect(await c.camera.list({ camera: 'lower', limit: 10 })).toHaveLength(1)
+    expect(await c.camera.get({ id: cap.id })).toEqual(cap)
+    await expect(c.camera.get({ id: 'pruned' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('takes a pod-ID still on demand without adding a capture (#224)', async () => {
+    const { c, hal } = caller()
+    await expect(c.camera.capturePodId({ camera: 'upper' })).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' })
+    const still = new Uint8Array(9000)
+    still.set([0xFF, 0xD8])
+    still.set([0xFF, 0xD9], 8998)
+    hal.captureFull = async () => still
+    const got = await c.camera.capturePodId({ camera: 'upper' })
+    expect(got).toMatchObject({ camera: 'upper', bytes: 9000, url: '/api/camera/upper/podid.jpg' })
+    expect(await c.camera.list({ limit: 10 })).toEqual([])
   })
 
   it('telemetry history and light hours', async () => {

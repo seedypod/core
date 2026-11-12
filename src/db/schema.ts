@@ -4,6 +4,7 @@
  * biometrics.db only if it grows.
  */
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import type { RegionCalibration } from '../vision/regions'
 
 export const deviceSettings = sqliteTable('device_settings', {
   id: integer().primaryKey().default(1),
@@ -28,12 +29,19 @@ export const deviceSettings = sqliteTable('device_settings', {
   mqttTlsEnabled: integer({ mode: 'boolean' }).notNull().default(false),
   mqttTlsInsecure: integer({ mode: 'boolean' }).notNull().default(false),
   captureIntervalMin: integer().notNull().default(60),
+  telemetryFlushMin: integer().notNull().default(5),
   /** Analyser whose green fraction drives pod trends (ADR-0019). */
   primaryAnalyzer: text().notNull().default('green-threshold'),
   /** Store large analyser outputs (masks) in the blob sink. */
   analysisArtifacts: integer({ mode: 'boolean' }).notNull().default(false),
+  /** Move the pump cycles to the next growth stage's watering preset as the plants age. */
+  followGrowCycle: integer({ mode: 'boolean' }).notNull().default(true),
+  /** Light curves Your schedules turned off for a schedule's light preset, to turn back on (ADR-0030). */
+  libraryLightsOff: text({ mode: 'json' }).$type<string[]>(),
   /** Bearer token for POST /api/analyses/results; empty = ingest off. */
   analysisIngestToken: text().notNull().default(''),
+  /** JSON: pod boxes moved per camera and slot, as fractions of the frame (#143); null = measured defaults. */
+  podRegions: text({ mode: 'json' }).$type<RegionCalibration>(),
   /** Opt-in S3-compatible mirror for stills and artifacts; unset = off. */
   mirrorEndpoint: text(),
   mirrorBucket: text(),
@@ -43,6 +51,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   mirrorSecretAccessKey: text(),
   /** Autopilot kill switch (ADR-0020): off stops every rule and drops their light leases. */
   autopilotEnabled: integer({ mode: 'boolean' }).notNull().default(true),
+  /** HomeKit bridge (ADR 0023): off by default; set through homekit.setEnabled once the bridge started. */
+  homekitEnabled: integer({ mode: 'boolean' }).notNull().default(false),
   /** Off on a new database so the first run opens on Welcome (ADR-0021); databases from before it migrate as set up. */
   setupComplete: integer({ mode: 'boolean' }).notNull().default(true),
   updatedAt: text().notNull(),
@@ -90,6 +100,18 @@ export const growCycles = sqliteTable('grow_cycles', {
   notes: text().notNull().default(''),
   /** Reminders already issued for this cycle, JSON string[]. */
   issued: text().notNull().default('[]'),
+  /** The grow protocol (ADR-0030); null until germination ends, chosen by the planted crops. */
+  protocolId: text(),
+  /** Days added to days-since-sowing for the protocol day: Advance and Release move it. */
+  shiftDays: integer().notNull().default(0),
+  holdStageId: text(),
+  holdSince: text(),
+  thenKind: text({ enum: ['stay', 'schedule', 'remind'] }).notNull().default('stay'),
+  thenScheduleId: text(),
+  /** When the chosen Then fired; choosing again clears it. */
+  thenDoneAt: text(),
+  /** The day each stage began, JSON { stageId: YYYY-MM-DD }, kept when Advance or Release move the clock. */
+  stageStarts: text().notNull().default('{}'),
 })
 
 export const pods = sqliteTable('pods', {
@@ -98,6 +120,28 @@ export const pods = sqliteTable('pods', {
   plantedAt: text(),
   status: text({ enum: ['empty', 'seeded', 'growing', 'harvest', 'attention'] }).notNull().default('empty'),
   notes: text().notNull().default(''),
+  updatedAt: text().notNull(),
+  /** When the status last changed, for "ready for 2 d". */
+  statusSince: text(),
+  /** The last cut (ADR-0022): camera readiness counts only photos after it. */
+  lastHarvestAt: text(),
+})
+
+/**
+ * Optional per-crop harvest knowledge (ADR-0022), keyed by the plant's name in
+ * lower case. Entered by hand or filled in by an agent over MCP; the camera's
+ * estimate works without any.
+ */
+export const plantProfiles = sqliteTable('plant_profiles', {
+  key: text().primaryKey(),
+  name: text().notNull(),
+  /** Harvest window, days from planting. */
+  harvestMinDays: integer(),
+  harvestMaxDays: integer(),
+  /** Leaf cover (green fraction, 0–1) at which the plant is ready to cut. */
+  targetCover: real(),
+  notes: text().notNull().default(''),
+  source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
   updatedAt: text().notNull(),
 })
 
@@ -165,6 +209,45 @@ export const analysisResults = sqliteTable('analysis_results', {
   index('analysis_results_series').on(t.analyzer, t.metric, t.slot, t.ts),
 ])
 
+/**
+ * What the grower says each pod shows in a capture (#184): the ground truth a
+ * trained pod classifier learns from (ADR-0019). One label per capture and pod;
+ * relabelling replaces it. Rows outlive the capture's pruning, so a season of
+ * labels survives on a mirrored unit.
+ */
+export const podLabels = sqliteTable('pod_labels', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  captureId: text().notNull(),
+  /** Capture timestamp and camera, denormalised so the export's window never joins. */
+  ts: text().notNull(),
+  camera: text({ enum: ['upper', 'lower'] }).notNull(),
+  slot: integer().notNull(),
+  label: text({ enum: ['empty', 'seeded', 'sprouted', 'growing', 'ready', 'unhealthy'] }).notNull(),
+  labelledAt: text().notNull(),
+  /** The pod's plant and sowing date when it was first labelled, so its history keeps them after a replant. */
+  plant: text(),
+  plantedAt: text(),
+}, t => [
+  uniqueIndex('pod_labels_key').on(t.captureId, t.slot),
+  index('pod_labels_ts').on(t.ts),
+])
+
+/** Owner-confirmed yCube dot code → plant pairs (#224). Unconfirmed pairs are never stored. */
+export const podCodes = sqliteTable('pod_codes', {
+  code: text().primaryKey(),
+  plant: text().notNull(),
+  confirmedAt: text().notNull(),
+})
+
+/** The latest dot-code read of each pod, from its camera's last pod-ID still (#224). */
+export const podCodeReads = sqliteTable('pod_code_reads', {
+  slot: integer().primaryKey(),
+  camera: text({ enum: ['upper', 'lower'] }).notNull(),
+  code: text(),
+  confidence: real().notNull(),
+  ts: text().notNull(),
+})
+
 /** Autopilot rules (ADR-0020); the AST lives in JSON columns validated by zod at the API. */
 export const automations = sqliteTable('automations', {
   id: integer().primaryKey({ autoIncrement: true }),
@@ -188,3 +271,65 @@ export const automationRuns = sqliteTable('automation_runs', {
   outcome: text({ enum: ['fired', 'skipped', 'clamped', 'dry_run', 'refused', 'error'] }).notNull(),
   detail: text().notNull().default('{}'),
 }, t => [index('automation_runs_rule_time').on(t.automationId, t.firedAt)])
+
+/** Plants added to the planner catalog on this unit (#130); Gardyn's built-in ones live in src/plants/catalog.json. */
+export const customPlants = sqliteTable('custom_plants', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  category: text({ enum: ['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce'] }).notNull(),
+  zone: text({ enum: ['high', 'medium', 'low'] }).notNull(),
+  /** First harvest window, months after starting the yCube. */
+  harvestMinMonths: integer().notNull(),
+  harvestMaxMonths: integer().notNull(),
+  careLevel: text({ enum: ['beginner', 'intermediate', 'expert'] }),
+  size: text({ enum: ['large', 'normal'] }).notNull().default('normal'),
+  succession: text({ enum: ['fast-greens', 'long-greens-herbs', 'fast-fruiting', 'long-fruiting', 'flowers'] }).notNull(),
+  source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+})
+
+/** Your schedules (ADR-0030): named sets of pump cycles, with a light preset, to switch between. */
+export const scheduleLibrary = sqliteTable('schedule_library', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  /** JSON { minute, durationS, days }[]. */
+  cycles: text().notNull().default('[]'),
+  lightPresetId: text(),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+  lastUsedAt: text(),
+})
+
+/** What was done to the tank (ADR-0029): fed, topped off, refreshed, pH adjusted. */
+export const tankActions = sqliteTable('tank_actions', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  /** When it was done, which may be before it was logged. */
+  ts: text().notNull(),
+  kind: text({ enum: ['feed', 'top_off', 'refresh', 'ph_down', 'ph_up', 'clean', 'trim_roots', 'thin', 'other'] }).notNull(),
+  amount: real(),
+  unit: text({ enum: ['tsp', 'tbsp', 'mL', 'L', 'gal', 'g'] }),
+  product: text(),
+  note: text().notNull().default(''),
+  source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
+  createdAt: text().notNull(),
+}, t => [index('tank_actions_ts').on(t.ts)])
+
+/** Saved pod plans (src/plants/planner.ts): layout and sowing waves as JSON. */
+export const plans = sqliteTable('plans', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  model: text({ enum: ['home', 'studio', 'nursery'] }).notNull(),
+  mode: text({ enum: ['staggered', 'batch'] }).notNull().default('staggered'),
+  /** JSON: { plantId, count }[] */
+  request: text().notNull(),
+  /** JSON: PlanResult */
+  layout: text().notNull(),
+  /** JSON: SowingWave[] */
+  sowing: text().notNull(),
+  createdAt: text().notNull(),
+  updatedAt: text().notNull(),
+  appliedAt: text(),
+  /** Sow reminders already raised, JSON string[]. */
+  issued: text().notNull().default('[]'),
+})

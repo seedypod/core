@@ -27,7 +27,7 @@ export function describeExpr(e: Expr, labels: Labels): string {
 
 function unitOf(e: Expr, labels: Labels): string {
   const u = e.kind === 'signal' || e.kind === 'window' ? labels(e.signal)?.unit : undefined
-  return u && !['1/0', '0–1', 'per capture', 'pH'].includes(u) ? ` ${u}` : ''
+  return u && !['1/0', '0–1', 'per capture', 'pH'].includes(u) ? (u === '%' || u.startsWith('°') ? u : ` ${u}`) : ''
 }
 
 export function describeCondition(c: Condition, labels: Labels): string {
@@ -55,11 +55,11 @@ export function describeAction(a: Action, labels: Labels): string {
   switch (a.kind) {
     case 'notify': return `notify “${a.message}”`
     case 'setLight': {
-      const band = a.clamp ? ` (kept within ${a.clamp.min}–${a.clamp.max} %)` : ''
+      const band = a.clamp ? ` (kept within ${a.clamp.min}–${a.clamp.max}%)` : ''
       const hold = a.mode === 'one-shot' || (a.mode === undefined && a.holdMinutes) ? `, holding ${a.holdMinutes ?? 60} min` : ''
-      return `set the light to ${describeExpr(a.level, labels)} %${band}${hold}`
+      return `set the light to ${describeExpr(a.level, labels)}%${band}${hold}`
     }
-    case 'runPump': return `run the pump for ${describeExpr(a.durationS, labels)} s${a.level ? ` at ${a.level} %` : ''}`
+    case 'runPump': return `run the pump for ${describeExpr(a.durationS, labels)} s${a.level ? ` at ${a.level}%` : ''}`
     case 'stopPump': return 'stop the pump'
     case 'dose': return `run doser ${a.doser.slice(-1)} for ${describeExpr(a.durationS, labels)} s`
     case 'setPodStatus': return `mark pod ${a.slot} as ${a.status}`

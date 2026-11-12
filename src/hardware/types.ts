@@ -37,6 +37,15 @@ export interface HalClient {
   /** Remove an app-added probe; sensors from hal.toml are refused. */
   removeSensor(kind: string, addr: number): Promise<DeviceResult>
   captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array>
+  /**
+   * A still at the sensor's full size (2592×1944), where the yCube dot codes
+   * are readable (#224). Occasional and on demand only; an older hald has none.
+   */
+  captureFull?(camera: 'upper' | 'lower'): Promise<Uint8Array>
+  /** Frames the last still from this camera refused as damaged, retries included. */
+  damagedFrames?(camera: 'upper' | 'lower'): number
+  /** Of the boots on record, how many the USB hub didn't come up by itself. */
+  hubBoots?(): { missing: number, total: number } | null
   subscribe(listener: (event: HalEvent) => void): Unsubscribe
   close(): Promise<void>
 }

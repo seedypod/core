@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DeviceEntry, DeviceInventory, DeviceKindInfo } from '@/src/hardware/contract'
 import { formatReading, hexAddr } from '@/src/lib/sensorMeta'
 import { CalibrationWizard } from '../CalibrationWizard'
-import { SensorsPage } from '../SensorsPage'
+import { ridgeTicks, SensorsPage, sparkPoints } from '../SensorsPage'
+import type * as Chart3DModule from '@/src/components/charts/viz3d/Chart3D'
 
 // The pages only need the hooks' shape; each test sets what the queries return and
 // what the mutations do, so the trpc client itself stays out of the picture.
 // Hoisted because vi.mock's factory runs before the rest of this module.
-const { q, mutations, mutationError, invalidate, useMutation } = vi.hoisted(() => {
+const { q, mutations, mutationError, invalidate, useMutation, history } = vi.hoisted(() => {
+  const history = { calls: [] as unknown[], data: [{ ts: '2026-10-31T10:00:00Z', value: 21 }, { ts: '2026-10-31T11:00:00Z', value: 23 }] as Array<{ ts: string, value: number }>, error: null as Error | null }
   const q = { devices: { data: undefined as DeviceInventory | undefined }, latest: { data: undefined as Record<string, { value: number, unit: string }> | undefined } }
   const mutations = { addSensor: vi.fn(), removeSensor: vi.fn(), calibrate: vi.fn() }
   const mutationError = { current: null as Error | null }
@@ -26,14 +28,38 @@ const { q, mutations, mutationError, invalidate, useMutation } = vi.hoisted(() =
       }
     },
   })
-  return { q, mutations, mutationError, invalidate, useMutation }
+  return { q, mutations, mutationError, invalidate, useMutation, history }
+})
+
+// The ridgeline's 3D chart as a stub that shows what it was handed, or gives up as a browser without WebGL would.
+const ridge = vi.hoisted(() => ({ fail: false }))
+vi.mock('@/src/components/charts/viz3d/Chart3D', async (orig) => {
+  const real = await orig<typeof Chart3DModule>()
+  const { useEffect } = await import('react')
+  return {
+    ...real,
+    Chart3D: ({ status, data, onUnavailable }: { status: string, data: { series: Array<{ label: string, current: string, values: number[] }> } | null, onUnavailable?: () => void }) => {
+      useEffect(() => {
+        if (ridge.fail) onUnavailable?.()
+      }, [onUnavailable])
+      return <div data-testid="ridge" data-state={status}>{(data?.series ?? []).map(s => `${s.label}=${s.current}`).join('|')}</div>
+    },
+  }
 })
 
 vi.mock('@/src/utils/trpc', () => ({
   trpc: {
+    useQueries: (fn: (t: unknown) => unknown[]) => fn({ telemetry: { history: (input: unknown) => input } }).map((input) => {
+      history.calls.push(input)
+      return { data: history.data, error: history.error, dataUpdatedAt: Date.parse('2026-10-31T12:00:00Z'), refetch: vi.fn() }
+    }),
     useUtils: () => ({ devices: { invalidate }, system: { invalidate }, sensors: { invalidate } }),
     devices: { list: { useQuery: () => q.devices }, addSensor: { useMutation: useMutation('addSensor') }, removeSensor: { useMutation: useMutation('removeSensor') } },
     sensors: { latest: { useQuery: () => q.latest }, calibrate: { useMutation: useMutation('calibrate') } },
+    telemetry: { history: { useQuery: (input: unknown) => {
+      history.calls.push(input)
+      return { data: history.data, isLoading: false, error: history.error }
+    } } },
   },
 }))
 
@@ -60,6 +86,9 @@ beforeEach(() => {
   mutationError.current = null
   for (const m of Object.values(mutations)) m.mockReset()
   invalidate.mockReset()
+  history.calls = []
+  history.data = [{ ts: '2026-10-31T10:00:00Z', value: 21 }, { ts: '2026-10-31T11:00:00Z', value: 23 }]
+  history.error = null
 })
 afterEach(cleanup)
 
@@ -80,14 +109,48 @@ describe('sensorMeta', () => {
 describe('SensorsPage', () => {
   it('lists every device with its source, status and latest reading', () => {
     render(<SensorsPage />)
-    expect(screen.getAllByText('Built-in')).toHaveLength(2)
-    expect(screen.getAllByText('Added')).toHaveLength(1)
+    expect(screen.getByText('3 devices · 3 readings · 1 not found')).toBeTruthy()
+    expect(screen.getAllByText('built-in')).toHaveLength(2)
+    expect(screen.getAllByText('added')).toHaveLength(1)
+    expect(screen.getByText('not found')).toBeTruthy()
     expect(screen.getByText('no device at 0x40')).toBeTruthy()
-    expect(screen.getByText('6.1')).toBeTruthy()
+    // Each reading shows in its tile, grouped, with the part that reports it.
+    expect(screen.getAllByText('6.1')).toHaveLength(2)
     expect(screen.getByText('22.5°C')).toBeTruthy()
+    expect(screen.getByText('22.5°C · —')).toBeTruthy()
+    expect(screen.getByText('Environment')).toBeTruthy()
+    expect(screen.getByText('Water quality')).toBeTruthy()
+    expect(screen.getByText('Air temperature')).toBeTruthy()
+    expect(screen.getByText('EZO-PH')).toBeTruthy()
+    expect(screen.getAllByText('DHT20')).toHaveLength(2)
+    expect(screen.getByRole('img', { name: 'pH' })).toBeTruthy()
+    expect(screen.getAllByText('min 21')).toHaveLength(3)
     // Only app-added probes can be calibrated or removed.
     expect(screen.getAllByText('Remove')).toHaveLength(1)
     expect(screen.getAllByText('Calibrate')).toHaveLength(1)
+  })
+
+  it('reloads every tile\'s history for the chosen range', () => {
+    render(<SensorsPage />)
+    expect(history.calls.at(-1)).toEqual({ sensor: 'ph', hours: 24, maxPoints: 144 })
+    fireEvent.click(screen.getByRole('tab', { name: '7d' }))
+    expect(history.calls.at(-1)).toEqual({ sensor: 'ph', hours: 168, maxPoints: 336 })
+  })
+
+  it('says when a window has no history or the history fails', () => {
+    history.data = []
+    render(<SensorsPage />)
+    expect(screen.getAllByText('Nothing recorded in this window.')).toHaveLength(3)
+    cleanup()
+    history.error = new Error('db locked')
+    render(<SensorsPage />)
+    expect(screen.getAllByText('Couldn\'t load the history: db locked')).toHaveLength(3)
+  })
+
+  it('reports all ready when every device answers', () => {
+    q.devices.data = { sensors: [builtIn], addable: [] }
+    render(<SensorsPage />)
+    expect(screen.getByText('1 device · 2 readings · all ready')).toBeTruthy()
   })
 
   it('says so while the daemon has not reported', () => {
@@ -137,6 +200,60 @@ describe('SensorsPage', () => {
     fireEvent.click(screen.getByText('Calibrate'))
     expect(screen.getByRole('dialog', { name: 'Calibrate pH probe (Atlas EZO)' })).toBeTruthy()
     expect(screen.getByText('Step 1 of 2')).toBeTruthy()
+  })
+})
+
+describe('SensorsPage with WebGL', () => {
+  beforeEach(() => {
+    vi.stubGlobal('WebGLRenderingContext', function WebGLRenderingContext() {})
+    ridge.fail = false
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('draws every live reading as one ridgeline in place of the tiles\' sparklines', () => {
+    render(<SensorsPage />)
+    const card = screen.getByRole('region', { name: 'Readings' })
+    expect(card.textContent).toContain('3 sensors · each in its own range')
+    expect(screen.getByTestId('ridge').getAttribute('data-state')).toBe('ready')
+    expect(screen.getByTestId('ridge').textContent).toBe('Air temperature=22.5°C|Humidity=—|pH=6.1')
+    expect(screen.queryByRole('img', { name: 'pH' })).toBeNull()
+    expect(screen.getAllByText('min 21')).toHaveLength(3)
+  })
+
+  it('says it is loading, then that nothing was recorded', () => {
+    history.data = undefined as unknown as typeof history.data
+    render(<SensorsPage />)
+    expect(screen.getByTestId('loading-line')).toBeTruthy()
+    expect(screen.getByTestId('ridge').getAttribute('data-state')).toBe('loading')
+    cleanup()
+    history.data = []
+    render(<SensorsPage />)
+    expect(screen.getByTestId('ridge').getAttribute('data-state')).toBe('empty')
+  })
+
+  it('gives the sparklines back when the 3D chart can\'t run', () => {
+    ridge.fail = true
+    render(<SensorsPage />)
+    expect(screen.queryByRole('region', { name: 'Readings' })).toBeNull()
+    expect(screen.getByRole('img', { name: 'pH' })).toBeTruthy()
+  })
+})
+
+describe('ridgeTicks', () => {
+  it('labels the window\'s start, middle and now in hours or days', () => {
+    expect(ridgeTicks(24).map(t => t.label)).toEqual(['−24h', '−12h', 'now'])
+    expect(ridgeTicks(168).map(t => t.label)).toEqual(['−7d', '−3.5d', 'now'])
+    expect(ridgeTicks(6).map(t => t.at)).toEqual([0, 0.5, 1])
+  })
+})
+
+describe('sparkPoints', () => {
+  it('spans the box and keeps a flat line inside it', () => {
+    expect(sparkPoints([1])).toBe('')
+    expect(sparkPoints([0, 10])).toBe('0,46 200,4')
+    expect(sparkPoints([5, 5, 5])).toBe('0,46 100,46 200,46')
   })
 })
 

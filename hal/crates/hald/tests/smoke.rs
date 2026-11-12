@@ -78,6 +78,43 @@ fn check_validates_and_reports_unknown_kinds() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["ok"], true);
     assert_eq!(v["actuators"], serde_json::json!(["light", "pump"]));
+    // The pump current guard ships off until a baseline is measured.
+    assert!(v["limits"]["pump_dry_current_a"].is_null());
+    assert_eq!(v["limits"]["pump_dry_after_s"], 5);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_pump_trace_file_is_opened_up_front_and_a_bad_path_is_refused() {
+    let dir = tmp("trace");
+    let cfg = dir.join("hal.toml");
+    std::fs::write(
+        &cfg,
+        format!(
+            "unit_id = \"smoke\"\nhttp_bind = \"127.0.0.1:0\"\nmdns = false\ntelemetry_interval_s = 1\nstate_dir = {:?}\n",
+            dir.join("state")
+        ),
+    )
+    .unwrap();
+    let trace = dir.join("pump-trace.csv");
+    let out = hald()
+        .args(["--sim", "--stdout", "--ticks", "2", "--config"])
+        .arg(&cfg)
+        .arg("--pump-trace")
+        .arg(&trace)
+        .output()
+        .expect("hald runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(trace.exists());
+    let out = hald()
+        .args(["--sim", "--stdout", "--ticks", "1", "--config"])
+        .arg(&cfg)
+        .arg("--pump-trace")
+        .arg(dir.join("no-such-dir").join("pump-trace.csv"))
+        .output()
+        .expect("hald runs");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("pump trace"));
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -111,6 +148,21 @@ fn invalid_config_is_refused_before_starting() {
 }
 
 #[test]
+fn usb_recovery_can_be_turned_off_and_does_nothing_then() {
+    let dir = tmp("usb");
+    let cfg = dir.join("hal.toml");
+    std::fs::write(&cfg, "[usb_recovery]\nenabled = false\n").unwrap();
+    let out = hald()
+        .args(["--usb-recover", "--config"])
+        .arg(&cfg)
+        .output()
+        .expect("hald runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("disabled"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn camera_rules_are_printed_for_explicit_ports_and_bad_input_is_refused() {
     let out = hald()
         .args(["--camera-rules", "upper=1-1.3:1.0", "lower=1-1.2:1.0"])
@@ -125,9 +177,21 @@ fn camera_rules_are_printed_for_explicit_ports_and_bad_input_is_refused() {
         .output()
         .expect("hald runs");
     assert!(!bad.status.success());
+    let bad = hald()
+        .args(["--camera-rules", "upper=bcm2835-codec"])
+        .output()
+        .expect("hald runs");
+    assert!(!bad.status.success());
     let listed = hald().arg("--list-cameras").output().expect("hald runs");
     assert!(listed.status.success());
     assert!(serde_json::from_slice::<serde_json::Value>(&listed.stdout)
         .unwrap()
         .is_array());
+}
+
+#[test]
+fn syncing_camera_rules_with_no_cameras_changes_nothing() {
+    let out = hald().arg("--sync-camera-rules").output().expect("hald runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("names are pinned when both appear"));
 }

@@ -11,8 +11,9 @@ import { cn } from '@/lib/utils'
      alarm snoozed). No dismiss; it goes away when the state ends.
    - action: inline banner that needs the user (pump stall, alarm active).
      Resolved by its action, or an X once seen.
-   - success / info: a toast that only confirms something finished. See toast.tsx.
-   Toasts never carry actions; if the user has to act it is an action banner. */
+   - success / info: a toast that says something just happened. See toast.tsx.
+   A toast carries at most an optional View or Undo; if the user has to act it
+   is an action banner (or a Needs you row). */
 export type NoticeTone = 'cool' | 'ok' | 'warn' | 'danger'
 export type NoticeKind = 'progress' | 'action' | 'success' | 'info'
 

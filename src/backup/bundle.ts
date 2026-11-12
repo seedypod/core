@@ -1,7 +1,7 @@
 /**
  * The backup bundle (ADR-0021): `seedypod-backup-<unit>-<date>.tar.gz` holding
  * the database, `hal.toml`, the Mosquitto LAN password file, `hald`'s state
- * files and, optionally, the photos. `manifest.json` is the last entry, so
+ * files, HomeKit's identity and pairings and, optionally, the photos. `manifest.json` is the last entry, so
  * the checksums are taken as the files stream by and no photo is read twice.
  * `scripts/seedypod-restore.cjs` is the reader; keep the two in step.
  */
@@ -36,6 +36,7 @@ export const BUNDLE_NAMES = [
   /^etc\/seedypod\/hal\.toml$/,
   /^etc\/mosquitto\/seedypod\.passwd$/,
   /^var\/lib\/seedypod\/[a-z0-9_-]+\.json$/,
+  /^homekit\/[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)?\.json$/,
   /^captures\/(?:[\w-][\w.@-]*\/)*[\w-][\w.@-]*$/,
 ]
 

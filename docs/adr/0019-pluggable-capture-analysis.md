@@ -9,8 +9,44 @@ sources: [{"resource": "/adr/0004-two-tier-hal-core.md", "title": "ADR 0004: Two
 
 # ADR 0019: Pluggable capture analysis
 
-**Status:** Accepted
+**Status:** Accepted, amended 2026-11-09 (learned models run in plain TypeScript, not ONNX) and 2026-11-09 (a native runner, `podvision`, runs them first)
 **Date:** 2026-10-31
+
+> **Status note, 2026-11-09 ([#191](https://github.com/seedypod/core/issues/191)).** The native
+> backend the amendment below left room for exists. On the unit, `pod-state@1` took about 33 s
+> per capture in TypeScript, and the vision worker shared the Pi Zero W's one core with core's
+> API, which slowed from 30 ms to as much as 1 s. `podvision` (`hal/crates/podvision`) is a small
+> Rust binary that core runs once per capture as a `nice` 19 child, under a timeout. It decodes the
+> still, crops the pods and runs every enabled pod-state revision from the same `seedypod-cnn`
+> weights files, then prints JSON. It is a separate release binary like `hald`, but it links none
+> of `hald`, and analysis stays core's: core decides what runs and stores the results under the
+> same analyser ids and versions. The TypeScript runner stays as the fallback, used when the
+> binary is missing, fails, times out or reports another version, and always for the rule-based
+> analysers. Both runners match the training repository's parity fixture within 1e-4. On real
+> stills they differ by what their JPEG decoders do, and podvision's decoder is the one that
+> matches training's (PIL). [Capture analysis](../ANALYSIS.md#native-runner) gives the numbers.
+
+> **Amendment, 2026-11-09 ([#185](https://github.com/seedypod/core/issues/185)).** Decision 1
+> said a learned model would be "one more analyser that loads an ONNX file". That does not work
+> on the unit this targets, a Pi Zero W (ARMv6, no NEON, 426 MB RAM). Measured on it:
+>
+> | Runtime | Result on the unit |
+> |---|---|
+> | `onnxruntime-node` / current `onnxruntime-web` | No ARMv6 build; WASM SIMD needs NEON, which the CPU doesn't have |
+> | `onnxruntime-web@1.17.3`, non-SIMD WASM, SqueezeNet 1.1 | Compiling the 9 MB runtime took about 5 min, then the OOM killer stopped it at about 170 MB RSS before the model loaded |
+> | Plain-JS CNN (64×64×3 crop → 3× conv3×3 16/32/64 → GAP → dense 5, about 24k parameters, about 100 KB) | **753 ms per pod, 22.6 s for 30 pods, 63 MB RSS** at `nice 19`, with core running |
+>
+> Captures are hourly, so about 23 s on the vision worker per capture is fine. So learned models
+> ship as plain-TypeScript analysers with a weights file, the way sleepypod runs its sleep-stage
+> model: fit off the device ([seedypod/training](https://github.com/seedypod/training)), ship a
+> small, inspectable file (`models/pod-state.json`, format `seedypod-cnn` v1: a JSON header with
+> the architecture, classes, input size and normalisation, and the tensors as base64 float32),
+> and run it in plain code. The forward pass (`src/vision/cnn.ts`) is one narrow, pure boundary,
+> a parsed weights file and a `Float32Array` in, logits out, kept apart from cropping,
+> normalisation and the analyser, so a native backend (Rust, say) could replace it if the models
+> outgrow JavaScript without touching the analyser. Like the rest of analysis it stays in core,
+> never in `hald`. The first is `pod-state`; [Capture analysis](../ANALYSIS.md#the-learned-pod-state-analyser)
+> says how it is trained and shipped.
 
 ## Context
 
@@ -33,7 +69,7 @@ number per pod in `pod_growth`. It works as a first signal, but:
 - The cell-culture analogy fits: a pod is a well, green fraction is
   confluence, the trend is a growth curve. That field moved from fixed
   thresholds to per-image thresholds to learned segmentation, and each step
-  was justified by comparing outputs on a shared dataset. sleepypod took the
+  was justified by comparing outputs on a shared dataset. [sleepypod](https://sleepypod.github.io/developers/training/) took the
   same route for its sleep-stage classifier: pair device signals with ground
   truth, build a dataset off the device, fit there, run the cheap result on
   the device.
@@ -46,7 +82,8 @@ number per pod in `pod_growth`. It works as a first signal, but:
    returns per-pod results. The current routine becomes `green-threshold@1`;
    the first addition is `exg-otsu@1` (excess green with a per-image Otsu
    threshold, the PlantCV approach). A learned model is one more analyser
-   that loads an ONNX file. Every enabled on-device analyser runs on each new
+   that loads an ONNX file (superseded by the 2026-11-09 amendment: plain
+   TypeScript with a weights file). Every enabled on-device analyser runs on each new
    capture, on a worker thread, through a single queue that drops to the
    newest capture when it falls behind.
 
@@ -102,7 +139,7 @@ number per pod in `pod_growth`. It works as a first signal, but:
   scoring only are follow-ups the table makes measurable.
 - Training a local model becomes a data question, not an architecture
   change: label pods in the UI ("sprouted", "unhealthy", "ready"), export,
-  fit off-device, ship the ONNX file as an analyser.
+  fit off-device, ship the weights file as an analyser (the ONNX file of the original text; see the amendment).
 - Two new trust boundaries: an outbound credential for the mirror and an
   inbound token for result ingest. Both are per-unit secrets in core's
   settings, never in `hal.toml`.

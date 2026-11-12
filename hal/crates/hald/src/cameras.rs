@@ -3,10 +3,23 @@
 //! camera also exposes a metadata node next to its capture node. We pin each
 //! camera to its physical USB port with udev rules that only match the
 //! capture node (`index == 0`), giving `/dev/seedypod/camera-<name>`.
+//!
+//! The numbers aren't just unstable, they shift: when one camera fails to bind,
+//! the other takes its number. So a configured `/dev/videoN` fallback is only
+//! used once its port proves it is that camera ([`check_fallback`]). Port order
+//! says nothing about position either: it is only the default assignment.
 
 use std::path::{Path, PathBuf};
 
+use hal_core::DeviceError;
 use serde::Serialize;
+
+use crate::config::STOCK_CAMERA_PORTS;
+
+/// Where `--sync-camera-rules` keeps the pins.
+pub const RULES_PATH: &str = "/etc/udev/rules.d/70-seedypod-cameras.rules";
+
+const NAMES: [&str; 2] = ["upper", "lower"];
 
 /// A capture node found in sysfs.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -40,6 +53,9 @@ pub fn discover(sysfs: &Path, dev: &Path) -> Vec<Detected> {
                 .file_name()?
                 .to_string_lossy()
                 .into_owned();
+            if !is_usb_interface(&port) {
+                return None;
+            }
             Some(Detected {
                 device: dev.join(e.file_name()),
                 name: read("name").unwrap_or_default(),
@@ -51,6 +67,17 @@ pub fn discover(sysfs: &Path, dev: &Path) -> Vec<Detected> {
     out
 }
 
+/// `1-1.3:1.0`, not a Pi's on-chip `bcm2835-codec`, whose video nodes look just like a camera's.
+fn is_usb_interface(port: &str) -> bool {
+    let Some((device, interface)) = port.split_once(':') else {
+        return false;
+    };
+    device.contains('-')
+        && device.chars().all(|c| c.is_ascii_digit() || "-.".contains(c))
+        && !interface.is_empty()
+        && interface.chars().all(|c| c.is_ascii_digit() || c == '.')
+}
+
 /// Sort ports numerically (`1-1.10` after `1-1.9`).
 fn port_key(port: &str) -> Vec<u32> {
     port.split(|c: char| !c.is_ascii_digit())
@@ -60,7 +87,7 @@ fn port_key(port: &str) -> Vec<u32> {
 
 /// Default assignment: the first two cameras by port become `upper` and `lower`.
 pub fn default_assignment(found: &[Detected]) -> Vec<(String, String)> {
-    ["upper", "lower"]
+    NAMES
         .iter()
         .zip(found)
         .map(|(name, d)| ((*name).to_owned(), d.port.clone()))
@@ -78,11 +105,7 @@ pub fn parse_assignment(args: &[String]) -> Result<Vec<(String, String)>, String
                 && name
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-            let ok_port = !port.is_empty()
-                && port
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "-.:".contains(c));
-            if !ok_name || !ok_port {
+            if !ok_name || !is_usb_interface(port) {
                 return Err(format!("bad camera assignment {a:?}"));
             }
             Ok((name.to_owned(), port.to_owned()))
@@ -98,10 +121,154 @@ pub fn rules(assign: &[(String, String)]) -> String {
     );
     for (name, port) in assign {
         s.push_str(&format!(
-            "SUBSYSTEM==\"video4linux\", KERNELS==\"{port}\", ATTR{{index}}==\"0\", SYMLINK+=\"seedypod/camera-{name}\"\n"
+            "SUBSYSTEM==\"video4linux\", SUBSYSTEMS==\"usb\", KERNELS==\"{port}\", ATTR{{index}}==\"0\", SYMLINK+=\"seedypod/camera-{name}\"\n"
         ));
     }
     s
+}
+
+/// The `(name, port)` pins in a rules file, ignoring anything that isn't a USB interface.
+pub fn parse_rules(text: &str) -> Vec<(String, String)> {
+    let between = |line: &'_ str, open: &str, close: char| {
+        let rest = &line[line.find(open)? + open.len()..];
+        Some(rest[..rest.find(close)?].to_owned())
+    };
+    text.lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter_map(|l| {
+            let port = between(l, "KERNELS==\"", '"')?;
+            let name = between(l, "seedypod/camera-", '"')?;
+            is_usb_interface(&port).then_some((name, port))
+        })
+        .collect()
+}
+
+/// The pins to write, or `None` to leave things alone.
+///
+/// Pins already made are kept, so an assignment set by hand survives. With both
+/// cameras on the bus they are named in port order. A lone camera is only named
+/// if it is on a stock port, so a unit with one dead camera keeps the other: on
+/// any other port it could be either one, and a wrong name would stick.
+pub fn plan(existing: &[(String, String)], found: &[Detected]) -> Option<Vec<(String, String)>> {
+    if existing.is_empty() && found.len() < NAMES.len() {
+        let lone = found.first()?;
+        let (name, port) = STOCK_CAMERA_PORTS.iter().find(|(_, port)| *port == lone.port)?;
+        return Some(vec![((*name).to_owned(), (*port).to_owned())]);
+    }
+    let free_names = NAMES
+        .iter()
+        .filter(|n| !existing.iter().any(|(name, _)| name == *n));
+    let free_ports = found
+        .iter()
+        .filter(|d| !existing.iter().any(|(_, port)| *port == d.port));
+    let added = free_names
+        .zip(free_ports)
+        .map(|(name, d)| ((*name).to_owned(), d.port.clone()));
+    let all: Vec<_> = existing.iter().cloned().chain(added).collect();
+    (all.len() > existing.len()).then_some(all)
+}
+
+/// Pin whichever cameras are on the bus now, then let `reload` make udev act on
+/// it. Safe to run on every camera arrival. Says what it did.
+pub fn sync(
+    sysfs: &Path,
+    dev: &Path,
+    rules_path: &Path,
+    reload: impl FnOnce() -> Result<(), String>,
+) -> Result<String, String> {
+    let found = discover(sysfs, dev);
+    let existing = std::fs::read_to_string(rules_path)
+        .map(|t| parse_rules(&t))
+        .unwrap_or_default();
+    let Some(assign) = plan(&existing, &found) else {
+        return Ok(if existing.is_empty() {
+            format!(
+                "{} of {} cameras on the bus; names are pinned when both appear, or pin one by hand with --camera-rules NAME=PORT",
+                found.len(),
+                NAMES.len()
+            )
+        } else {
+            "camera names already pinned".to_owned()
+        });
+    };
+    // udev only reads *.rules, and the rename means it never sees half a file.
+    let tmp = rules_path.with_extension("rules.tmp");
+    std::fs::write(&tmp, rules(&assign))
+        .and_then(|()| std::fs::rename(&tmp, rules_path))
+        .map_err(|e| format!("{}: {e}", rules_path.display()))?;
+    reload()?;
+    let pins = assign
+        .iter()
+        .map(|(name, port)| format!("{name} = port {port}"))
+        .collect::<Vec<_>>();
+    Ok(format!("camera names pinned: {}", pins.join(", ")))
+}
+
+/// Whether `node` is the camera called `name`, going by its port: the pinned one,
+/// or failing that what [`plan`] would pin.
+#[cfg_attr(not(feature = "hardware"), allow(dead_code))]
+fn fallback_is(name: &str, node: &Path, found: &[Detected], pins: &[(String, String)]) -> bool {
+    let Some(detected) = found.iter().find(|d| d.device == node) else {
+        return false;
+    };
+    let assigned = plan(pins, found).unwrap_or_else(|| pins.to_vec());
+    assigned
+        .iter()
+        .any(|(n, port)| n == name && *port == detected.port)
+}
+
+/// Whether camera `name` may use `node`, its `/dev/videoN` fallback. Refusing means
+/// one camera's picture is never saved under the other's name.
+#[cfg_attr(not(feature = "hardware"), allow(dead_code))]
+pub fn check_fallback(name: &str, node: &Path) -> Result<(), DeviceError> {
+    check_fallback_at(
+        Path::new("/sys"),
+        Path::new("/dev"),
+        Path::new(RULES_PATH),
+        name,
+        node,
+    )
+}
+
+#[cfg_attr(not(feature = "hardware"), allow(dead_code))]
+fn check_fallback_at(
+    sysfs: &Path,
+    dev: &Path,
+    rules_path: &Path,
+    name: &str,
+    node: &Path,
+) -> Result<(), DeviceError> {
+    let found = discover(sysfs, dev);
+    let pins = std::fs::read_to_string(rules_path)
+        .map(|t| parse_rules(&t))
+        .unwrap_or_default();
+    if fallback_is(name, node, &found, &pins) {
+        return Ok(());
+    }
+    // A working camera nothing can name. The wording stays fixed: it becomes the alert.
+    if pins.is_empty() && found.len() == 1 && plan(&pins, &found).is_none() {
+        return Err(DeviceError::Other(
+            "one camera on the bus and no pins: pin it with --camera-rules".into(),
+        ));
+    }
+    Err(DeviceError::NotPresent)
+}
+
+/// `--action=add`: a plain trigger is `change`, which doesn't create the links.
+pub fn reload_udev() -> Result<(), String> {
+    for args in [
+        &["control", "--reload"][..],
+        &["trigger", "--action=add", "--subsystem-match=video4linux"][..],
+    ] {
+        let status = std::process::Command::new("udevadm")
+            .args(args)
+            .status()
+            .map_err(|e| format!("udevadm: {e}"))?;
+        if !status.success() {
+            return Err(format!("udevadm {} exited {status}", args[0]));
+        }
+    }
+    Ok(())
 }
 
 /// `/dev/seedypod/camera-<name>`, the stable path the rules create.
@@ -113,7 +280,7 @@ pub fn stable_path(name: &str) -> PathBuf {
 mod tests {
     use super::*;
 
-    /// A fake sysfs: two cameras, each with a capture and a metadata node, plus one unplugged entry.
+    /// A fake sysfs: cameras with capture and metadata nodes, on-chip nodes, and one unplugged entry.
     fn fake_sysfs(tag: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("hald-cameras-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -124,6 +291,9 @@ mod tests {
             ("video2", "0", "1-1.2:1.0", "Upper Cam"),
             ("video3", "1", "1-1.2:1.0", "Upper Cam"),
             ("video9", "0", "1-1.10:1.0", "Spare"),
+            // On-chip nodes every Pi has, with or without a camera.
+            ("video20", "0", "bcm2835-isp", "bcm2835-isp-output0"),
+            ("video31", "0", "bcm2835-codec", "bcm2835-codec-encode_image"),
         ] {
             let iface = root.join("devices/platform/usb1/1-1").join(port);
             std::fs::create_dir_all(&iface).unwrap();
@@ -174,7 +344,7 @@ mod tests {
             ("lower".into(), "1-1.3:1.0".into()),
         ]);
         assert!(r.contains(
-            "SUBSYSTEM==\"video4linux\", KERNELS==\"1-1.2:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-upper\"\n"
+            "SUBSYSTEM==\"video4linux\", SUBSYSTEMS==\"usb\", KERNELS==\"1-1.2:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-upper\"\n"
         ));
         assert!(r.contains("KERNELS==\"1-1.3:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-lower\""));
         assert_eq!(r.lines().filter(|l| l.starts_with("SUBSYSTEM")).count(), 2);
@@ -193,5 +363,228 @@ mod tests {
         assert!(parse_assignment(&["upper".into()]).is_err());
         assert!(parse_assignment(&["upper=1-1\"; RUN+=\"/bin/sh".into()]).is_err());
         assert!(parse_assignment(&["=1-1.2:1.0".into()]).is_err());
+        // Rules must only ever match USB interfaces.
+        assert!(parse_assignment(&["upper=bcm2835-codec".into()]).is_err());
+        assert!(parse_assignment(&["upper=1-1.3".into()]).is_err());
+    }
+
+    fn detected(ports: &[&str]) -> Vec<Detected> {
+        ports
+            .iter()
+            .map(|p| Detected {
+                device: "/dev/video0".into(),
+                name: "View Camera".into(),
+                port: (*p).to_owned(),
+            })
+            .collect()
+    }
+
+    fn pins(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(n, p)| ((*n).to_owned(), (*p).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn rules_read_back_as_the_assignment_they_were_written_from() {
+        let assign = pins(&[("upper", "1-1.3:1.0"), ("lower", "1-1.4:1.0")]);
+        assert_eq!(parse_rules(&rules(&assign)), assign);
+        assert!(parse_rules("").is_empty());
+        // The older form, a comment, and a line that doesn't name a USB interface.
+        let old = "# KERNELS==\"1-1.9:1.0\" seedypod/camera-x\"\n\
+                   SUBSYSTEM==\"video4linux\", KERNELS==\"1-1.3:1.0\", ATTR{index}==\"0\", SYMLINK+=\"seedypod/camera-upper\"\n\
+                   SUBSYSTEM==\"video4linux\", KERNELS==\"bcm2835-codec\", SYMLINK+=\"seedypod/camera-lower\"\n\
+                   SUBSYSTEM==\"video4linux\", KERNELS==\"1-1.4:1.0\", SYMLINK+=\"other\"\n";
+        assert_eq!(parse_rules(old), pins(&[("upper", "1-1.3:1.0")]));
+    }
+
+    #[test]
+    fn a_lone_camera_is_only_named_on_a_stock_port() {
+        assert_eq!(plan(&[], &[]), None);
+        // The upper camera is dead: the lower one must keep working, as `lower`.
+        assert_eq!(
+            plan(&[], &detected(&["1-1.4:1.0"])),
+            Some(pins(&[("lower", "1-1.4:1.0")]))
+        );
+        assert_eq!(
+            plan(&[], &detected(&["1-1.3:1.0"])),
+            Some(pins(&[("upper", "1-1.3:1.0")]))
+        );
+        // Elsewhere it could be either, and a wrong name would stick.
+        assert_eq!(plan(&[], &detected(&["1-1.2:1.0"])), None);
+        // A pin made that way is completed when the other camera turns up.
+        assert_eq!(
+            plan(
+                &pins(&[("lower", "1-1.4:1.0")]),
+                &detected(&["1-1.3:1.0", "1-1.4:1.0"])
+            ),
+            Some(pins(&[("lower", "1-1.4:1.0"), ("upper", "1-1.3:1.0")]))
+        );
+    }
+
+    #[test]
+    fn both_cameras_are_named_in_port_order_on_any_ports() {
+        assert_eq!(
+            plan(&[], &detected(&["1-1.3:1.0", "1-1.4:1.0"])),
+            Some(pins(&[("upper", "1-1.3:1.0"), ("lower", "1-1.4:1.0")]))
+        );
+        assert_eq!(
+            plan(&[], &detected(&["1-1.1:1.0", "1-1.2:1.0"])),
+            Some(pins(&[("upper", "1-1.1:1.0"), ("lower", "1-1.2:1.0")]))
+        );
+    }
+
+    #[test]
+    fn pins_already_made_are_kept() {
+        // Set by hand, the other way round from port order.
+        let swapped = pins(&[("upper", "1-1.4:1.0"), ("lower", "1-1.3:1.0")]);
+        assert_eq!(plan(&swapped, &detected(&["1-1.3:1.0", "1-1.4:1.0"])), None);
+        // A third camera doesn't disturb them.
+        assert_eq!(
+            plan(&swapped, &detected(&["1-1.2:1.0", "1-1.3:1.0", "1-1.4:1.0"])),
+            None
+        );
+        // A partial file from an earlier install gets its other half.
+        assert_eq!(
+            plan(
+                &pins(&[("lower", "1-1.4:1.0")]),
+                &detected(&["1-1.3:1.0", "1-1.4:1.0"])
+            ),
+            Some(pins(&[("lower", "1-1.4:1.0"), ("upper", "1-1.3:1.0")]))
+        );
+        assert_eq!(
+            plan(&pins(&[("lower", "1-1.4:1.0")]), &detected(&["1-1.4:1.0"])),
+            None
+        );
+    }
+
+    /// `/dev/videoN` at each port, as they numbered up.
+    fn nodes(nodes: &[(&str, &str)]) -> Vec<Detected> {
+        nodes
+            .iter()
+            .map(|(device, port)| Detected {
+                device: (*device).into(),
+                name: "View Camera".into(),
+                port: (*port).to_owned(),
+            })
+            .collect()
+    }
+
+    const VIDEO0: &str = "/dev/video0";
+    const VIDEO2: &str = "/dev/video2";
+
+    #[test]
+    fn a_fallback_number_taken_by_the_other_camera_is_refused() {
+        let pinned = pins(&[("upper", "1-1.3:1.0"), ("lower", "1-1.4:1.0")]);
+        // The upper camera didn't bind, so the lower one came up as video0.
+        let lone = nodes(&[(VIDEO0, "1-1.4:1.0")]);
+        assert!(!fallback_is("upper", Path::new(VIDEO0), &lone, &pinned));
+        assert!(fallback_is("lower", Path::new(VIDEO0), &lone, &pinned));
+        // Both up, each on the number it is expected on.
+        let both = nodes(&[(VIDEO0, "1-1.3:1.0"), (VIDEO2, "1-1.4:1.0")]);
+        assert!(fallback_is("upper", Path::new(VIDEO0), &both, &pinned));
+        assert!(fallback_is("lower", Path::new(VIDEO2), &both, &pinned));
+        // Numbers swapped: the ports decide, not the config.
+        let swapped = nodes(&[(VIDEO0, "1-1.4:1.0"), (VIDEO2, "1-1.3:1.0")]);
+        assert!(!fallback_is("upper", Path::new(VIDEO0), &swapped, &pinned));
+        // Nothing at that number.
+        assert!(!fallback_is("lower", Path::new(VIDEO2), &lone, &pinned));
+    }
+
+    #[test]
+    fn with_nothing_pinned_a_lone_camera_is_named_by_its_stock_port_or_not_at_all() {
+        let lone = nodes(&[(VIDEO0, "1-1.4:1.0")]);
+        assert!(!fallback_is("upper", Path::new(VIDEO0), &lone, &[]));
+        assert!(fallback_is("lower", Path::new(VIDEO0), &lone, &[]));
+        let elsewhere = nodes(&[(VIDEO0, "1-1.2:1.0")]);
+        assert!(!fallback_is("upper", Path::new(VIDEO0), &elsewhere, &[]));
+        assert!(!fallback_is("lower", Path::new(VIDEO0), &elsewhere, &[]));
+        // With both there, the default order applies until the rules are written.
+        let both = nodes(&[(VIDEO0, "1-1.3:1.0"), (VIDEO2, "1-1.4:1.0")]);
+        assert!(fallback_is("upper", Path::new(VIDEO0), &both, &[]));
+        assert!(fallback_is("lower", Path::new(VIDEO2), &both, &[]));
+    }
+
+    /// `fake_sysfs` with only `video2` on `1-1.2:1.0` left on the bus.
+    fn lone_on_a_strange_port(tag: &str) -> PathBuf {
+        let root = fake_sysfs(tag);
+        for node in ["video0", "video1", "video3", "video9", "video7"] {
+            std::fs::remove_dir_all(root.join("class/video4linux").join(node)).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn a_fallback_is_refused_with_the_reason_a_person_can_act_on() {
+        let root = lone_on_a_strange_port("check");
+        let rules_path = root.join("rules");
+        let check =
+            |name: &str| check_fallback_at(&root, Path::new("/dev"), &rules_path, name, Path::new(VIDEO2));
+
+        // Nothing can name it: say what to do, in words that don't change.
+        let Err(DeviceError::Other(why)) = check("upper") else {
+            panic!("should need a pin");
+        };
+        assert_eq!(
+            why,
+            "one camera on the bus and no pins: pin it with --camera-rules"
+        );
+
+        // Pinned to this port, it is this camera.
+        std::fs::write(&rules_path, rules(&pins(&[("lower", "1-1.2:1.0")]))).unwrap();
+        assert!(check("lower").is_ok());
+        // And it isn't the other one, which is simply not there.
+        assert!(matches!(check("upper"), Err(DeviceError::NotPresent)));
+
+        // Pinned elsewhere, this node isn't that camera.
+        std::fs::write(&rules_path, rules(&pins(&[("lower", "1-1.9:1.0")]))).unwrap();
+        assert!(matches!(check("lower"), Err(DeviceError::NotPresent)));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sync_pins_both_cameras_once_and_reloads_udev() {
+        let root = fake_sysfs("sync");
+        let path = root.join("70-seedypod-cameras.rules");
+        let mut reloads = 0;
+        let said = sync(&root, Path::new("/dev"), &path, || {
+            reloads += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            said,
+            "camera names pinned: upper = port 1-1.2:1.0, lower = port 1-1.3:1.0"
+        );
+        assert_eq!(reloads, 1);
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(written.lines().filter(|l| l.starts_with("SUBSYSTEM")).count(), 2);
+        assert!(!written.contains("bcm2835"));
+        assert!(!path.with_extension("rules.tmp").exists());
+
+        // The trigger that reload fires brings it back here: nothing to do, so no loop.
+        let said = sync(&root, Path::new("/dev"), &path, || panic!("no reload")).unwrap();
+        assert_eq!(said, "camera names already pinned");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), written);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sync_waits_quietly_and_reports_what_it_cant_do() {
+        let root = fake_sysfs("sync-wait");
+        let path = root.join("rules");
+        let said = sync(&root.join("nope"), Path::new("/dev"), &path, || {
+            panic!("no reload")
+        })
+        .unwrap();
+        assert!(said.starts_with("0 of 2 cameras on the bus; names are pinned when both appear"));
+        assert!(!path.exists());
+
+        let unwritable = root.join("nope/rules");
+        assert!(sync(&root, Path::new("/dev"), &unwritable, || Ok(())).is_err());
+        let failed = sync(&root, Path::new("/dev"), &path, || Err("udevadm exited 1".into()));
+        assert_eq!(failed, Err("udevadm exited 1".to_owned()));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

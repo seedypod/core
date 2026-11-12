@@ -8,7 +8,9 @@ import { publicProcedure, router } from '../trpc'
 async function set(ctx: Parameters<Parameters<typeof publicProcedure.mutation>[0]>[0]['ctx'], id: z.infer<typeof ActuatorId>, cmd: z.infer<typeof ActuatorCommand>) {
   try {
     const state = await ctx.hal.setActuator(id, cmd)
-    ctx.events.emit({ kind: 'mutation', path: `actuators.${id}` })
+    // A command that starts the pump says so, so the UI can tell a run someone started from a Stop.
+    const starts = id === 'pump' && (cmd.on === true || (cmd.on === undefined && (cmd.level ?? 0) > 0))
+    ctx.events.emit({ kind: 'mutation', path: starts ? 'actuators.pump.on' : `actuators.${id}` })
     return state
   }
   catch (e) {

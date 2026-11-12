@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Builds better-sqlite3 for the original Pi Zero W, as the release asset scripts/install
+# unpacks there. Upstream has no ARMv6 binary and compiling on the unit takes 53 minutes.
+# Raspbian under emulation gives real ARMv6 code against glibc 2.36, so it loads on
+# bookworm and trixie.
+# Usage: scripts/build-sqlite-armv6 <out-dir>   needs Docker, and QEMU on a non-ARM host
+#        scripts/build-sqlite-armv6 --versions  the versions it would build, as key=value
+# Both versions come from the repo: the lockfile's better-sqlite3 and the Node 22 that
+# scripts/install gives this board.
+set -euo pipefail
+
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+sqlite="$(sed -n 's/^  better-sqlite3@\([0-9][^:(]*\):$/\1/p' "$repo/pnpm-lock.yaml" | head -1)"
+node="$(sed -n 's/^NODE_22=//p' "$repo/scripts/install")"
+[ -n "$sqlite" ] && [ -n "$node" ] || { echo "no better-sqlite3 in the lockfile, or no NODE_22 in scripts/install" >&2; exit 1; }
+
+if [ "${1:-}" = --versions ]; then
+  printf 'sqlite=%s\nnode=%s\n' "$sqlite" "$node"
+  exit 0
+fi
+[ $# -eq 1 ] || { sed -n '5,6p' "$0" >&2; exit 2; }
+
+mkdir -p "$1"
+out="$(cd "$1" && pwd)"
+docker run --rm --platform linux/arm/v6 -v "$out:/out" -e SQLITE="$sqlite" -e NODE="$node" \
+  balenalib/raspberry-pi-debian:bookworm bash -euo pipefail -c '
+    apt-get update -q
+    apt-get install -y -q --no-install-recommends build-essential python3 ca-certificates curl xz-utils binutils
+    curl -fsSL "https://unofficial-builds.nodejs.org/download/release/v$NODE/node-v$NODE-linux-armv6l.tar.xz" \
+      | tar -xJ -C /usr/local --strip-components=1
+    mkdir /build && cd /build
+    npm_config_build_from_source=true npm install --no-save --no-audit --no-fund "better-sqlite3@$SQLITE"
+    cd node_modules/better-sqlite3
+    readelf -A build/Release/better_sqlite3.node | grep -q "Tag_CPU_arch: v6"
+    node -e "new (require(\".\"))(\":memory:\").exec(\"create table t (x)\")"
+    name="better-sqlite3-v$SQLITE-node-v$(node -p process.versions.modules)-linux-armv6.tar.gz"
+    tar czf "/out/$name" build/Release/better_sqlite3.node
+    cd /out && sha256sum "$name" > "$name.sha256"
+  '
+ls -l "$out"

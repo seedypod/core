@@ -9,7 +9,9 @@ sources: [{"resource": "./pin-map.md", "title": "Gardyn hardware map (Phase 1 ch
 
 # Simulated bring-up
 
-Until a real Gardyn is on the bench, Phase 1 runs against a **simulated unit**.
+Before a real Gardyn was on the bench, Phase 1 ran against a **simulated unit**,
+and it still runs in CI. The first real-unit run is in the
+[handoff](../HANDOFF.md#7-real-unit-bring-up-2026-11-06).
 `tests/sim/bringup.mjs` starts the stack exactly as it runs on a Pi, with the
 hardware swapped out:
 

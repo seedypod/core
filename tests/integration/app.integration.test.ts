@@ -14,7 +14,7 @@ let hal: SimHal
 beforeAll(async () => {
   hal = new SimHal({ tickMs: 0 })
   const events = createEventBus()
-  const core = createCore({ hal, store: new MemoryStore(), events, version: 'test' })
+  const core = createCore({ hal, store: new MemoryStore(), events, version: 'test', captureMinBytes: 1 })
   const { app, injectWebSocket } = createApp({ ctx: core.ctx })
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' })
   injectWebSocket(server)
@@ -38,6 +38,41 @@ describe('core HTTP surface', () => {
     expect(s.remainingS).toBe(30)
   })
 
+  it('serves each camera\'s newest stored still at a fixed URL, and nothing before the first', async () => {
+    expect((await fetch(`${base}/api/camera/lower/latest.jpg`)).status).toBe(404)
+    expect((await fetch(`${base}/api/camera/side/latest.jpg`)).status).toBe(404)
+    const taken = await fetch(`${base}/api/camera/lower/capture`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(r => r.json()) as { url: string, ts: string }
+    const r = await fetch(`${base}/api/camera/lower/latest.jpg`)
+    expect(r.status).toBe(200)
+    expect(r.headers.get('content-type')).toBe('image/jpeg')
+    expect(r.headers.get('cache-control')).toBe('no-cache')
+    expect(r.headers.get('last-modified')).toBe(new Date(taken.ts).toUTCString())
+    const byId = await fetch(`${base}${taken.url}`).then(x => x.arrayBuffer())
+    expect(Buffer.compare(Buffer.from(await r.arrayBuffer()), Buffer.from(byId))).toBe(0)
+  })
+
+  it('serves the latest pod-ID still apart from the captures (#224)', async () => {
+    expect((await fetch(`${base}/api/camera/upper/podid.jpg`)).status).toBe(404)
+    expect((await fetch(`${base}/api/camera/side/podid.jpg`)).status).toBe(404)
+    const before = await fetch(`${base}/api/captures?camera=upper`).then(r => r.json()) as unknown[]
+    const taken = await fetch(`${base}/api/camera/upper/podid`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(r => r.json()) as { url: string, ts: string }
+    expect(taken.url).toBe('/api/camera/upper/podid.jpg')
+    const r = await fetch(`${base}${taken.url}`)
+    expect(r.status).toBe(200)
+    expect(r.headers.get('content-type')).toBe('image/jpeg')
+    expect(r.headers.get('last-modified')).toBe(new Date(taken.ts).toUTCString())
+    expect(await fetch(`${base}/api/captures?camera=upper`).then(x => x.json())).toEqual(before)
+  })
+
+  it('serves the boot log as a download when hald has written one', async () => {
+    expect((await fetch(`${base}/api/system/boot-log`)).status).toBe(404)
+    const core = createCore({ hal, store: new MemoryStore(), events: createEventBus(), version: 'test', bootLog: async () => 't hub=1\n' })
+    const r = await createApp({ ctx: core.ctx }).app.fetch(new Request('http://unit/api/system/boot-log'))
+    expect(r.status).toBe(200)
+    expect(r.headers.get('content-disposition')).toContain('seedypod-boot-log.txt')
+    expect(await r.text()).toBe('t hub=1\n')
+  })
+
   it('serves the OpenAPI document', async () => {
     const doc = await fetch(`${base}/api/openapi.json`).then(r => r.json()) as { paths: Record<string, unknown> }
     expect(Object.keys(doc.paths)).toContain('/light')
@@ -48,7 +83,7 @@ describe('core HTTP surface', () => {
     const ok = await fetch(`${base}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json, text/event-stream' }, body })
     expect(ok.status).toBe(200)
     const json = await ok.json() as { result: { tools: { name: string }[] } }
-    expect(json.result.tools.map(t => t.name)).toEqual(expect.arrayContaining(['status', 'set_light', 'run_pump', 'acknowledge_alert']))
+    expect(json.result.tools.map(t => t.name)).toEqual(expect.arrayContaining(['status', 'set_light', 'run_pump', 'acknowledge_alert', 'plant_catalog', 'plan_layout', 'best_spot', 'save_plan', 'apply_plan']))
     const bad = await fetch(`${base}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json', 'origin': 'https://evil.example' }, body })
     expect(bad.status).toBe(403)
   })

@@ -6,10 +6,13 @@
 //!   MQTT with JSON lines for smoke tests and CI.
 //! * `--sim` swaps every driver for `hal-sim` and runs on virtual time.
 
+mod board;
+mod boot_log;
 mod cameras;
 mod config;
 mod devices;
 mod engine;
+mod fade;
 mod ha;
 mod http;
 mod identity;
@@ -17,7 +20,10 @@ mod kinds;
 mod mdns;
 mod mqtt;
 mod overlay;
+mod pump_trace;
+mod recording;
 mod state;
+mod usb;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,6 +36,8 @@ use engine::{Engine, EngineConfig, Inbound, Now, Outbound, SharedSnapshot};
 use hal_core::{Caps, Limits, SystemInfo, CONTRACT_VERSION};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{info, warn};
+use tracing_subscriber::layer::{Layer, SubscriberExt};
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Parser, Debug)]
 #[command(name = "hald", version, about = "seedypod hardware daemon")]
@@ -58,6 +66,14 @@ struct Cli {
     /// Exit after this many telemetry ticks (for smoke tests).
     #[arg(long)]
     ticks: Option<u64>,
+    /// Temporary (#220): append the pump monitor's V, A and W at 4 Hz to this CSV
+    /// while the pump runs, to record wet and dry traces for the current guard.
+    #[arg(long, env = "HAL_PUMP_TRACE", value_name = "FILE")]
+    pump_trace: Option<PathBuf>,
+    /// If the USB bus is empty after boot, try to enumerate it again and exit.
+    /// Needs root. Runs once per boot.
+    #[arg(long)]
+    usb_recover: bool,
     /// List the USB cameras (capture nodes) with their ports as JSON and exit.
     #[arg(long)]
     list_cameras: bool,
@@ -65,15 +81,24 @@ struct Cli {
     /// pairs, the first two cameras by port become upper and lower.
     #[arg(long, num_args = 0.., value_name = "NAME=PORT")]
     camera_rules: Option<Vec<String>>,
+    /// Pin both cameras in the udev rules once they're on the bus, keeping any
+    /// pins already made, and exit. Needs root. Runs when a camera appears.
+    #[arg(long)]
+    sync_camera_rules: bool,
 }
 
 const DEFAULT_MQTT_URL: &str = "mqtt://127.0.0.1:1883";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse()?))
-        .with_writer(std::io::stderr)
+    let policy = recording::RecordingPolicy::from_env();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse()?))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_filter(recording::log_filter(policy)),
+        )
         .init();
     let cli = Cli::parse();
     if cli.print_default_config {
@@ -106,8 +131,63 @@ async fn main() -> anyhow::Result<()> {
         print!("{}", cameras::rules(&assign));
         return Ok(());
     }
+    if cli.sync_camera_rules {
+        let said = cameras::sync(
+            Path::new("/sys"),
+            Path::new("/dev"),
+            Path::new(cameras::RULES_PATH),
+            cameras::reload_udev,
+        )
+        .map_err(anyhow::Error::msg)?;
+        println!("{said}");
+        return Ok(());
+    }
 
     let mut cfg = config::Config::load(cli.config.as_deref())?;
+    if cli.usb_recover {
+        let boot = usb::Boot {
+            sysfs: Path::new("/sys"),
+            state_dir: &cfg.state_dir,
+            root: Path::new("/"),
+            uptime: usb::uptime().unwrap_or_default(),
+            has_cameras: !cfg.camera.is_empty(),
+        };
+        let recovery = usb::recover(&boot, &cfg.usb_recovery, &mut std::thread::sleep, &mut || {
+            usb::in_use(&cfg.http_bind)
+        });
+        if let Some(came_up) = recovery.hub_came_up() {
+            if let Err(e) = usb::record_boot(&cfg.state_dir, came_up) {
+                warn!(%e, "couldn't record this boot's USB hub");
+            }
+        }
+        // Before any reboot, which would take the journal with it. It must never stop one.
+        let facts = boot_log::gather(
+            &recovery,
+            Path::new("/"),
+            Path::new("/sys"),
+            &cfg.state_dir,
+            Now::real().ts(),
+            usb::uptime().unwrap_or_default(),
+        );
+        if let Err(e) = boot_log::append(&cfg.state_dir, &facts.line()) {
+            warn!(%e, "couldn't add to the boot log");
+        }
+        match recovery {
+            usb::Recovery::AlreadyUp => info!("USB bus came up by itself"),
+            usb::Recovery::NoAction(why) => info!(%why, "no USB recovery needed"),
+            usb::Recovery::Recovered { attempts } => info!(attempts, "USB bus recovered"),
+            usb::Recovery::Reboot { attempt, limit } => {
+                warn!(attempt, limit, "USB hub missing; rebooting to try again");
+                usb::reboot()?;
+            }
+            usb::Recovery::NotRebooting(why) => warn!(%why, "USB hub missing; not rebooting this boot"),
+            usb::Recovery::GaveUp { reboots } => {
+                let limit = cfg.usb_recovery.reboot_attempts;
+                anyhow::bail!("USB hub missing after {reboots} reboots (reboot_attempts = {limit}); waiting for it to be seen")
+            }
+        }
+        return Ok(());
+    }
     if let Some(u) = &cli.mqtt_url {
         cfg.mqtt_url = Some(u.clone());
     }
@@ -144,7 +224,9 @@ async fn main() -> anyhow::Result<()> {
                 "actuators": actuators,
                 "cameras": cfg.camera.iter().map(|c| c.name.clone()).collect::<Vec<_>>(),
                 "limits": { "pump_max_run_s": cfg.limits.pump_max_run_s, "pump_max_duty": cfg.limits.pump_max_duty,
-                            "water_low_cm": cfg.limits.water_low_cm, "over_temp_c": cfg.limits.over_temp_c },
+                            "water_low_cm": cfg.limits.water_low_cm, "over_temp_c": cfg.limits.over_temp_c,
+                            "pump_dry_current_a": cfg.limits.pump_dry_current_a, "pump_dry_after_s": cfg.limits.pump_dry_after_s,
+                            "pump_dry_grace_s": cfg.limits.pump_dry_grace_s },
                 "dosing_enabled": cfg.dosing.enabled,
             }))?
         );
@@ -156,6 +238,19 @@ async fn main() -> anyhow::Result<()> {
     if !errors.is_empty() {
         anyhow::bail!("invalid config:\n  {}", errors.join("\n  "));
     }
+
+    let trace = match &cli.pump_trace {
+        Some(path) => {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|e| anyhow::anyhow!("pump trace {}: {e}", path.display()))?;
+            info!(path = %path.display(), "tracing the pump monitor while the pump runs");
+            Some(pump_trace::PumpTrace::new(file))
+        }
+        None => None,
+    };
 
     let built = if cli.sim {
         devices::build_sim(&cfg)
@@ -171,6 +266,7 @@ async fn main() -> anyhow::Result<()> {
         contract: CONTRACT_VERSION,
         unit_id: unit_id.clone(),
         model,
+        board: if cli.sim { None } else { board::read() },
         hal_version: env!("CARGO_PKG_VERSION").into(),
         caps: Caps {
             sensors: built.registry.sensor_ids(),
@@ -190,6 +286,7 @@ async fn main() -> anyhow::Result<()> {
         system.clone(),
         EngineConfig {
             telemetry_interval: Duration::from_secs(cfg.telemetry_interval_s.max(1)),
+            light_fade: Duration::from_millis(cfg.light_fade_ms),
             pump: (&cfg.limits).into(),
             dosing: (&cfg.dosing).into(),
             button_pump_run_s: cfg.button.pump_run_s,
@@ -248,9 +345,12 @@ async fn main() -> anyhow::Result<()> {
         system: system.clone(),
         snapshot,
         cameras: Arc::new(built.cameras),
+        camera_health: http::CameraHealth::default(),
+        state_dir: state_dir.clone(),
         started: Instant::now(),
         mqtt_connected: mqtt_connected.clone(),
         inbound: inbound_tx.clone(),
+        sim: built.world.clone(),
     };
     let http_port = match tokio::net::TcpListener::bind(&cfg.http_bind).await {
         Ok(listener) => {
@@ -284,6 +384,23 @@ async fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
+    // An empty USB bus → camera_missing, once recovery has had its chance.
+    if !cli.sim && cfg.usb_recovery.enabled && !cfg.camera.is_empty() {
+        let tx = inbound_tx.clone();
+        let mut watch = usb::Watch::new(&cfg.usb_recovery, state_dir.clone());
+        let reboots_dir = state_dir.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                let uptime = usb::uptime().unwrap_or_default();
+                let reboots = usb::reboots_so_far(&reboots_dir).unwrap_or(0);
+                if let Some(alert) = watch.tick(&usb::bus_state(Path::new("/sys")), uptime, reboots) {
+                    let _ = tx.send(alert);
+                }
+            }
+        });
+    }
+
     // Signals → Shutdown.
     {
         let tx = inbound_tx.clone();
@@ -302,6 +419,7 @@ async fn main() -> anyhow::Result<()> {
         interval: Duration::from_secs(cfg.telemetry_interval_s.max(1)),
         world: built.world,
         stop: built.stop,
+        trace,
     };
     let engine_task = tokio::task::spawn_blocking(move || run_engine(engine, loop_cfg, inbound_rx, out_tx));
     engine_task.await?;
@@ -318,11 +436,21 @@ struct LoopConfig {
     interval: Duration,
     world: Option<hal_sim::Shared>,
     stop: Arc<AtomicBool>,
+    trace: Option<pump_trace::PumpTrace<std::fs::File>>,
+}
+
+/// `--pump-trace`: reads the pump monitor when a read is due.
+fn trace_pump(trace: &mut Option<pump_trace::PumpTrace<std::fs::File>>, engine: &mut Engine, now: Now) {
+    if let Some(t) = trace {
+        t.poll(engine.pump_on(now), Instant::now(), &now.ts(), || {
+            engine.pump_sample()
+        });
+    }
 }
 
 /// The engine loop: drain commands until the next tick, tick, repeat.
 /// In `--sim`, virtual time advances one telemetry interval per tick.
-fn run_engine(mut engine: Engine, cfg: LoopConfig, rx: Receiver<Inbound>, tx: UnboundedSender<Outbound>) {
+fn run_engine(mut engine: Engine, mut cfg: LoopConfig, rx: Receiver<Inbound>, tx: UnboundedSender<Outbound>) {
     let send = |tx: &UnboundedSender<Outbound>, outs: Vec<Outbound>| {
         for o in outs {
             let _ = tx.send(o);
@@ -335,19 +463,29 @@ fn run_engine(mut engine: Engine, cfg: LoopConfig, rx: Receiver<Inbound>, tx: Un
     };
     let mut now = Now::real();
     send(&tx, engine.boot(now));
+    // After boot, which restores the light on this thread; from here on only the fader writes.
+    engine.start_light_fades();
     let mut ticks = 0u64;
     loop {
         let deadline = Instant::now() + real_tick;
         loop {
-            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            // A pump trace wakes the loop between ticks for its reads.
+            let wake = cfg
+                .trace
+                .as_ref()
+                .and_then(pump_trace::PumpTrace::due)
+                .map_or(deadline, |d| d.min(deadline));
+            match rx.recv_timeout(wake.saturating_duration_since(Instant::now())) {
                 Ok(Inbound::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
                     send(&tx, engine.handle(Inbound::Shutdown, now));
                     cfg.stop.store(true, Ordering::Relaxed);
                     return;
                 }
                 Ok(msg) => send(&tx, engine.handle(msg, now)),
+                Err(RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
                 Err(RecvTimeoutError::Timeout) => break,
             }
+            trace_pump(&mut cfg.trace, &mut engine, now);
         }
         if cfg.sim {
             let dt = cfg.interval.mul_f64(cfg.time_scale.max(0.0));
@@ -359,6 +497,7 @@ fn run_engine(mut engine: Engine, cfg: LoopConfig, rx: Receiver<Inbound>, tx: Un
             now = Now::real();
         }
         send(&tx, engine.tick(now));
+        trace_pump(&mut cfg.trace, &mut engine, now);
         ticks += 1;
         if cfg.ticks.is_some_and(|n| ticks >= n) {
             send(&tx, engine.handle(Inbound::Shutdown, now));

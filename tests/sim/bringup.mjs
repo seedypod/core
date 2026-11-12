@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { Aedes } from 'aedes'
+import Database from 'better-sqlite3'
 import mqtt from 'mqtt'
 
 const root = resolve(import.meta.dirname, '../..')
@@ -72,6 +73,12 @@ http_bind = "127.0.0.1:${halHttpPort}"
 telemetry_interval_s = 1
 state_dir = "${join(work, 'hal-state')}"
 mdns = false
+
+# The current guard on, against the sim's pump: 0.22 A wet at 30 %, a quarter of that pulling air.
+[limits]
+pump_dry_current_a = 0.15
+pump_dry_after_s = 3
+pump_dry_grace_s = 2
 
 [dosing]
 enabled = true
@@ -169,14 +176,15 @@ const coreEnv = {
   SEEDYPOD_ETC_DIR: work, SEEDYPOD_STATE_DIR: join(work, 'hal-state'),
   SEEDYPOD_MOSQUITTO_PASSWD: join(mosquittoDir, 'seedypod.passwd'), SEEDYPOD_MOSQUITTO_CONF: join(mosquittoDir, 'seedypod.conf'),
   SEEDYPOD_RESTORE_CMD: JSON.stringify([process.execPath, join(root, 'scripts/seedypod-restore.cjs')]),
-  SEEDYPOD_RESTORE_DB: join(work, 'core/seedypod.db'), SEEDYPOD_RESTORE_CAPTURES: join(work, 'core/captures'),
+  SEEDYPOD_RESTORE_DB: join(work, 'core/seedypod.db'), SEEDYPOD_RESTORE_CAPTURES: join(work, 'core/captures'), SEEDYPOD_RESTORE_HOMEKIT: join(work, 'core/homekit'),
   SEEDYPOD_RESTORE_WORK: join(work, 'restore'), SEEDYPOD_RESTORE_DETACH: 'fork',
   SEEDYPOD_SYSTEMCTL: JSON.stringify([process.execPath, join(root, 'tests/sim/fake-systemctl.mjs')]),
   SIM_CONTROL_URL: `http://127.0.0.1:${controlPort}/`,
 }
 let daemon = null
 let coreProc = null
-const startHald = () => (daemon = start(hald, ['--sim', '--config', config, '--mqtt-url', brokerUrl], { RUST_LOG: 'info' }, 'hald'))
+const pumpTrace = join(work, 'pump-trace.csv')
+const startHald = () => (daemon = start(hald, ['--sim', '--config', config, '--mqtt-url', brokerUrl, '--pump-trace', pumpTrace], { RUST_LOG: 'info' }, 'hald'))
 const startCore = () => (coreProc = start(process.execPath, [join(root, 'server/dist/index.js')], coreEnv, 'core'))
 async function stop(p) {
   if (!p || p.exitCode !== null || p.signalCode) return
@@ -280,6 +288,18 @@ try {
     return `${s.system.model}, limits ${JSON.stringify(s.system.limits)}`
   })
 
+  // Its chunk only loads here, and a CommonJS package in it breaks only in the bundle.
+  await check('MCP answers from its lazily loaded chunk', async () => {
+    const res = await fetch(`${api}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'accept': 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'bringup', version: '1' } } }),
+    })
+    const body = await res.json()
+    assert(res.ok && body.result?.serverInfo?.name === 'seedypod', `initialize: ${res.status} ${JSON.stringify(body)}`)
+    return `server ${body.result.serverInfo.name}, protocol ${body.result.protocolVersion}`
+  })
+
   await check('telemetry flows hald → MQTT → core', async () => {
     const s = await until('readings', async () => {
       const r = await get('/sensors')
@@ -314,6 +334,24 @@ try {
     return `ran at ${r.body.level} %, stopped after its bound`
   })
 
+  await check('pump: a dry intake trips the current guard, the fault names the current, and it clears', async () => {
+    const intake = dry => fetch(`http://127.0.0.1:${halHttpPort}/sim/intake`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dry }) })
+    assert((await intake(true)).status === 200, 'sim intake switch')
+    const r = await post('/pump/run-once', { durationS: 60 })
+    assert(r.status === 200 && r.body.on, `${r.status} ${JSON.stringify(r.body)}`)
+    const alert = await until('pump_fault in core', async () => (await get('/alerts')).find(a => a.kind === 'pump_fault' && a.active), 20_000)
+    assert(/dry-run: pump drew 0\.05 A, below 0\.15 A for 3 s: it's pulling air/.test(alert.detail), `detail ${alert.detail}`)
+    const pump = await get('/pump')
+    assert(pump.on === false && /pulling air/.test(pump.fault), `pump ${JSON.stringify(pump)}`)
+    assert(!(await get('/alerts')).some(a => a.kind === 'water_low' && a.active), 'water_low raised with a full tank')
+    const trace = readFileSync(pumpTrace, 'utf8')
+    assert(/^# run /m.test(trace) && trace.includes('t_s,duty,pump_v,pump_a,pump_w\n0.00,30,'), `pump trace ${trace.slice(0, 200)}`)
+    assert((await intake(false)).status === 200, 'sim intake back')
+    // Like a level dry-run, it clears itself once the water has read good for a window.
+    await until('the dry-run to clear', async () => (await get('/pump')).fault === null && !(await get('/alerts')).some(a => a.kind === 'pump_fault' && a.active), 30_000)
+    return `"${alert.detail}" → cleared; ${trace.split('\n').length} trace lines`
+  })
+
   await check('camera: still fetched over hald HTTP and stored', async () => {
     const r = await post('/camera/upper/capture', {})
     assert(r.status === 200, `${r.status} ${JSON.stringify(r.body)}`)
@@ -329,7 +367,7 @@ try {
       return r.length > 0 ? r : null
     })
     const analyzers = [...new Set(rows.map(r => r.analyzer))].sort()
-    assert(analyzers.join() === 'exg-otsu,green-threshold', `analysers ${analyzers}`)
+    assert(analyzers.join() === 'exg-otsu,green-threshold,pod-state', `analysers ${analyzers}`)
     const status = await get('/vision/status')
     assert(status.failed === 0, `failed ${status.failed}`)
     return `${rows.length} rows from ${analyzers.join(' + ')}`
@@ -520,6 +558,27 @@ try {
     const info = await get('/backup/restore')
     assert(info.undo?.undoneAt === null && info.status?.state === 'done', `info ${JSON.stringify(info)}`)
     return 'undo → fresh card again; undo again → restored'
+  })
+
+  await check('SIGTERM writes held telemetry to the card', async () => {
+    const since = new Date(Date.now() - 3_600_000).toISOString()
+    const onCard = () => {
+      const db = new Database(coreEnv.SEEDYPOD_RESTORE_DB, { readonly: true })
+      const { n } = db.prepare(`SELECT count(*) AS n FROM telemetry WHERE sensor = 'air_temp' AND ts >= ?`).get(since)
+      db.close()
+      return n
+    }
+    // History serves rows from memory until the flush, so more there than on the card means some are held.
+    const shown = await until('a held row', async () => {
+      const h = await get('/telemetry/air_temp?hours=1')
+      return h.length > onCard() ? h.length : 0
+    }, 90_000)
+    await stop(coreProc)
+    const saved = onCard()
+    assert(saved >= shown, `history showed ${shown} rows, ${saved} reached the card`)
+    startCore()
+    await until('core back', () => get('/settings'))
+    return `${saved} rows on the card after the stop`
   })
 
   await check('daemon loss is noticed (LWT → hal_offline)', async () => {

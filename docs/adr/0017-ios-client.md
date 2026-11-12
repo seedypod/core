@@ -14,7 +14,7 @@ sources: [{"resource": "https://github.com/sleepypod/ios", "title": "sleepypod/i
 
 ## Context
 
-Handoff step 5 asked whether `sleepypod/ios` (Swift/SwiftUI, AGPL-3.0, 149
+Handoff step 5 asked whether [`sleepypod/ios`](https://sleepypod.github.io/developers/ios/) (Swift/SwiftUI, AGPL-3.0, 149
 Swift files) can be forked as the seedypod app by pointing its networking
 layer at this repo's tRPC router. The relevant pieces of that app:
 
@@ -23,7 +23,7 @@ layer at this repo's tRPC router. The relevant pieces of that app:
 | tRPC transport | `Networking/SleepypodCoreClient.swift` (the `// MARK: - tRPC Transport` section, ~150 lines) | `GET /api/trpc/<proc>?input=` and `POST` with a superjson `{"json": …, "meta": …}` envelope, batched queries (`?batch=1`), result/error decoding, transient-error retry | **Yes, as is.** Core mounts the same `@hono/trpc-server` at `/api/trpc` with the `superjson` transformer (ADR-0005), so the wire format is identical |
 | Backend protocol | `Networking/SleepypodProtocol.swift` | ~45 bed-specific calls: sides, °F set-points, priming, vitals, sleep stages | **No.** There is no overlap with `sensors`, `light`, `pump`, `schedules`, `grow`, `camera`, `vision`, `alerts` |
 | Mock backend | `Networking/MockClient.swift`, `APIBackend.swift` | Demo mode and backend picker behind the protocol | **The pattern, not the code.** A seedypod mock mirrors `SimHal` |
-| Discovery | `Services/PodDiscovery.swift` | `NWBrowser` for `_sleepypod._tcp` with TXT records, manual IP fallback | **The pattern only.** Core advertises nothing today; only `hald` advertises `_seedypod-hal._tcp`, and that is the daemon's HTTP port, not core |
+| Discovery | `Services/PodDiscovery.swift` | `NWBrowser` for `_sleepypod._tcp` with TXT records, manual IP fallback | **The pattern only.** When this was written core advertised nothing (it now does, see below); `hald` advertises `_seedypod-hal._tcp`, and that is the daemon's HTTP port, not core |
 | Live stream | `Services/SensorStreamService.swift` | `URLSessionWebSocketTask` to `ws://<ip>:3001` with a receive loop | **The receive loop, retargeted** to `ws://<host>:3000/api/ws` (CoreEvent frames, ADR-0015) |
 | Models, views, HealthKit, ML, snore, Watch | the remaining ~85% | Sleep-domain UI and analysis | **No** |
 
@@ -55,8 +55,14 @@ is complete.
 
 ## Prerequisites in core (before the app)
 
-- Advertise core over mDNS as `_seedypod._tcp` on its HTTP port, with TXT
+- **Done.** Advertise core over mDNS as `_seedypod._tcp` on its HTTP port, with TXT
   `id` (unit), `v` (version) and `auth` (`1` when an API key is set).
+  `src/network/mdns.ts` publishes it with ciao, the responder hap-nodejs
+  already ships. `id` is hald's unit id, then `HAL_UNIT_ID`, then the
+  hostname. TXT is updated live when the API key or the unit id changes. The
+  instance name is the unit name in Settings, read at startup.
+  `SEEDYPOD_MDNS=0` turns it off; it is also off under Vitest and when core
+  binds only loopback. The Vercel demo is web-only and advertises nothing.
 - Keep `/api/ws` frames documented as part of the API reference.
 
 ## Consequences

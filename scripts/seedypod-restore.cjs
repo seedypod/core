@@ -29,12 +29,14 @@ const prefix = INSTALLED_PREFIX.startsWith('__') ? path.resolve(__dirname, '..')
 const P = {
   db: env('SEEDYPOD_RESTORE_DB') ?? path.join(prefix, 'data/seedypod.db'),
   captures: env('SEEDYPOD_RESTORE_CAPTURES') ?? path.join(prefix, 'data/captures'),
+  homekit: env('SEEDYPOD_RESTORE_HOMEKIT') ?? path.join(prefix, 'data/homekit'),
   journal: env('SEEDYPOD_RESTORE_JOURNAL') ?? path.join(prefix, 'src/db/migrations/meta/_journal.json'),
   etc: env('SEEDYPOD_ETC_DIR') ?? '/etc/seedypod',
   state: env('SEEDYPOD_STATE_DIR') ?? '/var/lib/seedypod',
   passwd: env('SEEDYPOD_MOSQUITTO_PASSWD') ?? '/etc/mosquitto/seedypod.passwd',
   mosquittoConf: env('SEEDYPOD_MOSQUITTO_CONF') ?? '/etc/mosquitto/conf.d/seedypod.conf',
   work: env('SEEDYPOD_RESTORE_WORK') ?? '/var/lib/seedypod-restore',
+  busy: env('SEEDYPOD_BUSY_DIR') ?? '/run/seedypod-busy',
 }
 const STAGING = path.join(P.work, 'staging')
 const PRE = path.join(P.work, 'pre-restore')
@@ -48,6 +50,7 @@ const NAMES = [
   /^etc\/seedypod\/hal\.toml$/,
   /^etc\/mosquitto\/seedypod\.passwd$/,
   /^var\/lib\/seedypod\/[a-z0-9_-]+\.json$/,
+  /^homekit\/[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)?\.json$/,
   /^captures\/(?:[\w-][\w.@-]*\/)*[\w-][\w.@-]*$/,
 ]
 
@@ -250,12 +253,22 @@ function settle(file, kind) {
     else own(uid, gid)
   }
   else if (kind === 'hal') {
-    own(0, lookup('/etc/group', 'seedypod') ?? 0)
+    own(0, ofDir(P.etc)[1])
     fs.chmodSync(file, 0o644)
   }
   else if (kind === 'passwd') {
-    own(lookup('/etc/passwd', 'mosquitto') ?? 0, lookup('/etc/group', 'seedypod') ?? 0)
+    own(lookup('/etc/passwd', 'mosquitto') ?? 0, ofDir(P.etc)[1])
     fs.chmodSync(file, 0o640)
+  }
+  else if (kind === 'homekit') {
+    // Pairing keys: core's user only, like hap-nodejs and core write them.
+    const [uid, gid] = ofDir(path.dirname(P.db))
+    own(uid, gid)
+    fs.chmodSync(file, 0o700)
+    for (const f of fs.readdirSync(file)) {
+      fs.chownSync(path.join(file, f), uid, gid)
+      fs.chmodSync(path.join(file, f), 0o600)
+    }
   }
   else if (kind === 'state') {
     const [uid, gid] = ofDir(P.state)
@@ -291,7 +304,24 @@ function ensureLanListener() {
   return true
 }
 
+// hald --usb-recover won't reboot for the USB hub while a file is here. Unlike
+// status.json it's in /run, so a power cut mid-restore can't hold reboots for good.
+function markBusy(busy) {
+  const marker = path.join(P.busy, 'restore')
+  try {
+    if (busy) {
+      fs.mkdirSync(P.busy, { recursive: true })
+      fs.writeFileSync(marker, '')
+    }
+    else fs.rmSync(marker, { force: true })
+  }
+  catch {
+    // Only a guard against a reboot: never worth failing a restore for.
+  }
+}
+
 function writeStatus(s) {
+  markBusy(!['done', 'failed', 'refused'].includes(s.state))
   fs.mkdirSync(P.work, { recursive: true, mode: 0o755 })
   const tmp = `${STATUS}.tmp`
   fs.writeFileSync(tmp, `${JSON.stringify({ ...s, at: new Date().toISOString() })}\n`, { mode: 0o644 })
@@ -326,6 +356,8 @@ function plan(names, manifest) {
       items.push([`var/lib/seedypod/${f}`, path.join(P.state, f), state.includes(f) ? path.join(files, 'var/lib/seedypod', f) : null, 'state'])
     }
   }
+  // HomeKit's identity and pairings (ADR 0023) are swapped as one directory, and only when the bundle has them.
+  if (names.some(n => n.startsWith('homekit/'))) items.push(['data/homekit', P.homekit, path.join(files, 'homekit'), 'homekit'])
   if (manifest.photos) items.push(['data/captures', P.captures, fs.existsSync(path.join(files, 'captures')) ? path.join(files, 'captures') : null, 'captures'])
   return items
 }
@@ -499,6 +531,8 @@ async function main(argv) {
       process.stderr.write(`${e.message}\n`)
       return result(e.code === 'newer-schema' ? 3 : 4, { ok: false, code: e.code, error: e.message })
     }
+    // No terminal status was written, so nothing else will lift the hold on a USB hub reboot.
+    markBusy(false)
     process.stderr.write(`restore failed: ${e.message}\n`)
     return result(1, { ok: false, code: 'failed', error: e.message })
   }

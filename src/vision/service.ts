@@ -7,8 +7,9 @@
 import type { BlobSink } from '../camera/captures'
 import type { EventBus } from '../lib/eventBus'
 import type { AnalysisRow, Capture, Store } from '../store/types'
-import { DEVICE_ANALYZERS, info, type AnalyzerInfo } from './analyzer'
-import { inlineExecutor, type Executor, type JobOutput } from './execute'
+import { deviceAnalyzers, info, type AnalyzerInfo } from './analyzer'
+import { DAMAGED, inlineExecutor, type Executor, type JobOutput } from './execute'
+import { podRegions } from './regions'
 
 export interface AnalysisServiceOptions {
   store: Store
@@ -71,8 +72,9 @@ export class AnalysisService {
    * background. Returns how many captures it will visit.
    */
   rerun(analyzerId: string, limit = 2000): number {
-    const analyzer = DEVICE_ANALYZERS.find(a => a.id === analyzerId)
+    const analyzer = deviceAnalyzers().find(a => a.id === analyzerId)
     if (!analyzer) throw new Error(`${analyzerId} is not an on-device analyser`)
+    if (analyzer.disabled) throw new Error(`${analyzerId} is off: ${analyzer.disabled}`)
     if (this.backfill) throw new Error(`already re-running ${this.backfill.analyzer}`)
     const captures = this.o.store.captures.list(undefined, limit)
     this.backfill = { analyzer: analyzerId, done: 0, total: captures.length }
@@ -94,7 +96,8 @@ export class AnalysisService {
   list(): AnalyzerListing[] {
     const primary = this.o.store.settings.get().primaryAnalyzer
     const stats = this.o.store.analyses.stats()
-    const out: AnalyzerListing[] = DEVICE_ANALYZERS.map((a) => {
+    const device = deviceAnalyzers()
+    const out: AnalyzerListing[] = device.map((a) => {
       const s = stats.filter(x => x.analyzer === a.id && x.version === a.version)
       return { ...info(a), source: 'device', primary: a.id === primary, ...totals(s) }
     })
@@ -103,12 +106,12 @@ export class AnalysisService {
       const key = `${s.analyzer}@${s.version}`
       if (seen.has(key)) continue
       seen.add(key)
-      const known = DEVICE_ANALYZERS.find(a => a.id === s.analyzer)
+      const known = device.find(a => a.id === s.analyzer)
       out.push({
         id: s.analyzer,
         version: s.version,
         label: known?.label ?? s.analyzer,
-        description: known ? `Older version of ${known.label}.` : 'Results posted by an off-device worker.',
+        description: known ? `Older version of ${known.label}.` : s.source === 'device' ? 'A model revision that no longer runs here; enable it again under GET /api/models.' : 'Results posted by an off-device worker.',
         metrics: known?.metrics ?? [],
         runsOn: [s.source],
         source: s.source,
@@ -130,15 +133,20 @@ export class AnalysisService {
     const job = this.waiting.get(camera)
     if (!job) return
     this.waiting.delete(camera)
-    await this.analyse(job.capture, job.bytes, DEVICE_ANALYZERS.map(a => a.id))
+    await this.analyse(job.capture, job.bytes, deviceAnalyzers().filter(a => !a.disabled).map(a => a.id))
   }
 
   private async analyse(capture: Capture, bytes: Uint8Array, analyzers: string[]): Promise<void> {
     this.running = capture
     try {
-      const opts = { artifacts: this.o.store.settings.get().analysisArtifacts }
-      const out = await this.executor({ bytes, camera: capture.camera, analyzers, opts })
-      if (out) {
+      const settings = this.o.store.settings.get()
+      const opts = { artifacts: settings.analysisArtifacts }
+      const regions = podRegions(capture.camera, settings.podRegions)
+      const out = await this.executor({ bytes, camera: capture.camera, regions, analyzers, opts })
+      if (out === DAMAGED) {
+        await this.forget(capture)
+      }
+      else if (out) {
         this.o.store.analyses.add(await this.toRows(capture, out))
         this.o.events?.emit({ kind: 'mutation', path: 'analyses' })
       }
@@ -150,6 +158,21 @@ export class AnalysisService {
     finally {
       this.running = null
     }
+  }
+
+  /**
+   * Drop what this unit scored from a damaged still, which a re-run finds among
+   * stills taken before hald could refuse them. Left in, those scores keep
+   * pulling the pod trends. A remote worker's results stay: they aren't ours to redo.
+   */
+  private async forget(capture: Capture): Promise<void> {
+    const rows = this.o.store.analyses.forCapture(capture.id).filter(r => r.source === 'device')
+    if (rows.length === 0) return
+    for (const r of rows) {
+      if (r.artifact) await this.o.sink.remove(r.artifact)
+    }
+    this.o.store.analyses.removeDevice(capture.id)
+    this.o.events?.emit({ kind: 'mutation', path: 'analyses' })
   }
 
   private async toRows(capture: Capture, out: JobOutput): Promise<AnalysisRow[]> {

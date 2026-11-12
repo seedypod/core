@@ -1,9 +1,13 @@
 /**
  * Captures — stills from the HAL stored as files (unit) or data URLs (demo),
  * indexed in the Store, pruned to a cap, and served by the server.
+ *
+ * hald refuses torn frames, which only it can see. This only checks that a
+ * whole JPEG arrived, which also covers an older hald or a dropped connection.
  */
 import type { HalClient } from '../hardware/types'
 import type { Capture, Store } from '../store/types'
+import { LinkWatch } from './linkHealth'
 
 export interface BlobSink {
   put(key: string, bytes: Uint8Array): Promise<string>
@@ -39,33 +43,109 @@ export interface CaptureServiceOptions {
   minBytes?: number
   /** Scores each still after it is stored (ADR-0019); omitted = no analysis. */
   analysis?: { enqueue(c: Capture, bytes: Uint8Array): void, removeArtifacts(captureId: string): Promise<void> }
+  /** Every still once it is stored, scheduled or on demand. */
+  onStored?: (c: Capture) => void
+}
+
+/** SOI at the start and EOI at the end: the whole file arrived. */
+export function isWholeJpeg(b: Uint8Array): boolean {
+  return b[0] === 0xFF && b[1] === 0xD8 && b.at(-2) === 0xFF && b.at(-1) === 0xD9
+}
+
+type Cam = 'upper' | 'lower'
+
+/** The latest full-size pod-ID still of a camera (#224). Kept apart from the captures. */
+export interface PodIdStill {
+  camera: Cam
+  ts: string
+  path: string
+  bytes: number
+}
+
+/**
+ * The newest stored still for `camera`, without taking one. HomeKit and Home
+ * Assistant show this rather than waking the camera (ADR 0027).
+ */
+export async function latestStill(store: Pick<Store, 'captures'>, sink: Pick<BlobSink, 'get'>, camera: Cam): Promise<{ capture: Capture, bytes: Uint8Array } | null> {
+  const [capture] = store.captures.list(camera, 1)
+  if (!capture) return null
+  const bytes = await sink.get(capture.path)
+  return bytes ? { capture, bytes } : null
 }
 
 export class CaptureService {
   private readonly now: () => Date
   private readonly keep: number
   private readonly minBytes: number
+  /** Why each failing camera failed. `camera_missing` covers both, so it only clears once this is empty. */
+  private readonly failing = new Map<Cam, string>()
+  private readonly link: LinkWatch
   private timer: ReturnType<typeof setInterval> | null = null
+  private readonly podIds = new Map<Cam, PodIdStill>()
 
   constructor(private readonly o: CaptureServiceOptions) {
     this.now = o.now ?? (() => new Date())
     this.keep = o.keep ?? 720
     this.minBytes = o.minBytes ?? 1024
+    this.link = new LinkWatch(o.store.alerts)
   }
 
-  async capture(camera: 'upper' | 'lower'): Promise<Capture> {
-    const bytes = await this.o.hal.captureStill(camera)
+  /** What this capture says about the link. `good` is a frame hald was happy with. */
+  private noteLink(camera: Cam, good: boolean, ts: string): void {
+    this.link.record(camera, this.o.hal.damagedFrames?.(camera) ?? 0, good, ts)
+    this.link.recordBoots(this.o.hal.hubBoots?.() ?? null, ts)
+  }
+
+  private fail(camera: Cam, detail: string, ts: string): void {
+    this.failing.set(camera, detail)
+    this.report(ts)
+  }
+
+  private recovered(camera: Cam, ts: string): void {
+    this.failing.delete(camera)
+    this.report(ts)
+  }
+
+  private report(ts: string): void {
+    const detail = [...this.failing.values()].join('; ')
+    if (!detail) this.o.store.alerts.clear('camera_missing', ts)
+    else {
+      // hald can clear this shared alert between captures. Check the store,
+      // so an unchanged capture failure is reported again after that happens.
+      const active = this.o.store.alerts.list({ activeOnly: true }).find(a => a.kind === 'camera_missing')
+      if (active?.detail !== detail) this.o.store.alerts.raise('camera_missing', detail, ts)
+    }
+  }
+
+  async capture(camera: Cam): Promise<Capture> {
+    let bytes: Uint8Array
+    try {
+      bytes = await this.o.hal.captureStill(camera)
+    }
+    catch (e) {
+      const detail = `${camera} camera failed: ${(e as Error).message}`
+      const failedAt = this.now().toISOString()
+      this.fail(camera, detail, failedAt)
+      this.noteLink(camera, false, failedAt)
+      throw new Error(detail)
+    }
     const ts = this.now().toISOString()
+    this.noteLink(camera, true, ts)
     if (bytes.byteLength < this.minBytes) {
-      this.o.store.alerts.raise('camera_missing', `${camera} camera returned ${bytes.byteLength} bytes`, ts)
+      this.fail(camera, `${camera} camera returned ${bytes.byteLength} bytes`, ts)
       throw new Error(`${camera} camera returned no usable image`)
     }
-    this.o.store.alerts.clear('camera_missing', ts)
+    if (!isWholeJpeg(bytes)) {
+      this.fail(camera, `${camera} camera sent an incomplete JPEG`, ts)
+      throw new Error(`${camera} camera returned no usable image`)
+    }
+    this.recovered(camera, ts)
     const id = `${camera}-${ts.replace(/[:.]/g, '-')}`
     const path = await this.o.sink.put(`${id}.jpg`, bytes)
     const row: Capture = { id, camera, ts, path, bytes: bytes.byteLength }
     this.o.store.captures.add(row)
     this.o.analysis?.enqueue(row, bytes)
+    this.o.onStored?.(row)
     for (const dropped of this.o.store.captures.prune(camera, this.keep)) {
       await this.o.sink.remove(dropped.path)
       await this.o.analysis?.removeArtifacts(dropped.id)
@@ -73,11 +153,40 @@ export class CaptureService {
     return row
   }
 
+  /**
+   * A full-size still for reading the pods' dot codes (#224). It is not a
+   * capture: it isn't listed, scored, pruned with them or counted by the link
+   * watch, and a failure raises no alert. Only the latest per camera is kept,
+   * overwritten each time.
+   */
+  async capturePodId(camera: Cam): Promise<{ still: PodIdStill, bytes: Uint8Array }> {
+    if (!this.o.hal.captureFull) throw new Error('this hardware has no full-size stills')
+    const bytes = await this.o.hal.captureFull(camera)
+    if (bytes.byteLength < this.minBytes || !isWholeJpeg(bytes)) throw new Error(`${camera} camera returned no usable full-size image`)
+    const ts = this.now().toISOString()
+    const path = await this.o.sink.put(`podid/${camera}.jpg`, bytes)
+    const still: PodIdStill = { camera, ts, path, bytes: bytes.byteLength }
+    this.podIds.set(camera, still)
+    return { still, bytes }
+  }
+
+  /** The latest pod-ID still of `camera` taken since core started, if any. */
+  async podId(camera: Cam): Promise<{ still: PodIdStill, bytes: Uint8Array } | null> {
+    const still = this.podIds.get(camera)
+    if (!still) return null
+    const bytes = await this.o.sink.get(still.path)
+    return bytes ? { still, bytes } : null
+  }
+
   async bytes(id: string): Promise<{ capture: Capture, bytes: Uint8Array } | null> {
     const capture = this.o.store.captures.get(id)
     if (!capture) return null
     const bytes = await this.o.sink.get(capture.path)
     return bytes ? { capture, bytes } : null
+  }
+
+  latest(camera: Cam): Promise<{ capture: Capture, bytes: Uint8Array } | null> {
+    return latestStill(this.o.store, this.o.sink, camera)
   }
 
   /** Periodic captures of both cameras. */

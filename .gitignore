@@ -19,7 +19,8 @@ coverage
 reports/mutation
 playwright-report
 
-# SQLite (local/dev)
+# SQLite (local/dev); `pnpm dev` and `pnpm dev:sim` keep their data here
+data/
 *.db
 *.db-shm
 *.db-wal

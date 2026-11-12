@@ -44,21 +44,48 @@ same sentence for each rule.
 | Pods | Each pod's green area and its growth trend, from the primary analyser on the **Analysis** screen |
 | Grow cycle | Days since the cycle started |
 
-If a reading has no value (a sensor isn't fitted, or its reading is stale), the
-rule **skips**. It never acts on missing data.
+If a reading has no value (a sensor isn't fitted, or hald marks its reading
+stale or suspect), the rule **skips**. It never acts on missing or untrusted
+data.
 
 ## Dry run, then arm
 
 New rules start in **dry run**. A dry-run rule evaluates on schedule and logs
 what it **would** have done, but touches nothing. Leave it for a few days,
-check the run log, then press **Arm**.
+check the activity log, then switch it to **Active**.
 
-**Back to dry run** and **Turn off** are always one click away.
+Each rule has an **Off / Dry-run / Active** control on its row, so going back
+is always one click. The header shows the count (`3 rules · 2 active ·
+1 dry-run`) next to the kill switch. With no rules yet, the screen offers two
+examples (dimming when hot, a pH dose) that open in the builder.
+
+### Starter rules
+
+**Starter rules**, below the rules, come from the knowledge bundle
+([ADR 0029](adr/0029-care-engine-and-agent-boundary.md)):
+
+| Starter | Fires when | Note |
+|---|---|---|
+| pH outside 5.5–6.5 | The hour's average pH leaves 5.5–6.5 | [pH and EC](https://github.com/seedypod/core/blob/dev/knowledge/nutrients/gardyn-feeding-guidance.md#ph-and-ec) |
+| EC below the crop target | The hour's average EC drops below the low end for what you grow: 0.8 seedlings, 1.0 herbs, 1.2 leafy greens, 2.0 fruiting (mS/cm) | [pH and EC](https://github.com/seedypod/core/blob/dev/knowledge/nutrients/gardyn-feeding-guidance.md#ph-and-ec) |
+| Tank below half | The tank has been under 50 % for 30 minutes | [Gardyn feeding guidance](https://github.com/seedypod/core/blob/dev/knowledge/nutrients/gardyn-feeding-guidance.md#gardyn-feeding-guidance) |
+
+Each one only notifies you. Click one to open it in the builder, where you can
+change it before saving. It saves in dry run like any new rule, so check its
+backtest and run log, then arm it. A starter is greyed out when the unit lacks
+its sensor ("no pH probe") or a rule of that name exists. The section goes away
+once you've added every one the unit can run.
 
 ## Backtest before you arm
 
-**Backtest**, on a saved rule or inside the builder, replays the rule over the
-last 1, 3 or 7 days of recorded readings and shows:
+Every rule on the list carries a **standing 7-day backtest**, replayed in the
+background: a line such as `7-day backtest · 3 would fire · peak 31 of 29 °C`
+(how far the reading it watches went against its threshold), and a sparkline
+of that reading with the threshold dashed and a mark where the rule would have
+fired. You can see what arming a rule would mean without opening anything.
+
+Click the summary, or open the builder, for the full replay over the last 1, 3
+or 7 days of recorded readings. It shows:
 
 - when it would have fired, and what each action would have done, including
   values that were clamped;
@@ -72,7 +99,13 @@ unknown in a backtest; the panel tells you when that applies.
 
 ## Why did it do that?
 
-The **run log** keeps one line every time a rule's *when* came round:
+**Today**, at the top of the screen, says who holds the light right now and
+draws the last 24 hours as one lane per rule, with a mark wherever it fired or
+would have fired.
+
+The **activity log** keeps one line every time a rule's *when* came round,
+grouped by day. It shows what rules did by default; **All checks** adds the
+skipped ones, and **Fired**, **Would fire** and **Refused** narrow it down:
 
 | Outcome | Meaning |
 |---|---|
@@ -124,7 +157,8 @@ light at the moment.
 - **REST** (`/api`, see `GET /api/openapi.json`):
   - `GET /automations`, `POST /automations`, `PUT` and `DELETE /automations/{id}`
   - `GET /automations/runs`, `GET /automations/status`, `GET /automations/signals`
-  - `POST /automations/backtest`
+  - `POST /automations/backtest`, and `GET /automations/backtests` for every
+    rule's 7-day summary at once
   - `PUT /autopilot/enabled` (the kill switch)
   - `GET /light/owner`, `POST /light/resume`
 
@@ -132,6 +166,8 @@ light at the moment.
   [ADR 0020](adr/0020-autopilot-reactive-automations.md). The API accepts
   shapes the builder can't show, such as nested AND/OR, arithmetic in values,
   and per-action light limits. The app shows those rules read-only.
-- **MCP:** `list_automations` and `backtest_automation` are read-only, so an
-  agent can explain rules and test drafts. Creating, arming or disabling rules
-  stays with a person in the app.
+- **MCP:** `list_automations`, `backtest_automation` and `starter_rules` are
+  read-only, so an agent can explain rules, offer a starter and test drafts.
+  Creating, arming or disabling rules stays with a person in the app
+  ([ADR 0029](adr/0029-care-engine-and-agent-boundary.md)).
+- **REST:** `GET /care/starter-rules` lists the starters with their citations.

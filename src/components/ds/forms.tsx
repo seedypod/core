@@ -1,8 +1,9 @@
 'use client'
 
 import { ChevronDown, Minus, Plus } from 'lucide-react'
-import type { ComponentProps, ReactNode } from 'react'
+import { useEffect, useRef, type ComponentProps, type PointerEvent, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { dayOn, daysLabel, runsOn } from '@/src/lib/days'
 
 /* ─── Toggle ─────────────────────────────────────────────────────────────
    Green track when on. Only the knob animates (150ms standard ease). */
@@ -173,11 +174,18 @@ export function TextField({ label, mono = true, onChange, hint, className, readO
   )
 }
 
-/* ─── Slider ─────────────────────────────────────────────────────────── */
+/* ─── Slider ───────────────────────────────────────────────────────────
+   The input stays the semantic control, for keyboards and screen readers, but
+   pointers skip it: a native range only jumps to a tap on some browsers (iOS
+   Safari wants its thumb grabbed), so the value comes from the pointer's
+   position. `touch-pan-y` keeps vertical swipes scrolling the page; the browser
+   cancels the pointer when one starts, and the slider goes back to where it was.
+   `min-h` holds its height in a flex column, where `flex-1` alone collapses it. */
 export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1, label, disabled, className }: {
   value: number
+  /** Fires on each change, the first on touch; on a cancelled touch, with where it started. */
   onChange?: (v: number) => void
-  /** Fires on pointer/key release — use for expensive writes. */
+  /** Fires once per gesture or key release that changed the value — use for expensive writes. */
   onCommit?: (v: number) => void
   min?: number
   max?: number
@@ -187,8 +195,69 @@ export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1
   className?: string
 }) {
   const pct = max === min ? 0 : ((value - min) / (max - min)) * 100
+  const input = useRef<HTMLInputElement>(null)
+  const drag = useRef<{ id: number, from: number, at: number } | null>(null)
+  /** Where a keyboard or screen reader adjustment started, until it's committed. */
+  const adjusted = useRef<number | null>(null)
+  const keyDown = useRef(false)
+
+  const follow = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (d?.id !== e.pointerId) return
+    const { left, width } = e.currentTarget.getBoundingClientRect()
+    const along = Math.max(0, Math.min(1, (e.clientX - left) / width))
+    const v = Math.min(max, min + Math.round((along * (max - min)) / step) * step)
+    if (v === d.at) return
+    d.at = v
+    onChange?.(v)
+  }
+  const start = (e: PointerEvent<HTMLDivElement>) => {
+    if (disabled || drag.current || e.button !== 0) return
+    drag.current = { id: e.pointerId, from: value, at: value }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    input.current?.focus({ preventScroll: true })
+    follow(e)
+  }
+  const finish = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (d?.id !== e.pointerId) return
+    drag.current = null
+    if (d.at !== d.from) onCommit?.(d.at)
+  }
+  const cancel = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (d?.id !== e.pointerId) return
+    drag.current = null
+    if (d.at !== d.from) onChange?.(d.from)
+  }
+
+  const settle = () => {
+    const from = adjusted.current
+    adjusted.current = null
+    if (from !== null && from !== value) onCommit?.(value)
+  }
+  // A screen reader's adjustment has no key to release; its native change is the end of it. React's onChange is the input event.
+  useEffect(() => {
+    const el = input.current
+    const onNativeChange = () => {
+      if (!keyDown.current) settle()
+    }
+    el?.addEventListener('change', onNativeChange)
+    return () => el?.removeEventListener('change', onNativeChange)
+  })
+
   return (
-    <div data-no-swipe className={cn('relative h-[18px] min-w-20 flex-1', disabled && 'opacity-45', className)}>
+    <div
+      data-no-swipe
+      className={cn('relative h-[18px] min-h-[18px] min-w-20 flex-1 touch-pan-y select-none', disabled ? 'opacity-45' : 'cursor-pointer', className)}
+      onPointerDown={start}
+      onPointerMove={follow}
+      onPointerUp={finish}
+      onPointerCancel={cancel}
+      onLostPointerCapture={cancel}
+    >
+      {/* A 44 px target for a finger, past the thumb at each end, without taking 44 px of layout. */}
+      <div data-testid="slider-hit" className="absolute -inset-x-2 -inset-y-[13px]" />
       <div className="absolute inset-x-0 top-[7px] h-1 rounded-sm bg-line-2" />
       <div className="absolute left-0 top-[7px] h-1 rounded-sm bg-fg" style={{ width: `${pct}%` }} />
       <div
@@ -196,6 +265,7 @@ export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1
         style={{ left: `calc(${pct}% - 9px)` }}
       />
       <input
+        ref={input}
         type="range"
         aria-label={label}
         min={min}
@@ -203,10 +273,23 @@ export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1
         step={step}
         value={value}
         disabled={disabled}
-        onChange={e => onChange?.(Number(e.target.value))}
-        onPointerUp={e => onCommit?.(Number((e.target as HTMLInputElement).value))}
-        onKeyUp={e => onCommit?.(Number((e.target as HTMLInputElement).value))}
-        className="absolute inset-0 m-0 !min-h-0 w-full cursor-pointer opacity-0"
+        onChange={(e) => {
+          adjusted.current ??= value
+          onChange?.(Number(e.target.value))
+        }}
+        onKeyDown={() => {
+          keyDown.current = true
+        }}
+        onKeyUp={() => {
+          keyDown.current = false
+          settle()
+        }}
+        // Tab moves focus before its keyup, which then lands elsewhere; without this the key stays down for good.
+        onBlur={() => {
+          keyDown.current = false
+          settle()
+        }}
+        className="pointer-events-none absolute inset-0 m-0 !min-h-0 w-full opacity-0"
       />
     </div>
   )
@@ -274,6 +357,27 @@ export function DayPicker({ value, onChange, days = DEFAULT_DAYS, labels, classN
         )
       })}
     </div>
+  )
+}
+
+/* ─── WeekdayDots ────────────────────────────────────────────────────────
+   DayPicker's read-only twin: the week Mon-first with a schedule's days lit,
+   and the days summed up beside it ("Every day", "Mondays", "Mon, Wed, Fri"). */
+export function WeekdayDots({ days, summary = true, className }: {
+  /** The schedule's day mask, Mon=1 … Sun=64. */
+  days: number
+  summary?: boolean
+  className?: string
+}) {
+  return (
+    <span role="img" aria-label={runsOn(days)} data-testid="weekday-dots" className={cn('flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[11px]', className)}>
+      <span className="flex min-w-0 flex-wrap gap-0.5" aria-hidden>
+        {DEFAULT_DAYS.map((d, i) => (
+          <span key={i} data-on={dayOn(days, i) ? 'true' : undefined} className={cn('grid size-4 place-items-center rounded-[3px] leading-none', dayOn(days, i) ? 'bg-tank/20 text-tank' : 'text-fg-3/60')}>{d}</span>
+        ))}
+      </span>
+      {summary && <span className="whitespace-nowrap text-fg-2" aria-hidden>{daysLabel(days)}</span>}
+    </span>
   )
 }
 

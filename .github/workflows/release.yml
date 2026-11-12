@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   hal:
-    name: hald ${{ matrix.target }}
+    name: hald + podvision ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -26,16 +26,37 @@ jobs:
           workspaces: hal
           key: ${{ matrix.target }}
       - uses: taiki-e/install-action@cross
-      - run: cross build --release --target ${{ matrix.target }} -p hald
+      - run: cross build --release --target ${{ matrix.target }} -p hald --features hardware
       - run: cp target/${{ matrix.target }}/release/hald hald-${{ matrix.target }}
+      # The update helper refuses an asset it can't check (ADR-0026).
+      - run: sha256sum hald-${{ matrix.target }} > hald-${{ matrix.target }}.sha256
       - uses: actions/upload-artifact@v6
         with:
           name: hald-${{ matrix.target }}
-          path: hal/hald-${{ matrix.target }}
+          path: |
+            hal/hald-${{ matrix.target }}
+            hal/hald-${{ matrix.target }}.sha256
+      # Core's native pod-state runner (#191): its own binary, never linked into hald.
+      - run: cross build --release --target ${{ matrix.target }} -p podvision
+      - run: cp target/${{ matrix.target }}/release/podvision podvision-${{ matrix.target }}
+      - run: sha256sum podvision-${{ matrix.target }} > podvision-${{ matrix.target }}.sha256
+      - uses: actions/upload-artifact@v6
+        with:
+          name: podvision-${{ matrix.target }}
+          path: |
+            hal/podvision-${{ matrix.target }}
+            hal/podvision-${{ matrix.target }}.sha256
+
+  sqlite-armv6:
+    uses: ./.github/workflows/sqlite-armv6.yml
 
   release:
     runs-on: ubuntu-latest
-    needs: hal
+    needs: [hal, sqlite-armv6]
+    # Without the binary a Pi Zero W compiles it, which beats no release at all.
+    if: ${{ !cancelled() && needs.hal.result == 'success' && needs.sqlite-armv6.result != 'cancelled' }}
+    outputs:
+      tag: ${{ steps.published.outputs.tag }}
     permissions:
       contents: write # to be able to publish a GitHub release
       issues: write # to be able to comment on released issues
@@ -46,6 +67,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          lfs: true
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -90,11 +112,35 @@ jobs:
             --exclude='.claude' \
             .
           mv /tmp/seedypod-core.tar.gz .
+          sha256sum seedypod-core.tar.gz > seedypod-core.tar.gz.sha256
 
-      - name: Download hald binaries
+      - name: Check the tarball has no Git LFS pointers
+        # Without lfs: true on checkout, the brand PNGs ship as pointer text and the logo breaks on the unit.
+        run: |
+          mkdir -p "$RUNNER_TEMP/tarball" && tar xzf seedypod-core.tar.gz -C "$RUNNER_TEMP/tarball"
+          if grep -rlx 'version https://git-lfs.github.com/spec/v1' "$RUNNER_TEMP/tarball"; then
+            echo "::error::Git LFS pointer files in seedypod-core.tar.gz; check out with lfs: true"
+            exit 1
+          fi
+          [ "$(file -b --mime-type "$RUNNER_TEMP/tarball/web/dist/brand/icon-64.png")" = image/png ]
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: seedypod-core
+          path: seedypod-core.tar.gz
+          retention-days: 1
+
+      - name: Download hald and podvision binaries
         uses: actions/download-artifact@v8
         with:
-          pattern: hald-*
+          pattern: '{hald,podvision}-*'
+          merge-multiple: true
+          path: release-assets
+
+      - name: Download the ARMv6 better-sqlite3
+        uses: actions/download-artifact@v8
+        with:
+          pattern: better-sqlite3-armv6
           merge-multiple: true
           path: release-assets
 
@@ -105,3 +151,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm exec semantic-release
+
+      - name: Find the tag it made, if it made one
+        id: published
+        run: echo "tag=$(git tag --points-at HEAD --list 'v*' | sort -V | tail -1)" >> "$GITHUB_OUTPUT"
+
+  os-image:
+    needs: [release]
+    if: ${{ needs.release.outputs.tag != '' }}
+    permissions:
+      contents: write # to attach the image to the release
+    uses: ./.github/workflows/os-image.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+      branch: main

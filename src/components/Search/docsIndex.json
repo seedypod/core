@@ -1,0 +1,1491 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-02T07:07:28.116Z",
+  "base": "https://seedypod.github.io",
+  "pages": [
+    {
+      "path": "/about/",
+      "title": "About seedypod",
+      "section": null,
+      "description": "Why seedypod exists, where it stands, and how it relates to sleepypod and garden-of-eden.",
+      "headings": [
+        {
+          "title": "Project status",
+          "anchor": "project-status"
+        },
+        {
+          "title": "Credits and license",
+          "anchor": "credits-and-license"
+        },
+        {
+          "title": "Get involved",
+          "anchor": "get-involved"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/",
+      "title": "User guide",
+      "section": "User guide",
+      "description": "Install seedypod on your Gardyn and use the web UI, schedules, grow cycle and Home Assistant.",
+      "headings": [
+        {
+          "title": "What you can do",
+          "anchor": "what-you-can-do"
+        },
+        {
+          "title": "Safety you can count on",
+          "anchor": "safety-you-can-count-on"
+        },
+        {
+          "title": "Guides",
+          "anchor": "guides"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/analysis/",
+      "title": "Capture analysis",
+      "section": "User guide",
+      "description": "How the unit scores pods from camera stills, how to compare analysers, export a dataset, mirror photos off the unit, and plug in an off-device analyser.",
+      "headings": [
+        {
+          "title": "On the unit",
+          "anchor": "on-the-unit"
+        },
+        {
+          "title": "Export a dataset",
+          "anchor": "export-a-dataset"
+        },
+        {
+          "title": "Mirror photos off the unit (opt-in)",
+          "anchor": "mirror-photos-off-the-unit-opt-in"
+        },
+        {
+          "title": "Plug in an off-device analyser",
+          "anchor": "plug-in-an-off-device-analyser"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/autopilot/",
+      "title": "Autopilot",
+      "section": "User guide",
+      "description": "Rules that react to readings: build one, read it back in plain English, backtest it, arm it, and see why it acted; how the light decides between you, Autopilot and the schedule.",
+      "headings": [
+        {
+          "title": "A rule is WHEN, IF, THEN",
+          "anchor": "a-rule-is-when-if-then"
+        },
+        {
+          "title": "What a rule can read",
+          "anchor": "what-a-rule-can-read"
+        },
+        {
+          "title": "Dry run, then arm",
+          "anchor": "dry-run-then-arm"
+        },
+        {
+          "title": "Backtest before you arm",
+          "anchor": "backtest-before-you-arm"
+        },
+        {
+          "title": "Why did it do that?",
+          "anchor": "why-did-it-do-that"
+        },
+        {
+          "title": "Safety",
+          "anchor": "safety"
+        },
+        {
+          "title": "Who controls the light",
+          "anchor": "who-controls-the-light"
+        },
+        {
+          "title": "For integrators",
+          "anchor": "for-integrators"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/debugging/",
+      "title": "Debugging",
+      "section": "User guide",
+      "description": "SSH, hald --check, journalctl, I²C probing, latched faults and the simulator.",
+      "headings": [
+        {
+          "title": "Get a shell",
+          "anchor": "get-a-shell"
+        },
+        {
+          "title": "Check the hardware daemon",
+          "anchor": "check-the-hardware-daemon"
+        },
+        {
+          "title": "Logs only last until reboot",
+          "anchor": "logs-only-last-until-reboot"
+        },
+        {
+          "title": "Check core",
+          "anchor": "check-core"
+        },
+        {
+          "title": "Probe the I²C bus",
+          "anchor": "probe-the-ic-bus"
+        },
+        {
+          "title": "The pump will not start",
+          "anchor": "the-pump-will-not-start"
+        },
+        {
+          "title": "A restore that didn’t finish",
+          "anchor": "a-restore-that-didnt-finish"
+        },
+        {
+          "title": "SD card writes",
+          "anchor": "sd-card-writes"
+        },
+        {
+          "title": "Reproduce without hardware",
+          "anchor": "reproduce-without-hardware"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/grow-cycle/",
+      "title": "Grow cycle and pods",
+      "section": "User guide",
+      "description": "Track a grow from germination to harvest, get timed reminders, and keep notes on all 30 pods.",
+      "headings": [
+        {
+          "title": "Start a cycle",
+          "anchor": "start-a-cycle"
+        },
+        {
+          "title": "Reminders",
+          "anchor": "reminders"
+        },
+        {
+          "title": "Pods",
+          "anchor": "pods"
+        },
+        {
+          "title": "Plant health from the cameras",
+          "anchor": "plant-health-from-the-cameras"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/home-assistant/",
+      "title": "Home Assistant",
+      "section": "User guide",
+      "description": "The Gardyn appears in Home Assistant through MQTT discovery; core adds grow reminders and a water-now button.",
+      "headings": [
+        {
+          "title": "Connect the daemon",
+          "anchor": "connect-the-daemon"
+        },
+        {
+          "title": "Core bridge",
+          "anchor": "core-bridge"
+        },
+        {
+          "title": "Example dashboard and automations",
+          "anchor": "example-dashboard-and-automations"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/installation/",
+      "title": "Install seedypod on a Gardyn",
+      "section": "User guide",
+      "description": "Back up the stock card, flash Raspberry Pi OS, install hald and core, connect Home Assistant.",
+      "headings": [
+        {
+          "title": "Back up the stock card",
+          "anchor": "back-up-the-stock-card"
+        },
+        {
+          "title": "Flash Raspberry Pi OS",
+          "anchor": "flash-raspberry-pi-os"
+        },
+        {
+          "title": "Enable I²C and install the hardware daemon",
+          "anchor": "enable-ic-and-install-the-hardware-daemon"
+        },
+        {
+          "title": "Install core",
+          "anchor": "install-core"
+        },
+        {
+          "title": "Connect Home Assistant (optional)",
+          "anchor": "connect-home-assistant-optional"
+        },
+        {
+          "title": "First things to set",
+          "anchor": "first-things-to-set"
+        },
+        {
+          "title": "Back up off the card",
+          "anchor": "back-up-off-the-card"
+        },
+        {
+          "title": "Replace a dead SD card",
+          "anchor": "replace-a-dead-sd-card"
+        },
+        {
+          "title": "Flash a new card",
+          "anchor": "flash-a-new-card"
+        },
+        {
+          "title": "Run both installers",
+          "anchor": "run-both-installers"
+        },
+        {
+          "title": "Restore",
+          "anchor": "restore"
+        },
+        {
+          "title": "Change Wi-Fi",
+          "anchor": "change-wi-fi"
+        },
+        {
+          "title": "Uninstall",
+          "anchor": "uninstall"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/maintenance/",
+      "title": "Maintenance and self-repair",
+      "section": "User guide",
+      "description": "Routine care, what each alert means and how to clear it, health checks, backups, updates, and replacing parts on a seedypod unit.",
+      "headings": [
+        {
+          "title": "Routine care",
+          "anchor": "routine-care"
+        },
+        {
+          "title": "Alerts and what to do",
+          "anchor": "alerts-and-what-to-do"
+        },
+        {
+          "title": "Health checks",
+          "anchor": "health-checks"
+        },
+        {
+          "title": "Backups",
+          "anchor": "backups"
+        },
+        {
+          "title": "Restoring a backup",
+          "anchor": "restoring-a-backup"
+        },
+        {
+          "title": "Updates",
+          "anchor": "updates"
+        },
+        {
+          "title": "Replacing parts",
+          "anchor": "replacing-parts"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/mcp/",
+      "title": "MCP for agents",
+      "section": "User guide",
+      "description": "Let an AI agent read your tower and run bounded actions through the Model Context Protocol.",
+      "headings": [
+        {
+          "title": "Tools",
+          "anchor": "tools"
+        },
+        {
+          "title": "Security",
+          "anchor": "security"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/privacy/",
+      "title": "Privacy",
+      "section": "User guide",
+      "description": "No outbound connections, no accounts, no telemetry. Camera stills stay on your LAN.",
+      "headings": [
+        {
+          "title": "What stays where",
+          "anchor": "what-stays-where"
+        },
+        {
+          "title": "Who can reach it",
+          "anchor": "who-can-reach-it"
+        },
+        {
+          "title": "This website",
+          "anchor": "this-website"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/schedules/",
+      "title": "Schedules",
+      "section": "User guide",
+      "description": "Light curves with sunrise and sunset ramps, and bounded watering cycles.",
+      "headings": [
+        {
+          "title": "Light curves",
+          "anchor": "light-curves"
+        },
+        {
+          "title": "Pump cycles",
+          "anchor": "pump-cycles"
+        },
+        {
+          "title": "From other tools",
+          "anchor": "from-other-tools"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/sensors/",
+      "title": "Adding a probe",
+      "section": "User guide",
+      "description": "Fit a pH, EC or water-temperature probe, add it from the Sensors screen, calibrate it, and remove it.",
+      "headings": [
+        {
+          "title": "1. Wire it",
+          "anchor": "1-wire-it"
+        },
+        {
+          "title": "2. Add it",
+          "anchor": "2-add-it"
+        },
+        {
+          "title": "3. Calibrate it",
+          "anchor": "3-calibrate-it"
+        },
+        {
+          "title": "4. Remove it",
+          "anchor": "4-remove-it"
+        },
+        {
+          "title": "For developers",
+          "anchor": "for-developers"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/web-ui/",
+      "title": "Web UI tour",
+      "section": "User guide",
+      "description": "Every screen of the seedypod web UI, from the home screen to the wall-display kiosk.",
+      "headings": [
+        {
+          "title": "Welcome",
+          "anchor": "welcome"
+        },
+        {
+          "title": "Home",
+          "anchor": "home"
+        },
+        {
+          "title": "Light",
+          "anchor": "light"
+        },
+        {
+          "title": "Water",
+          "anchor": "water"
+        },
+        {
+          "title": "Schedule",
+          "anchor": "schedule"
+        },
+        {
+          "title": "Autopilot",
+          "anchor": "autopilot"
+        },
+        {
+          "title": "Grow",
+          "anchor": "grow"
+        },
+        {
+          "title": "Cameras",
+          "anchor": "cameras"
+        },
+        {
+          "title": "Analysis",
+          "anchor": "analysis"
+        },
+        {
+          "title": "Alerts",
+          "anchor": "alerts"
+        },
+        {
+          "title": "Sensors",
+          "anchor": "sensors"
+        },
+        {
+          "title": "Settings",
+          "anchor": "settings"
+        },
+        {
+          "title": "Kiosk",
+          "anchor": "kiosk"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/",
+      "title": "Developers",
+      "section": "Developers",
+      "description": "Architecture, APIs, the hardware daemon and its contract, decision records and the build plan.",
+      "headings": [
+        {
+          "title": "Start here",
+          "anchor": "start-here"
+        },
+        {
+          "title": "Clients",
+          "anchor": "clients"
+        },
+        {
+          "title": "Reference",
+          "anchor": "reference"
+        },
+        {
+          "title": "About these pages",
+          "anchor": "about-these-pages"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/",
+      "title": "Architecture decision records",
+      "section": "Developers",
+      "description": "Why seedypod is built the way it is, one decision at a time.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0001-new-repository/",
+      "title": "ADR 0001: New repository and naming",
+      "section": "Developers",
+      "description": "Why a new repo instead of a fork, the seedypod name, and the single-repo layout.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Amendment (2026-10-31): leafypod → seedypod",
+          "anchor": "amendment-2026-10-31-leafypod--seedypod"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0002-license/",
+      "title": "ADR 0002: License",
+      "section": "Developers",
+      "description": "AGPL-3.0, clean-room with respect to the GPL-3 upstream.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0003-core-stack/",
+      "title": "ADR 0003: Core application stack",
+      "section": "Developers",
+      "description": "TypeScript, Hono, Vite, TanStack Router, Tailwind 4; Next.js rejected pending the memory spike.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Alternatives considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Positive",
+          "anchor": "positive"
+        },
+        {
+          "title": "Negative",
+          "anchor": "negative"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0004-two-tier-hal-core/",
+      "title": "ADR 0004: Two tiers — a hardware daemon and a core",
+      "section": "Developers",
+      "description": "One hardware daemon (hald) and one core, joined by a versioned contract; deployment topologies.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Positive",
+          "anchor": "positive"
+        },
+        {
+          "title": "Negative",
+          "anchor": "negative"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0005-trpc/",
+      "title": "ADR 0005: tRPC as the primary control plane; MCP, REST and MQTT are additive",
+      "section": "Developers",
+      "description": "tRPC first; REST, MCP, MQTT, SSE and WebSocket are generated or additive surfaces.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Amendment (2026-10-30): WebSocket event stream",
+          "anchor": "amendment-2026-10-30-websocket-event-stream"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0006-rust-for-the-hal/",
+      "title": "ADR 0006: Rust for the hardware daemon",
+      "section": "Developers",
+      "description": "Why the hardware daemon is Rust (rppal, cross-compiled) rather than Python/gpiozero.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Alternatives considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Positive",
+          "anchor": "positive"
+        },
+        {
+          "title": "Negative",
+          "anchor": "negative"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0007-hal-contract/",
+      "title": "ADR 0007: HAL contract v1 — MQTT + HTTP, versioned JSON, HA discovery from the HAL",
+      "section": "Developers",
+      "description": "MQTT topic tree, payload schemas, HTTP endpoints and HA discovery published by hald.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0009-pump-safety-guard/",
+      "title": "ADR 0009: Pump safety guard and latched faults",
+      "section": "Developers",
+      "description": "Pump duty clamp, bounded runs, dry-run interlock, over-temp cutoff and latched faults.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0010-drizzle-sqlite-store/",
+      "title": "ADR 0010: Drizzle ORM + SQLite behind a Store interface",
+      "section": "Developers",
+      "description": "One SQLite file via drizzle on the unit; an in-memory Store with identical semantics for tests and the browser demo.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0011-mcp-and-mhs/",
+      "title": "ADR 0011: MCP tool design and Model Hardware Standard alignment",
+      "section": "Developers",
+      "description": "Tools are named read/write primitives with units and declared limits over the tRPC caller; refusals are errors.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0012-deployment-and-trust/",
+      "title": "ADR 0012: Deployment and trust model",
+      "section": "Developers",
+      "description": "Tarball releases with hald binaries, systemd units, LAN-only trust with an opt-in API key.",
+      "headings": [
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0013-ha-bridge/",
+      "title": "ADR 0013: Core-level MQTT bridge for Home Assistant",
+      "section": "Developers",
+      "description": "An additive MQTT client for grow reminders, cycle state, light hours and a bounded water button; the daemon already publishes the physical entities.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0014-auto-dosing-safety/",
+      "title": "ADR 0014: Auto-dosing safety",
+      "section": "Developers",
+      "description": "Dosing pumps get their own guard with hard daily volume caps and lockouts; off by default.",
+      "headings": [
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Amendment (2026-10-31): dose_fault",
+          "anchor": "amendment-2026-10-31-dose_fault"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0015-event-bus/",
+      "title": "ADR 0015: Event bus and mutation broadcast",
+      "section": "Developers",
+      "description": "One process-wide bus carries HAL events and mutations to SSE, WebSocket, the recorder and the HA bridge.",
+      "headings": [
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0016-shared-design-language/",
+      "title": "ADR 0016: Shared design language with sleepypod",
+      "section": "Developers",
+      "description": "Tokens, ds/ and ui/ ported verbatim with domain renames; extraction to a shared package deferred.",
+      "headings": [
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0017-ios-client/",
+      "title": "ADR 0017: iOS client — reuse sleepypod's transport, not its app",
+      "section": "Developers",
+      "description": "Evaluation of forking sleepypod/ios's networking layer against seedypod's tRPC router, and what core must add first.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Prerequisites in core (before the app)",
+          "anchor": "prerequisites-in-core-before-the-app"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0018-runtime-sensor-inventory/",
+      "title": "ADR 0018: Runtime sensor inventory",
+      "section": "Developers",
+      "description": "Probes are added from the app through SensorKind descriptors; app-added sensors live in a state-dir overlay and go live without restarting hald.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0019-pluggable-capture-analysis/",
+      "title": "ADR 0019: Pluggable capture analysis",
+      "section": "Developers",
+      "description": "Vision analysers are an interface; their outputs share one versioned results table, export as a dataset, and can be mirrored to opt-in off-device storage and compute.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Phases",
+          "anchor": "phases"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0020-autopilot-reactive-automations/",
+      "title": "ADR 0020: Autopilot — reactive automations",
+      "section": "Developers",
+      "description": "WHEN/IF/THEN rules over live sensor and analysis signals, ported from sleepypod's Autopilot, with a light arbiter that ranks manual > Autopilot > schedule, an audit log, dry-run and backtests; hald's…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Rules: the sleepypod model, ported",
+          "anchor": "rules-the-sleepypod-model-ported"
+        },
+        {
+          "title": "Signals: a typed catalog",
+          "anchor": "signals-a-typed-catalog"
+        },
+        {
+          "title": "Actions: seedypod’s verbs, through the normal paths",
+          "anchor": "actions-seedypods-verbs-through-the-normal-paths"
+        },
+        {
+          "title": "The light arbiter: manual > Autopilot > schedule",
+          "anchor": "the-light-arbiter-manual--autopilot--schedule"
+        },
+        {
+          "title": "Safety",
+          "anchor": "safety"
+        },
+        {
+          "title": "Transparency",
+          "anchor": "transparency"
+        },
+        {
+          "title": "Where it lives",
+          "anchor": "where-it-lives"
+        },
+        {
+          "title": "Agents",
+          "anchor": "agents"
+        },
+        {
+          "title": "UI",
+          "anchor": "ui"
+        },
+        {
+          "title": "Alternatives considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Implementation",
+          "anchor": "implementation"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0021-sd-card-wear-and-recovery/",
+      "title": "ADR 0021: SD card wear and fast recovery",
+      "section": "Developers",
+      "description": "Write less to the microSD card, using sleepypod's eMMC approach, and make a dead card a ten-minute swap: automatic off-card backups, a one-step restore, and a ready-made SD image.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "1. Write less (ported from sleepypod)",
+          "anchor": "1-write-less-ported-from-sleepypod"
+        },
+        {
+          "title": "2. Back up automatically, off the card",
+          "anchor": "2-back-up-automatically-off-the-card"
+        },
+        {
+          "title": "3. Restore in one step",
+          "anchor": "3-restore-in-one-step"
+        },
+        {
+          "title": "4. A ready-made SD card image",
+          "anchor": "4-a-ready-made-sd-card-image"
+        },
+        {
+          "title": "Phasing",
+          "anchor": "phasing"
+        },
+        {
+          "title": "Alternatives considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Recommended card",
+          "anchor": "recommended-card"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0022-harvest-outlook/",
+      "title": "ADR 0022: Harvest outlook from the camera, with optional plant profiles",
+      "section": "Developers",
+      "description": "Each planted pod gets a harvest state (ready, soon, growing) led by camera leaf cover against a target and its rate of change; optional per-crop profiles add a window in days and their own target, and…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0023-homekit/",
+      "title": "ADR 0023: HomeKit bridge and per-unit identity",
+      "section": "Developers",
+      "description": "An embedded hap-nodejs bridge, off by default, exposes the grow light, the pump and the sensors to Apple Home through core's own tRPC caller, with a HomeKit identity derived per unit as in sleepypod…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "An embedded bridge, off by default",
+          "anchor": "an-embedded-bridge-off-by-default"
+        },
+        {
+          "title": "Accessories go through core’s tRPC caller",
+          "anchor": "accessories-go-through-cores-trpc-caller"
+        },
+        {
+          "title": "Identity: sleepypod ADR 0020, with a seedypod seed chain",
+          "anchor": "identity-sleepypod-adr-0020-with-a-seedypod-seed-chain"
+        },
+        {
+          "title": "mDNS: ciao, as in sleepypod",
+          "anchor": "mdns-ciao-as-in-sleepypod"
+        },
+        {
+          "title": "Backups carry HomeKit",
+          "anchor": "backups-carry-homekit"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/api/",
+      "title": "REST API reference",
+      "section": "Developers",
+      "description": "seedypod core's OpenAPI REST facade, generated from the tRPC routers.",
+      "headings": [
+        {
+          "title": "Base URL and transport",
+          "anchor": "base-url-and-transport"
+        },
+        {
+          "title": "Authentication",
+          "anchor": "authentication"
+        },
+        {
+          "title": "Examples",
+          "anchor": "examples"
+        },
+        {
+          "title": "Endpoints",
+          "anchor": "endpoints"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/architecture/",
+      "title": "Architecture",
+      "section": "Developers",
+      "description": "Two tiers joined by a versioned contract, one control plane with several surfaces, and three deployment topologies.",
+      "headings": [
+        {
+          "title": "Two tiers",
+          "anchor": "two-tiers"
+        },
+        {
+          "title": "One control plane, several surfaces",
+          "anchor": "one-control-plane-several-surfaces"
+        },
+        {
+          "title": "Core stack",
+          "anchor": "core-stack"
+        },
+        {
+          "title": "Deployment topologies",
+          "anchor": "deployment-topologies"
+        },
+        {
+          "title": "Demo mode",
+          "anchor": "demo-mode"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/deployment/",
+      "title": "Deployment",
+      "section": "Developers",
+      "description": "How code moves from dev and main to a unit: tarballs, dev-latest, releases, scripts/deploy.",
+      "headings": [
+        {
+          "title": "Repository secrets and variables",
+          "anchor": "repository-secrets-and-variables"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/hal-contract/",
+      "title": "HAL contract v1",
+      "section": "Developers",
+      "description": "The wire contract between hald and core: MQTT topics, JSON payloads, HTTP endpoints and golden fixtures.",
+      "headings": [
+        {
+          "title": "Conventions",
+          "anchor": "conventions"
+        },
+        {
+          "title": "Topics",
+          "anchor": "topics"
+        },
+        {
+          "title": "Identifiers",
+          "anchor": "identifiers"
+        },
+        {
+          "title": "Payloads",
+          "anchor": "payloads"
+        },
+        {
+          "title": "Try it",
+          "anchor": "try-it"
+        },
+        {
+          "title": "Changing the contract",
+          "anchor": "changing-the-contract"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/hal/",
+      "title": "hald — the hardware daemon",
+      "section": "Developers",
+      "description": "Configuring, running and talking to hald: hal.toml, MQTT topics, Home Assistant entities, HTTP endpoints, state file, install and operations.",
+      "headings": [
+        {
+          "title": "Running",
+          "anchor": "running"
+        },
+        {
+          "title": "Configuration (hal.toml)",
+          "anchor": "configuration-haltoml"
+        },
+        {
+          "title": "Device list",
+          "anchor": "device-list"
+        },
+        {
+          "title": "MQTT",
+          "anchor": "mqtt"
+        },
+        {
+          "title": "Home Assistant entities",
+          "anchor": "home-assistant-entities"
+        },
+        {
+          "title": "Sensors added from the app",
+          "anchor": "sensors-added-from-the-app"
+        },
+        {
+          "title": "HTTP",
+          "anchor": "http"
+        },
+        {
+          "title": "Camera names",
+          "anchor": "camera-names"
+        },
+        {
+          "title": "State file",
+          "anchor": "state-file"
+        },
+        {
+          "title": "mDNS",
+          "anchor": "mdns"
+        },
+        {
+          "title": "Install",
+          "anchor": "install"
+        },
+        {
+          "title": "Verification status",
+          "anchor": "verification-status"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/handoff/",
+      "title": "Handoff",
+      "section": "Developers",
+      "description": "State of the repository at the pause point, how to transfer it, what to change afterwards, and what remains.",
+      "headings": [
+        {
+          "title": "1. What exists",
+          "anchor": "1-what-exists"
+        },
+        {
+          "title": "2. Transfer (done 2026-10-31)",
+          "anchor": "2-transfer-done-2026-10-31"
+        },
+        {
+          "title": "3. Destination settings (applied via the API)",
+          "anchor": "3-destination-settings-applied-via-the-api"
+        },
+        {
+          "title": "4. Running it",
+          "anchor": "4-running-it"
+        },
+        {
+          "title": "5. Next steps, in order",
+          "anchor": "5-next-steps-in-order"
+        },
+        {
+          "title": "6. Conventions to keep",
+          "anchor": "6-conventions-to-keep"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/hardware/",
+      "title": "Gardyn hardware map",
+      "section": "Developers",
+      "description": "Pins, I²C addresses, parts and model detection as documented upstream, with the Phase 1 verification checklist.",
+      "headings": [
+        {
+          "title": "Tank and pump, from two weeks of stock logs",
+          "anchor": "tank-and-pump-from-two-weeks-of-stock-logs"
+        },
+        {
+          "title": "Model detection",
+          "anchor": "model-detection"
+        },
+        {
+          "title": "Known failure modes (from upstream’s issue tracker — these are our test cases)",
+          "anchor": "known-failure-modes-from-upstreams-issue-tracker--these-are-our-test-cases"
+        },
+        {
+          "title": "Phase 1 checklist",
+          "anchor": "phase-1-checklist"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/implementation-plan/",
+      "title": "Implementation plan (Phase 0 → 1.0)",
+      "section": "Developers",
+      "description": "Phased build plan with parallelism markers, ADR index, HAL contract draft and OKRs.",
+      "headings": [
+        {
+          "title": "0. Ground truth (what we know going in)",
+          "anchor": "0-ground-truth-what-we-know-going-in"
+        },
+        {
+          "title": "0.1 Hardware map (BCM numbering)",
+          "anchor": "01-hardware-map-bcm-numbering"
+        },
+        {
+          "title": "0.2 Safety invariants (lifted from upstream’s bug list — these are the spec, not nice-to-haves)",
+          "anchor": "02-safety-invariants-lifted-from-upstreams-bug-list--these-are-the-spec-not-nice-to-haves"
+        },
+        {
+          "title": "0.3 Upstream roadmap we are superseding",
+          "anchor": "03-upstream-roadmap-we-are-superseding"
+        },
+        {
+          "title": "1. Architecture",
+          "anchor": "1-architecture"
+        },
+        {
+          "title": "1.1 Repository layout (single repo, mirrors sleepypod/core + its modules/ multi-language precedent)",
+          "anchor": "11-repository-layout-single-repo-mirrors-sleepypodcore--its-modules-multi-language-precedent"
+        },
+        {
+          "title": "2. Phases",
+          "anchor": "2-phases"
+        },
+        {
+          "title": "Phase 0 — Repo & conventions bootstrap ⏱ 1 day",
+          "anchor": "phase-0--repo--conventions-bootstrap--1-day"
+        },
+        {
+          "title": "Phase 1 — Hardware reconnaissance & root ⏱ ½ day hands-on ∥ Phase 0 (fully independent)",
+          "anchor": "phase-1--hardware-reconnaissance--root---day-hands-on--phase-0-fully-independent"
+        },
+        {
+          "title": "Phase 2 — HAL (Rust daemon) ⏱ 1–2 weeks ⛔ Phase 1.6 (pin map) · Phase 0.6 (CI)",
+          "anchor": "phase-2--hal-rust-daemon--12-weeks--phase-16-pin-map--phase-06-ci"
+        },
+        {
+          "title": "Phase 3 — Core (tRPC / scheduler / DB / MCP) ⏱ 1–2 weeks ⛔ Phase 2.1 (contract) · ∥ Phase 2.2–2.10",
+          "anchor": "phase-3--core-trpc--scheduler--db--mcp--12-weeks--phase-21-contract---phase-22210"
+        },
+        {
+          "title": "Phase 4 — Web UI ⏱ 1 week ⛔ 3.3 (routers) · ∥ 3.4–3.11",
+          "anchor": "phase-4--web-ui--1-week--33-routers---34311"
+        },
+        {
+          "title": "Phase 5 — Integrations ⏱ 3–5 days ⛔ Phase 3 · tasks ∥ each other",
+          "anchor": "phase-5--integrations--35-days--phase-3--tasks--each-other"
+        },
+        {
+          "title": "Phase 6 — Hardware expansion ⏱ 1–2 weekends ⛔ Phase 2 · ∥ Phases 4–5",
+          "anchor": "phase-6--hardware-expansion--12-weekends--phase-2---phases-45"
+        },
+        {
+          "title": "Phase 7 — Plant intelligence (CV) ⏱ open-ended ⛔ 6.1 (compute) or off-device inference · ∥ Phase 5",
+          "anchor": "phase-7--plant-intelligence-cv--open-ended--61-compute-or-off-device-inference---phase-5"
+        },
+        {
+          "title": "Phase 8 — Hardening & 1.0 ⏱ 1 week ⛔ everything above",
+          "anchor": "phase-8--hardening--10--1-week--everything-above"
+        },
+        {
+          "title": "3. Critical path & parallelism map",
+          "anchor": "3-critical-path--parallelism-map"
+        },
+        {
+          "title": "4. ADR index (sleepypod template: Status/Date, Context, Decision, Consequences, References, Authors)",
+          "anchor": "4-adr-index-sleepypod-template-statusdate-context-decision-consequences-references-authors"
+        },
+        {
+          "title": "5. HAL contract v1 (draft for ADR-0007)",
+          "anchor": "5-hal-contract-v1-draft-for-adr-0007"
+        },
+        {
+          "title": "6. OKRs (first quarter) — new for this project; sleepypod has no OKR docs, only ADRs + knowledge/ (OKF)",
+          "anchor": "6-okrs-first-quarter--new-for-this-project-sleepypod-has-no-okr-docs-only-adrs--knowledge-okf"
+        },
+        {
+          "title": "7. Open questions (answer before the phase that needs them)",
+          "anchor": "7-open-questions-answer-before-the-phase-that-needs-them"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/sim-bringup/",
+      "title": "Simulated bring-up",
+      "section": "Developers",
+      "description": "Phase 1 run against a simulated Gardyn: hald --sim, an MQTT broker and core, checked end to end in CI.",
+      "headings": [
+        {
+          "title": "Checklist",
+          "anchor": "checklist"
+        },
+        {
+          "title": "What it found",
+          "anchor": "what-it-found"
+        },
+        {
+          "title": "What it does not cover",
+          "anchor": "what-it-does-not-cover"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/testing/",
+      "title": "Testing",
+      "section": "Developers",
+      "description": "Coverage gates live in Codecov (codecov.yml), flags javascript and rust.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/getting-started/",
+      "title": "Get started",
+      "section": null,
+      "description": "Try seedypod in your browser, run it on your laptop, or install it on the Pi inside your Gardyn.",
+      "headings": [
+        {
+          "title": "1. Try the live demo",
+          "anchor": "1-try-the-live-demo"
+        },
+        {
+          "title": "2. Run it on your computer",
+          "anchor": "2-run-it-on-your-computer"
+        },
+        {
+          "title": "3. Install on a Gardyn",
+          "anchor": "3-install-on-a-gardyn"
+        },
+        {
+          "title": "What next",
+          "anchor": "what-next"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/ios/",
+      "title": "iPhone app",
+      "section": null,
+      "description": "seedypod for iPhone: your Gardyn tower in 3D, with pods, light, water and alerts, straight from your own network.",
+      "headings": [
+        {
+          "title": "What it does",
+          "anchor": "what-it-does"
+        },
+        {
+          "title": "The tower",
+          "anchor": "the-tower"
+        },
+        {
+          "title": "Pods",
+          "anchor": "pods"
+        },
+        {
+          "title": "Light and water",
+          "anchor": "light-and-water"
+        },
+        {
+          "title": "Alerts",
+          "anchor": "alerts"
+        },
+        {
+          "title": "Settings",
+          "anchor": "settings"
+        },
+        {
+          "title": "Live updates",
+          "anchor": "live-updates"
+        },
+        {
+          "title": "Connect to your unit",
+          "anchor": "connect-to-your-unit"
+        },
+        {
+          "title": "Demo mode",
+          "anchor": "demo-mode"
+        },
+        {
+          "title": "API key",
+          "anchor": "api-key"
+        },
+        {
+          "title": "Build from source",
+          "anchor": "build-from-source"
+        },
+        {
+          "title": "Troubleshooting",
+          "anchor": "troubleshooting"
+        },
+        {
+          "title": "What runs where",
+          "anchor": "what-runs-where"
+        }
+      ],
+      "keywords": "ios iphone app bonjour demo mode api key xcode"
+    }
+  ]
+}

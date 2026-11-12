@@ -14,12 +14,16 @@ import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AnalysisRouteImport } from './routes/analysis'
 import { Route as AutopilotRouteImport } from './routes/autopilot'
 import { Route as CamerasRouteImport } from './routes/cameras'
+import { Route as CareRouteImport } from './routes/care'
+import { Route as DatabaseRouteImport } from './routes/database'
 import { Route as GrowRouteImport } from './routes/grow'
 import { Route as KioskRouteImport } from './routes/kiosk'
 import { Route as LightRouteImport } from './routes/light'
+import { Route as PlanRouteImport } from './routes/plan'
 import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as SensorsRouteImport } from './routes/sensors'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as WaterRouteImport } from './routes/water'
 import { Route as WifiRouteImport } from './routes/wifi'
 
@@ -48,6 +52,16 @@ const CamerasRoute = CamerasRouteImport.update({
   path: '/cameras',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CareRoute = CareRouteImport.update({
+  id: '/care',
+  path: '/care',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DatabaseRoute = DatabaseRouteImport.update({
+  id: '/database',
+  path: '/database',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GrowRoute = GrowRouteImport.update({
   id: '/grow',
   path: '/grow',
@@ -63,6 +77,11 @@ const LightRoute = LightRouteImport.update({
   path: '/light',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlanRoute = PlanRouteImport.update({
+  id: '/plan',
+  path: '/plan',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScheduleRoute = ScheduleRouteImport.update({
   id: '/schedule',
   path: '/schedule',
@@ -76,6 +95,11 @@ const SensorsRoute = SensorsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WaterRoute = WaterRouteImport.update({
@@ -95,12 +119,16 @@ export interface FileRoutesByFullPath {
   '/analysis': typeof AnalysisRoute
   '/autopilot': typeof AutopilotRoute
   '/cameras': typeof CamerasRoute
+  '/care': typeof CareRoute
+  '/database': typeof DatabaseRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
+  '/plan': typeof PlanRoute
   '/schedule': typeof ScheduleRoute
   '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
+  '/status': typeof StatusRoute
   '/water': typeof WaterRoute
   '/wifi': typeof WifiRoute
 }
@@ -110,12 +138,16 @@ export interface FileRoutesByTo {
   '/analysis': typeof AnalysisRoute
   '/autopilot': typeof AutopilotRoute
   '/cameras': typeof CamerasRoute
+  '/care': typeof CareRoute
+  '/database': typeof DatabaseRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
+  '/plan': typeof PlanRoute
   '/schedule': typeof ScheduleRoute
   '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
+  '/status': typeof StatusRoute
   '/water': typeof WaterRoute
   '/wifi': typeof WifiRoute
 }
@@ -126,12 +158,16 @@ export interface FileRoutesById {
   '/analysis': typeof AnalysisRoute
   '/autopilot': typeof AutopilotRoute
   '/cameras': typeof CamerasRoute
+  '/care': typeof CareRoute
+  '/database': typeof DatabaseRoute
   '/grow': typeof GrowRoute
   '/kiosk': typeof KioskRoute
   '/light': typeof LightRoute
+  '/plan': typeof PlanRoute
   '/schedule': typeof ScheduleRoute
   '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRoute
+  '/status': typeof StatusRoute
   '/water': typeof WaterRoute
   '/wifi': typeof WifiRoute
 }
@@ -143,12 +179,16 @@ export interface FileRouteTypes {
     | '/analysis'
     | '/autopilot'
     | '/cameras'
+    | '/care'
+    | '/database'
     | '/grow'
     | '/kiosk'
     | '/light'
+    | '/plan'
     | '/schedule'
     | '/sensors'
     | '/settings'
+    | '/status'
     | '/water'
     | '/wifi'
   fileRoutesByTo: FileRoutesByTo
@@ -158,12 +198,16 @@ export interface FileRouteTypes {
     | '/analysis'
     | '/autopilot'
     | '/cameras'
+    | '/care'
+    | '/database'
     | '/grow'
     | '/kiosk'
     | '/light'
+    | '/plan'
     | '/schedule'
     | '/sensors'
     | '/settings'
+    | '/status'
     | '/water'
     | '/wifi'
   id:
@@ -173,12 +217,16 @@ export interface FileRouteTypes {
     | '/analysis'
     | '/autopilot'
     | '/cameras'
+    | '/care'
+    | '/database'
     | '/grow'
     | '/kiosk'
     | '/light'
+    | '/plan'
     | '/schedule'
     | '/sensors'
     | '/settings'
+    | '/status'
     | '/water'
     | '/wifi'
   fileRoutesById: FileRoutesById
@@ -189,12 +237,16 @@ export interface RootRouteChildren {
   AnalysisRoute: typeof AnalysisRoute
   AutopilotRoute: typeof AutopilotRoute
   CamerasRoute: typeof CamerasRoute
+  CareRoute: typeof CareRoute
+  DatabaseRoute: typeof DatabaseRoute
   GrowRoute: typeof GrowRoute
   KioskRoute: typeof KioskRoute
   LightRoute: typeof LightRoute
+  PlanRoute: typeof PlanRoute
   ScheduleRoute: typeof ScheduleRoute
   SensorsRoute: typeof SensorsRoute
   SettingsRoute: typeof SettingsRoute
+  StatusRoute: typeof StatusRoute
   WaterRoute: typeof WaterRoute
   WifiRoute: typeof WifiRoute
 }
@@ -236,6 +288,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CamerasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/care': {
+      id: '/care'
+      path: '/care'
+      fullPath: '/care'
+      preLoaderRoute: typeof CareRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/database': {
+      id: '/database'
+      path: '/database'
+      fullPath: '/database'
+      preLoaderRoute: typeof DatabaseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/grow': {
       id: '/grow'
       path: '/grow'
@@ -257,6 +323,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LightRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/plan': {
+      id: '/plan'
+      path: '/plan'
+      fullPath: '/plan'
+      preLoaderRoute: typeof PlanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schedule': {
       id: '/schedule'
       path: '/schedule'
@@ -276,6 +349,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/water': {
@@ -301,12 +381,16 @@ const rootRouteChildren: RootRouteChildren = {
   AnalysisRoute: AnalysisRoute,
   AutopilotRoute: AutopilotRoute,
   CamerasRoute: CamerasRoute,
+  CareRoute: CareRoute,
+  DatabaseRoute: DatabaseRoute,
   GrowRoute: GrowRoute,
   KioskRoute: KioskRoute,
   LightRoute: LightRoute,
+  PlanRoute: PlanRoute,
   ScheduleRoute: ScheduleRoute,
   SensorsRoute: SensorsRoute,
   SettingsRoute: SettingsRoute,
+  StatusRoute: StatusRoute,
   WaterRoute: WaterRoute,
   WifiRoute: WifiRoute,
 }

@@ -9,7 +9,14 @@ import type { MirroredSink } from '../camera/mirrorSink'
 import type { AnalysisService } from '../vision/service'
 import type { FlashMeter } from '../telemetry/flash'
 import type { BackupService } from '../backup/service'
+import type { DatabaseInspector } from '../db/inspect'
 import type { RestoreClient } from '../backup/restore'
+import type { UpdateClient } from '../update/client'
+import type { ModelRegistry } from '../vision/registry'
+import type { PodCodeService } from '../vision/podCodes'
+import type { HomeKitControl } from '../homekit/types'
+import type { BridgeStatus } from '../mqtt/bridge'
+import type { LoggingControl } from '../logging/policy'
 
 export interface Context {
   hal: HalClient
@@ -17,18 +24,38 @@ export interface Context {
   store: Store
   captures: CaptureService
   analysis: AnalysisService
+  /** yCube dot codes (#224): pod-ID stills read by podvision, and the owner's code → plant pairs. */
+  podCodes: PodCodeService
   wifi: Wifi
   light: LightArbiter
   autopilot: AutopilotEngine
   /** SD card writes (ADR-0021); reports unavailable off a Pi. */
   flash: FlashMeter
+  /** The Database view's scan; absent in tests. */
+  database?: DatabaseInspector
   /** Present when stills go through the opt-in off-device mirror (the unit; not tests or the demo). */
   mirror?: MirroredSink
   /** Off-card backups (ADR-0021); on the unit only, like the mirror. */
   backup?: BackupService
   /** Runs the root restore helper; on the unit only. */
   restore?: RestoreClient
+  /** Runs the root update helper (ADR-0026); on the unit only. */
+  update?: UpdateClient
+  /** hald's boot log, or null if it hasn't written one; on the unit only. */
+  bootLog?: () => Promise<string | null>
+  /** The HomeKit bridge (ADR 0023); node hosts only, off until enabled in Settings. */
+  homekit?: HomeKitControl
+  /** Pod-state model revisions (#186); on the unit only. */
+  models?: ModelRegistry
+  /** The native pod-state runner (#191) and why its last still fell back to TypeScript; absent when it isn't installed. */
+  podvision?: { bin: string, lastError: () => string | null }
+  /** The Home Assistant MQTT bridge (ADR-0013); node hosts only, where server/index.ts owns it. */
+  bridge?: () => BridgeStatus
+  /** How much core and hald log; node hosts only, where the policy file lives. */
+  logging?: LoggingControl
   /** Build info pinned at release time (.git-info) or 'dev'. */
   version: string
+  /** The machine core runs on (the unit's Pi, or a LAN box when the unit has a Pi Zero W); absent in the browser demo. */
+  host?: { hostname: string, arch: string }
   now?: () => Date
 }

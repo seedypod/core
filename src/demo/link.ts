@@ -10,13 +10,10 @@ import { SimHal } from '../hardware/sim'
 import type { Context } from '../server/context'
 import { createCore } from '../server/bootstrap'
 import { MemoryStore } from '../store/memory'
+import { demoDatabase, demoFlashSource } from './database'
 import { seedDemo } from './seed'
 import { appRouter, type AppRouter } from '../server/routers/app'
 import { createCallerFactory } from '../server/trpc'
-
-export function isDemo(): boolean {
-  return import.meta.env.VITE_DEMO === '1'
-}
 
 let ctx: Context | null = null
 function demoContext(): Context {
@@ -24,7 +21,7 @@ function demoContext(): Context {
     const hal = new SimHal({ timeScale: 60, tickMs: 1000 })
     const store = new MemoryStore()
     seedDemo(store, hal)
-    const core = createCore({ hal, store, version: 'demo', startServices: true, captureMinBytes: 1 })
+    const core = createCore({ hal, store, version: 'demo', startServices: true, captureMinBytes: 1, database: demoDatabase(), flashSource: demoFlashSource })
     ctx = core.ctx
   }
   return ctx

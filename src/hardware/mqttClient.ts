@@ -16,7 +16,7 @@ import { HalRefused } from './sim'
 export interface MqttLike {
   /** True when the client is already connected (mqtt.js `connectAsync` resolves after `connect` fired). */
   readonly connected?: boolean
-  publish(topic: string, payload: string, opts?: { retain?: boolean, qos?: 0 | 1 | 2 }): void
+  publish(topic: string, payload: string | Uint8Array, opts?: { retain?: boolean, qos?: 0 | 1 | 2 }): void
   subscribe(topic: string | string[]): void
   on(event: 'message', cb: (topic: string, payload: Uint8Array) => void): void
   on(event: 'connect' | 'close' | 'offline', cb: () => void): void
@@ -46,6 +46,10 @@ export class MqttHalClient implements HalClient {
   private readonly pendingCal = new Map<SensorId, { point: CalibrationCommand['point'], resolve: (r: CalibrationResult) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
   private readonly u: string
   private readonly timeoutMs: number
+  private readonly damaged = new Map<'upper' | 'lower', number>()
+  /** When each actuator's state arrived: hald sends the seconds left only when the state changes. */
+  private readonly actuatorAt = new Map<ActuatorId, number>()
+  private boots: { missing: number, total: number } | null = null
   private readonly fetchImpl: typeof fetch
 
   constructor(private readonly o: MqttHalClientOptions) {
@@ -63,7 +67,18 @@ export class MqttHalClient implements HalClient {
   }
 
   snapshot(): HalSnapshot {
-    return { ...this.snap, sensors: { ...this.snap.sensors }, actuators: { ...this.snap.actuators }, alerts: { ...this.snap.alerts } }
+    return { ...this.snap, sensors: { ...this.snap.sensors }, actuators: this.liveActuators(), alerts: { ...this.snap.alerts } }
+  }
+
+  /** Each actuator's state with its seconds left counted down to now, not left at what they were when it changed. */
+  private liveActuators(): HalSnapshot['actuators'] {
+    const now = (this.o.now?.() ?? new Date()).getTime()
+    const out: HalSnapshot['actuators'] = {}
+    for (const [id, s] of Object.entries(this.snap.actuators) as [ActuatorId, ActuatorState][]) {
+      const at = this.actuatorAt.get(id)
+      out[id] = s.remainingS === null || at === undefined ? s : { ...s, remainingS: Math.max(0, s.remainingS - Math.floor((now - at) / 1000)) }
+    }
+    return out
   }
 
   setActuator(id: ActuatorId, cmd: ActuatorCommand): Promise<ActuatorState> {
@@ -127,9 +142,31 @@ export class MqttHalClient implements HalClient {
   }
 
   async captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array> {
+    // First: if hald can't be reached, the last still's count mustn't count again.
+    this.damaged.set(camera, 0)
     const r = await this.fetchImpl(`${this.o.httpBase}/camera/${camera}.jpg`)
-    if (!r.ok) throw new Error(`camera ${camera}: HTTP ${r.status}`)
+    this.damaged.set(camera, Number(r.headers.get('x-seedypod-damaged-frames')) || 0)
+    const boots = /^(\d+)\/(\d+)$/.exec(r.headers.get('x-seedypod-hub-boots') ?? '')
+    this.boots = boots ? { missing: Number(boots[1]), total: Number(boots[2]) } : null
+    // hald's 503 says why, and that's what the alert should show.
+    if (!r.ok) throw new Error((await r.text().catch(() => '')).trim() || `HTTP ${r.status}`)
     return new Uint8Array(await r.arrayBuffer())
+  }
+
+  /** hald's full-size still. It says nothing about the link, so the link counts are left alone. */
+  async captureFull(camera: 'upper' | 'lower'): Promise<Uint8Array> {
+    const r = await this.fetchImpl(`${this.o.httpBase}/camera/full/${camera}.jpg`)
+    if (r.status === 404) throw new Error('this hald has no full-size stills; update it')
+    if (!r.ok) throw new Error((await r.text().catch(() => '')).trim() || `HTTP ${r.status}`)
+    return new Uint8Array(await r.arrayBuffer())
+  }
+
+  damagedFrames(camera: 'upper' | 'lower'): number {
+    return this.damaged.get(camera) ?? 0
+  }
+
+  hubBoots(): { missing: number, total: number } | null {
+    return this.boots
   }
 
   subscribe(listener: (event: HalEvent) => void): Unsubscribe {
@@ -183,6 +220,7 @@ export class MqttHalClient implements HalClient {
         const id = ActuatorId.parse(parts[1])
         const state = ActuatorState.parse(JSON.parse(payload))
         this.snap.actuators[id] = state
+        this.actuatorAt.set(id, (this.o.now?.() ?? new Date()).getTime())
         const p = this.pending.get(id)
         if (p) {
           clearTimeout(p.timer)

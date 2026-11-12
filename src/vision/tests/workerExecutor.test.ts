@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { encode } from 'jpeg-js'
 import { describe, expect, it } from 'vitest'
 import { createWorkerExecutor } from '../workerExecutor'
 import { jpeg } from './fixtures'
@@ -11,10 +13,36 @@ describe('worker executor', () => {
     try {
       const bytes = jpeg(90, 75, true)
       const out = await w.run({ bytes, camera: 'upper', analyzers: ['green-threshold', 'exg-otsu'], opts: { artifacts: true } })
-      expect(out?.map(o => o.analyzer)).toEqual(['green-threshold', 'exg-otsu'])
-      expect(out?.[1]?.artifacts?.[0]?.bytes.byteLength).toBeGreaterThan(0)
+      if (!Array.isArray(out)) throw new Error('should have scored it')
+      expect(out.map(o => o.analyzer)).toEqual(['green-threshold', 'exg-otsu'])
+      expect(out[1]?.artifacts?.[0]?.bytes.byteLength).toBeGreaterThan(0)
       expect(bytes.byteLength).toBeGreaterThan(0)
       expect(await w.run({ bytes: new Uint8Array([1]), camera: 'lower', analyzers: ['exg-otsu'], opts: { artifacts: false } })).toBeNull()
+      const data = new Uint8Array(64 * 64 * 4)
+      for (let i = 0; i < data.length; i += 4) data.set([0, 135, 0, 255], i)
+      const torn = new Uint8Array(encode({ data, width: 64, height: 64 }, 85).data)
+      expect(await w.run({ bytes: torn, camera: 'upper', analyzers: ['exg-otsu'], opts: { artifacts: false } })).toBe('damaged')
+    }
+    finally {
+      await w.close()
+    }
+  }, 20_000)
+
+  it('runs the learned analyser from the weights core passes it', async () => {
+    const text = readFileSync(new URL('../../../models/pod-state.json', import.meta.url), 'utf8')
+    const w = createWorkerExecutor(script, { execArgv: ['--import', 'tsx'] }, [{ id: 'pod-state', label: 'Pod state', text }])
+    const job = (analyzers: string[]) => ({ bytes: jpeg(320, 240, true), camera: 'lower' as const, analyzers, opts: { artifacts: false } })
+    try {
+      const out = await w.run(job(['pod-state']))
+      if (!Array.isArray(out)) throw new Error('should have scored it')
+      expect(out[0]?.analyzer).toBe('pod-state')
+      expect(out[0]?.results.filter(r => r.metric === 'pod_state').map(r => r.slot)).toEqual(Array.from({ length: 15 }, (_, i) => 16 + i))
+      // A revision enabled later runs as its own analyser; one switched off stops.
+      w.configure([{ id: 'pod-state-v2', label: 'Pod state: v2', text }])
+      const next = await w.run(job(['pod-state', 'pod-state-v2']))
+      expect(Array.isArray(next) && next.map(o => o.analyzer)).toEqual(['pod-state-v2'])
+      w.configure([{ id: 'pod-state', label: 'Pod state', text: null }])
+      expect(await w.run(job(['pod-state']))).toEqual([])
     }
     finally {
       await w.close()

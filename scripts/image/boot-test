@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Boots a built image for real, under QEMU's raspi0 (an ARMv6 Pi Zero with 512 MB), and
+# passes once core serves a page: the kernel, growing the root partition, cloud-init and
+# first boot all run as they do on a card. It has no Wi-Fi, I²C, GPIO or cameras, runs
+# many times slower than a Zero W (allow 30 minutes or more), and its timings mean
+# nothing. The emulated machine sometimes wedges early in boot: if the log stops for ten
+# minutes, run it again. It's a tool for a change to the build, not a CI step.
+# Usage: scripts/image/boot-test <seedypod-os.img.xz> [<dir>]
+#   <dir> holds a user-data and network-config to put on bootfs, as Imager would.
+#   needs Docker that can run --privileged.
+set -euo pipefail
+
+if [ "${1:-}" != --inside ]; then
+  [ $# -ge 1 ] || { sed -n '8,10p' "$0" >&2; exit 2; }
+  image="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+  custom="${2:-}"
+  docker run --rm --privileged -v "$image:/image.img.xz:ro" -v "$(cd "$(dirname "$0")" && pwd)/boot-test:/boot-test:ro" \
+    ${custom:+-v "$(cd "$custom" && pwd):/custom:ro"} debian:trixie bash /boot-test --inside
+  exit
+fi
+
+apt-get update -q >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+  qemu-system-arm qemu-utils mtools xz-utils fdisk jq device-tree-compiler python3 >/dev/null
+
+cd /tmp
+xz -dc -T0 /image.img.xz > card.img
+part() { sfdisk -J card.img | jq -r ".partitiontable.partitions[$1].$2"; }
+mkdir root boot kernel
+mount -o "loop,offset=$(($(part 1 start) * 512)),sizelimit=$(($(part 1 size) * 512))" card.img root
+mount -o "loop,offset=$(($(part 0 start) * 512)),sizelimit=$(($(part 0 size) * 512))" card.img boot
+[ ! -d /custom ] || cp -f /custom/* boot/
+
+# On this copy only: wait for core, say how things stand on the serial port, power off.
+cat > root/usr/local/sbin/boot-test-report <<'REPORT'
+#!/bin/sh
+# Written out at the end, because a getty starting on the port hangs up anything holding it.
+exec > /run/boot-test.log 2>&1
+tries=0
+until [ "$(curl -s -m 30 -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/)" = 200 ]; do
+  tries=$((tries + 1))
+  if [ "$tries" -gt 240 ]; then echo "BOOT-TEST: core never answered"; break; fi
+  sleep 15
+done
+[ "$tries" -gt 240 ] || echo "BOOT-TEST: core answered, $(cut -d' ' -f1 /proc/uptime) s after boot"
+systemctl is-active seedypod-first-boot hald seedypod-core mosquitto seedypod-port80
+tr '\0' '\n' < "/proc/$(pgrep -f server/dist/index.js)/environ" | grep HAL_UNIT_ID
+df -h /
+lsblk
+free -m
+cat /proc/swaps
+hostname
+ls /etc/ssh/ssh_host_*
+cat /etc/machine-id
+cat /etc/systemd/journald.conf.d/*
+id
+tail -5 /etc/passwd
+id alice bob seedypod seedypod-hal seedypod-core pi
+getent shadow alice bob seedypod pi | cut -c1-16
+ls -la /home /home/*/.ssh
+systemctl is-enabled ssh
+ls /etc/NetworkManager/system-connections /run/NetworkManager/system-connections
+cat /etc/sudoers.d/90-cloud-init-users
+sudo -u seedypod-core nmcli -t device
+sudo -u seedypod-core sudo -n -l | tail -2
+ps -o user=,args= -C hald,node,mosquitto
+nft list table ip seedypod
+grep -E 'HAL_|^User=' /etc/systemd/system/seedypod-core.service
+journalctl -u seedypod-first-boot -u seedypod-cloud-init-off --no-pager | tail -15
+systemctl --failed --no-pager
+cat /run/boot-test.log > /dev/ttyAMA0
+poweroff
+REPORT
+chmod 0755 root/usr/local/sbin/boot-test-report
+cat > root/etc/systemd/system/boot-test-report.service <<'UNIT'
+[Unit]
+DefaultDependencies=no
+After=basic.target
+[Service]
+ExecStart=/usr/local/sbin/boot-test-report
+UNIT
+mkdir -p root/etc/systemd/system/basic.target.wants
+ln -sf ../boot-test-report.service root/etc/systemd/system/basic.target.wants/
+
+cp -f boot/kernel.img boot/initramfs boot/bcm2708-rpi-zero-w.dtb kernel/
+cmdline="$(sed 's/console=serial0,115200 console=tty1//' boot/cmdline.txt)"
+umount root boot
+
+# QEMU has no Bluetooth chip, so free the PL011 it would hold for the console.
+dtc -q -I dtb -O dts kernel/bcm2708-rpi-zero-w.dtb > kernel/board.dts
+python3 -I - kernel/board.dts <<'PATCH'
+import re, sys
+path = sys.argv[1]
+dts = open(path).read()
+dts = re.sub(r'\n\s*bluetooth \{.*?\n\t\t\t\};', '\n', dts, count=1, flags=re.S)
+dts = dts.replace('stdout-path = "serial0:115200n8";', 'stdout-path = "/soc/serial@7e201000:115200n8";')
+dts = dts.replace('serial0 = "/soc/serial@7e215040";', 'serial0 = "/soc/serial@7e201000";')
+dts = dts.replace('serial1 = "/soc/serial@7e201000";', 'serial1 = "/soc/serial@7e215040";')
+for node in ('serial@7e215040', 'mmcnr@7e300000'):
+    start = dts.index('\t\t' + node + ' {')
+    status = dts.index('status = ', start)
+    dts = dts[:status] + 'status = "disabled"' + dts[dts.index(';', status):]
+open(path, 'w').write(dts)
+PATCH
+dtc -q -I dts -O dtb kernel/board.dts -o kernel/board.dtb
+
+# An SD card's size has to be a power of two, and the power and watchdog blocks aren't
+# emulated: the first oopses, and arming the second resets the machine. With no power
+# off either, powering off panics, and panic=1 with -no-reboot ends QEMU there.
+qemu-img resize -q -f raw card.img 8G
+timeout 7200 qemu-system-arm -M raspi0 -kernel kernel/kernel.img -initrd kernel/initramfs -dtb kernel/board.dtb \
+  -drive if=sd,format=raw,file=card.img -display none -monitor none -serial stdio -serial null -no-reboot \
+  -append "$cmdline console=ttyAMA0,115200 earlycon=pl011,0x20201000 panic=1 watchdog_disarm=0 initcall_blacklist=bcm2835_power_driver_init,bcm2835_wdt_driver_init" \
+  | tee /tmp/serial.log
+grep -q 'BOOT-TEST: core answered' /tmp/serial.log

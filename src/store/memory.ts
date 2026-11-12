@@ -1,7 +1,7 @@
 import type { SensorId } from '../hardware/contract'
-import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, DeviceSettings, FlashSample, GrowCycle, GrowStage, Pod, Schedule, ScheduleRun, Store, TelemetryPoint } from './types'
+import type { AlertRow, Automation, AutomationRun, AnalysisPoint, AnalysisRow, AnalyzerStats, BackupRecord, Capture, CustomPlant, DeviceSettings, FlashSample, GrowCycle, GrowProtocolState, GrowStage, PlanRow, PlantProfile, Pod, PodCodePair, PodCodeRead, PodLabel, PodLabelCursor, PodLabelValue, SavedSchedule, Schedule, ScheduleRun, Store, TankAction, TankActionKind, TelemetryPoint } from './types'
 import type { AutomationRule } from '../autopilot/types'
-import { DEFAULT_SETTINGS } from './types'
+import { DEFAULT_SETTINGS, POD_LABELS, profileKey } from './types'
 
 /** In-memory Store for tests and the browser demo. Same semantics as SqliteStore. */
 export class MemoryStore implements Store {
@@ -13,21 +13,30 @@ export class MemoryStore implements Store {
   private nextAlertId = 1
   private readonly cycles: GrowCycle[] = []
   private readonly podRows = new Map<number, Pod>()
+  private readonly profileRows = new Map<string, PlantProfile>()
+  private readonly customPlantRows = new Map<string, CustomPlant>()
+  private readonly savedRows = new Map<string, SavedSchedule>()
   private readonly captureRows: Capture[] = []
-  private readonly points: TelemetryPoint[] = []
+  private points: TelemetryPoint[] = []
   private readonly counterRows = new Map<string, number>()
   private flashRows: FlashSample[] = []
   private readonly backupRows: BackupRecord[] = []
   private readonly analysisRows: AnalysisRow[] = []
+  private readonly planRows = new Map<string, PlanRow>()
   private automationRows: Automation[] = []
   private runRows: AutomationRun[] = []
   private nextAutomationId = 1
   private nextRunId = 1
+  private readonly labelRows = new Map<string, PodLabel>()
+  private readonly codePairs = new Map<string, PodCodePair>()
+  private readonly codeReads = new Map<number, PodCodeRead>()
+  private readonly tankRows: TankAction[] = []
+  private nextTankId = 1
 
   constructor(podCount = 30) {
     const ts = new Date(0).toISOString()
     for (let slot = 1; slot <= podCount; slot++) {
-      this.podRows.set(slot, { slot, plant: null, plantedAt: null, status: 'empty', notes: '', updatedAt: ts })
+      this.podRows.set(slot, { slot, plant: null, plantedAt: null, status: 'empty', notes: '', updatedAt: ts, statusSince: ts, lastHarvestAt: null })
     }
   }
 
@@ -102,8 +111,16 @@ export class MemoryStore implements Store {
         open.endedAt = ts
         open.stage = 'ended'
       }
-      const c: GrowCycle = { id: `cycle-${this.cycles.length + 1}`, startedAt: ts, endedAt: null, stage: 'germination', notes, issued: [] }
+      const c: GrowCycle = { id: `cycle-${this.cycles.length + 1}`, startedAt: ts, endedAt: null, stage: 'germination', notes, issued: [], protocolId: null, shiftDays: 0, holdStageId: null, holdSince: null, thenKind: 'stay', thenScheduleId: null, thenDoneAt: null, stageStarts: {} }
       this.cycles.push(c)
+      return c
+    },
+    setStart: (ts: string, stage: GrowStage, issued: string[]): GrowCycle | null => {
+      const c = this.grow.current()
+      if (!c) return null
+      c.startedAt = ts
+      c.stage = stage
+      c.issued = [...issued]
       return c
     },
     setStage: (stage: GrowStage): GrowCycle | null => {
@@ -115,6 +132,12 @@ export class MemoryStore implements Store {
     markIssued: (reminder: string): void => {
       const c = this.grow.current()
       if (c && !c.issued.includes(reminder)) c.issued.push(reminder)
+    },
+    setProtocol: (patch: Partial<GrowProtocolState>): GrowCycle | null => {
+      const c = this.grow.current()
+      if (!c) return null
+      Object.assign(c, clone(patch))
+      return c
     },
     end: (ts: string): GrowCycle | null => {
       const c = this.grow.current()
@@ -128,13 +151,57 @@ export class MemoryStore implements Store {
 
   pods = {
     list: (): Pod[] => [...this.podRows.values()].sort((a, b) => a.slot - b.slot),
-    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt'>>, ts: string): Pod => {
+    update: (slot: number, patch: Partial<Omit<Pod, 'slot' | 'updatedAt' | 'statusSince'>>, ts: string): Pod => {
       const prev = this.podRows.get(slot)
       if (!prev) throw new Error(`no pod ${slot}`)
-      const row = { ...prev, ...patch, updatedAt: ts }
+      const moved = patch.status !== undefined && patch.status !== prev.status
+      const row = { ...prev, ...patch, updatedAt: ts, statusSince: moved ? ts : prev.statusSince }
       this.podRows.set(slot, row)
       return row
     },
+  }
+
+  plants = {
+    list: (): PlantProfile[] => [...this.profileRows.values()].sort((a, b) => a.key.localeCompare(b.key)),
+    upsert: (p: Omit<PlantProfile, 'key' | 'updatedAt'>, ts: string): PlantProfile => {
+      const row = { ...p, key: profileKey(p.name), updatedAt: ts }
+      this.profileRows.set(row.key, row)
+      return row
+    },
+    remove: (name: string): boolean => this.profileRows.delete(profileKey(name)),
+  }
+
+  customPlants = {
+    list: (): CustomPlant[] => [...this.customPlantRows.values()].map(clone),
+    get: (id: string): CustomPlant | null => {
+      const r = this.customPlantRows.get(id)
+      return r ? clone(r) : null
+    },
+    upsert: (p: Omit<CustomPlant, 'createdAt' | 'updatedAt'>, ts: string): CustomPlant => {
+      const row: CustomPlant = { ...clone(p), createdAt: this.customPlantRows.get(p.id)?.createdAt ?? ts, updatedAt: ts }
+      this.customPlantRows.set(p.id, row)
+      return clone(row)
+    },
+    remove: (id: string): boolean => this.customPlantRows.delete(id),
+  }
+
+  scheduleLibrary = {
+    list: (): SavedSchedule[] => [...this.savedRows.values()].map(clone),
+    get: (id: string): SavedSchedule | null => {
+      const r = this.savedRows.get(id)
+      return r ? clone(r) : null
+    },
+    upsert: (s: Omit<SavedSchedule, 'createdAt' | 'updatedAt' | 'lastUsedAt'>, ts: string): SavedSchedule => {
+      const prev = this.savedRows.get(s.id)
+      const row: SavedSchedule = { ...clone(s), createdAt: prev?.createdAt ?? ts, updatedAt: ts, lastUsedAt: prev?.lastUsedAt ?? null }
+      this.savedRows.set(s.id, row)
+      return clone(row)
+    },
+    markUsed: (id: string, ts: string): void => {
+      const r = this.savedRows.get(id)
+      if (r) r.lastUsedAt = ts
+    },
+    remove: (id: string): boolean => this.savedRows.delete(id),
   }
 
   captures = {
@@ -160,6 +227,22 @@ export class MemoryStore implements Store {
       const rows = this.points.filter(p => p.sensor === sensor && p.ts >= fromTs && p.ts <= toTs)
       return downsample(rows, maxPoints)
     },
+    flush: (): void => {
+      // nothing is held
+    },
+    thin: (sensors: readonly SensorId[], fromTs: string, toTs: string, bucketMin: number): number => {
+      const seen = new Set<string>()
+      const before = this.points.length
+      this.points = this.points.filter((p) => {
+        if (!sensors.includes(p.sensor) || p.ts < fromTs || p.ts >= toTs) return true
+        const bucket = `${p.sensor}${p.ts.slice(0, 14)}${Math.floor(Number(p.ts.slice(14, 16)) / bucketMin)}`
+        if (seen.has(bucket)) return false
+        seen.add(bucket)
+        return true
+      })
+      return before - this.points.length
+    },
+    oldestTs: (): string | null => this.points[0]?.ts ?? null,
   }
 
   counters = {
@@ -216,6 +299,10 @@ export class MemoryStore implements Store {
     forCapture: (captureId: string): AnalysisRow[] =>
       this.analysisRows.filter(r => r.captureId === captureId)
         .sort((a, b) => a.analyzer.localeCompare(b.analyzer) || a.version - b.version || a.slot - b.slot || a.metric.localeCompare(b.metric)),
+    removeDevice: (captureId: string): void => {
+      const keep = this.analysisRows.filter(r => r.captureId !== captureId || r.source !== 'device')
+      this.analysisRows.splice(0, this.analysisRows.length, ...keep)
+    },
     range: (fromTs: string, toTs: string): AnalysisRow[] =>
       this.analysisRows.filter(r => r.ts >= fromTs && r.ts <= toTs).sort((a, b) => a.ts.localeCompare(b.ts)),
     stats: (): AnalyzerStats[] => {
@@ -230,6 +317,64 @@ export class MemoryStore implements Store {
         m.set(k, s)
       }
       return [...m.values()].map(({ ids, ...s }) => ({ ...s, captures: ids.size })).sort((a, b) => a.analyzer.localeCompare(b.analyzer) || a.version - b.version)
+    },
+  }
+
+  podLabels = {
+    set: (l: PodLabel): PodLabel => {
+      const k = `${l.captureId}#${l.slot}`
+      const was = this.labelRows.get(k)
+      const row = was?.plant != null ? { ...l, plant: was.plant, plantedAt: was.plantedAt } : { ...l }
+      this.labelRows.set(k, row)
+      return { ...row }
+    },
+    remove: (captureId: string, slot: number): boolean => this.labelRows.delete(`${captureId}#${slot}`),
+    forCapture: (captureId: string): PodLabel[] =>
+      [...this.labelRows.values()].filter(l => l.captureId === captureId).sort((a, b) => a.slot - b.slot).map(l => ({ ...l })),
+    range: (fromTs: string, toTs: string): PodLabel[] =>
+      [...this.labelRows.values()].filter(l => l.ts >= fromTs && l.ts <= toTs)
+        .sort((a, b) => a.ts.localeCompare(b.ts) || a.captureId.localeCompare(b.captureId) || a.slot - b.slot).map(l => ({ ...l })),
+    list: (q: { label?: PodLabelValue, camera?: 'upper' | 'lower', limit: number, before?: PodLabelCursor }): PodLabel[] => {
+      // Code-unit order, as SQLite compares text, so both stores page alike.
+      const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+      const order = (a: PodLabelCursor, b: PodLabelCursor) => cmp(b.ts, a.ts) || cmp(b.captureId, a.captureId) || a.slot - b.slot
+      const { before } = q
+      return [...this.labelRows.values()]
+        .filter(l => (!q.label || l.label === q.label) && (!q.camera || l.camera === q.camera) && (!before || order(l, before) > 0))
+        .sort(order).slice(0, q.limit).map(l => ({ ...l }))
+    },
+    counts: (): Record<PodLabelValue, number> => {
+      const out = Object.fromEntries(POD_LABELS.map(l => [l, 0])) as Record<PodLabelValue, number>
+      for (const l of this.labelRows.values()) out[l.label]++
+      return out
+    },
+    captures: (limit = 50): Array<{ captureId: string, ts: string, camera: 'upper' | 'lower', pods: number }> => {
+      const m = new Map<string, { captureId: string, ts: string, camera: 'upper' | 'lower', pods: number }>()
+      for (const l of this.labelRows.values()) {
+        const c = m.get(l.captureId) ?? { captureId: l.captureId, ts: l.ts, camera: l.camera, pods: 0 }
+        c.pods++
+        m.set(l.captureId, c)
+      }
+      return [...m.values()].sort((a, b) => b.ts.localeCompare(a.ts) || a.captureId.localeCompare(b.captureId)).slice(0, limit)
+    },
+  }
+
+  podCodes = {
+    pairs: (): PodCodePair[] => [...this.codePairs.values()].sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0)).map(p => ({ ...p })),
+    pair: (code: string): PodCodePair | null => {
+      const p = this.codePairs.get(code)
+      return p ? { ...p } : null
+    },
+    confirm: (code: string, plant: string, ts: string): PodCodePair => {
+      const p = { code, plant, confirmedAt: ts }
+      this.codePairs.set(code, p)
+      return { ...p }
+    },
+    forget: (code: string): boolean => this.codePairs.delete(code),
+    reads: (): PodCodeRead[] => [...this.codeReads.values()].sort((a, b) => a.slot - b.slot).map(r => ({ ...r })),
+    setReads: (camera: 'upper' | 'lower', reads: PodCodeRead[]): void => {
+      for (const [slot, r] of this.codeReads) if (r.camera === camera) this.codeReads.delete(slot)
+      for (const r of reads) this.codeReads.set(r.slot, { ...r, camera })
     },
   }
 
@@ -268,6 +413,45 @@ export class MemoryStore implements Store {
       const before = this.runRows.length
       this.runRows = this.runRows.filter(r => r.firedAt >= beforeTs)
       return before - this.runRows.length
+    },
+  }
+
+  tankActions = {
+    add: (a: Omit<TankAction, 'id' | 'createdAt'>, createdAt: string): TankAction => {
+      const row = { ...a, id: this.nextTankId++, createdAt }
+      this.tankRows.push(row)
+      return row
+    },
+    list: (q?: { kind?: TankActionKind, limit?: number }): TankAction[] =>
+      this.tankRows.filter(r => !q?.kind || r.kind === q.kind).sort((a, b) => b.ts.localeCompare(a.ts) || b.id - a.id).slice(0, q?.limit ?? 100),
+    remove: (id: number): boolean => {
+      const i = this.tankRows.findIndex(r => r.id === id)
+      if (i < 0) return false
+      this.tankRows.splice(i, 1)
+      return true
+    },
+  }
+
+  plans = {
+    list: (): PlanRow[] => [...this.planRows.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    get: (id: string): PlanRow | null => this.planRows.get(id) ?? null,
+    save: (p: Omit<PlanRow, 'createdAt' | 'updatedAt' | 'appliedAt' | 'issued'>): PlanRow => {
+      const now = new Date().toISOString()
+      const prev = this.planRows.get(p.id)
+      const row: PlanRow = { ...p, createdAt: prev?.createdAt ?? now, updatedAt: now, appliedAt: prev?.appliedAt ?? null, issued: prev?.issued ?? [] }
+      this.planRows.set(p.id, row)
+      return row
+    },
+    remove: (id: string): boolean => this.planRows.delete(id),
+    markApplied: (id: string, ts: string): PlanRow | null => {
+      const r = this.planRows.get(id)
+      if (!r) return null
+      r.appliedAt = ts
+      return r
+    },
+    markIssued: (id: string, key: string): void => {
+      const r = this.planRows.get(id)
+      if (r && !r.issued.includes(key)) r.issued.push(key)
     },
   }
 

@@ -4,7 +4,7 @@ import { createEventBus } from '../../lib/eventBus'
 import { LightArbiter } from '../../control/light'
 import { MemoryStore } from '../../store/memory'
 import { lightLevelAt, Scheduler } from '../scheduler'
-import { dayEnabled, localTime, minuteToHHMM } from '../time'
+import { dayEnabled, localTime, minuteToHHMM, zoneAbbr } from '../time'
 
 describe('lightLevelAt', () => {
   const curve = { setpoints: [{ minute: 360, level: 0 }, { minute: 420, level: 80 }, { minute: 1200, level: 80 }, { minute: 1260, level: 0 }] }
@@ -38,6 +38,12 @@ describe('time helpers', () => {
   })
   it('falls back to UTC on a bad zone', () => {
     expect(localTime(new Date('2026-01-01T12:00:00Z'), 'Not/AZone').minute).toBe(720)
+    expect(zoneAbbr(new Date('2026-01-01T12:00:00Z'), 'Not/AZone')).toBe('UTC')
+  })
+  it('names the zone as a clock does, daylight time included', () => {
+    expect(zoneAbbr(new Date('2026-11-10T14:00:00Z'), 'America/Los_Angeles')).toBe('PST')
+    expect(zoneAbbr(new Date('2026-07-10T14:00:00Z'), 'America/Los_Angeles')).toBe('PDT')
+    expect(zoneAbbr(new Date('2026-11-10T14:00:00Z'), 'UTC')).toBe('UTC')
   })
 })
 
@@ -100,6 +106,19 @@ describe('Scheduler', () => {
     const r2 = await s.tick()
     expect(r2.pumpFired).toEqual([])
     expect(store.schedules.recentRuns()).toHaveLength(1)
+  })
+
+  it('holds a pump slot while the clock can\'t be believed, and doesn\'t use it up', async () => {
+    const { store, hal } = setup('2026-10-31T08:00:30Z')
+    store.schedules.upsert({ id: 'p', kind: 'pump', name: 'morning', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })
+    let trusted = false
+    const logs: string[] = []
+    const s = new Scheduler({ store, hal, events: createEventBus(), now: () => new Date('2026-10-31T08:00:30Z'), clockTrusted: () => trusted, log: m => logs.push(m) })
+    expect((await s.tick()).pumpFired).toEqual([])
+    expect(store.schedules.recentRuns()).toHaveLength(0)
+    expect(logs.join()).toContain('the clock isn\'t set yet')
+    trusted = true
+    expect((await s.tick()).pumpFired).toEqual(['p'])
   })
 
   it('respects the day mask and disabled flag', async () => {

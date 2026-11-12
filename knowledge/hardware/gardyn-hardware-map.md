@@ -9,7 +9,7 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden/blob/main/con
 
 # Gardyn hardware map
 
-The controller is a Raspberry Pi Zero W or Zero 2 W booting from microSD. BCM numbering.
+The controller is a Raspberry Pi Zero W (owners' reports; iot-root recommends a Zero 2 W upgrade) or Zero 2 W booting from microSD. BCM numbering. The stock board's GPIO header is on the underside, so a replacement Zero 2 W needs its header soldered the same way. Core runs on Node 24 on a 64-bit OS (a Zero 2 W) and falls back to Node 22 on a 32-bit one (the Zero W's ARMv6 build); see docs/INSTALLATION.md, Which Pi. hald reports the board as `board` in its system info.
 
 | Function | Interface | Pin / address | Note |
 |---|---|---|---|
@@ -25,4 +25,4 @@ The controller is a Raspberry Pi Zero W or Zero 2 W booting from microSD. BCM nu
 
 Model inference: DHT20 at 0x38 ⇒ 3.0+; else AM2320 ⇒ 1.0/2.0. Home ≈ 5 gal / 30 pods; Studio ≈ 4 gal.
 
-Verification status: **none of this has been measured on our unit.** The Phase 1 probe (see `docs/hardware/pin-map.md`) upgrades this concept to `stable` with a `verified` attestation.
+Verification status: **partly measured on our unit** (Gardyn 3.0, from 2026-11-06): the grow light on GPIO18, the I²C sensors, the over-temp line on GPIO25 (active low) and both cameras; the pump, water level and button aren't yet. `docs/hardware/pin-map.md` has the per-row status. The Phase 1 probe (see `docs/hardware/pin-map.md`) upgrades this concept to `stable` with a `verified` attestation.

@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { ActuatorCommand, ActuatorState, Alert, ButtonEvent, CalibrationCommand, CalibrationResult, DeviceCommand, DeviceInventory, DeviceKindInfo, DeviceResult, Reading, SystemInfo } from '../contract'
 
 const dir = join(__dirname, '../../../hal/contract/fixtures')
-const schemas = { system: SystemInfo, actuator_state: ActuatorState, reading: Reading, alert: Alert, alert_dose_fault: Alert, command: ActuatorCommand, calibration_command: CalibrationCommand, calibration_result: CalibrationResult, device_inventory: DeviceInventory, device_kinds: z.array(DeviceKindInfo), device_command: DeviceCommand, device_result: DeviceResult, button_event: ButtonEvent } as const
+const schemas = { system: SystemInfo, system_without_board: SystemInfo, actuator_state: ActuatorState, reading: Reading, alert: Alert, alert_dose_fault: Alert, command: ActuatorCommand, calibration_command: CalibrationCommand, calibration_result: CalibrationResult, device_inventory: DeviceInventory, device_kinds: z.array(DeviceKindInfo), device_command: DeviceCommand, device_result: DeviceResult, button_event: ButtonEvent } as const
 
 describe('HAL contract fixtures parse on the TS side', () => {
   for (const file of readdirSync(dir)) {

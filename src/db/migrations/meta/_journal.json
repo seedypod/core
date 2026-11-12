@@ -57,6 +57,90 @@
       "when": 1793488462579,
       "tag": "0007_flawless_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793515760869,
+      "tag": "0008_slim_adam_destine",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793586677300,
+      "tag": "0009_hard_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793608483439,
+      "tag": "0010_furry_power_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793970385155,
+      "tag": "0011_adorable_the_hunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794210104746,
+      "tag": "0012_custom_plants",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1794211536059,
+      "tag": "0013_pod_regions",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794225976575,
+      "tag": "0014_tank_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1794256924908,
+      "tag": "0015_pod_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1794367152197,
+      "tag": "0016_follow_grow_cycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1794370193649,
+      "tag": "0017_label_plant",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1794392603702,
+      "tag": "0018_grow_protocols",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1794433379516,
+      "tag": "0019_pod_codes",
+      "breakpoints": true
     }
   ]
 }

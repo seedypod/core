@@ -11,6 +11,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bundleEntries, collect, gzipTar, type BackupManifest, type BundleFile } from '../../src/backup/bundle'
 import { header } from '../../src/datasets/tar'
 
+// As root the helper ignores every SEEDYPOD_* override and acts on the real unit's paths.
+if (process.getuid?.() === 0) throw new Error('the restore tests must not run as root')
+
 const helper = resolve(import.meta.dirname, '../../scripts/seedypod-restore.cjs')
 const enc = new TextEncoder()
 const DB = (tag: string) => enc.encode(`SQLite format 3\0${tag}`)
@@ -31,16 +34,18 @@ beforeEach(() => {
   writeFileSync(live('mosquitto/seedypod.conf'), 'per_listener_settings true\nlistener 1883 127.0.0.1\n')
   writeFileSync(live('migrations/meta/_journal.json'), JSON.stringify({ entries: Array.from({ length: 7 }, (_, i) => ({ tag: `000${i}_x` })) }))
   const stub = join(dir, 'systemctl.mjs')
-  writeFileSync(stub, `import { appendFileSync } from 'node:fs'\nappendFileSync(${JSON.stringify(join(dir, 'systemctl.log'))}, process.argv.slice(2).join(' ') + '\\n')\n`)
+  writeFileSync(stub, `import { appendFileSync, existsSync } from 'node:fs'\nif (existsSync(${JSON.stringify(join(dir, 'busy/restore'))})) appendFileSync(${JSON.stringify(join(dir, 'busy-seen'))}, 'x')\nappendFileSync(${JSON.stringify(join(dir, 'systemctl.log'))}, process.argv.slice(2).join(' ') + '\\n')\n`)
   envs = {
     SEEDYPOD_RESTORE_DB: live('data/seedypod.db'),
     SEEDYPOD_RESTORE_CAPTURES: live('data/captures'),
+    SEEDYPOD_RESTORE_HOMEKIT: live('data/homekit'),
     SEEDYPOD_RESTORE_JOURNAL: live('migrations/meta/_journal.json'),
     SEEDYPOD_ETC_DIR: live('etc'),
     SEEDYPOD_STATE_DIR: live('state'),
     SEEDYPOD_MOSQUITTO_PASSWD: live('mosquitto/seedypod.passwd'),
     SEEDYPOD_MOSQUITTO_CONF: live('mosquitto/seedypod.conf'),
     SEEDYPOD_RESTORE_WORK: join(dir, 'work'),
+    SEEDYPOD_BUSY_DIR: join(dir, 'busy'),
     SEEDYPOD_SYSTEMCTL: JSON.stringify([process.execPath, stub]),
     SEEDYPOD_RESTORE_DETACH: 'fork',
   }
@@ -133,6 +138,8 @@ describe('checking a bundle', () => {
     }
     expect(run('--check', write(tarOf('etc/passwd'))).out.error).toBe('unexpected file in the bundle: etc/passwd')
     expect(run('--check', write(tarOf('captures/../../etc/shadow'))).out.error).toBe('unexpected file in the bundle: captures/../../etc/shadow')
+    expect(run('--check', write(tarOf('homekit/../seedypod.json'))).out.error).toBe('unexpected file in the bundle: homekit/../seedypod.json')
+    expect(run('--check', write(tarOf('homekit/sub/identity.json'))).out.error).toBe('unexpected file in the bundle: homekit/sub/identity.json')
     expect(run('--check', write(tarOf('seedypod.db', '2'))).out.error).toBe('seedypod.db is not a regular file (tar type "2")')
     expect(run('--check', write(enc.encode('not a gzip'))).out.error).toMatch(/^not a seedypod backup/)
     expect(run('--check', join(dir, 'missing.tar.gz')).out.error).toMatch(/^no such file/)
@@ -176,6 +183,20 @@ describe('restoring', () => {
     expect(existsSync(join(dir, 'work/staging'))).toBe(false)
   })
 
+  it('marks itself busy while it works, so a USB hub reboot can\'t land mid-restore, and clears it after', async () => {
+    expect(run(await bundle()).code).toBe(0)
+    expect(existsSync(join(dir, 'busy-seen'))).toBe(true)
+    expect(existsSync(join(dir, 'busy/restore'))).toBe(false)
+  })
+
+  it('lifts its busy mark when it fails without a status to say so', async () => {
+    const p = await bundle()
+    // The work dir can't be made, so even the first status write throws.
+    writeFileSync(join(dir, 'work'), 'not a directory')
+    expect(run(p).code).toBe(1)
+    expect(existsSync(join(dir, 'busy/restore'))).toBe(false)
+  })
+
   it('undoes a wrong restore, and a second undo redoes it', async () => {
     run(await bundle())
     expect(run('--undo').code).toBe(0)
@@ -210,6 +231,7 @@ describe('restoring', () => {
     expect(read('data/seedypod.db-wal')).toBe('old wal')
     expect(read('etc/hal.toml')).toContain('fresh')
     expect(calls().slice(-2)).toEqual(['start hald', 'start seedypod-core'])
+    expect(existsSync(join(dir, 'busy/restore'))).toBe(false)
     expect(JSON.parse(readFileSync(join(dir, 'work/status.json'), 'utf8'))).toMatchObject({ state: 'failed' })
     expect(run('--undo').out).toMatchObject({ ok: false, error: 'there is no restore to undo' })
   })
@@ -221,6 +243,33 @@ describe('restoring', () => {
     expect(read('data/captures/upper-1.jpg')).toBe('jpeg')
     expect(existsSync(live('data/captures/upper-old.jpg'))).toBe(false)
     expect(readFileSync(join(dir, 'work/pre-restore/data/captures/upper-old.jpg'), 'utf8')).toBe('old')
+  })
+
+  it('restores HomeKit\'s identity and pairings as one directory, so the unit stays paired (ADR 0023)', async () => {
+    mkdirSync(live('data/homekit'))
+    writeFileSync(live('data/homekit/identity.json'), '{"username":"AA:00:00:00:00:01"}')
+    writeFileSync(live('data/homekit/AccessoryInfo.AA0000000001.json'), '{"pairedClients":{}}')
+    const hk = [
+      { name: 'homekit/identity.json', bytes: enc.encode('{"username":"B6:C2:6B:92:03:40"}') },
+      { name: 'homekit/AccessoryInfo.B6C26B920340.json', bytes: enc.encode('{"pairedClients":{"ios":{}}}') },
+      { name: 'homekit/IdentifierCache.B6C26B920340.json', bytes: enc.encode('{}') },
+    ]
+    expect(run(await bundle([...FILES, ...hk])).code).toBe(0)
+    expect(read('data/homekit/identity.json')).toContain('B6:C2:6B:92:03:40')
+    expect(read('data/homekit/AccessoryInfo.B6C26B920340.json')).toContain('ios')
+    // The old identity's pairing file would belong to a bridge that no longer exists.
+    expect(existsSync(live('data/homekit/AccessoryInfo.AA0000000001.json'))).toBe(false)
+    expect(readFileSync(join(dir, 'work/pre-restore/data/homekit/identity.json'), 'utf8')).toContain('AA:00')
+    expect(run('--undo').code).toBe(0)
+    expect(read('data/homekit/identity.json')).toContain('AA:00')
+    expect(existsSync(live('data/homekit/IdentifierCache.B6C26B920340.json'))).toBe(false)
+  })
+
+  it('leaves HomeKit alone when the bundle has none of its files', async () => {
+    mkdirSync(live('data/homekit'))
+    writeFileSync(live('data/homekit/identity.json'), '{"username":"AA:00:00:00:00:01"}')
+    expect(run(await bundle()).code).toBe(0)
+    expect(read('data/homekit/identity.json')).toContain('AA:00')
   })
 
   it('--detach returns at once and finishes in the background', async () => {

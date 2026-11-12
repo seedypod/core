@@ -27,6 +27,8 @@ jobs:
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -35,6 +37,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm dlx vercel@latest pull --yes --environment=${{ github.event_name == 'push' && 'production' || 'preview' }} --token=${{ secrets.VERCEL_TOKEN }}
       - run: pnpm dlx vercel@latest build ${{ github.event_name == 'push' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Check the build has no Git LFS pointers
+        # Without lfs: true on checkout, the brand PNGs deploy as pointer text and the logo breaks.
+        run: |
+          if grep -rlx 'version https://git-lfs.github.com/spec/v1' .vercel/output/static; then
+            echo "::error::Git LFS pointer files in .vercel/output/static; check out with lfs: true"
+            exit 1
+          fi
+          [ "$(file -b --mime-type .vercel/output/static/brand/icon-64.png)" = image/png ]
       - id: deploy
         run: |
           URL=$(pnpm dlx vercel@latest deploy --prebuilt ${{ github.event_name == 'push' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }})

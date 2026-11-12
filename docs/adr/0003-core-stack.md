@@ -14,7 +14,7 @@ sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/
 
 ## Context
 
-sleepypod/core runs Next.js on the Eight Sleep Pod (aarch64, 2 GB). It works,
+[sleepypod/core](https://sleepypod.github.io/developers/architecture/) runs Next.js on the Eight Sleep Pod (aarch64, 2 GB). It works,
 but the build needs post-processing (`strip-turbopack-external-hashes`,
 hand-copying `.next/static` into standalone, deleting `instrumentation.ts` for
 the Vercel demo) and `next start` idles at roughly 150–250 MB. The Gardyn's Pi

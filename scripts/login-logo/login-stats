@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# seedypod login stats: the live facts login-logo writes beside the logo. One
+# line per fact, in display order: the label, then tab-separated segments, each
+# "state:text" with state ok, warn, bad, dim or - for none, or "bar-state:percent"
+# for a bar, drawn before the text after it. A fact with no source
+# is left out. First, when core answers, comes "version", the build core runs:
+# login-logo prints it in place of the version file, which a web update doesn't touch. Read-only: it reads /proc and /sys, runs df and vcgencmd, and GETs
+# core's /api/system/login-summary.
+#
+# On a Pi Zero W a fork costs ~50 ms and curl ~330 ms before it sends a byte, so
+# core is asked over bash's /dev/tcp, files are read with builtins and nothing
+# runs in a $(...). Core gets 0.6 s to answer; login-logo stops waiting at 1 s.
+#   SEEDYPOD_API          host:port of core (127.0.0.1:3000)
+#   SEEDYPOD_API_MS       how long core gets to answer (600)
+#   SEEDYPOD_STATS_ROOT   prefix for /proc, /sys and / (tests)
+exec 2>/dev/null </dev/null
+# A decimal point in EPOCHREALTIME and printf's %f, whatever the locale.
+export LC_NUMERIC=C
+
+root="${SEEDYPOD_STATS_ROOT:-}"
+api="${SEEDYPOD_API:-127.0.0.1:3000}"
+dir="${BASH_SOURCE[0]%/*}"
+deg=C
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) deg=°C ;; esac
+
+# Helpers set $r rather than print, so that none of them costs a fork.
+emit() { local IFS=$'\t'; printf '%s\n' "$*"; }
+ago() {
+  local s=$1
+  if [ "$s" -lt 60 ]; then r="${s}s"
+  elif [ "$s" -lt 3600 ]; then r="$((s / 60))m"
+  elif [ "$s" -lt 172800 ]; then r="$((s / 3600))h"
+  else r="$((s / 86400))d"
+  fi
+  r+=" ago"
+}
+whole() { printf -v r '%.0f' "$1"; }
+human() {
+  if [ "$1" -ge 1048576 ]; then r="$(($1 / 1048576)).$(($1 % 1048576 * 10 / 1048576))G"
+  else r="$(($1 / 1024))M"
+  fi
+}
+
+# ---- core --------------------------------------------------------------------
+summary=""
+fetch() {
+  local host=${api%:*} port=${api##*:} line body="" status="" in_body="" left t
+  local wait_ms=${SEEDYPOD_API_MS:-600}
+  [[ $wait_ms =~ ^[0-9]{1,6}$ ]] || wait_ms=600
+  local deadline=$((${EPOCHREALTIME/./} + wait_ms * 1000))
+  exec 3<>"/dev/tcp/$host/$port" || return 1
+  printf 'GET /api/system/login-summary HTTP/1.0\r\nHost: %s\r\nAccept: application/json\r\n\r\n' "$api" >&3 || return 1
+  while left=$((deadline - ${EPOCHREALTIME/./})); [ "$left" -gt 0 ]; do
+    printf -v t '%d.%06d' $((left / 1000000)) $((left % 1000000))
+    line=""
+    IFS= read -r -t "$t" -u 3 line || [ -n "$line" ] || break
+    line=${line%$'\r'}
+    if [ -n "$in_body" ]; then body+=$line
+    elif [ -z "$status" ]; then status=$line
+    elif [ -z "$line" ]; then in_body=1
+    fi
+  done
+  exec 3<&-
+  [[ $status == HTTP/1.?\ 200* ]] && [[ $body == '{'*'}' ]] && summary=$body
+}
+# Sets $v to a top-level field of the summary; false when it's null or missing.
+pick() {
+  local re="\"$1\":(\"([^\"]*)\"|[^,}]*)"
+  [[ $summary =~ $re ]] || return 1
+  v=${BASH_REMATCH[1]}
+  [ "${v:0:1}" = '"' ] && v=${BASH_REMATCH[2]}
+  v=${v//[^ -~]/}
+  [ -n "$v" ] && [ "$v" != null ]
+}
+
+# A unit's cgroup holds processes only while it runs: one read where
+# systemctl is-active takes 200 ms.
+running() {
+  local procs="$root/sys/fs/cgroup/system.slice/$1.service/cgroup.procs" pid=""
+  [ -r "$procs" ] && read -r pid < "$procs"
+  [ -n "$pid" ]
+}
+
+fetch
+pick coreVersion && emit version "-:$v"
+
+# ---- the unit ----------------------------------------------------------------
+# The hostname is in the address beside the logo already.
+if pick unitId; then
+  unit=$v
+  pick model && emit unit "-:$unit" "dim:$v" || emit unit "-:$unit"
+fi
+
+addr=""
+[ -n "${SSH_CONNECTION:-}" ] && read -r _ _ addr _ <<< "$SSH_CONNECTION"
+case "$addr" in *:*) addr="[$addr]" ;; esac
+port=:3000
+[ -e "$dir/port80.nft" ] && port=""
+[ -n "$addr" ] && emit web "-:http://$addr$port"
+
+services=()
+if [ -d "$root/sys/fs/cgroup/system.slice" ]; then
+  if ! running seedypod-core; then services+=("bad:core down")
+  elif [ -n "$summary" ]; then services+=("ok:core up")
+  else services+=("warn:core not answering")
+  fi
+  if ! running hald; then services+=("bad:hald down")
+  elif pick halOnline && [ "$v" = false ]; then services+=("warn:hald not connected")
+  else services+=("ok:hald up")
+  fi
+elif [ -n "$summary" ]; then
+  services+=("ok:core up")
+  if pick halOnline; then [ "$v" = true ] && services+=("ok:hald up") || services+=("warn:hald not connected"); fi
+fi
+[ "${#services[@]}" -gt 0 ] && emit status "${services[@]}"
+
+# The last update check, which runs only when someone asks (ADR 0026), and how to act on it here.
+if pick updateState; then
+  check=$v
+  updates=()
+  case "$check" in
+    available) pick updateTo && updates+=("warn:$v available") || updates+=("warn:update available") ;;
+    current) updates+=("ok:up to date") ;;
+    *) updates+=("-:not checked") ;;
+  esac
+  pick updateCheckedAgeS && ago "$v" && updates+=("dim:checked $r")
+  case "$check" in
+    available) updates+=("dim:sudo seedypod-update --now") ;;
+    unchecked) updates+=("dim:sudo seedypod-update --check") ;;
+  esac
+  emit update "${updates[@]}"
+fi
+
+up=()
+if read -r secs _ < "$root/proc/uptime" && secs=${secs%%.*} && [[ $secs =~ ^[0-9]+$ ]]; then
+  d=$((secs / 86400)) h=$((secs % 86400 / 3600)) m=$((secs % 3600 / 60))
+  if [ "$d" -gt 0 ]; then up+=("-:${d}d ${h}h")
+  elif [ "$h" -gt 0 ]; then up+=("-:${h}h ${m}m")
+  else up+=("-:${m}m")
+  fi
+fi
+read -r load _ < "$root/proc/loadavg" && up+=("dim:load $load")
+[ "${#up[@]}" -gt 0 ] && emit uptime "${up[@]}"
+
+# ---- the garden --------------------------------------------------------------
+if [ -n "$summary" ]; then
+  outputs=()
+  if pick lightFault && [ "$v" = true ]; then outputs+=("bad:light fault")
+  elif pick lightOn && [ "$v" = true ]; then pick lightLevel && outputs+=("ok:light on $v%") || outputs+=("ok:light on")
+  elif pick lightOn; then outputs+=("-:light off")
+  fi
+  if pick pumpFault && [ "$v" = true ]; then outputs+=("bad:pump fault")
+  elif pick pumpOn && [ "$v" = true ]; then outputs+=("ok:pump running"); pick pumpRemainingS && outputs+=("dim:${v}s left")
+  elif pick pumpOn; then outputs+=("-:pump off")
+  fi
+  [ "${#outputs[@]}" -gt 0 ] && emit outputs "${outputs[@]}"
+  pick tankPct && whole "$v" && emit tank "-:$r%"
+  air=()
+  pick airC && air+=("-:$v$deg")
+  pick humidityPct && whole "$v" && air+=("-:$r% RH")
+  [ "${#air[@]}" -gt 0 ] && emit air "${air[@]}"
+fi
+
+board=()
+pick boardC && whole "$v" && board+=("-:$r$deg")
+if read -r milli < "$root/sys/class/thermal/thermal_zone0/temp" && [[ $milli =~ ^[0-9]+$ ]]; then
+  c=$(((milli + 500) / 1000))
+  # The Pi starts throttling at 80 °C.
+  if [ "$c" -ge 80 ]; then state=bad; elif [ "$c" -ge 70 ]; then state=warn; else state=-; fi
+  board+=("$state:cpu $c$deg")
+fi
+[ "${#board[@]}" -gt 0 ] && emit board "${board[@]}"
+
+if [ -n "$summary" ]; then
+  pick captureAgeS && ago "$v" && emit camera "-:$r"
+  # Where the learned pod-state models run (#191), and how many are on.
+  if pick visionRunner; then
+    if [ "$v" != podvision ]; then vision=("-:TypeScript")
+    elif pick visionFallback && [ "$v" = true ]; then vision=("warn:fell back to TypeScript")
+    else vision=("ok:podvision")
+    fi
+    if pick podStateModels; then
+      case "$v" in 0) vision+=("dim:no model") ;; 1) vision+=("dim:1 model") ;; *) vision+=("dim:$v models") ;; esac
+    fi
+    emit vision "${vision[@]}"
+  fi
+  if pick readingAgeS; then
+    # Fifteen minutes is core's SENSOR_STALE_MS.
+    ago "$v"
+    [ "$v" -gt 900 ] && readings=("warn:$r") || readings=("-:$r")
+    pick staleSensors && [ "$v" -gt 0 ] && readings+=("warn:$v stale")
+    emit sensors "${readings[@]}"
+  fi
+  if pick activeAlerts; then
+    [ "$v" -gt 0 ] && emit alerts "warn:$v active" || emit alerts "ok:none"
+  fi
+fi
+
+# ---- the Pi ------------------------------------------------------------------
+# ram and disk: a bar of what's used, then percent and used/total, tinted when low.
+total="" avail=""
+while read -r key value _; do
+  case "$key" in MemTotal:) total=$value ;; MemAvailable:) avail=$value ;; esac
+done < "$root/proc/meminfo"
+if [[ $avail =~ ^[0-9]+$ ]] && [[ $total =~ ^[1-9][0-9]*$ ]] && [ "$avail" -le "$total" ]; then
+  [ $((avail * 10)) -lt "$total" ] && state=warn || state=-
+  used=$((total - avail))
+  human "$used"
+  text="$r/"
+  human "$total"
+  emit ram "bar-${state/-/ok}:$((used * 100 / total))" "$state:$((used * 100 / total))% $text$r"
+fi
+
+size="" taken="" left="" pct=""
+{ read -r _; read -r _ size taken left pct _; } < <(df -Pk "${root:-/}")
+pct=${pct%\%}
+if [[ $size =~ ^[1-9][0-9]*$ ]] && [[ $taken =~ ^[0-9]+$ ]] && [[ $left =~ ^[0-9]+$ ]] && [[ $pct =~ ^[0-9]{1,3}$ ]]; then
+  # Core's storage check: under 15% free is low, under 5% full.
+  if [ $((left * 20)) -lt "$size" ]; then state=bad
+  elif [ $((left * 100)) -lt $((size * 15)) ]; then state=warn
+  else state=-
+  fi
+  human "$taken"
+  text="$r/"
+  human "$size"
+  emit disk "bar-${state/-/ok}:$pct" "$state:$pct% $text$r"
+fi
+
+# get_throttled: bits 0-3 are now (under-voltage, capped, throttled, soft
+# limit), bits 16-19 the same since boot.
+if type -P vcgencmd >/dev/null && read -r throttled < <(vcgencmd get_throttled) && [[ $throttled =~ =0x([0-9a-fA-F]+)$ ]]; then
+  flags=$((16#${BASH_REMATCH[1]}))
+  if ((flags & 0x1)); then emit power "bad:under-voltage"
+  elif ((flags & 0x6)); then emit power "bad:throttled"
+  elif ((flags & 0x10000)); then emit power "warn:under-voltage since boot"
+  elif ((flags & 0x60000)); then emit power "warn:throttled since boot"
+  else emit power "ok:ok"
+  fi
+fi
+exit 0

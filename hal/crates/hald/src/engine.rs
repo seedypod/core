@@ -8,22 +8,23 @@
 //! only from [`Engine::apply_pump`], which only acts on a `PumpGuard`
 //! decision. Dosing pumps likewise only through their `DoseGuard`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use hal_core::device::{now_epoch_s, rfc3339_from_epoch};
 use hal_core::registry::Registry;
-use hal_core::safety::{Decision, DoseGuard, DoseLimits, Env, PumpGuard, PumpLimits};
+use hal_core::safety::{is_dry_run, Decision, DoseGuard, DoseLimits, Env, PumpGuard, PumpLimits, DRY_RUN};
 use hal_core::{
     topics, ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, BinarySensor, ButtonEvent,
     ButtonPress, CalibrationCommand, CalibrationResult, DeviceCommand, DeviceEntry, DeviceInventory,
-    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Reading, SensorId, SystemInfo,
+    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, Quality, Reading, SensorId, SystemInfo,
 };
 use serde::Serialize;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::config::{SensorEntry, I2C_ADDR_RANGE};
+use crate::fade::LightFader;
 use crate::kinds::SensorFactory;
 use crate::overlay::Overlay;
 use crate::state::{Persisted, StateFile};
@@ -116,6 +117,8 @@ pub type SharedSnapshot = Arc<RwLock<Snapshot>>;
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
     pub telemetry_interval: Duration,
+    /// How long a full swing of the light takes; zero for no fade.
+    pub light_fade: Duration,
     pub pump: PumpLimits,
     pub dosing: DoseLimits,
     /// Bounded run requested by a double press.
@@ -142,10 +145,17 @@ pub struct Engine {
     pump: PumpGuard,
     pump_since: String,
     pump_was_on: bool,
+    /// Until when a current-guard trip holds before it may clear like a dry-run.
+    dry_hold_until: Option<Instant>,
     doses: BTreeMap<ActuatorId, DoseGuard>,
     dose_since: BTreeMap<ActuatorId, String>,
+    /// Where the light is going; a fade may still be on its way there.
     light_level: f64,
     light_since: String,
+    /// Owns the light's driver, taken out of the registry.
+    light: Option<LightFader>,
+    /// The last light fault published; a failed fade step has no command to report it.
+    light_fault: Option<&'static str>,
     persisted: Persisted,
     state_file: Option<StateFile>,
     env: Env,
@@ -154,8 +164,59 @@ pub struct Engine {
     last_tick: Option<Instant>,
     last_hours_persist: Option<Instant>,
     alerts: BTreeMap<AlertKind, Alert>,
+    water: WaterAlert,
     snapshot: SharedSnapshot,
     devices: Devices,
+}
+
+/// Telemetry rounds the water alert looks back over: a minute at the default 10 s.
+const WATER_WINDOW: usize = 6;
+/// Rounds without a good reading in that window that raise it.
+const WATER_RAISE_AT: usize = 3;
+
+/// The `water_low` alert, debounced. A tank lifted out leaves the ranger on stray
+/// echoes that alternate with no reading at all, and each raise is an alert row
+/// in core. So a reading at the limit raises at once, a lost reading only when
+/// lost ones pile up, and it clears after a whole window of good readings.
+#[derive(Debug, Default)]
+struct WaterAlert {
+    /// Newest last; `true` for a round that read low or read nothing.
+    rounds: VecDeque<bool>,
+    active: bool,
+    detail: String,
+}
+
+impl WaterAlert {
+    /// A whole window of rounds that each read the water above the limit.
+    fn all_good(&self) -> bool {
+        self.rounds.len() == WATER_WINDOW && self.rounds.iter().all(|b| !*b)
+    }
+
+    fn observe(&mut self, distance: Option<f64>, low: f64) {
+        let is_low = distance.is_some_and(|d| d >= low);
+        let bad = is_low || distance.is_none();
+        // With no history the first round decides: nothing says a silent ranger is a blip.
+        if self.rounds.is_empty() {
+            self.rounds.extend([bad; WATER_RAISE_AT]);
+        }
+        if self.rounds.len() == WATER_WINDOW {
+            self.rounds.pop_front();
+        }
+        self.rounds.push_back(bad);
+        let bad_rounds = self.rounds.iter().filter(|b| **b).count();
+        if is_low || bad_rounds >= WATER_RAISE_AT {
+            self.active = true;
+        } else if bad_rounds == 0 {
+            self.active = false;
+            self.detail.clear();
+        }
+        if self.active && bad {
+            self.detail = match distance {
+                Some(d) => format!("water distance {d:.1} cm ≥ {low:.1} cm"),
+                None => "water level sensor unavailable".to_owned(),
+            };
+        }
+    }
 }
 
 /// Runtime sensor inventory: what is configured, what was added from the app,
@@ -205,6 +266,15 @@ impl Engine {
         state_file: Option<StateFile>,
         snapshot: SharedSnapshot,
     ) -> Self {
+        let mut cfg = cfg;
+        if cfg.pump.dry_current_a.is_some() && !system.caps.sensors.contains(&SensorId::PumpA) {
+            warn!("pump current guard off: no pump monitor (ina219) to read the current from");
+            cfg.pump.dry_current_a = None;
+        }
+        let mut registry = registry;
+        let light = registry
+            .remove_actuator(ActuatorId::Light)
+            .map(|driver| LightFader::new(driver, cfg.light_fade));
         let persisted = state_file.as_ref().map(StateFile::load).unwrap_or_default();
         let mut doses = BTreeMap::new();
         for id in &system.caps.actuators {
@@ -221,10 +291,13 @@ impl Engine {
             pump: PumpGuard::new(cfg.pump.clone()),
             pump_since: String::new(),
             pump_was_on: false,
+            dry_hold_until: None,
             doses,
             dose_since: BTreeMap::new(),
             light_level: 0.0,
             light_since: persisted.light_since.clone().unwrap_or_default(),
+            light,
+            light_fault: None,
             persisted,
             system,
             cfg,
@@ -237,8 +310,16 @@ impl Engine {
             last_tick: None,
             last_hours_persist: None,
             alerts: BTreeMap::new(),
+            water: WaterAlert::default(),
             snapshot,
             devices: Devices::default(),
+        }
+    }
+
+    /// Starts the thread that steps light fades. Without it, light changes are instant.
+    pub fn start_light_fades(&self) {
+        if let Some(Err(e)) = self.light.as_ref().map(LightFader::spawn) {
+            warn!(%e, "light changes won't fade");
         }
     }
 
@@ -273,6 +354,9 @@ impl Engine {
                     warn!(actuator = ?id, %e, "probe failed at boot");
                 }
             }
+        }
+        if let Some(Err(e)) = self.light.as_ref().map(LightFader::probe) {
+            warn!(actuator = ?ActuatorId::Light, %e, "probe failed at boot");
         }
         if let Some(b) = &mut self.over_temp_input {
             if let Err(e) = b.probe() {
@@ -323,10 +407,11 @@ impl Engine {
         match msg {
             Inbound::ActuatorSet(id, cmd) => out.extend(self.actuator_set(id, &cmd, now)),
             Inbound::AlertAck(kind) => {
-                info!(?kind, "alert acknowledged");
+                warn!(?kind, "alert acknowledged");
                 match kind {
                     AlertKind::PumpFault => {
                         self.pump.acknowledge();
+                        self.dry_hold_until = None;
                         out.extend(self.publish_actuator(ActuatorId::Pump, now));
                         self.save_state(now);
                     }
@@ -466,7 +551,7 @@ impl Engine {
             ActuatorId::Pump => {
                 let mut out = Vec::new();
                 self.refresh_env(now);
-                match self.pump.request(cmd, self.env, now.instant) {
+                match self.pump.request(cmd, self.start_env(), now.instant) {
                     Ok(Decision::Run { level, deadline_in }) => {
                         info!(level, secs = deadline_in.as_secs(), "pump run accepted");
                         self.apply_pump(level, now);
@@ -510,14 +595,38 @@ impl Engine {
         });
         if due {
             out.extend(self.telemetry(now, false));
+            // A dry-run clears itself once the water has read good for a whole window, as
+            // `water_low` does: a trip on a lost read clears a round later, a real one once
+            // the tank is filled. Over-temp and other latches still wait for a person.
+            let held = self.dry_hold_until.is_some_and(|t| now.instant < t);
+            if self.pump.fault().is_some_and(is_dry_run)
+                && !held
+                && !self.water.active
+                && self.water.all_good()
+            {
+                self.pump.acknowledge();
+                self.dry_hold_until = None;
+                info!("pump dry-run cleared: the water has read good for a minute");
+                out.extend(self.publish_actuator(ActuatorId::Pump, now));
+            }
         } else if self.pump.is_running(now.instant) {
             self.refresh_env(now);
         }
 
+        let mut tripped = false;
         if let Some(Decision::Stop) = self.pump.tick(self.env, now.instant) {
             self.apply_pump(0.0, now);
             match self.pump.fault() {
-                Some(f) => warn!(fault = f, "pump stopped by guard; latched until acknowledged"),
+                Some(f) => {
+                    warn!(fault = f, "pump stopped by guard; latched until acknowledged");
+                    tripped = true;
+                    // A full tank says nothing about a pump pulling air: the window it
+                    // clears on starts at the trip, not before it.
+                    if is_dry_run(f) && f != DRY_RUN {
+                        self.dry_hold_until =
+                            Some(now.instant + self.cfg.telemetry_interval * WATER_WINDOW as u32);
+                    }
+                }
                 None => info!("pump run complete"),
             }
             out.extend(self.publish_actuator(ActuatorId::Pump, now));
@@ -530,7 +639,13 @@ impl Engine {
                 out.extend(self.publish_actuator(id, now));
             }
         }
-        if due {
+        let light_fault = self.light.as_ref().and_then(LightFader::fault);
+        if light_fault != self.light_fault {
+            self.light_fault = light_fault;
+            out.extend(self.publish_actuator(ActuatorId::Light, now));
+        }
+        // A trip between telemetry rounds raises its alert now, not a round later.
+        if due || tripped {
             self.refresh_alerts(now, false, &mut out);
         }
         if self
@@ -547,14 +662,22 @@ impl Engine {
     fn telemetry(&mut self, now: Now, force: bool) -> Vec<Outbound> {
         let mut out = Vec::new();
         let mut distance = None;
+        let mut trusted_distance = None;
         let mut pcb = None;
+        let mut pump_a = None;
         let mut readings = Vec::new();
         for s in self.registry.sensors_mut() {
             match s.read() {
                 Ok(r) => {
                     match s.id() {
-                        SensorId::WaterDistance => distance = Some(r.value),
+                        SensorId::WaterDistance => {
+                            distance = Some(r.value);
+                            // Too few pings answered: the guard keeps the number, but a
+                            // run of stray echoes mustn't count as water being back.
+                            trusted_distance = (r.quality != Quality::Suspect).then_some(r.value);
+                        }
                         SensorId::PcbTemp => pcb = Some(r.value),
+                        SensorId::PumpA => pump_a = Some(r.value),
                         _ => {}
                     }
                     readings.push((s.id(), r));
@@ -567,6 +690,10 @@ impl Engine {
         }
         self.env.water_distance_cm = distance;
         self.env.pcb_temp_c = pcb;
+        self.env.pump_current_a = pump_a;
+        if let Some(low) = self.cfg.pump.water_low_cm {
+            self.water.observe(trusted_distance, low);
+        }
         self.env.over_temp_signal = self.read_over_temp_signal();
         for (id, r) in readings {
             let changed = self.last_published.get(&id).map_or(true, |(v, t)| {
@@ -589,12 +716,57 @@ impl Engine {
     /// between telemetry rounds).
     fn refresh_env(&mut self, _now: Now) {
         if let Some(s) = self.registry.sensor_mut(SensorId::WaterDistance) {
-            self.env.water_distance_cm = s.read().ok().map(|r| r.value);
+            // One more try before calling it no reading: a start shouldn't be refused on one bad read.
+            self.env.water_distance_cm = s.read().or_else(|_| s.read()).ok().map(|r| r.value);
         }
         if let Some(s) = self.registry.sensor_mut(SensorId::PcbTemp) {
             self.env.pcb_temp_c = s.read().ok().map(|r| r.value);
         }
+        // A failed read is `None`, which the current guard doesn't count as dry.
+        self.env.pump_current_a = self
+            .registry
+            .sensor_mut(SensorId::PumpA)
+            .and_then(|s| s.read().ok())
+            .map(|r| r.value);
         self.env.over_temp_signal = self.read_over_temp_signal();
+    }
+
+    /// Whether the pump is commanded on (for `--pump-trace`).
+    pub fn pump_on(&self, now: Now) -> bool {
+        self.pump.is_running(now.instant)
+    }
+
+    /// One read of the pump monitor for `--pump-trace`: duty, then V, A and W, `None` where a read failed.
+    pub fn pump_sample(&mut self) -> crate::pump_trace::Sample {
+        let mut read = |id| {
+            self.registry
+                .sensor_mut(id)
+                .and_then(|s| s.read().ok())
+                .map(|r| r.value)
+        };
+        let (v, a, w) = (
+            read(SensorId::PumpV),
+            read(SensorId::PumpA),
+            read(SensorId::PumpW),
+        );
+        crate::pump_trace::Sample {
+            duty: self.pump.level(),
+            v,
+            a,
+            w,
+        }
+    }
+
+    /// What the guard judges a pump start on. A held water alert counts as no
+    /// reading, so a stray good echo can't start the pump while the app says the
+    /// water is low (upstream #111). It only holds that way round: the guard judges
+    /// each live read, so one lost read can refuse a start or trip the pump while
+    /// `water_low`, which counts telemetry rounds, stays inactive.
+    fn start_env(&self) -> Env {
+        Env {
+            water_distance_cm: self.env.water_distance_cm.filter(|_| !self.water.active),
+            ..self.env
+        }
     }
 
     fn read_over_temp_signal(&mut self) -> bool {
@@ -610,7 +782,7 @@ impl Engine {
     fn apply_pump(&mut self, level: f64, now: Now) {
         if let Some(p) = self.registry.actuator_mut(ActuatorId::Pump) {
             if let Err(e) = p.set_level(level) {
-                warn!(%e, "pump driver write failed");
+                error!(%e, "pump driver write failed");
             }
         }
         let on = level > 0.0;
@@ -623,16 +795,19 @@ impl Engine {
     fn apply_dose(&mut self, id: ActuatorId, on: bool, now: Now) {
         if let Some(a) = self.registry.actuator_mut(id) {
             if let Err(e) = a.set_level(if on { 100.0 } else { 0.0 }) {
-                warn!(?id, %e, "dosing driver write failed");
+                error!(?id, %e, "dosing driver write failed");
             }
         }
         self.dose_since.insert(id, now.ts());
     }
 
     fn set_light(&mut self, level: f64, now: Now, persist: bool) {
-        if let Some(l) = self.registry.actuator_mut(ActuatorId::Light) {
-            if let Err(e) = l.set_level(level) {
-                warn!(%e, "light driver write failed");
+        if let Some(l) = &self.light {
+            // Only a boot restore doesn't persist, and that must land exactly, never fade.
+            if persist {
+                l.fade_to(level);
+            } else {
+                l.jump(level);
             }
         }
         if level != self.light_level || self.light_since.is_empty() {
@@ -665,7 +840,7 @@ impl Engine {
         }
         if let Some(f) = &self.state_file {
             if let Err(e) = f.save(&self.persisted) {
-                warn!(path = %f.path().display(), %e, "could not persist state");
+                error!(path = %f.path().display(), %e, "could not persist state");
             }
         }
         self.last_hours_persist = Some(now.instant);
@@ -679,7 +854,7 @@ impl Engine {
                 on: self.light_level > 0.0,
                 level: self.light_level,
                 since: self.light_since.clone(),
-                fault: None,
+                fault: self.light.as_ref().and_then(LightFader::fault).map(str::to_owned),
                 remaining_s: None,
             },
             ActuatorId::Pump => ActuatorState {
@@ -722,17 +897,12 @@ impl Engine {
         let ts = now.ts();
         let mut v = Vec::new();
         let has_distance = self.system.caps.sensors.contains(&SensorId::WaterDistance);
-        if let (true, Some(low)) = (has_distance, self.cfg.pump.water_low_cm) {
-            let (active, detail) = match self.env.water_distance_cm {
-                Some(d) if d >= low => (true, format!("water distance {d:.1} cm ≥ {low:.1} cm")),
-                Some(_) => (false, String::new()),
-                None => (true, "water level sensor unavailable".to_owned()),
-            };
+        if has_distance && self.cfg.pump.water_low_cm.is_some() {
             v.push(Alert {
                 kind: AlertKind::WaterLow,
-                active,
+                active: self.water.active,
                 ts: ts.clone(),
-                detail,
+                detail: self.water.detail.clone(),
             });
         }
         let pump_fault = self.pump.fault();
@@ -780,9 +950,11 @@ impl Engine {
             let prev = self.alerts.get(&a.kind);
             let changed = prev.map_or(true, |p| p.active != a.active || p.detail != a.detail);
             if changed || force {
-                if a.active && changed {
+                // A live detail (the water distance) changes every reading; log transitions only.
+                let was_active = prev.is_some_and(|p| p.active);
+                if a.active && !was_active {
                     warn!(kind = ?a.kind, detail = %a.detail, "alert raised");
-                } else if changed && prev.is_some() {
+                } else if !a.active && was_active {
                     info!(kind = ?a.kind, "alert cleared");
                 }
                 out.push(Outbound::json(topics::alert(&self.unit, a.kind), &a, true));
@@ -979,6 +1151,9 @@ impl Engine {
             self.apply_dose(id, false, now);
             out.extend(self.publish_actuator(id, now));
         }
+        if let Some(l) = &self.light {
+            l.finish();
+        }
         self.account_light_hours(now);
         self.save_state(now);
         out.push(Outbound::retained(topics::availability(&self.unit), "offline"));
@@ -996,6 +1171,7 @@ mod tests {
             contract: CONTRACT_VERSION,
             unit_id: "u1".into(),
             model: "sim".into(),
+            board: None,
             hal_version: "0.1.0".into(),
             caps: Caps {
                 sensors: vec![
@@ -1018,6 +1194,7 @@ mod tests {
     fn cfg(ha: bool) -> EngineConfig {
         EngineConfig {
             telemetry_interval: Duration::from_secs(10),
+            light_fade: Duration::from_millis(800),
             pump: PumpLimits::default(),
             dosing: DoseLimits {
                 enabled: true,
@@ -1224,15 +1401,23 @@ mod tests {
         r.engine
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
         assert_eq!(r.world.lock().unwrap().pump_level, 30.0);
-        // Drain the tank past the threshold; the next tick trips the guard.
+        // Drain the tank past the threshold; once it has stayed low for DRY_CONFIRM, the guard trips.
         r.world.lock().unwrap().water_distance_cm = 17.0;
         r.now.advance(Duration::from_secs(10));
+        let first = r.engine.tick(r.now);
+        assert_eq!(
+            r.world.lock().unwrap().pump_level,
+            30.0,
+            "one low read is not enough"
+        );
+        assert_eq!(payload(&first, "seedypod/u1/alert/water_low")["active"], true);
+        r.now.advance(hal_core::safety::DRY_CONFIRM);
         let out = r.engine.tick(r.now);
         assert_eq!(r.world.lock().unwrap().pump_level, 0.0);
         let st = payload(&out, "seedypod/u1/actuator/pump/state");
         assert_eq!(st["fault"], "dry-run");
+        // The trip raises its alert at once, between telemetry rounds.
         assert_eq!(payload(&out, "seedypod/u1/alert/pump_fault")["active"], true);
-        assert_eq!(payload(&out, "seedypod/u1/alert/water_low")["active"], true);
         // Refill: still latched, start refused, and the refusal is visible in state.
         r.world.lock().unwrap().water_distance_cm = 7.0;
         let out = r
@@ -1243,16 +1428,674 @@ mod tests {
             payload(&out, "seedypod/u1/actuator/pump/state")["fault"],
             "dry-run"
         );
-        assert_eq!(payload(&out, "seedypod/u1/alert/water_low")["active"], false);
         assert_eq!(r.world.lock().unwrap().pump_level, 0.0);
         let out = r.engine.handle(Inbound::AlertAck(AlertKind::PumpFault), r.now);
         assert!(payload(&out, "seedypod/u1/actuator/pump/state")["fault"].is_null());
         assert_eq!(payload(&out, "seedypod/u1/alert/pump_fault")["active"], false);
+        // A window of good readings clears the water alert, and only then may it start.
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], false);
+        let mut cleared = None;
+        for _ in 0..WATER_WINDOW {
+            r.now.advance(Duration::from_secs(10));
+            cleared = r
+                .engine
+                .tick(r.now)
+                .into_iter()
+                .find(|o| o.topic == "seedypod/u1/alert/water_low");
+        }
+        assert!(cleared.unwrap().payload.contains(r#""active":false"#));
         let out = r
             .engine
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
         assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
         let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn a_dry_run_clears_itself_once_the_water_reads_good_for_a_window() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "dry-clears");
+        r.engine.boot(r.now);
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        r.world.lock().unwrap().water_distance_cm = 17.0;
+        r.now.advance(Duration::from_secs(10));
+        r.engine.tick(r.now);
+        r.now.advance(hal_core::safety::DRY_CONFIRM);
+        r.engine.tick(r.now);
+        assert_eq!(r.engine.pump.fault(), Some("dry-run"));
+        // Topped off: still latched until a whole window has read good, then clear without an ack.
+        r.world.lock().unwrap().water_distance_cm = 7.0;
+        let mut last = Vec::new();
+        for i in 0..WATER_WINDOW {
+            assert_eq!(r.engine.pump.fault(), Some("dry-run"), "round {i}");
+            r.now.advance(Duration::from_secs(10));
+            last = r.engine.tick(r.now);
+        }
+        assert_eq!(r.engine.pump.fault(), None);
+        assert!(payload(&last, "seedypod/u1/actuator/pump/state")["fault"].is_null());
+        assert_eq!(payload(&last, "seedypod/u1/alert/pump_fault")["active"], false);
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A pump with the current guard on, and the INA219's three quantities unless `monitor` is false.
+    fn current_rig(tag: &str, monitor: bool) -> Rig {
+        let mut r = rig(vec![ActuatorId::Pump], false, tag);
+        let mut sys = system(vec![ActuatorId::Pump]);
+        let mut registry = Registry::default();
+        let mut ids = sys.caps.sensors.clone();
+        if monitor {
+            ids.extend([SensorId::PumpV, SensorId::PumpA, SensorId::PumpW]);
+        }
+        for id in &ids {
+            registry.add_sensor(Box::new(hal_sim::SimSensor::new(*id, r.world.clone())));
+        }
+        registry.add_actuator(Box::new(hal_sim::SimActuator::new(
+            ActuatorId::Pump,
+            r.world.clone(),
+        )));
+        sys.caps.sensors = ids;
+        let mut c = cfg(false);
+        // The sim draws 0.22 A wet at 30 % and a quarter of that pulling air.
+        c.pump.dry_current_a = Some(0.15);
+        r.engine = Engine::new(
+            sys,
+            c,
+            registry,
+            None,
+            Some(StateFile::new(&r.dir)),
+            r.snapshot.clone(),
+        );
+        r
+    }
+
+    #[test]
+    fn a_pump_pulling_air_stops_on_its_current_names_it_and_clears_like_a_dry_run() {
+        let mut r = current_rig("air", true);
+        r.engine.boot(r.now);
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        // Wet, it runs on.
+        for _ in 0..12 {
+            r.now.advance(Duration::from_secs(1));
+            r.engine.tick(r.now);
+        }
+        assert_eq!(r.world.lock().unwrap().pump_level, 30.0);
+        // The intake comes out of the water: the tank still reads full, the current falls.
+        r.world.lock().unwrap().intake_dry = true;
+        let mut tripped = None;
+        for s in 1..=10 {
+            r.now.advance(Duration::from_secs(1));
+            let out = r.engine.tick(r.now);
+            if r.world.lock().unwrap().pump_level == 0.0 {
+                tripped = Some((s, out));
+                break;
+            }
+        }
+        let (after, out) = tripped.expect("the current guard never tripped");
+        // The first low read comes a second in, then 5 s of them.
+        assert!(after <= 6, "tripped {after} s after the intake went dry");
+        let why = "dry-run: pump drew 0.05 A, below 0.15 A for 5 s: it's pulling air";
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["fault"], why);
+        let alert = payload(&out, "seedypod/u1/alert/pump_fault");
+        assert_eq!(alert["active"], true);
+        assert_eq!(alert["detail"], format!("pump: {why}"));
+        assert!(!r.engine.water.active, "the tank reads full throughout");
+        // Same latch as a level dry-run: refused until the water has read good for a
+        // window, though here the window starts at the trip, as the tank was full all along.
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], false);
+        let mut cleared = None;
+        for s in 1..=(2 * WATER_WINDOW as u64 * 10) {
+            r.now.advance(Duration::from_secs(1));
+            r.engine.tick(r.now);
+            if r.engine.pump.fault().is_none() {
+                cleared = Some(s);
+                break;
+            }
+        }
+        let cleared = cleared.expect("the dry-run never cleared");
+        assert!((60..=70).contains(&cleared), "cleared {cleared} s after the trip");
+        assert_eq!(r.engine.dry_hold_until, None);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn acknowledging_a_current_trip_lets_the_pump_run_at_once() {
+        let mut r = current_rig("air-ack", true);
+        r.engine.boot(r.now);
+        r.world.lock().unwrap().intake_dry = true;
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        for _ in 0..10 {
+            r.now.advance(Duration::from_secs(1));
+            r.engine.tick(r.now);
+        }
+        assert!(r.engine.pump.fault().is_some_and(|f| f.contains("pulling air")));
+        assert!(r.engine.dry_hold_until.is_some());
+        r.world.lock().unwrap().intake_dry = false;
+        let out = r.engine.handle(Inbound::AlertAck(AlertKind::PumpFault), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/alert/pump_fault")["active"], false);
+        assert_eq!(r.engine.dry_hold_until, None);
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(30))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn without_a_pump_monitor_the_current_guard_is_off() {
+        let mut r = current_rig("no-monitor", false);
+        assert_eq!(r.engine.pump.limits().dry_current_a, None);
+        r.engine.boot(r.now);
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))), r.now);
+        r.world.lock().unwrap().intake_dry = true;
+        for _ in 0..30 {
+            r.now.advance(Duration::from_secs(1));
+            r.engine.tick(r.now);
+        }
+        assert_eq!(r.world.lock().unwrap().pump_level, 30.0);
+        assert_eq!(r.engine.pump.fault(), None);
+        assert!(current_rig("with-monitor", true)
+            .engine
+            .pump
+            .limits()
+            .dry_current_a
+            .is_some());
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn a_pump_sample_reads_the_monitor_and_leaves_gaps_for_what_is_missing() {
+        let mut r = current_rig("sample", true);
+        r.engine.boot(r.now);
+        assert!(!r.engine.pump_on(r.now));
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))), r.now);
+        assert!(r.engine.pump_on(r.now));
+        let s = r.engine.pump_sample();
+        assert_eq!((s.duty, s.v, s.a), (30.0, Some(12.1), Some(0.22)));
+        assert!(s.w.is_some());
+        let mut bare = current_rig("sample-bare", false);
+        let s = bare.engine.pump_sample();
+        assert_eq!((s.v, s.a, s.w), (None, None, None));
+        let _ = std::fs::remove_dir_all(&r.dir);
+        let _ = std::fs::remove_dir_all(&bare.dir);
+    }
+
+    fn water_rounds(a: &mut WaterAlert, rounds: &[Option<f64>]) -> Vec<bool> {
+        rounds
+            .iter()
+            .map(|d| {
+                a.observe(*d, 16.0);
+                a.active
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_low_reading_raises_the_water_alert_at_once_and_it_needs_a_clean_window_to_clear() {
+        let mut a = WaterAlert::default();
+        water_rounds(&mut a, &[Some(7.0)]);
+        assert!(!a.active);
+        water_rounds(&mut a, &[Some(150.0)]);
+        assert!(a.active);
+        assert_eq!(a.detail, "water distance 150.0 cm ≥ 16.0 cm");
+        let held = water_rounds(&mut a, &[Some(7.0); WATER_WINDOW]);
+        assert_eq!(held, [true, true, true, true, true, false]);
+        assert_eq!(a.detail, "");
+    }
+
+    #[test]
+    fn a_lost_reading_raises_the_water_alert_only_when_they_pile_up() {
+        let mut a = WaterAlert::default();
+        water_rounds(&mut a, &[Some(7.0); WATER_WINDOW]);
+        // A dropout now and then on a full tank is not low water.
+        let blips = [
+            None,
+            Some(7.0),
+            Some(7.0),
+            None,
+            Some(7.0),
+            Some(7.0),
+            None,
+            Some(7.0),
+        ];
+        assert!(!water_rounds(&mut a, &blips).contains(&true));
+        water_rounds(&mut a, &[None, None]);
+        assert!(a.active);
+        assert_eq!(a.detail, "water level sensor unavailable");
+    }
+
+    #[test]
+    fn a_ranger_with_the_tank_out_holds_the_water_alert_instead_of_flapping() {
+        let mut a = WaterAlert::default();
+        let flapping = [
+            None,
+            Some(9.0),
+            None,
+            Some(150.0),
+            None,
+            Some(4.0),
+            None,
+            None,
+            Some(9.0),
+        ]
+        .repeat(5);
+        assert!(!water_rounds(&mut a, &flapping).contains(&false));
+        // Held across a stray good reading, the detail stays the last bad one.
+        assert_eq!(a.detail, "water level sensor unavailable");
+    }
+
+    /// A ranger on stray echoes: under the limit, but too few pings answered.
+    struct StrayEchoes;
+
+    impl hal_core::device::Sensor for StrayEchoes {
+        fn id(&self) -> SensorId {
+            SensorId::WaterDistance
+        }
+        fn probe(&mut self) -> Result<(), hal_core::device::DeviceError> {
+            Ok(())
+        }
+        fn read(&mut self) -> Result<Reading, hal_core::device::DeviceError> {
+            let mut r = Reading::new(9.0, "cm");
+            r.quality = Quality::Suspect;
+            Ok(r)
+        }
+    }
+
+    #[test]
+    fn suspect_readings_never_clear_the_water_alert_but_the_guard_still_sees_them() {
+        let mut registry = Registry::default();
+        registry.add_sensor(Box::new(StrayEchoes));
+        let mut e = Engine::new(system(vec![]), cfg(false), registry, None, None, Arc::default());
+        let mut now = Now {
+            instant: Instant::now(),
+            epoch_s: 1_793_419_043,
+        };
+        e.boot(now);
+        for _ in 0..WATER_WINDOW * 3 {
+            now.advance(Duration::from_secs(10));
+            e.tick(now);
+        }
+        assert!(e.water.active);
+        assert_eq!(e.water.detail, "water level sensor unavailable");
+        assert_eq!(e.env.water_distance_cm, Some(9.0));
+    }
+
+    #[test]
+    fn a_silent_ranger_at_boot_raises_the_water_alert_straight_away() {
+        let mut a = WaterAlert::default();
+        assert_eq!(water_rounds(&mut a, &[None]), [true]);
+    }
+
+    #[test]
+    fn a_held_water_alert_refuses_a_start_on_a_stray_good_reading() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "held");
+        r.engine.boot(r.now);
+        r.world.lock().unwrap().water_distance_cm = 150.0;
+        r.now.advance(Duration::from_secs(10));
+        let out = r.engine.tick(r.now);
+        assert_eq!(payload(&out, "seedypod/u1/alert/water_low")["active"], true);
+        r.world.lock().unwrap().water_distance_cm = 7.0;
+        r.now.advance(Duration::from_secs(10));
+        let out = r.engine.tick(r.now);
+        assert!(!topics_of(&out).contains(&"seedypod/u1/alert/water_low"));
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], false);
+        assert_eq!(r.world.lock().unwrap().pump_level, 0.0);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn a_unit_with_the_water_interlock_off_has_no_water_alert_to_hold() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "nolimit");
+        r.engine.cfg.pump.water_low_cm = None;
+        r.engine.pump = PumpGuard::new(r.engine.cfg.pump.clone());
+        r.world.lock().unwrap().water_distance_cm = 150.0;
+        let out = r.engine.boot(r.now);
+        assert!(!topics_of(&out).contains(&"seedypod/u1/alert/water_low"));
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// The fmt layer and policy filter as main.rs builds them, into a buffer.
+    fn quiet_log(run: impl FnOnce()) -> String {
+        use std::io::Write;
+        use std::sync::Mutex;
+        use tracing_subscriber::layer::{Layer, SubscriberExt};
+
+        #[derive(Clone, Default)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let buf = Buf::default();
+        let sink = buf.clone();
+        let policy = Some(crate::recording::RecordingPolicy::new(
+            "/nonexistent/recording-policy.json",
+        ));
+        let layer = tracing_subscriber::fmt::layer()
+            .with_writer(move || sink.clone())
+            .with_filter(crate::recording::log_filter(policy));
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), run);
+        let out = buf.0.lock().unwrap();
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    /// tracing caches per log line, process-wide, whether anyone wants it, and tests running
+    /// beside this one can leave a line switched off. So the scenario gets a process to itself.
+    #[test]
+    fn quiet_logging_keeps_pump_faults_refusals_and_alerts_and_drops_the_routine() {
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "engine::tests::quiet_log_scenario", "--ignored"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && stdout.contains("1 passed"), "{stdout}");
+    }
+
+    #[test]
+    #[ignore = "run in its own process by the test above"]
+    fn quiet_log_scenario() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "quiet");
+        r.engine.boot(r.now);
+        let log = quiet_log(|| {
+            r.engine
+                .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+            r.world.lock().unwrap().water_distance_cm = 17.0;
+            r.now.advance(Duration::from_secs(10));
+            r.engine.tick(r.now);
+            r.now.advance(hal_core::safety::DRY_CONFIRM);
+            r.engine.tick(r.now);
+            r.engine
+                .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        });
+        assert!(log.contains("pump stopped by guard"), "{log}");
+        assert!(log.contains("alert raised"), "{log}");
+        assert!(log.contains("pump command refused"), "{log}");
+        assert!(!log.contains("pump run accepted"), "{log}");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A rig with fades on, stepped by hand: `frames` moves its clock 20 ms at a time.
+    struct Fading {
+        r: Rig,
+        clock: Arc<std::sync::Mutex<Instant>>,
+    }
+
+    impl Fading {
+        fn new(tag: &str) -> Self {
+            let r = rig(vec![ActuatorId::Light, ActuatorId::Pump], false, tag);
+            let clock = Arc::new(std::sync::Mutex::new(Instant::now()));
+            let reads = clock.clone();
+            r.engine
+                .light
+                .as_ref()
+                .unwrap()
+                .step_by_hand(move || *reads.lock().unwrap());
+            Self { r, clock }
+        }
+        fn set(&mut self, level: f64) -> Vec<Outbound> {
+            self.r.engine.handle(
+                Inbound::ActuatorSet(ActuatorId::Light, on(Some(level), None)),
+                self.r.now,
+            )
+        }
+        fn level(&self) -> f64 {
+            self.r.world.lock().unwrap().light_level
+        }
+        /// The level after each of `n` frames.
+        fn frames(&mut self, n: usize) -> Vec<f64> {
+            (0..n)
+                .map(|_| {
+                    *self.clock.lock().unwrap() += Duration::from_millis(20);
+                    self.r.engine.light.as_ref().unwrap().step();
+                    self.level()
+                })
+                .collect()
+        }
+    }
+
+    impl Drop for Fading {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.r.dir);
+        }
+    }
+
+    #[test]
+    fn a_light_change_fades_while_state_reports_the_target_once() {
+        let mut f = Fading::new("fade");
+        f.r.engine.boot(f.r.now);
+        let out = f.set(60.0);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/light/state")["level"], 60.0);
+        assert_eq!(f.level(), 0.0, "nothing lands before the first frame");
+        assert_eq!(
+            StateFile::new(&f.r.dir).load().light_level,
+            60.0,
+            "the target, once"
+        );
+        let saved = std::fs::metadata(f.r.dir.join("state.json"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        let levels = f.frames(40);
+        assert!(levels.windows(2).all(|w| w[1] >= w[0]), "{levels:?}");
+        assert!(
+            levels.iter().filter(|l| **l > 0.0 && **l < 60.0).count() > 10,
+            "{levels:?}"
+        );
+        assert_eq!(f.level(), 60.0);
+        assert_eq!(
+            std::fs::metadata(f.r.dir.join("state.json"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            saved,
+            "no write per step"
+        );
+    }
+
+    #[test]
+    fn a_new_command_mid_fade_goes_on_from_where_the_light_is() {
+        let mut f = Fading::new("fade-retarget");
+        f.r.engine.boot(f.r.now);
+        f.set(100.0);
+        let here = *f.frames(20).last().unwrap();
+        f.set(10.0);
+        let after = f.frames(1)[0];
+        assert!((after - here).abs() < 2.0, "{here} then {after}");
+        f.frames(40);
+        assert_eq!(f.level(), 10.0);
+    }
+
+    #[test]
+    fn off_mid_fade_reaches_exactly_zero() {
+        let mut f = Fading::new("fade-off");
+        f.r.engine.boot(f.r.now);
+        f.set(100.0);
+        f.frames(10);
+        f.r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Light, off()), f.r.now);
+        f.frames(40);
+        assert_eq!(f.level(), 0.0);
+    }
+
+    #[test]
+    fn frequent_small_changes_track_smoothly_and_repeats_dont_restart_the_fade() {
+        let mut f = Fading::new("fade-small");
+        f.r.engine.boot(f.r.now);
+        f.set(50.0);
+        f.frames(40);
+        let mut levels = Vec::new();
+        for step in 1..=10 {
+            f.set(50.0 + f64::from(step));
+            levels.extend(f.frames(5));
+        }
+        assert!(
+            levels.windows(2).all(|w| w[1] >= w[0] && w[1] - w[0] < 1.0),
+            "{levels:?}"
+        );
+        assert_eq!(f.level(), 60.0);
+        // Asking again for where it's already headed mustn't push the end back.
+        f.set(100.0);
+        f.frames(20);
+        f.set(100.0);
+        f.frames(20);
+        assert_eq!(f.level(), 100.0);
+    }
+
+    #[test]
+    fn boot_restores_the_light_exactly_without_a_fade() {
+        let mut f = Fading::new("fade-boot");
+        StateFile::new(&f.r.dir)
+            .save(&Persisted {
+                light_level: 70.0,
+                ..Default::default()
+            })
+            .unwrap();
+        let persisted = StateFile::new(&f.r.dir).load();
+        f.r.engine.persisted = persisted;
+        f.r.engine.boot(f.r.now);
+        assert_eq!(f.level(), 70.0);
+        assert_eq!(f.r.engine.light.as_ref().unwrap().step(), None);
+    }
+
+    #[test]
+    fn with_fading_off_a_change_lands_at_once() {
+        let mut c = cfg(false);
+        c.light_fade = Duration::ZERO;
+        let world = hal_sim::world();
+        let mut registry = Registry::default();
+        registry.add_actuator(Box::new(hal_sim::SimActuator::new(
+            ActuatorId::Light,
+            world.clone(),
+        )));
+        let mut e = Engine::new(
+            system(vec![ActuatorId::Light]),
+            c,
+            registry,
+            None,
+            None,
+            Arc::default(),
+        );
+        e.start_light_fades();
+        let now = Now::real();
+        e.boot(now);
+        e.handle(Inbound::ActuatorSet(ActuatorId::Light, on(Some(35.0), None)), now);
+        assert_eq!(world.lock().unwrap().light_level, 35.0);
+    }
+
+    #[test]
+    fn a_shutdown_mid_fade_lands_the_light_on_its_saved_target() {
+        let mut f = Fading::new("fade-shutdown");
+        f.r.engine.boot(f.r.now);
+        f.set(80.0);
+        f.frames(5);
+        f.r.engine.handle(Inbound::Shutdown, f.r.now);
+        assert_eq!(f.level(), 80.0);
+        assert_eq!(StateFile::new(&f.r.dir).load().light_level, 80.0);
+    }
+
+    /// A light that refuses writes while `broken` is set.
+    struct Flaky(Arc<std::sync::atomic::AtomicBool>);
+
+    impl hal_core::device::Actuator for Flaky {
+        fn id(&self) -> ActuatorId {
+            ActuatorId::Light
+        }
+        fn probe(&mut self) -> Result<(), hal_core::device::DeviceError> {
+            Ok(())
+        }
+        fn set_level(&mut self, _: f64) -> Result<(), hal_core::device::DeviceError> {
+            if self.0.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(hal_core::device::DeviceError::Timeout);
+            }
+            Ok(())
+        }
+        fn level(&self) -> f64 {
+            0.0
+        }
+    }
+
+    #[test]
+    fn a_light_that_wont_write_reports_a_fault_once_and_clears_it() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let broken = Arc::new(AtomicBool::new(false));
+        let mut registry = Registry::default();
+        registry.add_actuator(Box::new(Flaky(broken.clone())));
+        let mut e = Engine::new(
+            system(vec![ActuatorId::Light]),
+            cfg(false),
+            registry,
+            None,
+            None,
+            Arc::default(),
+        );
+        let mut now = Now {
+            instant: Instant::now(),
+            epoch_s: 1_793_419_043,
+        };
+        e.boot(now);
+        broken.store(true, Ordering::Relaxed);
+        let out = e.handle(Inbound::ActuatorSet(ActuatorId::Light, on(Some(50.0), None)), now);
+        assert_eq!(
+            payload(&out, "seedypod/u1/actuator/light/state")["fault"],
+            "light driver write failed"
+        );
+        now.advance(Duration::from_secs(1));
+        let out = e.tick(now);
+        assert_eq!(
+            payload(&out, "seedypod/u1/actuator/light/state")["fault"],
+            "light driver write failed"
+        );
+        now.advance(Duration::from_secs(1));
+        assert!(!topics_of(&e.tick(now)).contains(&"seedypod/u1/actuator/light/state"));
+        broken.store(false, Ordering::Relaxed);
+        e.handle(Inbound::ActuatorSet(ActuatorId::Light, on(Some(60.0), None)), now);
+        now.advance(Duration::from_secs(1));
+        let out = e.tick(now);
+        assert!(payload(&out, "seedypod/u1/actuator/light/state")["fault"].is_null());
+    }
+
+    #[test]
+    fn a_fade_leaves_the_pump_guard_alone() {
+        let mut f = Fading::new("fade-pump");
+        f.r.engine.boot(f.r.now);
+        f.set(100.0);
+        f.r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), f.r.now);
+        assert_eq!(f.r.world.lock().unwrap().pump_level, 30.0);
+        f.r.world.lock().unwrap().water_distance_cm = 17.0;
+        f.r.now.advance(Duration::from_secs(10));
+        f.r.engine.tick(f.r.now);
+        f.r.now.advance(hal_core::safety::DRY_CONFIRM);
+        f.r.engine.tick(f.r.now);
+        assert_eq!(f.r.world.lock().unwrap().pump_level, 0.0, "tripped mid-fade");
+        assert_eq!(f.r.engine.pump.fault(), Some("dry-run"));
+        f.frames(40);
+        assert_eq!(f.level(), 100.0);
     }
 
     #[test]
@@ -1368,6 +2211,8 @@ mod tests {
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
         r.world.lock().unwrap().water_distance_cm = 18.0;
         r.now.advance(Duration::from_secs(10));
+        r.engine.tick(r.now);
+        r.now.advance(hal_core::safety::DRY_CONFIRM);
         r.engine.tick(r.now);
         assert_eq!(r.engine.pump.fault(), Some("dry-run"));
         r.engine.handle(Inbound::Button(ButtonPress::Long), r.now);

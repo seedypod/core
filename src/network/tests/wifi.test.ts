@@ -120,6 +120,101 @@ describe('NmcliWifi', () => {
     expect(await w.status()).toMatchObject({ mode: 'setup', lastError: 'couldn\'t join Home: Secrets were required, but not provided' })
   })
 
+  describe('status cache', () => {
+    const connected = 'GENERAL.STATE:100 (connected)\nGENERAL.CONNECTION:seedypod-wifi\nIP4.ADDRESS[1]:192.168.1.40/24\n'
+    /** nmcli whose answers can change, on a clock the test moves. */
+    function clocked() {
+      const answers: Array<[string, string]> = [['-t -f GENERAL.STATE', connected], ['-t -f ACTIVE,SSID', 'yes:Home\n']]
+      const nm = fakeNmcli(answers)
+      const clock = { ms: Date.parse('2026-10-31T12:00:00Z') }
+      const t = manual()
+      const w = new NmcliWifi({ run: nm.run, unitId: 'u', now: () => new Date(clock.ms), ...t })
+      const reads = () => nm.calls.filter(c => c.includes('GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS')).length
+      const hop = (ssid: string) => {
+        answers[1] = ['-t -f ACTIVE,SSID', `yes:${ssid}\n`]
+      }
+      return { w, clock, reads, hop }
+    }
+    const settle = () => new Promise(r => setTimeout(r, 0))
+
+    it('spends nmcli once on any number of polls inside the fresh window', async () => {
+      const { w, clock, reads } = clocked()
+      await w.status()
+      clock.ms += 14_000
+      expect(await w.status()).toMatchObject({ ssid: 'Home' })
+      expect(reads()).toBe(1)
+    })
+
+    it('shares one read between callers that arrive together', async () => {
+      const { w, reads } = clocked()
+      const [a, b] = await Promise.all([w.status(), w.status()])
+      expect(a).toEqual(b)
+      expect(reads()).toBe(1)
+    })
+
+    it('answers an aging poll from what it knows, and reads behind the reply', async () => {
+      const { w, clock, reads, hop } = clocked()
+      await w.status()
+      hop('Cafe')
+      clock.ms += 60_000
+      expect(await w.status()).toMatchObject({ ssid: 'Home' })
+      expect(reads()).toBe(2)
+      await settle()
+      expect(await w.status()).toMatchObject({ ssid: 'Cafe' })
+      expect(reads()).toBe(2)
+    })
+
+    it('waits for a real read once what it knows is too old to show', async () => {
+      const { w, clock, reads, hop } = clocked()
+      await w.status()
+      hop('Cafe')
+      clock.ms += 120_000
+      expect(await w.status()).toMatchObject({ ssid: 'Cafe' })
+      expect(reads()).toBe(2)
+    })
+
+    it('forgets on startSetup, stopSetup and connect, so the Wi-Fi screen never shows the old mode', async () => {
+      const answers: Array<[string, string]> = [['-t -f GENERAL.STATE', connected]]
+      const nm = fakeNmcli(answers)
+      const t = manual()
+      const w = new NmcliWifi({ run: nm.run, unitId: 'u', now, ...t })
+      expect((await w.status()).mode).toBe('client')
+      answers[0] = ['-t -f GENERAL.STATE', 'GENERAL.STATE:100 (connected)\nGENERAL.CONNECTION:seedypod-setup\n']
+      expect((await w.startSetup()).mode).toBe('setup')
+      expect((await w.status()).mode).toBe('setup')
+      answers[0] = ['-t -f GENERAL.STATE', connected]
+      expect((await w.stopSetup()).mode).toBe('client')
+      answers[0] = ['-t -f GENERAL.STATE', 'GENERAL.STATE:30 (disconnected)\nGENERAL.CONNECTION:\n']
+      await w.connect('Home', 'correct horse')
+      expect((await w.status()).mode).toBe('offline')
+      answers[0] = ['-t -f GENERAL.STATE', connected]
+      t.jobs.at(-1)?.fn()
+      await w.pending
+      expect((await w.status()).mode).toBe('client')
+    })
+
+    it('drops a read that a network change overtook', async () => {
+      let release: (s: string) => void = () => undefined
+      let first = true
+      const run = async (args: string[]) => {
+        if (!args.includes('GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS')) return ''
+        if (first) {
+          first = false
+          return await new Promise<string>((r) => {
+            release = r
+          })
+        }
+        return 'GENERAL.STATE:100 (connected)\nGENERAL.CONNECTION:seedypod-setup\n'
+      }
+      const w = new NmcliWifi({ run, unitId: 'u', now, ...manual() })
+      const old = w.status()
+      expect((await w.startSetup()).mode).toBe('setup')
+      release(connected)
+      expect((await old).mode).toBe('client')
+      expect((await w.status()).mode).toBe('setup')
+    })
+  })
+
   it('scans without listing its own hotspot', async () => {
     const nm = fakeNmcli([['-t -f IN-USE,SSID', ' :Home:70:WPA2\n*:seedypod-setup-u:100:\n']])
     expect(await new NmcliWifi({ run: nm.run, unitId: 'u' }).scan()).toEqual([{ ssid: 'Home', signal: 70, secure: true, inUse: false }])

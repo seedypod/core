@@ -93,6 +93,24 @@ describe('automations router', () => {
     await expect(c.automations.backtest({ hours: 1, stepMin: 5 })).rejects.toThrow(/rule id or a draft/)
   })
 
+  it('summarises every rule\'s backtest for the list: fires, how close the watched signal came, a sparkline', async () => {
+    const { c, store } = unit()
+    const start = Date.parse('2026-10-31T12:00:00Z') - 2 * 86_400_000
+    store.telemetry.add(Array.from({ length: 2 * 96 }, (_, i) => ({ ts: new Date(start + i * 15 * 60_000).toISOString(), sensor: 'air_temp' as const, value: i % 96 > 40 && i % 96 < 48 ? 31 : 24 })))
+    const hot = await c.automations.create({ ...hotRule, cooldownMin: 60 })
+    await c.automations.create({ ...hotRule, name: 'Never', conditions: { kind: 'compare', op: '>', left: { kind: 'signal', signal: 'sensor.air_temp' }, right: lit(40) } })
+    const [a, b] = await c.automations.backtests({ days: 7 })
+    expect(a).toMatchObject({ id: hot.id, days: 7, watch: { key: 'sensor.air_temp', op: '>', threshold: 30, extreme: 31 } })
+    expect(a?.wouldFire).toBeGreaterThan(0)
+    expect(a?.spark.length).toBeLessThanOrEqual(48)
+    expect(a?.spark.some(v => v !== null)).toBe(true)
+    expect(a?.fireAt.length).toBeGreaterThan(0)
+    expect(a?.fireAt.every(i => i >= 0 && i < (a?.spark.length ?? 0))).toBe(true)
+    expect(b).toMatchObject({ wouldFire: 0, watch: { threshold: 40, extreme: 31 } })
+    const { app } = createApp({ ctx: unit().core.ctx })
+    expect((await app.request('/api/automations/backtests')).status).toBe(200)
+  })
+
   it('exposes read-only MCP tools', async () => {
     const { core, c } = unit()
     await c.automations.create(hotRule)

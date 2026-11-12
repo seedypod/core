@@ -179,7 +179,9 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                             ..Default::default()
                         },
                     );
-                    let mut m = MedianSensor::new(Box::new(d), cfg.limits.distance_samples);
+                    let mut m = MedianSensor::new(Box::new(d), cfg.limits.distance_samples)
+                        .with_gap(Duration::from_millis(cfg.limits.distance_gap_ms))
+                        .with_max(cfg.limits.distance_max_cm.unwrap_or(cfg.tank.empty_cm * 1.5));
                     probe_sensor(&mut m, &s)?;
                     let level = LevelPctSensor::new(m.shared(), tank);
                     registry.add_sensor(Box::new(m));
@@ -191,7 +193,7 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                     let mut b = hal_drivers::gpio_binary::OverTempAlert::new(
                         "over_temp",
                         input,
-                        s.active_low.unwrap_or(false),
+                        s.active_low.unwrap_or(true),
                     );
                     b.probe().map_err(|e| anyhow::anyhow!("{e}"))?;
                     over_temp = Some(Box::new(b));
@@ -258,7 +260,9 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
                         a.hz.unwrap_or(cfg.pins.light_hz) as f64,
                     )
                     .map_err(|e| anyhow::anyhow!("hardware PWM (is dtoverlay=pwm enabled?): {e}"))?;
-                    let mut d = hal_drivers::pwm::PwmLight::new(id, out);
+                    // At the duty it found, or the probe would blink a light left on across a restart.
+                    let level = out.duty() * 100.0;
+                    let mut d = hal_drivers::pwm::PwmLight::new(id, out).with_level(level);
                     hal_core::Actuator::probe(&mut d).map_err(|e| anyhow::anyhow!("{e}"))?;
                     registry.add_actuator(Box::new(d));
                 }
@@ -281,7 +285,9 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
         })();
         match outcome {
             Ok(()) => info!(id = %a.id, kind = %a.kind, pin, "actuator ready"),
-            Err(e) => warn!(id = %a.id, kind = %a.kind, %e, "actuator unavailable; commands will be ignored"),
+            Err(e) => {
+                tracing::error!(id = %a.id, kind = %a.kind, %e, "actuator unavailable; commands will be ignored")
+            }
         }
     }
 
@@ -293,13 +299,23 @@ pub fn build_hardware(cfg: &Config) -> anyhow::Result<Built> {
             let mut ucfg = hal_drivers::uvc::UvcConfig::new(c.device.clone());
             ucfg.fallback = c.fallback.clone();
             ucfg.resolution = c.resolution.clone();
+            ucfg.palette = c.palette.clone();
             ucfg.skip_frames = c.skip_frames;
-            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(hal_drivers::uvc::UvcCamera::new(
+            ucfg.attempts = c.capture_attempts;
+            ucfg.retry_delay = std::time::Duration::from_millis(c.capture_retry_ms);
+            ucfg.attempt_timeout = std::time::Duration::from_secs(c.capture_timeout_s);
+            ucfg.inspect_frames = c.inspect_frames;
+            ucfg.full_resolution = c.full_resolution.clone();
+            ucfg.full_attempt_timeout = std::time::Duration::from_secs(c.full_capture_timeout_s);
+            let name = c.name.clone();
+            let camera = hal_drivers::uvc::UvcCamera::new(
                 &c.name,
                 ucfg,
                 hal_drivers::uvc::ProcessRunner,
                 scratch.clone(),
-            ))));
+            )
+            .with_fallback_check(move |node| crate::cameras::check_fallback(&name, node));
+            let cam: SharedCamera = Arc::new(Mutex::new(Box::new(camera)));
             (c.name.clone(), cam)
         })
         .collect();
@@ -340,6 +356,17 @@ fn probe_multi<S: hal_core::MultiSensor>(d: &mut S, s: &SensorEntry) -> anyhow::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Config::default()` names device nodes no simulator has: nothing may ask for them.
+    #[test]
+    fn simulated_cameras_need_no_device_node() {
+        let built = build_sim(&Config::default());
+        assert_eq!(built.cameras.len(), 2);
+        for cam in built.cameras.values() {
+            let mut cam = cam.lock().unwrap();
+            assert!(cam.capture().is_ok(), "{}", cam.name());
+        }
+    }
 
     #[test]
     fn stock_config_plans_the_documented_capability_set() {

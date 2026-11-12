@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { MemorySink } from '../../camera/captures'
 import { createEventBus } from '../../lib/eventBus'
 import { MemoryStore } from '../../store/memory'
-import type { Capture } from '../../store/types'
+import type { AnalysisRow, Capture } from '../../store/types'
+import { podTrends } from '../analyze'
 import type { Executor } from '../execute'
 import { inlineExecutor } from '../execute'
 import { AnalysisService, artifactKey } from '../service'
@@ -53,6 +54,58 @@ describe('AnalysisService', () => {
     expect(store.analyses.forCapture('l1').length).toBeGreaterThan(0)
   })
 
+  describe('a still found to be damaged', () => {
+    const row = (captureId: string, over: Partial<AnalysisRow> = {}): AnalysisRow => ({ captureId, ts: '2026-01-01T00:00:00Z', camera: 'upper', analyzer: 'green-threshold', version: 1, source: 'device', slot: 1, metric: 'green_fraction', value: 0.13, detail: null, artifact: null, ...over })
+
+    async function rerunWith(captures: Capture[], damaged: string) {
+      const s = setup(async job => (job.bytes[0] === 0 ? 'damaged' : inlineExecutor(job)))
+      for (const c of captures) {
+        s.store.captures.add(c)
+        await s.sink.put(c.path, c.id === damaged ? new Uint8Array([0]) : jpeg(60, 40, true))
+      }
+      return s
+    }
+
+    it('stops counting towards the trends after a re-run, and the good stills are unaffected', async () => {
+      const s = await rerunWith([cap('torn'), cap('good', 'upper', '2026-01-02T00:00:00Z')], 'torn')
+      s.store.analyses.add([row('torn'), row('torn', { analyzer: 'exg-otsu' })])
+      s.svc.rerun('green-threshold')
+      await s.svc.idle()
+      // Both analysers' scores go: the still is bad whichever one is being re-run.
+      expect(s.store.analyses.forCapture('torn')).toEqual([])
+      expect(s.store.analyses.forCapture('good').length).toBeGreaterThan(0)
+      expect(s.store.analyses.series({ analyzer: 'exg-otsu', slot: 1, metric: 'green_fraction' }).map(p => p.captureId)).toEqual([])
+      expect(podTrends(s.store, 1)[0]?.green).not.toBe(0.13)
+      expect(s.seen).toContain('analyses')
+    })
+
+    it('keeps what a remote worker posted, and removes its own artifacts', async () => {
+      const s = await rerunWith([cap('torn')], 'torn')
+      await s.sink.put('analysis/mask.pbm', new Uint8Array([1]))
+      s.store.analyses.add([row('torn', { artifact: 'analysis/mask.pbm' }), row('torn', { analyzer: 'leaf-model', source: 'remote' })])
+      s.svc.rerun('green-threshold')
+      await s.svc.idle()
+      expect(s.store.analyses.forCapture('torn').map(r => r.analyzer)).toEqual(['leaf-model'])
+      expect(await s.sink.get('analysis/mask.pbm')).toBeNull()
+    })
+
+    it('does nothing to a still that was never scored, and says nothing', async () => {
+      const s = setup(async () => 'damaged')
+      s.svc.enqueue(cap('a'), jpeg(30, 30, true))
+      await s.svc.idle()
+      expect(s.seen).not.toContain('analyses')
+      expect(s.svc.status().failed).toBe(0)
+    })
+
+    it('keeps its scores when the bytes are only unreadable, as a demo still is', async () => {
+      const s = setup(async () => null)
+      s.store.analyses.add([row('a')])
+      s.svc.enqueue(cap('a'), jpeg(30, 30, true))
+      await s.svc.idle()
+      expect(s.store.analyses.forCapture('a')).toHaveLength(1)
+    })
+  })
+
   it('counts failures and carries on', async () => {
     const { store, svc } = setup(async () => {
       throw new Error('worker died')
@@ -73,7 +126,7 @@ describe('AnalysisService', () => {
     store.settings.update({ analysisArtifacts: true })
     svc.enqueue(cap('a'), jpeg(60, 40, true))
     await svc.idle()
-    const key = artifactKey('a', 'exg-otsu', 1, 'mask.pbm')
+    const key = artifactKey('a', 'exg-otsu', 2, 'mask.pbm')
     const rows = store.analyses.forCapture('a')
     expect(rows.filter(r => r.analyzer === 'exg-otsu').every(r => r.artifact === key)).toBe(true)
     expect(rows.filter(r => r.analyzer === 'green-threshold').every(r => r.artifact === null)).toBe(true)
@@ -111,7 +164,7 @@ describe('AnalysisService', () => {
     ])
     store.settings.update({ primaryAnalyzer: 'leaf-unet' })
     const list = svc.list()
-    expect(list.map(a => `${a.id}@${a.version}:${a.source}`)).toEqual(['green-threshold@1:device', 'exg-otsu@1:device', 'exg-otsu@0:device', 'leaf-unet@3:remote'])
+    expect(list.map(a => `${a.id}@${a.version}:${a.source}`)).toEqual(['green-threshold@2:device', 'exg-otsu@2:device', 'exg-otsu@0:device', 'leaf-unet@3:remote'])
     expect(list.find(a => a.id === 'green-threshold')).toMatchObject({ rows: 15, captures: 1, primary: false })
     expect(list.find(a => a.id === 'leaf-unet')).toMatchObject({ primary: true, label: 'leaf-unet', runsOn: ['remote'], rows: 1 })
     expect(list.find(a => a.version === 0)?.description).toMatch(/Older version/)
