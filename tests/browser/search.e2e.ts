@@ -51,7 +51,8 @@ test('⌘K search survives its chunk failing to load, and retries for real', asy
   // The page behind it is untouched, and the dialog closes.
   await page.keyboard.press('Escape')
   await expect(palette).toBeHidden()
-  await expect(page.getByRole('main').getByRole('heading', { name: 'Water' })).toBeVisible()
+  // The page's title: the protocol card on it has a Water column too.
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Water', level: 1 })).toBeVisible()
 
   await page.getByRole('button', { name: 'Search' }).click()
   await palette.getByRole('button', { name: 'Try again' }).click()

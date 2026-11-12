@@ -11,7 +11,7 @@ import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from 
 import { lightData } from '@/src/components/charts/viz3d/shape'
 import { daysLabel } from '@/src/lib/days'
 import { GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HOURS } from '@/src/scheduler/lightPlan'
-import { localTime, systemZone } from '@/src/scheduler/time'
+import { localTime, systemZone, zoneAbbr } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle } from '@/src/components/Water/pumpCycles'
 import { CurveEditor } from './CurveEditor'
@@ -116,7 +116,7 @@ export function LightPage() {
                         // Where the light actually is now, on the curve's timeline.
                         { data: SAMPLE_MINUTES.map((_, i) => (l && i === Math.round(nowAt) ? (l.on ? l.level : 0) : Number.NaN)), color: 'var(--pod-ok)', dots: true, width: 4 },
                       ]}
-                      markers={[{ at: nowAt, label: `now ${fmtClock(minutesNow)}` }]}
+                      markers={[{ at: nowAt, label: `now ${fmtClock(minutesNow)} ${zoneAbbr(now, zone)}` }]}
                       xLabel={i => fmtClock(SAMPLE_MINUTES[i] ?? 0)}
                       format={(v, s) => (s === 0 ? `curve ${Math.round(v)}%` : `now ${Math.round(v)}%`)}
                     />

@@ -7,7 +7,7 @@ import { fmtMinutes, nextRun, type PumpCycle } from '@/src/components/Water/pump
 import { fmtIn } from '@/src/components/System/statusData'
 import { useNow } from '@/src/components/System/useNow'
 import { dayOn, daysLabel } from '@/src/lib/days'
-import { localTime, systemZone } from '@/src/scheduler/time'
+import { localTime, systemZone, zoneAbbr } from '@/src/scheduler/time'
 
 const DAY = 1440
 /** A level held this long is a step; shorter runs of one level are a ramp's rounding. */
@@ -16,8 +16,8 @@ const RAMP_MIN = 10
 const MIN_PX = 6
 const LANE_H = 22
 const LABEL_W = 64
-/** The now pill's width, "now 14:05" at 11 px, to keep it inside the axis at either end. */
-const PILL_W = 72
+/** The now pill's width for its text at 11 px mono, to keep it inside the axis at either end. */
+const pillWidth = (text: string) => Math.round(12 + text.length * 6.6)
 
 /** The rest of today, read as forecast: a grey hatch over a wash that dims what's under it. */
 export const AHEAD: CSSProperties = {
@@ -193,12 +193,14 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   const step = width < 420 ? 6 : 3
   const ticks = Array.from({ length: DAY / 60 / step + 1 }, (_, i) => i * step * 60)
   const nowPct = pctOf(nowMin)
+  const nowText = `now ${fmtClock(Math.floor(nowMin))} ${zoneAbbr(now, zone)}`
+  const pillW = pillWidth(nowText)
   // An hour label gives way to the now pill when they'd touch: by their centres, the end labels sitting inside the axis.
-  const clear = (m: number) => Math.abs((pctOf(m) - nowPct) / 100 * width + (m === 0 ? 18 : m === DAY ? -18 : 0)) > 58
+  const clear = (m: number) => Math.abs((pctOf(m) - nowPct) / 100 * width + (m === 0 ? 18 : m === DAY ? -18 : 0)) > pillW / 2 + 22
   const muted = [...lightMarks, ...waterMarks].some(m => m.muted)
 
   const describe = (marks: Mark[], none: string) => (marks.length ? marks.map(m => m.title).join('; ') : none)
-  const summary = `Today on the unit's clock, now ${fmtClock(Math.floor(nowMin))}. ${rows.map(r => `${r.name}: ${describe(r.marks, r.id === 'light' ? 'no light scheduled' : 'no pump runs')}`).join('. ')}.`
+  const summary = `Today on the unit's clock, ${nowText}. ${rows.map(r => `${r.name}: ${describe(r.marks, r.id === 'light' ? 'no light scheduled' : 'no pump runs')}`).join('. ')}.`
 
   return (
     <Card className="gap-3" data-testid="schedule-timeline">
@@ -241,8 +243,8 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
               {t === DAY ? '24:00' : fmtClock(t)}
             </span>
           ))}
-          <span className="absolute top-0.5 whitespace-nowrap rounded-tag bg-fg px-1.5 text-inverse" style={{ left: Math.max(0, Math.min(width - PILL_W, (nowPct / 100) * width - PILL_W / 2)) }} data-testid="timeline-now-label">
-            {`now ${fmtClock(Math.floor(nowMin))}`}
+          <span className="absolute top-0.5 whitespace-nowrap rounded-tag bg-fg px-1.5 text-inverse" style={{ left: Math.max(0, Math.min(width - pillW, (nowPct / 100) * width - pillW / 2)) }} data-testid="timeline-now-label">
+            {nowText}
           </span>
         </div>
 
