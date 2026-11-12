@@ -335,7 +335,13 @@ describe('LightPage: curves', () => {
     expect((screen.getByLabelText('Brightness') as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByTestId('auto-sub').textContent).toMatch(/^sunrise 06:4\d · sunset 17:0\d · light 04:24–19:54$/)
     cleanup()
+    // No location set: the timezone's city stands in, and the line says so.
     data.set('settings', { timezone: 'America/Los_Angeles', latitude: null, longitude: null })
+    render(<LightPage />)
+    expect(screen.getByTestId('auto-sub').textContent).toMatch(/^sunrise 06:\d\d · sunset 16:5\d · light 04:24–19:54 · near Los Angeles$/)
+    cleanup()
+    // UTC has no city: the day centres on 12:00 until a location is set.
+    data.set('settings', { timezone: 'UTC', latitude: null, longitude: null })
     render(<LightPage />)
     expect(screen.getByTestId('auto-sub').textContent).toBe('centred on 12:00 · set a location to follow the sun')
     expect(screen.getByRole('link', { name: 'set a location' }).getAttribute('href')).toBe('/settings#unit')
