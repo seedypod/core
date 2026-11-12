@@ -42,3 +42,4 @@ __pycache__/
 .env
 .env.local
 tests/browser/test-results
+.claude/settings.local.json
