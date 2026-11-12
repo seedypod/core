@@ -1,5 +1,5 @@
 import { Droplets, FastForward, Pause, Play, Sprout } from 'lucide-react'
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, InlineError } from '@/src/components/ds/core'
 import { TextField, Toggle, WeekdayDots } from '@/src/components/ds/forms'
@@ -501,6 +501,7 @@ function ThenChoice({ r, own, busy, onSet }: {
   onSet: (v: { kind: 'stay' | 'schedule' | 'remind', scheduleId?: string, when: 'now' | 'maintenance' }) => void
 }) {
   const last = r.stages.at(-1)
+  const uid = useId()
   const [choice, setChoice] = useState<string | null>(null)
   // The schedule picked, else Then's, else the first: whatever the list holds when it arrives or changes, so Switch always has one.
   const pickedSchedule = own.find(e => e.id === choice) ?? own.find(e => e.id === r.then.scheduleId) ?? own[0] ?? null
@@ -508,17 +509,20 @@ function ThenChoice({ r, own, busy, onSet }: {
   const inMaintenance = r.stage === last?.id
   const option = (kind: 'stay' | 'schedule' | 'remind', title: string, sub: ReactNode, extra?: ReactNode, off = false) => (
     <label className={cn('flex min-w-0 cursor-pointer items-start gap-2.5 rounded-[10px] border px-3.5 py-3', r.then.kind === kind ? 'border-pod-ok/60 bg-pod-ok/5' : 'border-line', (disabled || off) && 'cursor-default opacity-60')}>
+      {/* Named by its title alone, the rest its description, so the option reads as its choice. */}
       <input
         type="radio"
         name="protocol-then"
+        aria-labelledby={`${uid}-${kind}`}
+        aria-describedby={sub ? `${uid}-${kind}-sub` : undefined}
         className="mt-0.5 accent-current"
         checked={r.then.kind === kind}
         disabled={disabled || off}
         onChange={() => (kind === 'schedule' ? pickedSchedule && onSet({ kind, scheduleId: pickedSchedule.id, when: 'maintenance' }) : onSet({ kind, when: 'maintenance' }))}
       />
       <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <span className="text-[13px] font-medium">{title}</span>
-        {sub && <span className="text-[12px] leading-snug text-fg-2">{sub}</span>}
+        <span id={`${uid}-${kind}`} className="text-[13px] font-medium">{title}</span>
+        {sub && <span id={`${uid}-${kind}-sub`} className="text-[12px] leading-snug text-fg-2">{sub}</span>}
         {extra}
       </span>
     </label>

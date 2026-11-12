@@ -204,7 +204,8 @@ describe('ProtocolCard', () => {
     render(<ProtocolCard />)
     const panel = within(screen.getByTestId('then-choice'))
     expect((panel.getByRole('radio', { name: /Ask me first/ }) as HTMLInputElement).disabled).toBe(true)
-    expect(panel.getByText('No planted crop is in the catalog, so there’s no first-harvest day to ask on.')).toBeTruthy()
+    // Named by the choice alone, so nothing else on the page answers to its words ("planted" isn't a Plant field).
+    expect(panel.getByRole('radio', { name: 'Ask me first', description: 'No planted crop is in the catalog, so there’s no first-harvest day to ask on.' })).toBeTruthy()
     expect((panel.getByRole('radio', { name: /Switch to my schedule/ }) as HTMLInputElement).disabled).toBe(true)
     expect(panel.getByText('Save a schedule of your own first.')).toBeTruthy()
   })

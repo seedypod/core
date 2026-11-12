@@ -45,7 +45,7 @@ test('grow: start germination today at the protocol track\'s left end, then move
   await sown.getByRole('button', { name: 'Start germination today' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Start' }).click()
   // The cycle starts and the pump cycles go on germination: the card's stage panel says so.
-  await expect(main.getByTestId('stage-head')).toHaveText(/^Germination · day 1 of 8$/)
+  await expect(main.getByTestId('stage-head')).toHaveText(/^Germination, day 0 of 7$/)
   await expect(main.getByTestId('protocol').getByText(/^1 × 15 min, \w+$/)).toBeVisible()
   await expect(sown.getByTestId('sown-on')).toHaveText(/^Sown \w{3} \d{1,2} \w{3}$/)
 
