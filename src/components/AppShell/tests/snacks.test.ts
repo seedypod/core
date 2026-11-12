@@ -45,6 +45,9 @@ describe('alertSnack', () => {
     expect(alertSnack({ id: 1, kind: 'pump_fault', detail: 'pump: dry-run' })).toMatchObject({ id: 'pump', title: 'Pump stopped: dry-run', urgent: true, tone: 'danger', view: { to: '/water' }, shownOn: '/water' })
     expect(alertSnack({ id: 1, kind: 'pump_fault', detail: 'pump stopped: tank ran dry' })?.title).toBe('Pump stopped: tank ran dry')
     expect(alertSnack({ id: 1, kind: 'pump_fault', detail: '' })?.title).toBe('Pump stopped: fault')
+    // The current guard (#220) says what the pump drew, under the title.
+    expect(alertSnack({ id: 1, kind: 'pump_fault', detail: 'pump: dry-run: pump drew 0.4 A, below 1.2 A for 5 s: it\'s pulling air' })).toMatchObject({ id: 'pump', title: 'Pump stopped: dry-run', detail: 'Pump drew 0.4 A, below 1.2 A for 5 s: it\'s pulling air', urgent: true, shownOn: '/water' })
+    expect(alertSnack({ id: 1, kind: 'pump_fault', detail: 'pump: dry-run' })?.detail).toBeUndefined()
     expect(alertSnack({ id: 1, kind: 'water_low', detail: 'tank low' })).toMatchObject({ id: 'pump', title: 'Pump off: water low', urgent: true, shownOn: '/water' })
   })
 

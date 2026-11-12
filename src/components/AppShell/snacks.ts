@@ -2,6 +2,7 @@ import { CheckCircle2, Droplets, Sprout, Thermometer, TriangleAlert, Waves, type
 import { alertView, categoryOf, describeAlert } from '@/src/components/Alerts/AlertsPage'
 import type { NoticeTone } from '@/src/components/ds/notice'
 import type { CoreEvent } from '@/src/lib/eventBus'
+import { pumpFault } from '@/src/lib/pumpFault'
 import { PUMP_PRESETS } from '@/src/scheduler/pumpPlan'
 
 /**
@@ -42,9 +43,6 @@ export function followSnack(e: CoreEvent): Snack | null {
   return { id: 'follow', tone: 'cool', icon: Sprout, title: `Watering moved to ${preset.name}`, detail: preset.stage, view }
 }
 
-/** Why the pump stopped, from hald's "pump: dry-run" or the sim's "pump stopped: tank ran dry". */
-const pumpReason = (detail: string) => detail.replace(/^pump(?: stopped)?:\s*/i, '').trim() || 'fault'
-
 /**
  * A newly raised alert as a snack; reminders and chores are needs-you items,
  * not news, and Follow has its own. Each alert is its own toast, so two of a
@@ -56,7 +54,11 @@ export function alertSnack(a: { id: number, kind: string, detail: string }): Sna
   const go = view ? { to: view.to, label: 'View' } : undefined
   const hardware = categoryOf(a.kind) === 'hardware'
   const base = { id: `alert:${a.kind}:${a.id}`, urgent: hardware, tone: hardware ? 'danger' as const : 'warn' as const, view: go, shownOn: '/alerts' }
-  if (a.kind === 'pump_fault') return { ...base, id: 'pump', icon: Waves, title: `Pump stopped: ${pumpReason(a.detail)}`, shownOn: '/water' }
+  if (a.kind === 'pump_fault') {
+    // Why it stopped, from hald's "pump: dry-run" or the sim's "pump stopped: tank ran dry"; the current guard says what it drew.
+    const f = pumpFault(a.detail)
+    return { ...base, id: 'pump', icon: Waves, title: `Pump stopped: ${f.reason}`, detail: f.detail ?? undefined, shownOn: '/water' }
+  }
   if (a.kind === 'water_low') return { ...base, id: 'pump', icon: Droplets, title: 'Pump off: water low', detail: 'It stays off until the tank is filled.', shownOn: '/water' }
   if (a.kind === 'over_temp') return { ...base, icon: Thermometer, title: 'Outputs off: board over temperature', detail: a.detail || undefined }
   const { title, detail } = describeAlert(a)

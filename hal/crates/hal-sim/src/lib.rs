@@ -21,6 +21,9 @@ pub struct SimWorld {
     pub dose_level: [f64; 3],
     /// Stored calibration points for the simulated pH, EC and RTD probes.
     pub cal_points: [u8; 3],
+    /// The pump's intake is out of the water: it pulls air, draws a quarter of
+    /// its wet current and moves nothing (`POST /sim/intake` in `hald --sim`).
+    pub intake_dry: bool,
 }
 
 impl Default for SimWorld {
@@ -34,6 +37,7 @@ impl Default for SimWorld {
             pump_level: 0.0,
             dose_level: [0.0; 3],
             cal_points: [0; 3],
+            intake_dry: false,
         }
     }
 }
@@ -41,7 +45,7 @@ impl Default for SimWorld {
 impl SimWorld {
     /// Advance physics by `dt` simulated seconds.
     pub fn step(&mut self, dt: f64) {
-        if self.pump_level > 0.0 {
+        if self.pump_level > 0.0 && !self.intake_dry {
             self.water_distance_cm =
                 (self.water_distance_cm + (self.pump_level / 100.0) * 0.0053 * dt).min(20.0);
         }
@@ -88,10 +92,10 @@ impl Sensor for SimSensor {
     }
     fn read(&mut self) -> Result<Reading, DeviceError> {
         let w = self.world.lock().map_err(|e| DeviceError::Other(e.to_string()))?;
-        let pump_w = if w.pump_level > 0.0 {
-            1.2 + (w.pump_level / 100.0) * 4.8
-        } else {
-            0.0
+        let pump_w = match (w.pump_level > 0.0, w.intake_dry) {
+            (true, false) => 1.2 + (w.pump_level / 100.0) * 4.8,
+            (true, true) => (1.2 + (w.pump_level / 100.0) * 4.8) / 4.0,
+            (false, _) => 0.0,
         };
         let (value, unit) = match self.id {
             SensorId::AirTemp => (w.air_temp_c, "°C"),
@@ -227,6 +231,21 @@ mod tests {
         pump.set_level(30.0).unwrap();
         w.lock().unwrap().step(600.0);
         assert!(w.lock().unwrap().water_distance_cm > before);
+    }
+
+    #[test]
+    fn a_dry_intake_draws_less_and_moves_no_water() {
+        let w = world();
+        let mut pump = SimActuator::new(ActuatorId::Pump, w.clone());
+        let mut amps = SimSensor::new(SensorId::PumpA, w.clone());
+        pump.set_level(30.0).unwrap();
+        let wet = amps.read().unwrap().value;
+        w.lock().unwrap().intake_dry = true;
+        let before = w.lock().unwrap().water_distance_cm;
+        w.lock().unwrap().step(600.0);
+        assert_eq!(w.lock().unwrap().water_distance_cm, before);
+        let dry = amps.read().unwrap().value;
+        assert!(dry > 0.0 && dry < wet / 3.0, "wet {wet} A, dry {dry} A");
     }
 
     #[test]

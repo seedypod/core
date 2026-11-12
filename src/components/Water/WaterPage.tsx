@@ -14,6 +14,7 @@ import { tankData, type TankMarks } from '@/src/components/charts/viz3d/shape'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
 import type { Reading, SensorId } from '@/src/hardware/contract'
 import { dayOn, daysToList, listToDays } from '@/src/lib/days'
+import { pumpFault } from '@/src/lib/pumpFault'
 import { localTime, systemZone } from '@/src/scheduler/time'
 import { daysSinceSowing, PUMP_PRESETS, type PumpPreset } from '@/src/scheduler/pumpPlan'
 import { followedPreset } from '@/src/care/follow'
@@ -93,7 +94,8 @@ export function WaterPage() {
   }
   const isNew = !!editing && !cycles.some(c => c.id === editing.id)
 
-  const pumpLine = p ? (p.on ? `watering at ${p.level}%` : p.fault ? `pump fault: ${p.fault}` : 'pump idle') : '…'
+  // The strip below says what the current guard measured; up here, which fault it is.
+  const pumpLine = p ? (p.on ? `watering at ${p.level}%` : p.fault ? `pump fault: ${pumpFault(p.fault).reason}` : 'pump idle') : '…'
   const subtitle = [pumpLine, next ? `next run ${fmtClock(next.cycle.spec.minute)}` : null].filter(Boolean).join(' · ')
   const limitsLine = limits ? `Up to ${fmtMinutes(limits.pumpMaxRunS)} per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.` : undefined
 
@@ -544,7 +546,10 @@ function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, ru
   // that hasn't started (the usual line until it has something to say), else the next run and the supply.
   const subtitle = (): ReactNode => {
     if (runError) return <span className="truncate text-danger" title={runError}>{runError}</span>
-    if (p?.fault) return <span className="truncate">{p.fault}</span>
+    if (p?.fault) {
+      const why = pumpFault(p.fault).detail ?? p.fault
+      return <span className="truncate" title={why}>{why}</span>
+    }
     if (asked !== null) return <NotStarted asked={asked} onGiveUp={onGiveUp}>{usual}</NotStarted>
     return usual
   }

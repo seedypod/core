@@ -20,6 +20,7 @@ mod kinds;
 mod mdns;
 mod mqtt;
 mod overlay;
+mod pump_trace;
 mod recording;
 mod state;
 mod usb;
@@ -65,6 +66,10 @@ struct Cli {
     /// Exit after this many telemetry ticks (for smoke tests).
     #[arg(long)]
     ticks: Option<u64>,
+    /// Temporary (#220): append the pump monitor's V, A and W at 4 Hz to this CSV
+    /// while the pump runs, to record wet and dry traces for the current guard.
+    #[arg(long, env = "HAL_PUMP_TRACE", value_name = "FILE")]
+    pump_trace: Option<PathBuf>,
     /// If the USB bus is empty after boot, try to enumerate it again and exit.
     /// Needs root. Runs once per boot.
     #[arg(long)]
@@ -219,7 +224,9 @@ async fn main() -> anyhow::Result<()> {
                 "actuators": actuators,
                 "cameras": cfg.camera.iter().map(|c| c.name.clone()).collect::<Vec<_>>(),
                 "limits": { "pump_max_run_s": cfg.limits.pump_max_run_s, "pump_max_duty": cfg.limits.pump_max_duty,
-                            "water_low_cm": cfg.limits.water_low_cm, "over_temp_c": cfg.limits.over_temp_c },
+                            "water_low_cm": cfg.limits.water_low_cm, "over_temp_c": cfg.limits.over_temp_c,
+                            "pump_dry_current_a": cfg.limits.pump_dry_current_a, "pump_dry_after_s": cfg.limits.pump_dry_after_s,
+                            "pump_dry_grace_s": cfg.limits.pump_dry_grace_s },
                 "dosing_enabled": cfg.dosing.enabled,
             }))?
         );
@@ -231,6 +238,19 @@ async fn main() -> anyhow::Result<()> {
     if !errors.is_empty() {
         anyhow::bail!("invalid config:\n  {}", errors.join("\n  "));
     }
+
+    let trace = match &cli.pump_trace {
+        Some(path) => {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|e| anyhow::anyhow!("pump trace {}: {e}", path.display()))?;
+            info!(path = %path.display(), "tracing the pump monitor while the pump runs");
+            Some(pump_trace::PumpTrace::new(file))
+        }
+        None => None,
+    };
 
     let built = if cli.sim {
         devices::build_sim(&cfg)
@@ -330,6 +350,7 @@ async fn main() -> anyhow::Result<()> {
         started: Instant::now(),
         mqtt_connected: mqtt_connected.clone(),
         inbound: inbound_tx.clone(),
+        sim: built.world.clone(),
     };
     let http_port = match tokio::net::TcpListener::bind(&cfg.http_bind).await {
         Ok(listener) => {
@@ -398,6 +419,7 @@ async fn main() -> anyhow::Result<()> {
         interval: Duration::from_secs(cfg.telemetry_interval_s.max(1)),
         world: built.world,
         stop: built.stop,
+        trace,
     };
     let engine_task = tokio::task::spawn_blocking(move || run_engine(engine, loop_cfg, inbound_rx, out_tx));
     engine_task.await?;
@@ -414,11 +436,21 @@ struct LoopConfig {
     interval: Duration,
     world: Option<hal_sim::Shared>,
     stop: Arc<AtomicBool>,
+    trace: Option<pump_trace::PumpTrace<std::fs::File>>,
+}
+
+/// `--pump-trace`: reads the pump monitor when a read is due.
+fn trace_pump(trace: &mut Option<pump_trace::PumpTrace<std::fs::File>>, engine: &mut Engine, now: Now) {
+    if let Some(t) = trace {
+        t.poll(engine.pump_on(now), Instant::now(), &now.ts(), || {
+            engine.pump_sample()
+        });
+    }
 }
 
 /// The engine loop: drain commands until the next tick, tick, repeat.
 /// In `--sim`, virtual time advances one telemetry interval per tick.
-fn run_engine(mut engine: Engine, cfg: LoopConfig, rx: Receiver<Inbound>, tx: UnboundedSender<Outbound>) {
+fn run_engine(mut engine: Engine, mut cfg: LoopConfig, rx: Receiver<Inbound>, tx: UnboundedSender<Outbound>) {
     let send = |tx: &UnboundedSender<Outbound>, outs: Vec<Outbound>| {
         for o in outs {
             let _ = tx.send(o);
@@ -437,15 +469,23 @@ fn run_engine(mut engine: Engine, cfg: LoopConfig, rx: Receiver<Inbound>, tx: Un
     loop {
         let deadline = Instant::now() + real_tick;
         loop {
-            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            // A pump trace wakes the loop between ticks for its reads.
+            let wake = cfg
+                .trace
+                .as_ref()
+                .and_then(pump_trace::PumpTrace::due)
+                .map_or(deadline, |d| d.min(deadline));
+            match rx.recv_timeout(wake.saturating_duration_since(Instant::now())) {
                 Ok(Inbound::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
                     send(&tx, engine.handle(Inbound::Shutdown, now));
                     cfg.stop.store(true, Ordering::Relaxed);
                     return;
                 }
                 Ok(msg) => send(&tx, engine.handle(msg, now)),
+                Err(RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
                 Err(RecvTimeoutError::Timeout) => break,
             }
+            trace_pump(&mut cfg.trace, &mut engine, now);
         }
         if cfg.sim {
             let dt = cfg.interval.mul_f64(cfg.time_scale.max(0.0));
@@ -457,6 +497,7 @@ fn run_engine(mut engine: Engine, cfg: LoopConfig, rx: Receiver<Inbound>, tx: Un
             now = Now::real();
         }
         send(&tx, engine.tick(now));
+        trace_pump(&mut cfg.trace, &mut engine, now);
         ticks += 1;
         if cfg.ticks.is_some_and(|n| ticks >= n) {
             send(&tx, engine.handle(Inbound::Shutdown, now));

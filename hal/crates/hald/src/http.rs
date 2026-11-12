@@ -1,4 +1,5 @@
-//! HTTP (axum): health, system info, the state snapshot and camera stills.
+//! HTTP (axum): health, system info, the state snapshot and camera stills
+//! (and, in `--sim` only, a switch for the simulated pump's intake).
 //! Stills go through one mutex per camera (upstream #117) and the capture
 //! runs on a blocking thread; every result is reported to the engine so
 //! `camera_missing` reflects reality. That alert covers all the cameras, so
@@ -15,10 +16,12 @@ use std::time::Instant;
 use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use hal_core::{Camera, SystemInfo};
+use serde::Deserialize;
 use serde_json::json;
+use tracing::info;
 
 use crate::engine::{Inbound, SharedSnapshot};
 
@@ -73,16 +76,39 @@ pub struct AppState {
     pub started: Instant,
     pub mqtt_connected: Arc<AtomicBool>,
     pub inbound: Sender<Inbound>,
+    /// The simulated world in `--sim`; `None` on a unit, where `/sim/*` doesn't exist.
+    pub sim: Option<hal_sim::Shared>,
 }
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
+    let r = Router::new()
         .route("/health", get(health))
         .route("/system", get(system))
         .route("/state", get(snapshot))
         .route("/camera/{file}", get(camera))
-        .route("/camera/full/{file}", get(camera_full))
-        .with_state(state)
+        .route("/camera/full/{file}", get(camera_full));
+    let r = if state.sim.is_some() {
+        r.route("/sim/intake", post(sim_intake))
+    } else {
+        r
+    };
+    r.with_state(state)
+}
+
+#[derive(Deserialize)]
+struct Intake {
+    dry: bool,
+}
+
+/// `--sim` only: `{"dry": true}` lifts the pump's intake out of the simulated
+/// tank, so the next run pulls air and trips the current guard; `false` puts it back.
+async fn sim_intake(State(s): State<AppState>, Json(body): Json<Intake>) -> Response {
+    let Some(world) = &s.sim else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    world.lock().unwrap_or_else(|e| e.into_inner()).intake_dry = body.dry;
+    info!(dry = body.dry, "sim: pump intake set");
+    Json(json!({ "dry": body.dry })).into_response()
 }
 
 async fn health(State(s): State<AppState>) -> Json<serde_json::Value> {
@@ -284,6 +310,7 @@ mod tests {
             started: Instant::now(),
             mqtt_connected: connected.clone(),
             inbound: tx,
+            sim: None,
         };
         (state, rx, connected)
     }
@@ -304,6 +331,30 @@ mod tests {
             .unwrap()
             .to_vec();
         (status, ct, body)
+    }
+
+    async fn post_intake(app: &Router, dry: bool) -> StatusCode {
+        let req = Request::post("/sim/intake")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(format!("{{\"dry\":{dry}}}")))
+            .unwrap();
+        app.clone().oneshot(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn the_sim_intake_switch_exists_only_in_the_sim() {
+        let (app, _rx, _) = app();
+        assert_eq!(post_intake(&app, true).await, StatusCode::NOT_FOUND);
+        let world = hal_sim::world();
+        let (state, _rx, _) = app_state();
+        let sim = router(AppState {
+            sim: Some(world.clone()),
+            ..state
+        });
+        assert_eq!(post_intake(&sim, true).await, StatusCode::OK);
+        assert!(world.lock().unwrap().intake_dry);
+        assert_eq!(post_intake(&sim, false).await, StatusCode::OK);
+        assert!(!world.lock().unwrap().intake_dry);
     }
 
     #[tokio::test]

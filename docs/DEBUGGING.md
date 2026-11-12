@@ -43,4 +43,14 @@ sources: [{"resource": "https://github.com/iot-root/garden-of-eden", "title": "i
 - `sudo i2cdetect -y 1` — expect 0x40 (INA219), 0x48 (PCT2075), and 0x38 (DHT20, 3.0+). The AM2320 (1.0/2.0, 0x5C) does **not** answer `i2cdetect`.
 - A pump that refuses to start with `fault: "dry-run"` is latched: refill, then acknowledge from the UI, HA, or `POST /api/alerts/{id}/acknowledge` (the id is in `GET /api/alerts`). A doser stuck on `fault: "lockout"` works the same way through the `dose_fault` alert.
 - `mosquitto_sub -t 'seedypod/#' -v` shows everything `hald` publishes.
+- **Recording the pump's current** (temporary, #220). `hald --pump-trace <file>` (or `HAL_PUMP_TRACE`) appends the INA219's V, A and W at 4 Hz while the pump runs, and for 2 s after, as CSV: a `# run <time>` line, then `t_s,duty,pump_v,pump_a,pump_w`, with a failed read left blank. The INA219 caches its reading for 500 ms, so that's at least 2 fresh readings a second. To record a wet run and a short, supervised dry run:
+
+  ```sh
+  sudo systemctl edit hald        # add: [Service]  Environment=HAL_PUMP_TRACE=/var/lib/seedypod/pump-trace.csv
+  sudo systemctl restart hald
+  # run the pump from Water, intake in the water; then a dry run of 10 s or less, standing by to stop it
+  sudo systemctl revert hald && sudo systemctl restart hald
+  ```
+
+  Each run goes in as its own file under `hal/crates/hal-core/fixtures/pump_current/` (`wet.csv`, `dry.csv`) and into `WET_TRACES` / `DRY_TRACES` in `safety.rs`.
 - Simulate without hardware: `pnpm dev` runs core against an in-process simulator (no `HAL_MQTT_URL`), with the web UI on :5173. `pnpm dev:sim` does the same with a week of seeded history, pods, a grow cycle and Autopilot rules (`SEED_DEMO=1`, data in `./data/sim`, simulated time at 60×); delete `./data/sim` to start over. For the full chain, run `hald --sim --time-scale 60` and point core at it with `HAL_MQTT_URL`.

@@ -178,6 +178,12 @@ describe('alert helpers', () => {
     expect(describeAlert({ kind: 'camera_missing', detail: 'no camera' })).toEqual({ title: 'Camera not capturing', detail: 'no camera' })
     expect(describeAlert({ kind: 'mystery', detail: '' })).toEqual({ title: 'mystery', detail: '' })
     expect(describeAlert({ kind: 'camera_missing', detail: 'upper camera returned 0 bytes' }).detail).toContain('Pods 1–15')
+    expect(describeAlert({ kind: 'pump_fault', detail: 'pump: dry-run' })).toEqual({ title: 'Pump fault', detail: 'pump: dry-run' })
+  })
+
+  it('says what the pump drew when its current stopped it', () => {
+    const detail = 'pump: dry-run: pump drew 0.4 A, below 1.2 A for 5 s: it\'s pulling air'
+    expect(describeAlert({ kind: 'pump_fault', detail })).toEqual({ title: 'Pump fault: dry-run', detail: 'Pump drew 0.4 A, below 1.2 A for 5 s: it\'s pulling air' })
   })
   it('counts open alerts by category', () => {
     expect(openSummary([{ kind: 'reminder_a' }, { kind: 'reminder_b' }, { kind: 'mirror_failed' }])).toBe('3 open · 2 reminders, 1 service')

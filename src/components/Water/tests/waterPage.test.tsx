@@ -233,6 +233,17 @@ describe('WaterPage: tank and pump', () => {
     expect(within(screen.getByTestId('pump-strip')).getByText('dry run')).toBeTruthy()
   })
 
+  it('says what the pump drew when its current stopped it', () => {
+    data.set('pump', { ...idle, fault: 'dry-run: pump drew 0.4 A, below 1.2 A for 5 s: it\'s pulling air' })
+    render(<WaterPage />)
+    const strip = within(screen.getByTestId('pump-strip'))
+    expect(strip.getByText('Pump fault')).toBeTruthy()
+    const why = strip.getByText('Pump drew 0.4 A, below 1.2 A for 5 s: it\'s pulling air')
+    expect(why.getAttribute('title')).toBe(why.textContent)
+    expect(screen.getByText(/pump fault: dry-run(?!:)/)).toBeTruthy()
+    expect(strip.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+  })
+
   it('clears a latched pump fault from the page, without going to Alerts', () => {
     data.set('pump', { ...idle, fault: 'dry-run' })
     data.set('alerts', [{ id: 174, kind: 'pump_fault', active: true, detail: 'pump: dry-run' }])
