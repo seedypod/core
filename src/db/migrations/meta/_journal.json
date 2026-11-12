@@ -148,6 +148,13 @@
       "when": 1794504522932,
       "tag": "0020_unit_location",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1794513649213,
+      "tag": "0021_auto_lights_off",
+      "breakpoints": true
     }
   ]
 }

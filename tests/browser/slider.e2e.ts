@@ -33,7 +33,7 @@ test('touch: a tap anywhere on the track moves the thumb and sends one command, 
   const sent = commands(page)
   await page.touchscreen.tap(box.x + box.width * 0.75, y)
   await expect(slider).toHaveValue('75', { timeout: 200 })
-  await expect(page.getByText('75%', { exact: true })).toBeVisible({ timeout: 200 })
+  await expect(page.getByTestId('light-level')).toHaveText('75%', { timeout: 200 })
   await expect.poll(() => page.request.get('/api/light').then(r => r.json()).then(j => j.level as number)).toBe(75)
   await expect(slider).toHaveValue('75')
   expect(sent).toHaveLength(1)

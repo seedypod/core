@@ -346,6 +346,11 @@ export function createMcpServer(ctx: Context): McpServer {
     },
   }, async i => text(await caller.schedules.upsert(i)))
 
+  server.registerTool('light_auto', {
+    description: 'Turn Auto light on or off. On: the Auto curve (sunrise to sunset at the unit\'s location, stretched about midday to the grow protocol\'s hours) runs alone, and the light curves it switched off are remembered. Off: Auto stops and those curves come back on. A new garden starts on Auto.',
+    inputSchema: { on: z.boolean() },
+  }, async i => text(await caller.schedules.setAuto(i)))
+
   server.registerTool('delete_schedule', { description: 'Delete a schedule by id.', inputSchema: { id: z.string() } }, async i => text(await caller.schedules.remove(i)))
 
   server.registerTool('update_pod', {

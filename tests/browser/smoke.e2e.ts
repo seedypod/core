@@ -11,13 +11,35 @@ test('home shows the tower with the cycle and pod counts over it, and the API an
   expect((await r.json()).system.model).toContain('sim')
 })
 
-test('light slider and power toggle drive the HAL', async ({ page }) => {
+test('the light slider turns the light on from 0 and off back at 0', async ({ page }) => {
   // Start from off: an earlier test may have left the light on.
   await page.request.post('/api/light', { data: { on: false } })
   await page.goto('/light')
-  await page.getByRole('switch', { name: 'Light power' }).click()
+  const slider = page.getByLabel('Brightness')
+  await expect(slider).toHaveValue('0')
+  await slider.press('ArrowRight')
   await expect.poll(async () => (await (await page.request.get('/api/light')).json()).on).toBe(true)
-  await expect(page.getByRole('switch', { name: 'Light power' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('strip-level')).toHaveText('5%')
+  await slider.press('ArrowLeft')
+  await expect.poll(async () => (await (await page.request.get('/api/light')).json()).on).toBe(false)
+  await expect(page.getByTestId('strip-level')).toHaveText('Off')
+})
+
+test('Auto switches from the strip, running its curve alone, and off brings the others back', async ({ page }) => {
+  await page.goto('/light')
+  const auto = page.getByTestId('light-strip').getByRole('switch', { name: 'Auto', exact: true })
+  const lightCurves = async () => ((await (await page.request.get('/api/schedules')).json()) as Array<{ id: string, kind: string, enabled: boolean, spec: { sun?: { auto?: boolean } } }>).filter(s => s.kind === 'light')
+  const before = (await lightCurves()).filter(s => s.enabled && !s.spec.sun?.auto).map(s => s.id)
+  if ((await auto.getAttribute('aria-checked')) === 'true') {
+    await auto.click()
+    await expect(auto).toHaveAttribute('aria-checked', 'false')
+  }
+  await auto.click()
+  await expect(auto).toHaveAttribute('aria-checked', 'true')
+  await expect.poll(async () => (await lightCurves()).filter(s => s.enabled).map(s => s.spec.sun?.auto)).toEqual([true])
+  await auto.click()
+  await expect(auto).toHaveAttribute('aria-checked', 'false')
+  await expect.poll(async () => (await lightCurves()).filter(s => s.enabled && !s.spec.sun?.auto).map(s => s.id).sort()).toEqual([...before].sort())
 })
 
 test('pump run is bounded and reported', async ({ page }) => {

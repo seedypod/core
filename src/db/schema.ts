@@ -41,6 +41,8 @@ export const deviceSettings = sqliteTable('device_settings', {
   followGrowCycle: integer({ mode: 'boolean' }).notNull().default(true),
   /** Light curves Your schedules turned off for a schedule's light preset, to turn back on (ADR-0030). */
   libraryLightsOff: text({ mode: 'json' }).$type<string[]>(),
+  /** Light curves turning Auto on switched off, to turn back on when it's turned off. */
+  autoLightsOff: text({ mode: 'json' }).$type<string[]>(),
   /** Bearer token for POST /api/analyses/results; empty = ingest off. */
   analysisIngestToken: text().notNull().default(''),
   /** JSON: pod boxes moved per camera and slot, as fractions of the frame (#143); null = measured defaults. */

@@ -181,7 +181,7 @@ export function TextField({ label, mono = true, onChange, hint, className, readO
    position. `touch-pan-y` keeps vertical swipes scrolling the page; the browser
    cancels the pointer when one starts, and the slider goes back to where it was.
    `min-h` holds its height in a flex column, where `flex-1` alone collapses it. */
-export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1, label, disabled, className }: {
+export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1, marks, label, disabled, className }: {
   value: number
   /** Fires on each change, the first on touch; on a cancelled touch, with where it started. */
   onChange?: (v: number) => void
@@ -190,6 +190,8 @@ export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1
   min?: number
   max?: number
   step?: number
+  /** Values to mark along the track, as stops to aim for. */
+  marks?: number[]
   label?: string
   disabled?: boolean
   className?: string
@@ -260,6 +262,9 @@ export function Slider({ value, onChange, onCommit, min = 0, max = 100, step = 1
       <div data-testid="slider-hit" className="absolute -inset-x-2 -inset-y-[13px]" />
       <div className="absolute inset-x-0 top-[7px] h-1 rounded-sm bg-line-2" />
       <div className="absolute left-0 top-[7px] h-1 rounded-sm bg-fg" style={{ width: `${pct}%` }} />
+      {marks?.map(m => (
+        <span key={m} data-testid="slider-mark" className={cn('absolute top-[5px] h-2 w-0.5 -translate-x-1/2 rounded-full', m <= value ? 'bg-surface/70' : 'bg-fg-3')} style={{ left: `${((m - min) / (max - min)) * 100}%` }} />
+      ))}
       <div
         className="absolute top-0 box-border size-[18px] rounded-full border-[3px] border-surface bg-fg"
         style={{ left: `calc(${pct}% - 9px)` }}
