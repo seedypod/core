@@ -111,7 +111,8 @@ export function ProtocolCard() {
   const current = r.stages.find(s => s.id === r.stage) ?? null
   const shown: Picked | null = picked ?? current?.id ?? r.stages[0]?.id ?? null
   const next = nextStage(r)
-  const last = r.stages.at(-1)
+  // Every protocol ends in its ongoing maintenance stage.
+  const last = r.stages.at(-1) as ProtocolStageView
   const own = (library.data ?? []).filter(e => e.kind === 'own')
   const thenEntry = r.then.scheduleId ? (library.data ?? []).find(e => e.id === r.then.scheduleId) ?? null : null
   const noCycle = r.cycleId === null
@@ -250,7 +251,7 @@ export function ProtocolCard() {
               setStarting(true)
             }}
           />
-          {last?.startsOn && <span className="font-mono text-[11px] text-fg-3" data-testid="maintenance-on">{`${plainDay(last.startsOn)} · ${last.name.toLowerCase()} ${last.state === 'next' ? 'begins' : 'began'}`}</span>}
+          {last.startsOn && <span className="font-mono text-[11px] text-fg-3" data-testid="maintenance-on">{`${plainDay(last.startsOn)} · ${last.name.toLowerCase()} ${last.state === 'next' ? 'begins' : 'began'}`}</span>}
           <span className="font-mono text-[11px] text-fg-3">ongoing</span>
         </div>
         <p className="min-h-[16px] truncate font-mono text-[11px] text-fg-2" data-testid="track-hover">{hovered ? summary(hovered) : ''}</p>
@@ -458,16 +459,17 @@ function ThenPanel({ r, thenEntry, light, boost }: {
   light: Light
   boost: string | null
 }) {
-  const last = r.stages.at(-1)
+  // Every protocol ends in its ongoing maintenance stage.
+  const last = r.stages.at(-1) as ProtocolStageView
+  const name = thenEntry?.name ?? 'your schedule'
+  const when = last.startsOn ? `${last.state === 'next' ? 'when maintenance begins, ' : ''}${plainDay(last.startsOn)}` : 'when maintenance begins'
+  const stays = `Watering stays on ${last.name}, ${waterWords(last.water)}`
+  const sentence = r.then.kind === 'schedule'
+    ? (r.then.done ? `Switched to ${name}.` : `Watering switches to ${name} ${when}.`)
+    : r.then.kind === 'remind'
+      ? (r.then.harvestOn ? `${stays}. On ${plainDay(r.then.harvestOn)}, the crops’ first harvest by the catalog, Needs you asks what comes next.` : `${stays}.`)
+      : `${stays}, for as long as the plants grow.`
   const shown = r.then.kind === 'schedule' ? thenEntry : null
-  const when = last?.startsOn ? `${last.state === 'next' ? 'when maintenance begins, ' : ''}${plainDay(last.startsOn)}` : 'when maintenance begins'
-  const sentence = !last
-    ? ''
-    : r.then.kind === 'schedule'
-      ? (r.then.done ? `Switched to ${shown?.name ?? 'your schedule'}.` : `Watering switches to ${shown?.name ?? 'your schedule'} ${when}.`)
-      : r.then.kind === 'remind'
-        ? (r.then.harvestOn ? `Watering stays on ${last.name}, ${waterWords(last.water)}. On ${plainDay(r.then.harvestOn)}, the crops’ first harvest by the catalog, Needs you asks what comes next.` : `Watering stays on ${last.name}, ${waterWords(last.water)}.`)
-        : `Watering stays on ${last.name}, ${waterWords(last.water)}, for as long as the plants grow.`
   return (
     <div className="flex flex-col border-t border-line" data-testid="then-panel">
       <p className="px-5 pt-3.5 text-[13px] font-medium" data-testid="then-head">{`Then · ${thenLabel(r, thenEntry)}`}</p>
@@ -500,13 +502,14 @@ function ThenChoice({ r, own, busy, onSet }: {
   busy: boolean
   onSet: (v: { kind: 'stay' | 'schedule' | 'remind', scheduleId?: string, when: 'now' | 'maintenance' }) => void
 }) {
-  const last = r.stages.at(-1)
+  // Every protocol ends in its ongoing maintenance stage.
+  const last = r.stages.at(-1) as ProtocolStageView
   const uid = useId()
   const [choice, setChoice] = useState<string | null>(null)
   // The schedule picked, else Then's, else the first: whatever the list holds when it arrives or changes, so Switch always has one.
   const pickedSchedule = own.find(e => e.id === choice) ?? own.find(e => e.id === r.then.scheduleId) ?? own[0] ?? null
   const disabled = r.cycleId === null || busy
-  const inMaintenance = r.stage === last?.id
+  const inMaintenance = r.stage === last.id
   const option = (kind: 'stay' | 'schedule' | 'remind', title: string, sub: ReactNode, extra?: ReactNode, off = false) => (
     <label className={cn('flex min-w-0 cursor-pointer items-start gap-2.5 rounded-[10px] border px-3.5 py-3', r.then.kind === kind ? 'border-pod-ok/60 bg-pod-ok/5' : 'border-line', (disabled || off) && 'cursor-default opacity-60')}>
       {/* Named by its title alone, the rest its description, so the option reads as its choice. */}
@@ -532,10 +535,10 @@ function ThenChoice({ r, own, busy, onSet }: {
       <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 px-5 py-4">
         <legend className="mb-2 text-sm font-medium">
           When maintenance begins
-          {last && <span className="ml-2 font-mono text-[12px] font-normal text-fg-3" data-testid="then-when">{`${last.startsOn ? `${inMaintenance ? 'began ' : ''}${plainDay(last.startsOn)} · ` : ''}day ${last.from}`}</span>}
+          <span className="ml-2 font-mono text-[12px] font-normal text-fg-3" data-testid="then-when">{`${last.startsOn ? `${inMaintenance ? 'began ' : ''}${plainDay(last.startsOn)} · ` : ''}day ${last.from}`}</span>
         </legend>
         <div className="grid grid-cols-1 gap-2.5 @min-[720px]:grid-cols-3">
-          {option('stay', 'Keep the last stage', last ? `${last.name} · ${waterWords(last.water)}` : null)}
+          {option('stay', 'Keep the last stage', `${last.name} · ${waterWords(last.water)}`)}
           {option(
             'schedule',
             'Switch to my schedule',

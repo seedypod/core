@@ -458,6 +458,29 @@ describe('ProtocolCard: the rest of its ways in and out', () => {
     expect(screen.getByTestId('then-done').textContent).toBe('Switched.')
   })
 
+  it('dates the row by day alone before there\'s a sowing day, and names a Then schedule gone from the list plainly', () => {
+    const r = protocolReport(new MemoryStore(30), day(2))
+    data.set('protocol', { ...r, then: { ...r.then, kind: 'schedule', scheduleId: 'gone' } })
+    data.set('schedules', [])
+    data.set('library', [])
+    render(<ProtocolCard />)
+    expect(screen.getByTestId('then-when').textContent).toBe('day 22')
+    expect(screen.queryByTestId('maintenance-on')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    expect(screen.getByText('Watering switches to your schedule when maintenance begins.')).toBeTruthy()
+  })
+
+  it('keeps the schedule picked while Then is something else, and switches to it when chosen', () => {
+    show()
+    data.set('library', [{ ...summer, kind: 'own', lastUsedAt: null, active: false, readOnly: false }, { ...summer, id: 'away', name: 'Away', kind: 'own', lastUsedAt: null, active: false, readOnly: false }])
+    cleanup()
+    render(<ProtocolCard />)
+    fireEvent.change(screen.getByLabelText('Schedule to switch to'), { target: { value: 'away' } })
+    expect(calls.setThen).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('radio', { name: 'Switch to my schedule' }))
+    expect(calls.setThen).toHaveBeenLastCalledWith({ kind: 'schedule', scheduleId: 'away', when: 'maintenance' })
+  })
+
   it('turns Follow off and on from the header', () => {
     show()
     const toggle = screen.getByRole('switch', { name: 'Follow the grow cycle' })
