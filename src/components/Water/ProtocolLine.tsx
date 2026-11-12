@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { nextStage, plainDay } from '@/src/components/Grow/protocolWords'
+import { nextStage, plainDay, stageDayWords } from '@/src/components/Grow/protocolWords'
 import { trpc } from '@/src/utils/trpc'
 
 /**
@@ -22,7 +22,7 @@ export function ProtocolLine() {
           ? ['Not watering yet', `Start ${stage.name} watering`]
           : [
               `Following ${r.protocol.name}`,
-              `${stage.name}, day ${r.dayInStage + 1}`,
+              stageDayWords(r, stage),
               r.water === 'schedule' ? 'on your schedule' : r.water === 'edited' ? 'cycles changed by hand, left as they are' : r.hold ? 'held' : next?.startsOn ? `next change ${plainDay(next.startsOn)}` : 'ongoing',
             ]
   return (

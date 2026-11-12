@@ -26,12 +26,21 @@ export function waterWords(w: Pick<StageWater, 'runs' | 'durationS' | 'days' | '
 /** The stage after the current one, if there is one. */
 export const nextStage = (r: ProtocolReport) => r.stages.find(s => s.state === 'next' && s.startsOn !== null) ?? null
 
-/** Where the protocol is, in a line: "Germination, day 2 of 8 · Seedlings starts Tue 17 Nov". */
+/**
+ * The stage and the protocol's day, counted as the track counts them, from
+ * day 0 on the sowing day: "Germination, day 2 of 7" in a stage of days 0–7,
+ * "Maintenance, day 30" in the ongoing one. It's the sidebar's "Day 2" until
+ * Hold or Advance moves the protocol's clock off the plants' age.
+ */
+export function stageDayWords(r: Pick<ProtocolReport, 'day'>, stage: Pick<ProtocolStageView, 'name' | 'to'>): string {
+  return `${stage.name}, day ${r.day ?? 0}${stage.to === null ? '' : ` of ${stage.to}`}`
+}
+
+/** Where the protocol is, in a line: "Germination, day 2 of 7 · Seedlings starts Tue 17 Nov". */
 export function whereWords(r: ProtocolReport): string {
   const stage = r.stages.find(s => s.id === r.stage)
   if (!stage || r.dayInStage === null) return 'Starts when pods are planted'
-  const length = stage.to === null ? null : stage.to - stage.from + 1
-  const at = `${stage.name}, day ${r.dayInStage + 1}${length === null ? '' : ` of ${length}`}`
+  const at = stageDayWords(r, stage)
   if (r.hold) return `${at} · held${r.hold.days ? ` ${r.hold.days} d` : ''}`
   // A change is only promised when the protocol is the one watering.
   if (r.water === 'none') return `${at} · not watering yet`

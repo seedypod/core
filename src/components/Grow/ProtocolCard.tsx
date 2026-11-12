@@ -1,8 +1,8 @@
 import { Droplets, FastForward, Pause, Play, Sprout } from 'lucide-react'
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, InlineError } from '@/src/components/ds/core'
-import { TextField, WeekdayDots } from '@/src/components/ds/forms'
+import { TextField, Toggle, WeekdayDots } from '@/src/components/ds/forms'
 import { Modal } from '@/src/components/ds/feedback'
 import { fmtClock } from '@/src/components/charts/format'
 import { asCurve, runningToday } from '@/src/components/Light/curves'
@@ -15,7 +15,7 @@ import { BOOST_LEVEL, LIGHT_PRESETS } from '@/src/scheduler/lightPlan'
 import { dailyMinutes, GARDYN_WATERING_GUIDE, lightPeriods, lightWindow, PUMP_PRESETS, TIPS_CITATION, WATERING_TIPS, type PumpPreset } from '@/src/scheduler/pumpPlan'
 import { localTime, systemZone } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
-import { nextStage, plainDay, stageDays, waterWords, whereWords, type ProtocolReport, type ProtocolStageView } from './protocolWords'
+import { nextStage, plainDay, stageDays, stageDayWords, waterWords, whereWords, type ProtocolReport, type ProtocolStageView } from './protocolWords'
 
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 /** The track's share for an ongoing stage, against the others' lengths in days. */
@@ -36,12 +36,13 @@ function boostWords(periods: Period[]): string | null {
 const short = (w: { runs: number[], durationS: number, weekly: boolean }) => `${w.runs.length}×${Math.round(w.durationS / 60)} min${w.weekly ? ' wk' : ''}`
 
 /**
- * The grow protocol on Grow (ADR-0030): the stages as one track from the
- * sowing day with a Then slot at its end, Hold and Advance, and a panel for
- * the stage picked (the current one to start with) saying what it sets:
- * water, light, feed and checks, each with its source. A later stage says
- * when it starts and what changes; the Then slot chooses what comes after
- * maintenance. Hovering a stage only highlights it and says it in a line.
+ * The grow protocol on Grow and Water (ADR-0030): the stages as one track
+ * from the sowing day with a Then slot at its end, Follow, Hold and Advance,
+ * and a panel for the stage picked (the current one to start with) saying
+ * what it sets: water, light, feed and checks, each with its source. A later
+ * stage says when it starts and what changes; the Then slot says what comes
+ * after maintenance, chosen in the row under the panel. Hovering a stage only
+ * highlights it and says it in a line.
  */
 export function ProtocolCard() {
   const utils = trpc.useUtils()
@@ -110,6 +111,8 @@ export function ProtocolCard() {
   const current = r.stages.find(s => s.id === r.stage) ?? null
   const shown: Picked | null = picked ?? current?.id ?? r.stages[0]?.id ?? null
   const next = nextStage(r)
+  // Every protocol ends in its ongoing maintenance stage.
+  const last = r.stages.at(-1) as ProtocolStageView
   const own = (library.data ?? []).filter(e => e.kind === 'own')
   const thenEntry = r.then.scheduleId ? (library.data ?? []).find(e => e.id === r.then.scheduleId) ?? null : null
   const noCycle = r.cycleId === null
@@ -129,12 +132,16 @@ export function ProtocolCard() {
   }
 
   return (
-    <section aria-label="Grow protocol" data-testid="protocol" className="flex flex-col rounded-[14px] border border-line bg-surface">
+    <section aria-label="Grow protocol" data-testid="protocol" className="@container flex flex-col rounded-[14px] border border-line bg-surface">
       <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-4">
         <div className="flex min-w-[240px] flex-1 flex-col gap-1">
           <h2 className="text-base font-semibold">{`${r.protocol.name} protocol`}</h2>
           <p className="text-[13px] text-fg-2" data-testid="protocol-where">{whereWords(r)}</p>
         </div>
+        <span className="flex items-center gap-2 text-[13px] text-fg-2" title="As the plants age, move the watering on to each stage's, never back. Cycles you set by hand or one of your schedules are left alone.">
+          Follow
+          <Toggle on={r.following} size="md" label="Follow the grow cycle" disabled={follow.isPending} onChange={followGrowCycle => act(() => follow.mutate({ followGrowCycle }))} />
+        </span>
         {r.hold
           ? <Button icon={Play} disabled={release.isPending} onClick={() => release.mutate()}>Release hold</Button>
           : <Button icon={Pause} disabled={noCycle || !current || hold.isPending} onClick={() => act(() => hold.mutate())}>Hold at this stage</Button>}
@@ -210,7 +217,8 @@ export function ProtocolCard() {
                   done && !on && 'opacity-70',
                 )}
               >
-                {progress !== null && <span aria-hidden className="absolute inset-y-0 left-0 bg-fg/10" style={{ width: `${progress * 100}%` }} />}
+                {/* How far through the stage today is, up to the line that marks today. */}
+                {progress !== null && <span aria-hidden data-testid="today-mark" className="absolute inset-y-0 left-0 border-r-2 border-fg bg-fg/10" style={{ width: `${progress * 100}%` }} />}
                 <span className={cn('relative block truncate text-[13px]', s.state === 'current' ? 'font-semibold' : 'font-medium')}>{s.name}</span>
                 <span className="relative mt-1 block truncate font-mono text-[11px] text-fg-3">{`${stageDays(s)} · ${short(s.water)}`}</span>
               </button>
@@ -243,14 +251,16 @@ export function ProtocolCard() {
               setStarting(true)
             }}
           />
+          {last.startsOn && <span className="font-mono text-[11px] text-fg-3" data-testid="maintenance-on">{`${plainDay(last.startsOn)} · ${last.name.toLowerCase()} ${last.state === 'next' ? 'begins' : 'began'}`}</span>}
           <span className="font-mono text-[11px] text-fg-3">ongoing</span>
         </div>
         <p className="min-h-[16px] truncate font-mono text-[11px] text-fg-2" data-testid="track-hover">{hovered ? summary(hovered) : ''}</p>
       </div>
 
       {shown === 'then'
-        ? <ThenPanel r={r} own={own} thenEntry={thenEntry} light={light} boost={boost} busy={setThen.isPending} onSet={v => act(() => setThen.mutate(v))} />
+        ? <ThenPanel r={r} thenEntry={thenEntry} light={light} boost={boost} />
         : <StagePanel stage={r.stages.find(s => s.id === shown) ?? null} r={r} light={light} boost={boost} />}
+      <ThenChoice r={r} own={own} busy={setThen.isPending} onSet={v => act(() => setThen.mutate(v))} />
 
       <Modal
         open={confirming && !!next}
@@ -347,9 +357,9 @@ export function ProtocolCard() {
 
 /** What the Then slot says it will do. */
 function thenLabel(r: ProtocolReport, entry: { name: string, cycles: Array<{ durationS: number }> } | null): string {
-  if (r.then.kind === 'remind') return 'remind at first harvest'
+  if (r.then.kind === 'remind') return 'ask me first'
   if (r.then.kind === 'schedule') return entry ? `${entry.name} · ${entry.cycles.length}×${Math.round((entry.cycles[0]?.durationS ?? 0) / 60)} min` : 'your schedule'
-  return 'stay in maintenance'
+  return 'keep the last stage'
 }
 
 /** A note above the track with what can be done about it. */
@@ -388,9 +398,8 @@ function LightColumn({ boost, presetName, source }: { boost: string | null, pres
 /** What a stage sets, with where each comes from; a later stage says when it starts and what changes. */
 function StagePanel({ stage: s, r, light, boost }: { stage: ProtocolStageView | null, r: ProtocolReport, light: Light, boost: string | null }) {
   if (!s) return null
-  const length = s.to === null ? null : s.to - s.from + 1
   const head = s.state === 'current'
-    ? `${s.name} · ${r.dayInStage === null ? '' : `day ${r.dayInStage + 1}${length === null ? ', ongoing' : ` of ${length}`}`}`
+    ? `${stageDayWords(r, s)}${s.to === null ? ' · ongoing' : ''}`
     : s.state === 'next'
       ? `Starts ${s.startsOn ? plainDay(s.startsOn) : `on day ${s.from}`}${s.change ? ` · ${s.change}` : ''}`
       : `${s.name} · began ${s.startsOn ? plainDay(s.startsOn) : `day ${s.from}`}`
@@ -443,76 +452,28 @@ function StagePanel({ stage: s, r, light, boost }: { stage: ProtocolStageView | 
 
 interface Own { id: string, name: string, cycles: Array<{ minute: number, durationS: number, days: number }>, lightPresetId: string | null }
 
-/** What comes after maintenance: stay, one of your schedules (when maintenance begins, or now), or a reminder at first harvest. */
-function ThenPanel({ r, own, thenEntry, light, boost, busy, onSet }: {
+/** What the Then slot does, for the panel it opens: the schedule's watering and light, or what staying or asking means. */
+function ThenPanel({ r, thenEntry, light, boost }: {
   r: ProtocolReport
-  own: Own[]
   thenEntry: Own | null
   light: Light
   boost: string | null
-  busy: boolean
-  onSet: (v: { kind: 'stay' | 'schedule' | 'remind', scheduleId?: string, when: 'now' | 'maintenance' }) => void
 }) {
-  const last = r.stages.at(-1)
-  const [choice, setChoice] = useState<string | null>(null)
-  // The schedule picked, else Then's, else the first: whatever the list holds when it arrives or changes, so Switch always has one.
-  const pickedSchedule = own.find(e => e.id === choice) ?? own.find(e => e.id === r.then.scheduleId) ?? own[0] ?? null
-  const disabled = r.cycleId === null || busy
-  const inMaintenance = r.stage === last?.id
+  // Every protocol ends in its ongoing maintenance stage.
+  const last = r.stages.at(-1) as ProtocolStageView
+  const name = thenEntry?.name ?? 'your schedule'
+  const when = last.startsOn ? `${last.state === 'next' ? 'when maintenance begins, ' : ''}${plainDay(last.startsOn)}` : 'when maintenance begins'
+  const stays = `Watering stays on ${last.name}, ${waterWords(last.water)}`
+  const sentence = r.then.kind === 'schedule'
+    ? (r.then.done ? `Switched to ${name}.` : `Watering switches to ${name} ${when}.`)
+    : r.then.kind === 'remind'
+      ? (r.then.harvestOn ? `${stays}. On ${plainDay(r.then.harvestOn)}, the crops’ first harvest by the catalog, Needs you asks what comes next.` : `${stays}.`)
+      : `${stays}, for as long as the plants grow.`
   const shown = r.then.kind === 'schedule' ? thenEntry : null
-  const option = (kind: 'stay' | 'schedule' | 'remind', title: string, sub: ReactNode, extra?: ReactNode, off = false) => (
-    <label className={cn('flex cursor-pointer items-start gap-2.5 rounded-[10px] border px-3.5 py-3', r.then.kind === kind ? 'border-pod-ok/60 bg-pod-ok/5' : 'border-line', (disabled || off) && 'cursor-default opacity-60')}>
-      <input
-        type="radio"
-        name="protocol-then"
-        className="mt-0.5 accent-current"
-        checked={r.then.kind === kind}
-        disabled={disabled || off}
-        onChange={() => (kind === 'schedule' ? pickedSchedule && onSet({ kind, scheduleId: pickedSchedule.id, when: 'maintenance' }) : onSet({ kind, when: 'maintenance' }))}
-      />
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="text-[13px] font-medium">{title}</span>
-        <span className="text-[12px] leading-snug text-fg-2">{sub}</span>
-        {extra}
-      </span>
-    </label>
-  )
   return (
     <div className="flex flex-col border-t border-line" data-testid="then-panel">
-      <fieldset className="m-0 flex flex-col gap-3 border-0 px-5 py-4">
-        <legend className="mb-2 text-sm font-medium">
-          After the stages
-          <span className="ml-2 font-mono text-[12px] font-normal text-fg-3">{last ? `${last.name} is ongoing; nothing changes unless you choose` : ''}</span>
-        </legend>
-        <div className="grid grid-cols-1 gap-2.5 min-[1000px]:grid-cols-3">
-          {option('stay', 'Stay in maintenance', last ? `${waterWords(last.water)}, for as long as the plants grow.` : 'Keep the last stage.')}
-          {option(
-            'schedule',
-            'Switch to my schedule',
-            own.length ? (inMaintenance ? 'Maintenance has begun, so this switches now.' : 'When maintenance begins, or now.') : 'Save a schedule of your own first.',
-            own.length > 0 && (
-              <span className="flex min-w-0 flex-wrap items-center gap-2">
-                <select
-                  aria-label="Schedule to switch to"
-                  value={pickedSchedule?.id ?? ''}
-                  disabled={disabled}
-                  onChange={(e) => {
-                    setChoice(e.target.value)
-                    if (r.then.kind === 'schedule') onSet({ kind: 'schedule', scheduleId: e.target.value, when: 'maintenance' })
-                  }}
-                  className="min-w-0 max-w-full rounded-[6px] border border-line-2 bg-bg px-2 py-1 font-mono text-[12px]"
-                >
-                  {own.map(e => <option key={e.id} value={e.id}>{`${e.name} · ${e.cycles.length}×${Math.round((e.cycles[0]?.durationS ?? 0) / 60)} min`}</option>)}
-                </select>
-                {!inMaintenance && pickedSchedule && <Button size="sm" disabled={disabled} onClick={() => onSet({ kind: 'schedule', scheduleId: pickedSchedule.id, when: 'now' })}>Switch now</Button>}
-              </span>
-            ),
-            own.length === 0,
-          )}
-          {option('remind', 'Remind me at first harvest', r.then.harvestOn ? `In Needs you on ${plainDay(r.then.harvestOn)}, the planted crops’ first harvest by the catalog.` : 'No planted crop is in the catalog, so there’s no day to remind on.', null, r.then.harvestOn === null)}
-        </div>
-        {r.then.done && <p className="text-[12px] text-fg-3" data-testid="then-done">{r.then.kind === 'remind' ? 'Reminded: it’s in Needs you.' : 'Switched.'}</p>}
-      </fieldset>
+      <p className="px-5 pt-3.5 text-[13px] font-medium" data-testid="then-head">{`Then · ${thenLabel(r, thenEntry)}`}</p>
+      <p className="px-5 pb-3.5 pt-1 text-[13px] text-fg-2">{sentence}</p>
       {shown && (
         <div className="grid grid-cols-1 gap-px border-t border-line bg-line min-[640px]:grid-cols-2" data-testid="then-schedule">
           <Column title={`Water · ${shown.name}`}>
@@ -524,6 +485,87 @@ function ThenPanel({ r, own, thenEntry, light, boost, busy, onSet }: {
           <LightColumn boost={boost} presetName={LIGHT_PRESETS.find(p => p.id === shown.lightPresetId)?.name ?? null} source="schedule" />
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * What comes after the stages, chosen up front so it's no surprise: keep the
+ * last stage (Then `stay`), switch to one of your schedules when maintenance
+ * begins or now (`schedule`), or keep the last stage and ask in Needs you at
+ * the crops' first harvest (`remind`). Maintenance is ongoing, so it's the
+ * day maintenance begins that the row is dated by, not an end.
+ */
+function ThenChoice({ r, own, busy, onSet }: {
+  r: ProtocolReport
+  own: Own[]
+  busy: boolean
+  onSet: (v: { kind: 'stay' | 'schedule' | 'remind', scheduleId?: string, when: 'now' | 'maintenance' }) => void
+}) {
+  // Every protocol ends in its ongoing maintenance stage.
+  const last = r.stages.at(-1) as ProtocolStageView
+  const uid = useId()
+  const [choice, setChoice] = useState<string | null>(null)
+  // The schedule picked, else Then's, else the first: whatever the list holds when it arrives or changes, so Switch always has one.
+  const pickedSchedule = own.find(e => e.id === choice) ?? own.find(e => e.id === r.then.scheduleId) ?? own[0] ?? null
+  const disabled = r.cycleId === null || busy
+  const inMaintenance = r.stage === last.id
+  const option = (kind: 'stay' | 'schedule' | 'remind', title: string, sub: ReactNode, extra?: ReactNode, off = false) => (
+    <label className={cn('flex min-w-0 cursor-pointer items-start gap-2.5 rounded-[10px] border px-3.5 py-3', r.then.kind === kind ? 'border-pod-ok/60 bg-pod-ok/5' : 'border-line', (disabled || off) && 'cursor-default opacity-60')}>
+      {/* Named by its title alone, the rest its description, so the option reads as its choice. */}
+      <input
+        type="radio"
+        name="protocol-then"
+        aria-labelledby={`${uid}-${kind}`}
+        aria-describedby={sub ? `${uid}-${kind}-sub` : undefined}
+        className="mt-0.5 accent-current"
+        checked={r.then.kind === kind}
+        disabled={disabled || off}
+        onChange={() => (kind === 'schedule' ? pickedSchedule && onSet({ kind, scheduleId: pickedSchedule.id, when: 'maintenance' }) : onSet({ kind, when: 'maintenance' }))}
+      />
+      <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <span id={`${uid}-${kind}`} className="text-[13px] font-medium">{title}</span>
+        {sub && <span id={`${uid}-${kind}-sub`} className="text-[12px] leading-snug text-fg-2">{sub}</span>}
+        {extra}
+      </span>
+    </label>
+  )
+  return (
+    <div className="flex flex-col border-t border-line" data-testid="then-choice">
+      <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 px-5 py-4">
+        <legend className="mb-2 text-sm font-medium">
+          When maintenance begins
+          <span className="ml-2 font-mono text-[12px] font-normal text-fg-3" data-testid="then-when">{`${last.startsOn ? `${inMaintenance ? 'began ' : ''}${plainDay(last.startsOn)} · ` : ''}day ${last.from}`}</span>
+        </legend>
+        <div className="grid grid-cols-1 gap-2.5 @min-[720px]:grid-cols-3">
+          {option('stay', 'Keep the last stage', `${last.name} · ${waterWords(last.water)}`)}
+          {option(
+            'schedule',
+            'Switch to my schedule',
+            own.length ? (inMaintenance ? 'Maintenance has begun, so this switches now.' : null) : 'Save a schedule of your own first.',
+            own.length > 0 && (
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                <select
+                  aria-label="Schedule to switch to"
+                  value={pickedSchedule?.id ?? ''}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    setChoice(e.target.value)
+                    if (r.then.kind === 'schedule') onSet({ kind: 'schedule', scheduleId: e.target.value, when: 'maintenance' })
+                  }}
+                  className="min-w-0 max-w-full flex-1 rounded-[6px] border border-line-2 bg-bg px-2 py-1.5 font-mono text-[12px]"
+                >
+                  {own.map(e => <option key={e.id} value={e.id}>{`${e.name} · ${e.cycles.length}×${Math.round((e.cycles[0]?.durationS ?? 0) / 60)} min`}</option>)}
+                </select>
+                {!inMaintenance && pickedSchedule && <Button size="sm" disabled={disabled} onClick={() => onSet({ kind: 'schedule', scheduleId: pickedSchedule.id, when: 'now' })}>Switch now</Button>}
+              </span>
+            ),
+            own.length === 0,
+          )}
+          {option('remind', 'Ask me first', r.then.harvestOn ? `Keeps the last stage and adds it to Needs you at first harvest, ${plainDay(r.then.harvestOn)}.` : 'No planted crop is in the catalog, so there’s no first-harvest day to ask on.', null, r.then.harvestOn === null)}
+        </div>
+        {r.then.done && <p className="text-[12px] text-fg-3" data-testid="then-done">{r.then.kind === 'remind' ? 'Asked: it’s in Needs you.' : 'Switched.'}</p>}
+      </fieldset>
     </div>
   )
 }

@@ -7,11 +7,13 @@ test('grow: the tower renders in 3D, a pod picked on it opens in the side panel'
   await page.goto('/grow')
   await page.getByRole('tab', { name: 'Tower' }).click()
   const tower = page.getByTestId('tower-3d')
+  // The protocol card sits above, and the renderer loads only once the tower nears the viewport: bring it into view first.
+  await tower.scrollIntoViewIfNeeded()
   await expect(tower).toHaveAttribute('data-ready', 'true', { timeout: 20_000 })
   await expect(tower.locator('canvas')).toBeVisible()
   await expect(page.getByText('Needs attention')).toBeVisible()
 
-  // Hovering a pod previews its callout; scan until one answers. The protocol card sits above, so bring the tower into view first.
+  // Hovering a pod previews its callout; scan until one answers.
   await tower.scrollIntoViewIfNeeded()
   const box = await tower.boundingBox()
   if (!box) throw new Error('the tower has no size')

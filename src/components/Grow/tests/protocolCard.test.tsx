@@ -85,17 +85,17 @@ describe('ProtocolCard', () => {
   it('lays the stages out as one track from the sowing day, with the Then slot at its end', () => {
     show()
     expect(screen.getByRole('heading', { name: 'Greens & herbs protocol' })).toBeTruthy()
-    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 3 of 8 · Seedlings starts Tue 17 Nov')
+    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 2 of 7 · Seedlings starts Tue 17 Nov')
     const track = within(screen.getByRole('group', { name: 'Stages' }))
-    expect(track.getAllByRole('button').map(b => b.textContent)).toEqual(['Germination0–7 · 1×15 min wk', 'Seedlings8–13 · 1×10 min', 'Young plants14–21 · 2×6 min', 'Maintenance22 on · 3×6 min', 'Thenstay in maintenance'])
+    expect(track.getAllByRole('button').map(b => b.textContent)).toEqual(['Germination0–7 · 1×15 min wk', 'Seedlings8–13 · 1×10 min', 'Young plants14–21 · 2×6 min', 'Maintenance22 on · 3×6 min', 'Thenkeep the last stage'])
     expect(track.getAllByRole('button').map(b => b.dataset.state)).toEqual(['current', 'next', 'next', 'next', undefined])
-    expect(screen.getByTestId('track-line').textContent).toBe('Sown Mon 9 NovChangeongoing')
+    expect(screen.getByTestId('track-line').textContent).toBe('Sown Mon 9 NovChangeTue 1 Dec · maintenance beginsongoing')
   })
 
   it('opens on the current stage: water with its days, runs and sum, light, feed and checks, each with its source', () => {
     show()
     const panel = within(screen.getByTestId('stage-panel'))
-    expect(panel.getByTestId('stage-head').textContent).toBe('Germination · day 3 of 8')
+    expect(panel.getByTestId('stage-head').textContent).toBe('Germination, day 2 of 7')
     expect(panel.getByText('1 × 15 min, Mondays')).toBeTruthy()
     expect(panel.getByTestId('weekday-dots').getAttribute('aria-label')).toBe('Runs on Mondays')
     expect(panel.getByTestId('stage-runs').textContent).toBe('08:00 · once a week')
@@ -113,7 +113,7 @@ describe('ProtocolCard', () => {
     const seedlings = within(screen.getByRole('group', { name: 'Stages' })).getByRole('button', { name: /^Seedlings/ })
     fireEvent.mouseEnter(seedlings)
     expect(screen.getByTestId('track-hover').textContent).toBe('Seedlings · days 8–13 · 1 × 10 min daily · starts Tue 17 Nov')
-    expect(screen.getByTestId('stage-head').textContent).toBe('Germination · day 3 of 8')
+    expect(screen.getByTestId('stage-head').textContent).toBe('Germination, day 2 of 7')
     fireEvent.mouseLeave(seedlings)
     expect(screen.getByTestId('track-hover').textContent).toBe('')
     fireEvent.click(seedlings)
@@ -134,7 +134,7 @@ describe('ProtocolCard', () => {
     expect(calls.advance).toHaveBeenCalled()
     cleanup()
     show({ then: { holdStageId: 'germination', holdSince: day(1).toISOString() } })
-    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 2 of 8 · held 1 d')
+    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 1 of 7 · held 1 d')
     fireEvent.click(screen.getByRole('button', { name: 'Release hold' }))
     expect(calls.release).toHaveBeenCalled()
   })
@@ -142,7 +142,7 @@ describe('ProtocolCard', () => {
   it('offers no Advance in maintenance or without a cycle, and says why the protocol isn\'t moving water', () => {
     show({ cycles: 'mature', at: 30 })
     expect((screen.getByRole('button', { name: 'Advance now' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByTestId('stage-head').textContent).toBe('Maintenance · day 9, ongoing')
+    expect(screen.getByTestId('stage-head').textContent).toBe('Maintenance, day 30 · ongoing')
     cleanup()
     show({ cycle: false, follow: false, cycles: 'hand' })
     const notes = screen.getByTestId('protocol-notes').textContent
@@ -157,13 +157,17 @@ describe('ProtocolCard', () => {
     expect(calls.activate).toHaveBeenCalledWith({ id: 'preset:seedlings' })
   })
 
-  it('chooses what comes after in the Then slot: stay, a schedule when maintenance begins or now, or a reminder', () => {
+  it('chooses what comes after in the row under the panel: keep the last stage, a schedule when maintenance begins or now, or ask', () => {
     show()
+    const panel = within(screen.getByTestId('then-choice'))
+    expect(panel.getByTestId('then-when').textContent).toBe('Tue 1 Dec · day 22')
+    expect((panel.getByRole('radio', { name: /Keep the last stage/ }) as HTMLInputElement).checked).toBe(true)
+    expect(panel.getByText('Maintenance · 3 × 6 min daily')).toBeTruthy()
+    expect(panel.getByText('Keeps the last stage and adds it to Needs you at first harvest, Fri 8 Jan.')).toBeTruthy()
+    // The Then slot says what staying means.
     fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
-    const panel = within(screen.getByTestId('then-panel'))
-    expect((panel.getByRole('radio', { name: /Stay in maintenance/ }) as HTMLInputElement).checked).toBe(true)
-    expect(panel.getByText(/In Needs you on Fri 8 Jan/)).toBeTruthy()
-    fireEvent.click(panel.getByRole('radio', { name: /Remind me at first harvest/ }))
+    expect(screen.getByTestId('then-panel').textContent).toBe('Then · keep the last stageWatering stays on Maintenance, 3 × 6 min daily, for as long as the plants grow.')
+    fireEvent.click(panel.getByRole('radio', { name: /Ask me first/ }))
     expect(calls.setThen).toHaveBeenLastCalledWith({ kind: 'remind', when: 'maintenance' })
     fireEvent.click(panel.getByRole('radio', { name: /Switch to my schedule/ }))
     expect(calls.setThen).toHaveBeenLastCalledWith({ kind: 'schedule', scheduleId: 'summer', when: 'maintenance' })
@@ -174,6 +178,7 @@ describe('ProtocolCard', () => {
     show({ then: { thenKind: 'schedule', thenScheduleId: 'summer' } })
     expect(within(screen.getByRole('group', { name: 'Stages' })).getByRole('button', { name: /^Then/ }).textContent).toBe('ThenSummer · 2×5 min')
     fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    expect(screen.getByText('Watering switches to Summer when maintenance begins, Tue 1 Dec.')).toBeTruthy()
     const chosen = within(screen.getByTestId('then-schedule'))
     expect(chosen.getByText('07:00, 17:00')).toBeTruthy()
     expect(chosen.getByText('Water · Summer')).toBeTruthy()
@@ -184,7 +189,6 @@ describe('ProtocolCard', () => {
     data.set('protocol', r)
     data.set('schedules', store.schedules.list())
     const { rerender } = render(<ProtocolCard />)
-    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
     expect(screen.queryByRole('button', { name: 'Switch now' })).toBeNull()
     data.set('library', [{ ...summer, kind: 'own', lastUsedAt: null, active: false, readOnly: false }])
     rerender(<ProtocolCard />)
@@ -198,9 +202,10 @@ describe('ProtocolCard', () => {
     data.set('schedules', store.schedules.list())
     data.set('library', [])
     render(<ProtocolCard />)
-    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
-    const panel = within(screen.getByTestId('then-panel'))
-    expect((panel.getByRole('radio', { name: /Remind me at first harvest/ }) as HTMLInputElement).disabled).toBe(true)
+    const panel = within(screen.getByTestId('then-choice'))
+    expect((panel.getByRole('radio', { name: /Ask me first/ }) as HTMLInputElement).disabled).toBe(true)
+    // Named by the choice alone, so nothing else on the page answers to its words ("planted" isn't a Plant field).
+    expect(panel.getByRole('radio', { name: 'Ask me first', description: 'No planted crop is in the catalog, so there’s no first-harvest day to ask on.' })).toBeTruthy()
     expect((panel.getByRole('radio', { name: /Switch to my schedule/ }) as HTMLInputElement).disabled).toBe(true)
     expect(panel.getByText('Save a schedule of your own first.')).toBeTruthy()
   })
@@ -209,14 +214,14 @@ describe('ProtocolCard', () => {
 describe('ProtocolCard: putting the protocol\'s watering on', () => {
   it('starts the stage\'s watering when there are no pump cycles, and says so rather than promise a change', () => {
     show({ cycles: 'none' })
-    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 3 of 8 · not watering yet')
+    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 2 of 7 · not watering yet')
     fireEvent.click(screen.getByRole('button', { name: 'Start Germination watering' }))
     expect(calls.activate).toHaveBeenCalledWith({ id: 'preset:germination' })
   })
 
   it('replaces cycles changed by hand only after a confirmation that offers to keep them as a schedule first', () => {
     show({ cycles: 'hand' })
-    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 3 of 8 · watering stays as it is')
+    expect(screen.getByTestId('protocol-where').textContent).toBe('Germination, day 2 of 7 · watering stays as it is')
     fireEvent.click(screen.getByRole('button', { name: 'Use Germination watering (replaces your cycles)' }))
     const dialog = within(screen.getByRole('dialog'))
     expect(dialog.getByText('07:30 · Mine')).toBeTruthy()
@@ -231,7 +236,7 @@ describe('ProtocolCard: putting the protocol\'s watering on', () => {
   it('turns Follow on, and puts the stage\'s watering on, when Follow is off', () => {
     // Day 10 is seedlings, but with Follow off the pump is still on germination.
     show({ follow: false, at: 10 })
-    expect(screen.getByTestId('protocol-where').textContent).toBe('Seedlings, day 3 of 6 · watering stays as it is')
+    expect(screen.getByTestId('protocol-where').textContent).toBe('Seedlings, day 10 of 13 · watering stays as it is')
     fireEvent.click(screen.getByRole('button', { name: 'Turn on Follow' }))
     expect(calls.update).toHaveBeenCalledWith({ followGrowCycle: true })
     fireEvent.click(screen.getByRole('button', { name: 'Use Seedlings watering' }))
@@ -348,12 +353,12 @@ describe('ProtocolCard: the rest of its ways in and out', () => {
     cleanup()
     show({ then: { thenKind: 'remind' } })
     const then = screen.getByRole('button', { name: /^Then/ })
-    expect(then.textContent).toBe('Thenremind at first harvest')
+    expect(then.textContent).toBe('Thenask me first')
     fireEvent.mouseEnter(then)
-    expect(screen.getByTestId('track-hover').textContent).toBe('Then · remind at first harvest')
+    expect(screen.getByTestId('track-hover').textContent).toBe('Then · ask me first')
     fireEvent.mouseLeave(then)
     fireEvent.focus(then)
-    expect(screen.getByTestId('track-hover').textContent).toBe('Then · remind at first harvest')
+    expect(screen.getByTestId('track-hover').textContent).toBe('Then · ask me first')
     fireEvent.blur(then)
     expect(screen.getByTestId('track-hover').textContent).toBe('')
     const young = within(screen.getByRole('group', { name: 'Stages' })).getByRole('button', { name: /^Young plants/ })
@@ -424,14 +429,70 @@ describe('ProtocolCard: the rest of its ways in and out', () => {
 
   it('switches at once from the Then slot in maintenance, and offers nothing there without a cycle', () => {
     show({ cycles: 'mature', at: 30 })
-    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
-    const panel = within(screen.getByTestId('then-panel'))
+    const panel = within(screen.getByTestId('then-choice'))
     expect(panel.getByText('Maintenance has begun, so this switches now.')).toBeTruthy()
+    expect(panel.getByTestId('then-when').textContent).toBe('began Tue 1 Dec · day 22')
+    expect(screen.getByTestId('maintenance-on').textContent).toBe('Tue 1 Dec · maintenance began')
     expect(panel.queryByRole('button', { name: 'Switch now' })).toBeNull()
     cleanup()
     show({ cycle: false })
+    for (const radio of within(screen.getByTestId('then-choice')).getAllByRole('radio')) expect((radio as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('says in the Then slot what asking means, and once a Then has fired', () => {
+    show({ then: { thenKind: 'remind', thenDoneAt: day(1).toISOString() } })
     fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
-    for (const radio of within(screen.getByTestId('then-panel')).getAllByRole('radio')) expect((radio as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByTestId('then-panel').textContent).toBe('Then · ask me firstWatering stays on Maintenance, 3 × 6 min daily. On Fri 8 Jan, the crops’ first harvest by the catalog, Needs you asks what comes next.')
+    expect(screen.getByTestId('then-done').textContent).toBe('Asked: it’s in Needs you.')
+    cleanup()
+    const { r, store } = report({ then: { thenKind: 'remind' } })
+    data.set('protocol', { ...r, then: { ...r.then, harvestOn: null } })
+    data.set('schedules', store.schedules.list())
+    render(<ProtocolCard />)
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    expect(screen.getByTestId('then-panel').textContent).toBe('Then · ask me firstWatering stays on Maintenance, 3 × 6 min daily.')
+    cleanup()
+    show({ then: { thenKind: 'schedule', thenScheduleId: 'summer', thenDoneAt: day(1).toISOString() } })
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    expect(screen.getByText('Switched to Summer.')).toBeTruthy()
+    expect(screen.getByTestId('then-done').textContent).toBe('Switched.')
+  })
+
+  it('dates the row by day alone before there\'s a sowing day, and names a Then schedule gone from the list plainly', () => {
+    const r = protocolReport(new MemoryStore(30), day(2))
+    data.set('protocol', { ...r, then: { ...r.then, kind: 'schedule', scheduleId: 'gone' } })
+    data.set('schedules', [])
+    data.set('library', [])
+    render(<ProtocolCard />)
+    expect(screen.getByTestId('then-when').textContent).toBe('day 22')
+    expect(screen.queryByTestId('maintenance-on')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
+    expect(screen.getByText('Watering switches to your schedule when maintenance begins.')).toBeTruthy()
+  })
+
+  it('keeps the schedule picked while Then is something else, and switches to it when chosen', () => {
+    show()
+    data.set('library', [{ ...summer, kind: 'own', lastUsedAt: null, active: false, readOnly: false }, { ...summer, id: 'away', name: 'Away', kind: 'own', lastUsedAt: null, active: false, readOnly: false }])
+    cleanup()
+    render(<ProtocolCard />)
+    fireEvent.change(screen.getByLabelText('Schedule to switch to'), { target: { value: 'away' } })
+    expect(calls.setThen).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('radio', { name: 'Switch to my schedule' }))
+    expect(calls.setThen).toHaveBeenLastCalledWith({ kind: 'schedule', scheduleId: 'away', when: 'maintenance' })
+  })
+
+  it('turns Follow off and on from the header', () => {
+    show()
+    const toggle = screen.getByRole('switch', { name: 'Follow the grow cycle' })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(toggle)
+    expect(calls.update).toHaveBeenCalledWith({ followGrowCycle: false })
+  })
+
+  it('marks today on the current stage, up to the line', () => {
+    show()
+    // Day 2 of germination's days 0–7: three of its eight days have begun.
+    expect((screen.getByTestId('today-mark') as HTMLElement).style.width).toBe('37.5%')
   })
 
   it('names the schedule on the pump only when the library has it', () => {
@@ -448,7 +509,6 @@ describe('ProtocolCard: the rest of its ways in and out', () => {
     data.set('library', [{ ...summer, kind: 'own', lastUsedAt: null, active: false, readOnly: false }, { ...summer, id: 'away', name: 'Away', kind: 'own', lastUsedAt: null, active: false, readOnly: false }])
     cleanup()
     render(<ProtocolCard />)
-    fireEvent.click(screen.getByRole('button', { name: /^Then/ }))
     const picker = screen.getByLabelText('Schedule to switch to') as HTMLSelectElement
     expect(picker.value).toBe('summer')
     fireEvent.change(picker, { target: { value: 'away' } })
@@ -462,7 +522,7 @@ describe('ProtocolLine', () => {
     data.set('protocol', report().r)
     render(<ProtocolLine />)
     const line = screen.getByTestId('protocol-line')
-    expect(line.textContent).toBe('Following Greens & herbs · Germination, day 3 · next change Tue 17 Nov')
+    expect(line.textContent).toBe('Following Greens & herbs · Germination, day 2 of 7 · next change Tue 17 Nov')
     expect(line.getAttribute('href')).toBe('/grow')
   })
 
@@ -470,10 +530,10 @@ describe('ProtocolLine', () => {
     const cases: Array<[Parameters<typeof report>[0], string]> = [
       [{ follow: false }, 'Not following Greens & herbs · the cycles stay as they are'],
       [{ cycles: 'none' }, 'Not watering yet · Start Germination watering'],
-      [{ cycles: 'hand' }, 'Following Greens & herbs · Germination, day 3 · cycles changed by hand, left as they are'],
-      [{ cycles: 'summer', at: 10 }, 'Following Greens & herbs · Seedlings, day 3 · on your schedule'],
-      [{ cycles: 'mature', at: 30 }, 'Following Greens & herbs · Maintenance, day 9 · ongoing'],
-      [{ then: { holdStageId: 'germination', holdSince: day(1).toISOString() } }, 'Following Greens & herbs · Germination, day 2 · held'],
+      [{ cycles: 'hand' }, 'Following Greens & herbs · Germination, day 2 of 7 · cycles changed by hand, left as they are'],
+      [{ cycles: 'summer', at: 10 }, 'Following Greens & herbs · Seedlings, day 10 of 13 · on your schedule'],
+      [{ cycles: 'mature', at: 30 }, 'Following Greens & herbs · Maintenance, day 30 · ongoing'],
+      [{ then: { holdStageId: 'germination', holdSince: day(1).toISOString() } }, 'Following Greens & herbs · Germination, day 1 of 7 · held'],
     ]
     for (const [o, words] of cases) {
       data.set('protocol', report(o).r)
