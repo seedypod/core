@@ -4,7 +4,7 @@ import { createEventBus } from '../../lib/eventBus'
 import { LightArbiter } from '../../control/light'
 import { MemoryStore } from '../../store/memory'
 import { lightLevelAt, Scheduler } from '../scheduler'
-import { dayEnabled, localTime, minuteToHHMM } from '../time'
+import { dayEnabled, localTime, minuteToHHMM, zoneAbbr } from '../time'
 
 describe('lightLevelAt', () => {
   const curve = { setpoints: [{ minute: 360, level: 0 }, { minute: 420, level: 80 }, { minute: 1200, level: 80 }, { minute: 1260, level: 0 }] }
@@ -38,6 +38,12 @@ describe('time helpers', () => {
   })
   it('falls back to UTC on a bad zone', () => {
     expect(localTime(new Date('2026-01-01T12:00:00Z'), 'Not/AZone').minute).toBe(720)
+    expect(zoneAbbr(new Date('2026-01-01T12:00:00Z'), 'Not/AZone')).toBe('UTC')
+  })
+  it('names the zone as a clock does, daylight time included', () => {
+    expect(zoneAbbr(new Date('2026-11-10T14:00:00Z'), 'America/Los_Angeles')).toBe('PST')
+    expect(zoneAbbr(new Date('2026-07-10T14:00:00Z'), 'America/Los_Angeles')).toBe('PDT')
+    expect(zoneAbbr(new Date('2026-11-10T14:00:00Z'), 'UTC')).toBe('UTC')
   })
 })
 
