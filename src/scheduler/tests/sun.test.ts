@@ -7,7 +7,7 @@ import { createCallerFactory } from '../../server/trpc'
 import { MemoryStore } from '../../store/memory'
 import { lightHours } from '../lightPlan'
 import { Scheduler } from '../scheduler'
-import { DEFAULT_SUN, followSun, sunDay, sunSetpoints, sunWindow } from '../sun'
+import { AUTO_SUN, DEFAULT_SUN, followSun, sunDay, sunSetpoints, sunWindow } from '../sun'
 
 const SF = { latitude: 37.7749, longitude: -122.4194, timezone: 'America/Los_Angeles' }
 const at = (h: number, m: number) => h * 60 + m
@@ -75,9 +75,64 @@ describe('followSun', () => {
     expect(followSun(spec, { latitude: null, longitude: null, timezone: 'UTC' }, new Date('2026-11-12T18:00:00Z')).setpoints).toEqual(sunSetpoints(DEFAULT_SUN, { on: 300, off: 1140 }))
   })
 
+  it('an Auto curve takes its hours from what it\'s given, and its own without', () => {
+    const at12 = { latitude: null, longitude: null, timezone: 'UTC' }
+    const now = new Date('2026-11-12T18:00:00Z')
+    expect(lightHours(followSun({ setpoints: [], sun: AUTO_SUN }, at12, now, { minHours: 15, maxHours: 16 })).full).toBe(15)
+    expect(lightHours(followSun({ setpoints: [], sun: AUTO_SUN }, at12, now)).full).toBe(14)
+    // Not Auto: given hours are ignored.
+    expect(lightHours(followSun(spec, at12, now, { minHours: 15, maxHours: 16 })).full).toBe(14)
+  })
+
   it('leaves a curve that doesn\'t follow the sun as it is', () => {
     const plain = { setpoints: [{ minute: 0, level: 50 }] }
     expect(followSun(plain, SF, new Date())).toBe(plain)
+  })
+})
+
+describe('Auto', () => {
+  const core = () => {
+    const c = createCore({ hal: new SimHal({ tickMs: 0 }), store: new MemoryStore(), version: 'test', now: () => new Date('2026-11-12T18:00:00Z') })
+    return { store: c.ctx.store, c: createCallerFactory(appRouter)(c.ctx) }
+  }
+
+  it('gives greens and herbs 14–15 h and fruiting crops 15–16 h, from the grow protocol', async () => {
+    const { store, c } = core()
+    expect(await c.schedules.autoLight()).toMatchObject({ protocolId: 'greens-herbs', minHours: 14, maxHours: 15 })
+    await c.grow.updatePod({ slot: 1, plant: 'Red Cherry Tomato', status: 'seeded' })
+    expect(await c.schedules.autoLight()).toMatchObject({ protocolId: 'fruiting', protocolName: 'Fruiting', minHours: 15, maxHours: 16 })
+    const saved = await c.schedules.upsert({ id: 'auto', kind: 'light', name: 'Auto', enabled: true, days: 127, spec: { setpoints: [], sun: AUTO_SUN } })
+    expect('setpoints' in saved.spec && lightHours(saved.spec).full).toBe(15)
+    expect(store.schedules.get('auto')?.spec).toMatchObject({ sun: AUTO_SUN })
+  })
+
+  it('the scheduler moves an Auto curve to the hours it\'s given', async () => {
+    const store = new MemoryStore()
+    let hours = { minHours: 14, maxHours: 15 }
+    const s = new Scheduler({ store, hal: new SimHal({ tickMs: 0 }), events: createEventBus(), now: () => new Date('2026-11-12T18:00:00Z'), autoHours: () => hours })
+    store.schedules.upsert({ id: 'auto', kind: 'light', name: 'Auto', enabled: true, days: 127, spec: { setpoints: [], sun: AUTO_SUN } })
+    const full = () => {
+      const spec = store.schedules.get('auto')?.spec
+      return spec && 'setpoints' in spec ? lightHours(spec).full : null
+    }
+    await s.tick()
+    expect(full()).toBe(14)
+    hours = { minHours: 15, maxHours: 16 }
+    await s.tick()
+    expect(full()).toBe(15)
+  })
+
+  it('a new garden starts on Auto, but not one that has a light curve, and only once', async () => {
+    const { store, c } = core()
+    await c.settings.update({ setupComplete: true })
+    expect(store.schedules.list().filter(x => x.kind === 'light').map(x => [x.id, x.name, x.enabled, 'setpoints' in x.spec && x.spec.sun?.auto])).toEqual([['auto', 'Auto', true, true]])
+    store.schedules.remove('auto')
+    await c.settings.update({ setupComplete: true })
+    expect(store.schedules.list().filter(x => x.kind === 'light')).toEqual([])
+    const other = core()
+    other.store.schedules.upsert({ id: 'mine', kind: 'light', name: 'Mine', enabled: true, days: 127, spec: { setpoints: [{ minute: 0, level: 50 }] } })
+    await other.c.settings.update({ setupComplete: true })
+    expect(other.store.schedules.list().filter(x => x.kind === 'light').map(x => x.id)).toEqual(['mine'])
   })
 })
 

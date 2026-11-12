@@ -10,11 +10,11 @@ import { fmtClock } from '@/src/components/charts/format'
 import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { lightData } from '@/src/components/charts/viz3d/shape'
 import { daysLabel } from '@/src/lib/days'
-import { GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HOURS } from '@/src/scheduler/lightPlan'
+import { AUTO_HOURS, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HOURS } from '@/src/scheduler/lightPlan'
 import { localTime, systemZone, zoneAbbr } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle } from '@/src/components/Water/pumpCycles'
-import { DEFAULT_SUN } from '@/src/scheduler/sun'
+import { AUTO_SUN } from '@/src/scheduler/sun'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
 import { asCurve, holdWindow, levelAt, lightToday, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
@@ -168,6 +168,21 @@ export function LightPage() {
             {curves.length === 0 ? '. Start from one of these:' : '. Start from:'}
           </p>
           <div className="grid gap-2 min-[720px]:grid-cols-3">
+            <button
+              type="button"
+              data-testid="preset-auto"
+              onClick={() => {
+                const id = `curve-${Date.now().toString(36)}`
+                // The server writes today's setpoints from the sun and the grow protocol.
+                upsert.mutate({ id, kind: 'light', name: 'Auto', enabled: curves.length === 0, days: 127, spec: { setpoints: [], sun: AUTO_SUN } })
+                setAdding(false)
+                setOpenId(id)
+              }}
+              className="flex cursor-pointer flex-col gap-1 rounded-card border border-line bg-surface px-3.5 py-3 text-left hover:border-line-2"
+            >
+              <span className="text-sm font-medium">Auto</span>
+              <span className="text-[12px] leading-snug text-fg-2">{`Follows sunrise and sunset through the seasons${settings.data?.latitude == null ? ' once the unit’s location is set' : ''}, stretched about midday to the grow protocol’s hours: ${AUTO_HOURS['greens-herbs'].minHours}–${AUTO_HOURS['greens-herbs'].maxHours} h for greens and herbs, ${AUTO_HOURS.fruiting.minHours}–${AUTO_HOURS.fruiting.maxHours} h for fruiting crops.`}</span>
+            </button>
             {LIGHT_PRESETS.map(p => (
               <button
                 key={p.id}
@@ -186,21 +201,6 @@ export function LightPage() {
                 <span className="text-[12px] leading-snug text-fg-2">{p.description}</span>
               </button>
             ))}
-            <button
-              type="button"
-              data-testid="preset-sun"
-              onClick={() => {
-                const id = `curve-${Date.now().toString(36)}`
-                // The server writes today's setpoints from the sun.
-                upsert.mutate({ id, kind: 'light', name: 'Follow the sun', enabled: curves.length === 0, days: 127, spec: { setpoints: [], sun: DEFAULT_SUN } })
-                setAdding(false)
-                setOpenId(id)
-              }}
-              className="flex cursor-pointer flex-col gap-1 rounded-card border border-line bg-surface px-3.5 py-3 text-left hover:border-line-2"
-            >
-              <span className="text-sm font-medium">Follow the sun</span>
-              <span className="text-[12px] leading-snug text-fg-2">{`Sunrise to sunset, moving with the seasons, stretched about midday to ${DEFAULT_SUN.minHours}–${DEFAULT_SUN.maxHours} hours of full light${settings.data?.latitude == null ? ' once the unit’s location is set' : ''}.`}</span>
-            </button>
             <button
               type="button"
               data-testid="preset-blank"
@@ -313,7 +313,7 @@ const LONG_DAY = 'long enough to make lettuce and herbs bolt'
 function CurveCard({ curve: c, running, open, onOpen, onSave }: { curve: LightCurve, running: boolean, open: boolean, onOpen: (open: boolean) => void, onSave: (next: LightCurve) => void }) {
   const n = c.spec.setpoints.length
   const hours = lightHours(c.spec)
-  const meta = [c.spec.sun ? 'Follows the sun' : `${n} setpoint${n === 1 ? '' : 's'}`, daysLabel(c.days), c.enabled ? `on ${hours.lit} h, ${hours.full} h of full light` : 'off', c.enabled && hours.lit > LONG_DAY_HOURS && LONG_DAY].filter(Boolean).join(' · ')
+  const meta = [c.spec.sun?.auto ? 'Auto · follows the sun' : c.spec.sun ? 'Follows the sun' : `${n} setpoint${n === 1 ? '' : 's'}`, daysLabel(c.days), c.enabled ? `on ${hours.lit} h, ${hours.full} h of full light` : 'off', c.enabled && hours.lit > LONG_DAY_HOURS && LONG_DAY].filter(Boolean).join(' · ')
   const rating = lightRating(hours.full)
   return (
     <Card className="gap-0 p-0">

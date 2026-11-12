@@ -3,8 +3,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CurveEditor } from '../CurveEditor'
 
-const { settings } = vi.hoisted(() => ({ settings: { data: undefined as unknown } }))
-vi.mock('@/src/utils/trpc', () => ({ trpc: { settings: { get: { useQuery: () => settings } } } }))
+const { settings, auto } = vi.hoisted(() => ({ settings: { data: undefined as unknown }, auto: { data: undefined as unknown } }))
+vi.mock('@/src/utils/trpc', () => ({ trpc: { settings: { get: { useQuery: () => settings } }, schedules: { autoLight: { useQuery: () => auto } } } }))
 import type { LightCurve } from '../curves'
 
 const curve: LightCurve = { id: 'day', kind: 'light', name: 'Daylight', enabled: true, days: 127, spec: { setpoints: [{ minute: 1140, level: 85 }, { minute: 360, level: 0 }] } }
@@ -77,6 +77,38 @@ describe('CurveEditor', () => {
       expect(screen.getByTestId('sun-today').textContent).toBe('Set the unit’s location in Settings to follow sunrise and sunset; until then the day centres on 12:00. The light comes up from 04:30 and is off by 19:30.')
       fireEvent.click(screen.getByLabelText('Decrease Shift'))
       expect(screen.getByText('Centred 15 min earlier')).toBeTruthy()
+    })
+  })
+
+  describe('Auto', () => {
+    const autoCurve: LightCurve = { ...curve, spec: { setpoints: [], sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0, auto: true } } }
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-11-12T18:00:00Z'))
+      settings.data = { timezone: 'UTC', latitude: null, longitude: null }
+      auto.data = { protocolId: 'fruiting', protocolName: 'Fruiting', minHours: 15, maxHours: 16, why: 'the high end of Gardyn’s range, for fruiting crops' }
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      settings.data = undefined
+      auto.data = undefined
+    })
+
+    it('takes its hours from the grow protocol, says which, and hides the hour steppers', () => {
+      render(<CurveEditor schedule={autoCurve} onSave={vi.fn()} />)
+      expect(screen.getByTestId('sun-auto').textContent).toBe('Fruiting: 15–16 h of full light, the high end of Gardyn’s range, for fruiting crops.')
+      expect(screen.queryByLabelText('Fewest hours')).toBeNull()
+      // 15 hours about 12:00, with hour-long ramps.
+      expect(screen.getByTestId('sun-today').textContent).toMatch(/comes up from 04:00 and is off by 20:00\.$/)
+    })
+
+    it('turned off, keeps the protocol\'s hours so today\'s light doesn\'t jump, and they become its own', () => {
+      const onSave = vi.fn()
+      render(<CurveEditor schedule={autoCurve} onSave={onSave} />)
+      fireEvent.click(screen.getByRole('switch', { name: 'Hours from the grow protocol' }))
+      expect(screen.getByLabelText('Fewest hours').textContent).toContain('15 h')
+      fireEvent.click(screen.getByText('Save'))
+      expect(onSave).toHaveBeenCalledWith({ ...autoCurve, spec: { setpoints: [], sun: { minHours: 15, maxHours: 16, rampMin: 60, shiftMin: 0, auto: false } } })
     })
   })
 })

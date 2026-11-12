@@ -11,6 +11,7 @@ import type { LightArbiter } from '../control/light'
 import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
 import type { LightSpec, PumpSpec, Schedule, Store } from '../store/types'
+import type { SunHours } from './lightPlan'
 import { followSun } from './sun'
 import { dayEnabled, localTime } from './time'
 
@@ -24,6 +25,8 @@ export interface SchedulerDeps {
   /** False while the clock can't be believed yet; pump slots wait. */
   clockTrusted?: () => boolean
   log?: (msg: string) => void
+  /** Auto curves' hours of full light now, from the grow protocol. */
+  autoHours?: () => SunHours
 }
 
 /** Desired light level at `minute` for a curve, or null if the curve is empty. */
@@ -51,12 +54,12 @@ export function lightLevelAt(spec: LightSpec, minute: number): number | null {
 }
 
 /** Rewrite each sun-following curve's setpoints for the day of `now`, where they've moved; returns the ids rewritten. */
-export function refollowSun(store: Store, now: Date): string[] {
+export function refollowSun(store: Store, now: Date, autoHours?: SunHours): string[] {
   const settings = store.settings.get()
   const changed: string[] = []
   for (const s of store.schedules.list()) {
     if (s.kind !== 'light' || !('setpoints' in s.spec) || !s.spec.sun) continue
-    const spec = followSun(s.spec, settings, now)
+    const spec = followSun(s.spec, settings, now, autoHours)
     if (JSON.stringify(spec.setpoints) === JSON.stringify(s.spec.setpoints)) continue
     store.schedules.upsert({ id: s.id, kind: s.kind, name: s.name, enabled: s.enabled, days: s.days, spec })
     changed.push(s.id)
@@ -98,7 +101,7 @@ export class Scheduler {
     const now = this.now()
     const lt = localTime(now, settings.timezone)
     // Sunrise and sunset move a minute or two a day; a curve following them moves with them.
-    for (const id of refollowSun(store, now)) this.deps.events.emit({ kind: 'schedule', action: 'changed', id })
+    for (const id of refollowSun(store, now, this.deps.autoHours?.())) this.deps.events.emit({ kind: 'schedule', action: 'changed', id })
     const schedules = store.schedules.list().filter(s => s.enabled && dayEnabled(s.days, lt.weekday))
 
     // Light: the highest active curve wins (lets a "boost" schedule overlay a base curve).

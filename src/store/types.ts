@@ -73,6 +73,8 @@ export interface SunFollow {
   rampMin: number
   /** Minutes later (or earlier, negative) than the sun's midday the window centres on. */
   shiftMin: number
+  /** Auto: take minHours and maxHours from the grow protocol instead (`AUTO_HOURS`). */
+  auto?: boolean
 }
 export interface LightSpec { setpoints: LightSetpoint[], sun?: SunFollow }
 export interface PumpSpec { minute: number, durationS: number, level?: number }

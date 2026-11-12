@@ -9,6 +9,7 @@
  * curve's hours.
  */
 import type { LightSetpoint, LightSpec, SunFollow } from '../store/types'
+import type { SunHours } from './lightPlan'
 import { localTime } from './time'
 
 const rad = Math.PI / 180
@@ -67,14 +68,18 @@ export function sunSetpoints(sun: SunFollow, w: { on: number, off: number }): Li
 /** Without a location the day is the curve's shortest, centred on 12:00. */
 const NO_PLACE = { noon: 720, day: 0 }
 
-/** A sun-following spec with its setpoints for the day of `now`, or the spec as it was when it doesn't follow the sun. */
-export function followSun(spec: LightSpec, place: { latitude: number | null, longitude: number | null, timezone: string }, now: Date): LightSpec {
+/** A sun-following spec with its setpoints for the day of `now`, or the spec as it was when it doesn't follow the sun. An Auto curve takes its hours from `auto`. */
+export function followSun(spec: LightSpec, place: { latitude: number | null, longitude: number | null, timezone: string }, now: Date, auto?: SunHours): LightSpec {
   if (!spec.sun) return spec
+  const sun = spec.sun.auto && auto ? { ...spec.sun, minHours: auto.minHours, maxHours: auto.maxHours } : spec.sun
   const here = place.latitude !== null && place.longitude !== null
     ? sunDay(localTime(now, place.timezone).date, place.latitude, place.longitude, place.timezone)
     : NO_PLACE
-  return { ...spec, setpoints: sunSetpoints(spec.sun, sunWindow(spec.sun, here)) }
+  return { ...spec, setpoints: sunSetpoints(sun, sunWindow(sun, here)) }
 }
 
 /** What a new sun-following curve starts from: 14–16 hours of full light, hour-long ramps, centred on midday. */
 export const DEFAULT_SUN: SunFollow = { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0 }
+
+/** Auto: the sun, with its hours from the grow protocol. */
+export const AUTO_SUN: SunFollow = { ...DEFAULT_SUN, auto: true }

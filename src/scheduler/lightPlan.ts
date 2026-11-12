@@ -65,3 +65,16 @@ export const LIGHT_PRESETS: LightPreset[] = [
   { id: 'day-16h', name: 'Long day · 16 h', description: 'Light 6 AM to 10 PM: the most Gardyn recommends before plants stress and bolt.', setpoints: day(360, 1320) },
   { id: 'gentle-14h', name: 'Gentle day · 14 h', description: 'A two-hour sunrise from 6 AM and sunset to 10 PM, full from 8 AM to 8 PM: 14 hours of full light, with less glare at either end.', setpoints: day(420, 1260, 120) },
 ]
+
+export interface SunHours { minHours: number, maxHours: number }
+
+/**
+ * Auto's hours of full light by grow protocol, inside Gardyn's 14–16: leafy
+ * greens and herbs toward the low end, since more light hastens their
+ * bolting, and fruiting crops toward the high end, as they go in Gardyn's
+ * high-light zone (knowledge/plants/gardyn-light-zones.md).
+ */
+export const AUTO_HOURS: Record<'greens-herbs' | 'fruiting', SunHours & { why: string }> = {
+  'greens-herbs': { minHours: 14, maxHours: 15, why: 'the low end of Gardyn’s range, since more light hastens bolting in greens and herbs' },
+  'fruiting': { minHours: 15, maxHours: 16, why: 'the high end of Gardyn’s range, for fruiting crops' },
+}

@@ -1,7 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button, GhostIcon } from '@/src/components/ds/core'
-import { DayPicker, Slider, Stepper, TextField } from '@/src/components/ds/forms'
+import { DayPicker, Slider, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
 import { fmtClock } from '@/src/components/charts/format'
 import { daysToList, listToDays } from '@/src/lib/days'
 import { followSun, sunDay } from '@/src/scheduler/sun'
@@ -75,10 +75,11 @@ const stepper = 'border-line bg-field [&>span]:min-w-16 [&>span]:text-[13px]'
 /** How a curve follows the sun, and what that makes today on the unit's clock and at its place. */
 function SunControls({ sun, onChange }: { sun: SunFollow, onChange: (sun: SunFollow) => void }) {
   const settings = trpc.settings.get.useQuery()
+  const auto = trpc.schedules.autoLight.useQuery(undefined, { enabled: !!sun.auto })
   const place = { latitude: settings.data?.latitude ?? null, longitude: settings.data?.longitude ?? null, timezone: settings.data?.timezone ?? systemZone() }
   const now = new Date()
   const today = place.latitude !== null && place.longitude !== null ? sunDay(localTime(now, place.timezone).date, place.latitude, place.longitude, place.timezone) : null
-  const [rise, , , dark] = followSun({ setpoints: [], sun }, place, now).setpoints
+  const [rise, , , dark] = followSun({ setpoints: [], sun }, place, now, auto.data).setpoints
   const shift = sun.shiftMin === 0 ? 'on midday' : `${hm(Math.abs(sun.shiftMin))} ${sun.shiftMin > 0 ? 'later' : 'earlier'}`
   const row = 'flex flex-wrap items-center justify-between gap-3 border-b border-line py-2 text-[13px]'
   return (
@@ -90,13 +91,33 @@ function SunControls({ sun, onChange }: { sun: SunFollow, onChange: (sun: SunFol
         {rise && dark && `The light comes up from ${fmtClock(rise.minute)} and is off by ${fmtClock(dark.minute)}.`}
       </p>
       <div className={row}>
-        <span>Full light, at least</span>
-        <Stepper label="Fewest hours" className={stepper} value={sun.minHours} min={8} max={sun.maxHours} step={0.5} format={v => `${v} h`} onChange={minHours => onChange({ ...sun, minHours })} />
+        <span>Hours from the grow protocol</span>
+        <Toggle
+          on={!!sun.auto}
+          size="md"
+          label="Hours from the grow protocol"
+          // Turned off, it keeps the hours it had, so today's light doesn't jump.
+          onChange={on => onChange(on ? { ...sun, auto: true } : { ...sun, auto: false, ...(auto.data && { minHours: auto.data.minHours, maxHours: auto.data.maxHours }) })}
+        />
       </div>
-      <div className={row}>
-        <span>Full light, at most</span>
-        <Stepper label="Most hours" className={stepper} value={sun.maxHours} min={sun.minHours} max={18} step={0.5} format={v => `${v} h`} onChange={maxHours => onChange({ ...sun, maxHours })} />
-      </div>
+      {sun.auto
+        ? (
+            <p className="border-b border-line py-2 text-[13px] text-fg-2 text-pretty" data-testid="sun-auto">
+              {auto.data ? `${auto.data.protocolName}: ${auto.data.minHours}–${auto.data.maxHours} h of full light, ${auto.data.why}.` : ' '}
+            </p>
+          )
+        : (
+            <>
+              <div className={row}>
+                <span>Full light, at least</span>
+                <Stepper label="Fewest hours" className={stepper} value={sun.minHours} min={8} max={sun.maxHours} step={0.5} format={v => `${v} h`} onChange={minHours => onChange({ ...sun, minHours })} />
+              </div>
+              <div className={row}>
+                <span>Full light, at most</span>
+                <Stepper label="Most hours" className={stepper} value={sun.maxHours} min={sun.minHours} max={18} step={0.5} format={v => `${v} h`} onChange={maxHours => onChange({ ...sun, maxHours })} />
+              </div>
+            </>
+          )}
       <div className={row}>
         <span>Sunrise and sunset take</span>
         <Stepper label="Ramp" className={stepper} value={sun.rampMin} min={0} max={180} step={15} format={v => `${v} min`} onChange={rampMin => onChange({ ...sun, rampMin })} />
