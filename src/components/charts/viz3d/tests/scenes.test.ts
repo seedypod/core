@@ -99,12 +99,6 @@ const TODAY: TodayData = {
     { key: 'water', label: 'Water', sub: 'tank 20–60%', tone: 'blue', values: ramp(97, i => (i < 73 ? 0.5 - i / 400 : Number.NaN)) },
     { key: 'air', label: 'Air', sub: '20–28°C', tone: 'cream', values: ramp(97, i => (i < 73 ? 0.5 + 0.3 * Math.sin(i / 10) : Number.NaN)) },
   ],
-  events: [
-    { at: 0.33, tone: 'green', label: 'Pump' },
-    { at: 0.34, tone: 'orange', label: 'Water low' },
-    { at: 0.6, tone: 'amber', label: 'Warm day' },
-    { at: 0.9, tone: 'muted', label: '' },
-  ],
   ticks: DAY_TICKS,
 }
 const TANK: TankData = { levels: ramp(120, i => 0.8 - (i % 40) / 100), topUps: [40 / 119, 80 / 119], cutoff: 0.3, current: 0.4, ticks: ramp(5, k => ({ at: k / 4, label: ['Mon', 'Tue', 'Thu', 'Sat', 'Sun'][k] as string })), marks: { full: 'full · 2 in', now: 'now · 5.1 in', cutoff: 'cutoff 27% · 6.3 in', empty: 'empty · 7.9 in' }, low: false, pumping: true, runFrom: 0.9, runs: [0.2, 0.5, 0.8], upcoming: [0.3, 0.7] }

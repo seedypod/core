@@ -16,8 +16,7 @@ export type Tone = 'cream' | 'amber' | 'blue' | 'green' | 'orange' | 'muted'
 export interface Tick { at: number, label: string }
 
 export interface Lane { key: string, label: string, sub: string, tone: Tone, values: number[], /** From this index on the lane is a plan, drawn dimmer. */ dimFrom?: number }
-export interface DayEvent { at: number, tone: Tone, label: string }
-export interface TodayData { now: number, lanes: Lane[], events: DayEvent[], ticks: Tick[] }
+export interface TodayData { now: number, lanes: Lane[], ticks: Tick[] }
 
 /** The words on the tank's scale: full, the level now, the pump cutoff and empty, each with its depth; `short` for a narrow card. */
 export interface TankMarks { full: string, now: string, cutoff: string | null, empty: string, short?: Omit<TankMarks, 'short'> }
@@ -133,9 +132,9 @@ export const dayIndexAfter = (nowMin: number) => Math.min(DAY_POINTS, Math.floor
 interface MinuteSample { minute: number, value: number }
 
 /**
- * Today's lanes: the light solid to now and its plan after (0–100%), the tank
- * and the air to now in their own ranges, and the day's events with pump runs
- * (done and still to come) among them.
+ * Today's lanes: the light solid to now and its plan after (0–100%), and the
+ * tank and the air to now in their own ranges. The day's events are a flat
+ * strip under the chart.
  */
 export function todayData(input: {
   nowMin: number
@@ -144,20 +143,11 @@ export function todayData(input: {
   tankRange: [number, number]
   air: MinuteSample[]
   airRange: [number, number]
-  events: Array<{ minute: number, label: string, tone: 'muted' | 'light' | 'down' }>
-  pumpPast: number[]
-  pumpFuture: number[]
 }): TodayData {
   const after = dayIndexAfter(input.nowMin)
   const grid = Array.from({ length: DAY_POINTS }, (_, i) => dayMinute(i))
   const light = grid.map((m, i) => (i < after ? interpAt(input.light.past, Math.min(m, input.nowMin)) : interpAt(input.light.future, m)) / 100)
   const toNow = (s: MinuteSample[]) => binRange(s.map(p => ({ x: p.minute, y: p.value })), 0, DAY_MIN, DAY_POINTS, 4).map((v, i) => (i < after ? v : Number.NaN))
-  const TONE = { muted: 'muted', light: 'amber', down: 'orange' } as const
-  const events: DayEvent[] = [
-    ...input.pumpPast.map(m => ({ at: m / DAY_MIN, tone: 'green' as const, label: 'Pump' })),
-    ...input.pumpFuture.map(m => ({ at: m / DAY_MIN, tone: 'muted' as const, label: '' })),
-    ...input.events.map(e => ({ at: e.minute / DAY_MIN, tone: TONE[e.tone], label: e.label })),
-  ].sort((a, b) => a.at - b.at)
   return {
     now: input.nowMin / DAY_MIN,
     lanes: [
@@ -165,7 +155,6 @@ export function todayData(input: {
       { key: 'water', label: 'Water', sub: `tank ${input.tankRange[0]}–${input.tankRange[1]}%`, tone: 'blue', values: normalise(toNow(input.tank), ...input.tankRange) },
       { key: 'air', label: 'Air', sub: `${input.airRange[0]}–${input.airRange[1]}°C`, tone: 'cream', values: normalise(toNow(input.air), ...input.airRange) },
     ],
-    events,
     ticks: DAY_TICKS,
   }
 }

@@ -49,23 +49,22 @@ const TONE_INK: Record<Tone, Ink> = { cream: 'cream', amber: 'amber', blue: 'blu
 
 // ── Today ────────────────────────────────────────────────────────────────
 
-export const TODAY_SPEC: BaseSpec = { need: 14, camera: { position: [0, 4.6, 9.6], target: [0, 0.2, -0.75] }, bounds: [[-6, -0.35, -2.75], [6, 1.5, 1.6]] }
+export const TODAY_SPEC: BaseSpec = { need: 14, camera: { position: [0, 4.6, 9.6], target: [0, 0.2, -1.2] }, bounds: [[-6, -0.3, -2.75], [6, 1.3, 0.6]] }
 
-/** Light, Water and Air stacked in depth with their labels, the day's events on a fourth lane, and a translucent "now" plane. */
+/** Light, Water and Air stacked in depth with their labels, and a translucent "now" plane; the day's events are a flat strip under it. */
 export function createTodayViz(container: HTMLElement, env?: Env): Viz<TodayData> {
   const W = 12
   const x0 = -W / 2
   const LANE_Z = [-2.4, -1.2, 0]
-  const EVENTS_Z = 1.15
+  /** The front lane, where the hour axis sits. */
+  const FRONT_Z = 0
   const H = 0.9
   let data: TodayData | null = null
   const ribbons: ReturnType<typeof ribbon>[] = []
   const laneLabels: Label[] = []
-  const markers: Array<{ mesh: THREE.Mesh, label: Label }> = []
   const base = createBase(container, TODAY_SPEC, draw, env)
-  const T = base.THREE
 
-  floorGrid(base, { x0, x1: x0 + W, z0: LANE_Z[0] as number - 0.35, z1: EVENTS_Z + 0.35, xs: [0, 0.25, 0.5, 0.75, 1].map(a => x0 + a * W), zs: [...LANE_Z, EVENTS_Z] })
+  floorGrid(base, { x0, x1: x0 + W, z0: LANE_Z[0] as number - 0.35, z1: FRONT_Z + 0.35, xs: [0, 0.25, 0.5, 0.75, 1].map(a => x0 + a * W), zs: LANE_Z })
   ;['Light', 'Water', 'Air'].forEach((name, i) => {
     const z = LANE_Z[i] as number
     ribbons.push(ribbon(base, { x0, width: W, z, height: H, ink: (['amber', 'blue', 'cream'] as const)[i] as Ink, n: 97 }))
@@ -74,29 +73,17 @@ export function createTodayViz(container: HTMLElement, env?: Env): Viz<TodayData
     base.root.add(l.sprite)
     laneLabels.push(l)
   })
-  const eventsLabel = base.label('Events', { ink: 'fg2', size: 0.2, align: 'left', valign: 'bottom', priority: 2 })
-  eventsLabel.sprite.position.set(x0, 0.34, EVENTS_Z)
-  base.root.add(eventsLabel.sprite)
-  const ticks = axis(base, { x0, width: W, y: -0.05, z: EVENTS_Z + 0.45, size: 0.19 })
+  const ticks = axis(base, { x0, width: W, y: -0.05, z: FRONT_Z + 0.45, size: 0.19 })
   ticks.set([0, 6, 12, 18, 24].map(h => ({ at: h / 24, label: `${String(h).padStart(2, '0')}:00` })))
 
   // The now plane stands across every lane; hidden until there's a now to stand at.
-  const depth = EVENTS_Z - (LANE_Z[0] as number) + 0.7
+  const depth = FRONT_Z - (LANE_Z[0] as number) + 0.7
   const nowPlane = base.plane(depth, H + 0.25, 'fg1', 0.07)
   nowPlane.rotation.y = Math.PI / 2
   const nowEdge = base.line([[0, 0, 0], [0, 0, depth]], 'fg2', 0.6)
   const nowLabel = base.label('now', { ink: 'fg1', size: 0.2, align: 'center', valign: 'bottom', priority: 4 })
   base.root.add(nowLabel.sprite)
 
-  function marker() {
-    const mesh = new T.Mesh(new T.OctahedronGeometry(0.1), new T.MeshBasicMaterial({ transparent: true }))
-    base.root.add(mesh)
-    const label = base.label('', { ink: 'fg2', size: 0.16, align: 'center', valign: 'bottom' })
-    base.root.add(label.sprite)
-    return { mesh, label }
-  }
-
-  const c = new T.Color()
   function draw(f: Frame): boolean {
     ribbons.forEach(r => r.update(f))
     const shown = f.state === 'ready' && data !== null
@@ -107,29 +94,10 @@ export function createTodayViz(container: HTMLElement, env?: Env): Viz<TodayData
     nowLabel.setVisible(shown)
     if (shown) {
       ;(nowPlane.material as THREE.MeshBasicMaterial).opacity = 0.07 * appear
-      nowPlane.position.set(nowX, (H + 0.25) / 2, ((LANE_Z[0] as number) - 0.35 + EVENTS_Z + 0.35) / 2)
+      nowPlane.position.set(nowX, (H + 0.25) / 2, ((LANE_Z[0] as number) - 0.35 + FRONT_Z + 0.35) / 2)
       nowEdge.position.set(nowX, H + 0.25, (LANE_Z[0] as number) - 0.35)
       nowLabel.sprite.position.set(nowX, H + 0.3, (LANE_Z[0] as number) - 0.35)
     }
-    const events = data?.events ?? []
-    while (markers.length < events.length) markers.push(marker())
-    // Event labels give way to the lanes' names and to each other where they crowd (the base declutters).
-    markers.forEach((m, i) => {
-      const e = events[i]
-      const on = shown && e !== undefined
-      m.mesh.visible = on
-      m.label.setVisible(on)
-      if (!on || !e) return
-      const k = pointEase(f.p, e.at * 96, 96)
-      const x = x0 + e.at * W
-      m.mesh.position.set(x, 0.13, EVENTS_Z)
-      m.mesh.scale.setScalar(Math.max(0.001, k))
-      const mat = m.mesh.material as THREE.MeshBasicMaterial
-      mat.color.copy(inkMix(base, TONE_INK[e.tone], k, c))
-      mat.opacity = e.label ? 1 : 0.55
-      m.label.setText(e.label)
-      m.label.sprite.position.set(x, 0.3, EVENTS_Z)
-    })
     return false
   }
 

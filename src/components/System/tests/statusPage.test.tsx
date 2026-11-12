@@ -275,7 +275,8 @@ describe('today timeline', () => {
     const today = within(main()).getByRole('region', { name: 'Today' })
     expect(within(today).getByText('next: pump at 20:00 · in 2h 0m')).toBeTruthy()
     expect(within(today).getByRole('link', { name: /3 jobs · Schedule/ }).getAttribute('href')).toBe('/light')
-    expect(within(today).getAllByTestId('now-line')).toHaveLength(4)
+    // Light, water and air, and each of the six event rows.
+    expect(within(today).getAllByTestId('now-line')).toHaveLength(9)
     expect(within(today).getAllByTestId('now-line')[0]?.style.left).toBe('75%')
     const light = within(today).getByRole('group', { name: 'Light' })
     expect(within(light).getByTestId('light-past').getAttribute('points')?.endsWith('750,51')).toBe(true)
@@ -287,16 +288,54 @@ describe('today timeline', () => {
     expect(within(today).getByRole('group', { name: 'Air' }).textContent).toContain('19–28°C')
   })
 
-  it('marks backups, the first of each Autopilot burst and raised alerts on the events lane', () => {
+  it('lists the day\'s events a row per kind under the chart: pump runs done and to come, backups, the first of each Autopilot burst, and alerts', () => {
     day()
     page()
     const events = within(within(main()).getByRole('region', { name: 'Today' })).getByRole('group', { name: 'Events' })
-    expect(within(events).getByText('Backup')).toBeTruthy()
-    expect(within(events).getAllByText('Hot afternoon dim…')).toHaveLength(1)
-    expect(within(events).getByText('Autopilot')).toBeTruthy()
-    expect(within(events).getByText('Lower camera not…')).toBeTruthy()
-    expect(within(events).getByText('Add nutrients').closest('[data-row]')?.getAttribute('data-row')).toBe('1')
-    expect(within(events).getByText('Backup').previousElementSibling?.className).toContain('bg-fg-3')
+    const rows = within(events).getAllByTestId('event-row')
+    expect(rows.map(r => r.getAttribute('aria-label'))).toEqual([
+      'Backup: 1 time, 03:00',
+      'Pump: 1 time, 08:00',
+      'Hot afternoon dim…: 1 time, 11:20',
+      'Autopilot: 1 time, 13:00',
+      'Lower camera not…: 1 time, 16:24',
+      'Add nutrients: 1 time, 16:30',
+    ])
+    const pump = within(rows[1] as HTMLElement).getAllByTestId('event-mark')
+    expect(pump.map(m => [m.title, m.className.includes('bg-pod-ok'), m.className.includes('bg-line-2')])).toEqual([['Pump · 08:00', true, false], ['Pump · 20:00', false, true]])
+    expect(within(rows[0] as HTMLElement).getByTestId('event-mark').className).toContain('bg-fg-3')
+  })
+
+  it('draws an alert that keeps coming back as one row of bars, each for as long as it was raised, with its count', () => {
+    day()
+    // Raised and cleared every quarter hour from 08:00, and raised again now.
+    data.set('alerts.list', [
+      ...Array.from({ length: 8 }, (_, k) => ({ id: 10 + k, kind: 'water_low', active: false, detail: '', raisedAt: at(8, k * 15), clearedAt: at(8, k * 15 + 10) })),
+      { id: 30, kind: 'water_low', active: true, detail: '', raisedAt: at(17, 30), clearedAt: null },
+    ])
+    page()
+    const events = within(within(main()).getByRole('region', { name: 'Today' })).getByRole('group', { name: 'Events' })
+    const low = within(events).getAllByTestId('event-row').find(r => r.getAttribute('aria-label')?.startsWith('Water low')) as HTMLElement
+    expect(low.getAttribute('aria-label')).toBe('Water low: 9 times, 08:00 to 17:30')
+    expect(within(low).getByText('×9')).toBeTruthy()
+    const marks = within(low).getAllByTestId('event-mark')
+    expect(marks).toHaveLength(9)
+    expect(marks[0]?.title).toBe('Water low · 08:00–08:10')
+    expect(marks[0]?.style.width).toBe(`${(10 / 1440) * 100}%`)
+    // Still raised: it runs to now.
+    expect(marks[8]?.title).toBe('Water low · 17:30–18:00')
+  })
+
+  it('says when nothing has happened yet today', () => {
+    day()
+    data.set('schedules.list', [])
+    data.set('schedules.recentRuns', [])
+    data.set('backup.status', { recent: [] })
+    data.set('automations.runs', [])
+    data.set('alerts.list', [])
+    page()
+    const events = within(within(main()).getByRole('region', { name: 'Today' })).getByRole('group', { name: 'Events' })
+    expect(within(events).getByText('Nothing yet today')).toBeTruthy()
   })
 
   it('says it is loading until the day\'s requests answer', () => {
