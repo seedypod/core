@@ -62,9 +62,6 @@ describe('todayData', () => {
     tankRange: [20, 60],
     air: [{ minute: 600, value: 22 }],
     airRange: [20, 28],
-    events: [{ minute: 300, label: 'Backup', tone: 'muted' }, { minute: 100, label: 'Water low', tone: 'down' }, { minute: 200, label: 'Dim', tone: 'light' }],
-    pumpPast: [480],
-    pumpFuture: [1000],
   })
 
   it('has the light solid to now at the level now, and its plan after, dimmed', () => {
@@ -87,10 +84,8 @@ describe('todayData', () => {
     expect(air?.sub).toBe('20–28°C')
   })
 
-  it('puts events in time order, pump runs green and runs still to come unlabelled', () => {
-    expect(day.events.map(e => [Math.round(e.at * 1440), e.tone, e.label])).toEqual([
-      [100, 'orange', 'Water low'], [200, 'amber', 'Dim'], [300, 'muted', 'Backup'], [480, 'green', 'Pump'], [1000, 'muted', ''],
-    ])
+  it('has now and the day\'s hours, and no events: those are a flat strip under the chart', () => {
+    expect(day).not.toHaveProperty('events')
     expect(day.now).toBe(0.5)
     expect(day.ticks).toBe(DAY_TICKS)
   })

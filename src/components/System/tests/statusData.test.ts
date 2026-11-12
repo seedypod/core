@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SystemCheck } from '../checkState'
 import {
-  burstStarts, coreBuild, fmtAgo, fmtIn, fmtUptime, healthHeadline, laneArea, lanePoints, laneTicks, laneX, layoutEvents, lightSeries, mergeCurves, minuteOfDay, nextJob,
+  burstStarts, coreBuild, fmtAgo, fmtIn, fmtUptime, healthHeadline, laneArea, lanePoints, laneTicks, laneX, eventRows, lightSeries, mergeCurves, minuteOfDay, nextJob,
   niceRange, sparkline, todaySamples, wifiBars,
 } from '../statusData'
 
@@ -54,17 +54,22 @@ describe('lane geometry', () => {
   })
 })
 
-describe('events lane', () => {
-  it('puts a label on the second row when it would hit its neighbour, and back on the first when there is room', () => {
-    const placed = layoutEvents([
-      { minute: 690, label: 'Autopilot +5%', tone: 'light' },
+describe('events strip', () => {
+  it('makes a row per label in the order each first happened, with every time it happened', () => {
+    const rows = eventRows([
+      { minute: 690, label: 'Tank sensor', tone: 'down', until: 700 },
       { minute: 180, label: 'Backup', tone: 'muted' },
-      { minute: 700, label: 'Lower cam lost', tone: 'down' },
-      { minute: 710, label: 'Third', tone: 'muted' },
-      { minute: 1200, label: 'Later', tone: 'muted' },
-    ], 800)
-    expect(placed.map(p => [p.label, p.row])).toEqual([['Backup', 0], ['Autopilot +5%', 0], ['Lower cam lost', 1], ['Third', 0], ['Later', 0]])
-    expect(placed[0]?.leftPct).toBe(12.5)
+      { minute: 480, label: 'Tank sensor', tone: 'down', until: 495 },
+      { minute: 1200, label: 'Pump', tone: 'planned' },
+      { minute: 480, label: 'Pump', tone: 'pump' },
+    ])
+    expect(rows.map(r => [r.label, r.marks.map(m => m.minute)])).toEqual([['Backup', [180]], ['Tank sensor', [480, 690]], ['Pump', [480, 1200]]])
+  })
+
+  it('puts the kinds past the sixth into one Other row', () => {
+    const rows = eventRows(Array.from({ length: 8 }, (_, k) => ({ minute: k * 60, label: `Kind ${k}`, tone: 'muted' as const })))
+    expect(rows.map(r => r.label)).toEqual(['Kind 0', 'Kind 1', 'Kind 2', 'Kind 3', 'Kind 4', 'Other'])
+    expect(rows[5]?.marks.map(m => m.label)).toEqual(['Kind 5', 'Kind 6', 'Kind 7'])
   })
 
   it('keeps the first of each burst per rule', () => {

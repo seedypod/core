@@ -86,22 +86,27 @@ export function mergeCurves(curves: ReadonlyArray<ReadonlyArray<{ minute: number
   return first.map((p, i) => ({ minute: p.minute, level: Math.max(...curves.map(c => c[i]?.level ?? 0)) }))
 }
 
-export interface LaneEvent { minute: number, label: string, tone: 'muted' | 'light' | 'down' }
-export interface PlacedEvent extends LaneEvent { row: 0 | 1, leftPct: number }
+export type EventTone = 'muted' | 'light' | 'down' | 'pump' | 'planned'
+/** Something that happened today: at `minute`, or from `minute` to `until` (an alert while it was raised). */
+export interface LaneEvent { minute: number, until?: number, label: string, tone: EventTone }
+export interface EventRow { label: string, tone: EventTone, marks: LaneEvent[] }
 
-/** Approximate width of a 10 px mono label with its padding. */
-const labelWidth = (label: string) => label.length * 6.1 + 10
-
-/** Each label on the first row unless it would run into its left neighbour there; then the second. */
-export function layoutEvents(events: LaneEvent[], widthPx: number): PlacedEvent[] {
-  const ends: [number, number] = [-Infinity, -Infinity]
-  return [...events].sort((a, b) => a.minute - b.minute).map((e) => {
-    const x = (e.minute / DAY_MIN) * widthPx
-    const half = labelWidth(e.label) / 2
-    const row: 0 | 1 = x - half >= ends[0] + 4 ? 0 : x - half >= ends[1] + 4 || ends[1] < ends[0] ? 1 : 0
-    ends[row] = x + half
-    return { ...e, row, leftPct: (e.minute / DAY_MIN) * 100 }
-  })
+/**
+ * The day's events as rows, one per label in the order each first happened,
+ * so a kind that repeats all day is one row of marks rather than a label for
+ * each. Past `max` rows the rest share an Other row.
+ */
+export function eventRows(events: LaneEvent[], max = 6): EventRow[] {
+  const rows = new Map<string, EventRow>()
+  for (const e of [...events].sort((a, b) => a.minute - b.minute)) {
+    const row = rows.get(e.label) ?? { label: e.label, tone: e.tone, marks: [] }
+    row.marks.push(e)
+    rows.set(e.label, row)
+  }
+  const all = [...rows.values()]
+  if (all.length <= max) return all
+  const rest = all.slice(max - 1)
+  return [...all.slice(0, max - 1), { label: 'Other', tone: 'muted', marks: rest.flatMap(r => r.marks).sort((a, b) => a.minute - b.minute) }]
 }
 
 /** Collapse runs of the same rule closer than `gapMin` into the first of each burst. */
