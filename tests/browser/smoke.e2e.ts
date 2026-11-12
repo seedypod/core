@@ -64,7 +64,7 @@ test('old /schedule links land on Light, where the curves are', async ({ page })
 test('grow: start a cycle and edit a pod', async ({ page }) => {
   await page.goto('/grow')
   await page.getByRole('button', { name: 'Start cycle' }).click()
-  await expect(page.getByRole('main').getByText('Day 0')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Cycle' }).getByText('Day 0', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '1 empty', exact: true }).click()
   await page.getByLabel('Plant').fill('Basil')
   await page.getByRole('button', { name: 'Save' }).click()
