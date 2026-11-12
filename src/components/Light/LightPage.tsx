@@ -10,11 +10,10 @@ import { fmtClock } from '@/src/components/charts/format'
 import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { lightData } from '@/src/components/charts/viz3d/shape'
 import { daysLabel } from '@/src/lib/days'
-import { AUTO_HOURS, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HOURS } from '@/src/scheduler/lightPlan'
+import { GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HOURS } from '@/src/scheduler/lightPlan'
 import { localTime, systemZone, zoneAbbr } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle } from '@/src/components/Water/pumpCycles'
-import { AUTO_SUN } from '@/src/scheduler/sun'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
 import { asCurve, holdWindow, levelAt, lightToday, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
@@ -34,12 +33,15 @@ export function LightPage() {
   const resume = trpc.light.resume.useMutation({ onSuccess: () => utils.light.invalidate() })
   const o = owner.data
   const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
+  const setAuto = trpc.schedules.setAuto.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const lightHours = trpc.telemetry.lightHours.useQuery()
   const [openId, setOpenId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const settings = trpc.settings.get.useQuery()
   const timezone = settings.data?.timezone
-  const curves = useMemo(() => (schedules.data ?? []).flatMap(s => asCurve(s) ?? []), [schedules.data])
+  // Auto's curve leads the list.
+  const curves = useMemo(() => (schedules.data ?? []).flatMap(s => asCurve(s) ?? []).sort((a, b) => Number(!!b.spec.sun?.auto) - Number(!!a.spec.sun?.auto)), [schedules.data])
+  const autoOn = curves.some(c => c.spec.sun?.auto && c.enabled)
   const now = new Date()
   // Curves run on the unit's clock, so today and now are its, not this browser's.
   const zone = timezone ?? systemZone()
@@ -82,7 +84,10 @@ export function LightPage() {
           minute={minutesNow}
           weekday={weekday}
           zone={zone}
-          level={level}
+          // Off reads as the slider at 0, unless a level has just been asked for.
+          level={lightOn || requested ? level : 0}
+          auto={autoOn}
+          onAuto={on => setAuto.mutate({ on })}
           resuming={resume.isPending}
           onResume={() => resume.mutate()}
           onPower={power}
@@ -168,21 +173,6 @@ export function LightPage() {
             {curves.length === 0 ? '. Start from one of these:' : '. Start from:'}
           </p>
           <div className="grid gap-2 min-[720px]:grid-cols-3">
-            <button
-              type="button"
-              data-testid="preset-auto"
-              onClick={() => {
-                const id = `curve-${Date.now().toString(36)}`
-                // The server writes today's setpoints from the sun and the grow protocol.
-                upsert.mutate({ id, kind: 'light', name: 'Auto', enabled: curves.length === 0, days: 127, spec: { setpoints: [], sun: AUTO_SUN } })
-                setAdding(false)
-                setOpenId(id)
-              }}
-              className="flex cursor-pointer flex-col gap-1 rounded-card border border-line bg-surface px-3.5 py-3 text-left hover:border-line-2"
-            >
-              <span className="text-sm font-medium">Auto</span>
-              <span className="text-[12px] leading-snug text-fg-2">{`Follows sunrise and sunset through the seasons${settings.data?.latitude == null ? ' once the unit’s location is set' : ''}, stretched about midday to the grow protocol’s hours: ${AUTO_HOURS['greens-herbs'].minHours}–${AUTO_HOURS['greens-herbs'].maxHours} h for greens and herbs, ${AUTO_HOURS.fruiting.minHours}–${AUTO_HOURS.fruiting.maxHours} h for fruiting crops.`}</span>
-            </button>
             {LIGHT_PRESETS.map(p => (
               <button
                 key={p.id}
@@ -224,8 +214,10 @@ export function LightPage() {
           curve={c}
           running={running.includes(c)}
           open={open === c.id}
+          locked={autoOn && !c.spec.sun?.auto}
           onOpen={next => setOpenId(next ? c.id : '')}
-          onSave={next => upsert.mutate(next)}
+          // Auto's own switch is the strip's: on, it runs alone; off, the curves it stopped come back.
+          onSave={next => (c.spec.sun?.auto && next.enabled !== c.enabled ? setAuto.mutate({ on: next.enabled }) : upsert.mutate(next))}
         />
       ))}
     </div>
@@ -241,7 +233,7 @@ type Owner = { source: 'manual' | 'autopilot' | 'schedule' | null, manualUntil: 
  * right. It tints amber while the light is on. A change here holds for 30
  * minutes, as before.
  */
-function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, resuming, onResume, onPower, onPreview, onCommit }: {
+function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, auto, onAuto, resuming, onResume, onPower, onPreview, onCommit }: {
   on: boolean
   known: boolean
   owner: Owner
@@ -253,6 +245,9 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   weekday: number
   zone: string
   level: number
+  /** Whether Auto runs the light, and switching it. */
+  auto: boolean
+  onAuto: (on: boolean) => void
   resuming: boolean
   onResume: () => void
   onPower: (on: boolean) => void
@@ -297,10 +292,17 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
           <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-fg-3">{sub}</span>
         </div>
       </div>
-      <div className="flex h-10 items-center gap-3" title="A change here holds for 30 minutes, then the curve or Autopilot takes over again.">
-        <Toggle on={on} size="md" label="Light power" onChange={onPower} />
-        <div className="w-[200px] max-w-[48vw]">
-          <Slider value={level} onChange={onPreview} onCommit={onCommit} label="Brightness" />
+      <div className="flex h-10 items-center gap-4">
+        <label className="flex cursor-pointer items-center gap-2 text-[13px] text-fg-2">
+          <Toggle on={auto} size="md" label="Auto" onChange={onAuto} />
+          Auto
+        </label>
+        {/* One slider for both: all the way down is off. */}
+        <div className="flex items-center gap-2.5" title="A change here holds for 30 minutes, then the curve or Autopilot takes over again.">
+          <div className="w-[200px] max-w-[40vw]">
+            <Slider value={level} step={5} marks={[25, 50, 75]} onChange={onPreview} onCommit={v => (v === 0 ? onPower(false) : onCommit(v))} label="Brightness" />
+          </div>
+          <span className="w-9 text-right font-mono text-[12px] text-fg-2" data-testid="strip-level">{level > 0 ? `${level}%` : 'Off'}</span>
         </div>
       </div>
     </div>
@@ -310,10 +312,10 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
 /** A caution once the light is on long enough, however dim, to make lettuce and herbs bolt. */
 const LONG_DAY = 'long enough to make lettuce and herbs bolt'
 
-function CurveCard({ curve: c, running, open, onOpen, onSave }: { curve: LightCurve, running: boolean, open: boolean, onOpen: (open: boolean) => void, onSave: (next: LightCurve) => void }) {
+function CurveCard({ curve: c, running, open, locked, onOpen, onSave }: { curve: LightCurve, running: boolean, open: boolean, /** Auto is on, so this curve waits. */ locked: boolean, onOpen: (open: boolean) => void, onSave: (next: LightCurve) => void }) {
   const n = c.spec.setpoints.length
   const hours = lightHours(c.spec)
-  const meta = [c.spec.sun?.auto ? 'Auto · follows the sun' : c.spec.sun ? 'Follows the sun' : `${n} setpoint${n === 1 ? '' : 's'}`, daysLabel(c.days), c.enabled ? `on ${hours.lit} h, ${hours.full} h of full light` : 'off', c.enabled && hours.lit > LONG_DAY_HOURS && LONG_DAY].filter(Boolean).join(' · ')
+  const meta = [c.spec.sun?.auto ? 'Auto · follows the sun' : c.spec.sun ? 'Follows the sun' : `${n} setpoint${n === 1 ? '' : 's'}`, daysLabel(c.days), c.enabled ? `on ${hours.lit} h, ${hours.full} h of full light` : 'off', c.enabled && hours.lit > LONG_DAY_HOURS && LONG_DAY, locked && 'waiting while Auto runs'].filter(Boolean).join(' · ')
   const rating = lightRating(hours.full)
   return (
     <Card className="gap-0 p-0">
@@ -335,7 +337,7 @@ function CurveCard({ curve: c, running, open, onOpen, onSave }: { curve: LightCu
             series={[{ data: SAMPLE_MINUTES.map(m => levelAt(c.spec, m)), color: c.enabled ? 'var(--meter)' : 'var(--text-3)', width: 1.5 }]}
           />
         )}
-        <Toggle on={c.enabled} size="md" label={`Enable ${c.name}`} onChange={enabled => onSave({ ...c, enabled })} />
+        <Toggle on={c.enabled} size="md" label={`Enable ${c.name}`} disabled={locked} onChange={enabled => onSave({ ...c, enabled })} />
         <GhostIcon icon={open ? ChevronUp : ChevronDown} label={open ? `Close ${c.name}` : `Edit ${c.name}`} aria-expanded={open} className="text-fg-3" onClick={() => onOpen(!open)} />
       </div>
       {open && (

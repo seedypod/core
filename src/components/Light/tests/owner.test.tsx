@@ -7,7 +7,7 @@ import { HOLD_MS } from '../useLightControl'
 const { data, errors, calls, setLight } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   errors: new Map<string, Error>(),
-  calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn(), refetch: vi.fn() },
+  calls: { resume: vi.fn(), set: vi.fn(), upsert: vi.fn(), setAuto: vi.fn(), refetch: vi.fn() },
   setLight: { pending: undefined as unknown, setData: vi.fn(), hook: {} as { onMutate?: () => { command: number }, onSuccess?: (s: unknown, sent: unknown, context: { command: number }) => void, onError?: (e: Error, sent: { level?: number }) => void } },
 }))
 
@@ -26,7 +26,7 @@ vi.mock('@/src/utils/trpc', () => {
     trpc: {
       useUtils: () => ({ light: { invalidate: vi.fn(), get: { setData: setLight.setData } }, schedules: { invalidate: vi.fn() } }),
       light: { get: query('light'), owner: query('owner'), set, resume: mutation('resume') },
-      schedules: { list: query('schedules'), upsert: mutation('upsert') },
+      schedules: { list: query('schedules'), upsert: mutation('upsert'), setAuto: mutation('setAuto') },
       telemetry: { lightHours: query('hours') },
       settings: { get: query('settings') },
     },
@@ -131,15 +131,17 @@ describe('LightPage: who controls the light', () => {
     vi.useRealTimers()
   })
 
-  it('flips the switch with the tap while the command is in flight, and stays put for a brightness change', () => {
+  it('puts the slider at 0 and reads Off while turning off is in flight, and keeps the level for a brightness change', () => {
     setLight.pending = { on: false }
     render(<LightPage />)
-    expect(screen.getByRole('switch', { name: 'Light power' }).getAttribute('aria-checked')).toBe('false')
+    expect((screen.getByLabelText('Brightness') as HTMLInputElement).value).toBe('0')
+    expect(screen.getByTestId('strip-level').textContent).toBe('Off')
     expect(screen.getByText('Light off')).toBeTruthy()
     cleanup()
     setLight.pending = { level: 10 }
     render(<LightPage />)
-    expect(screen.getByRole('switch', { name: 'Light power' }).getAttribute('aria-checked')).toBe('true')
+    expect((screen.getByLabelText('Brightness') as HTMLInputElement).value).toBe('80')
+    expect(screen.getByTestId('strip-level').textContent).toBe('80%')
   })
 
   const adjust = (slider: HTMLElement, value: string) => {
@@ -153,7 +155,8 @@ describe('LightPage: who controls the light', () => {
     const slider = screen.getByLabelText('Brightness') as HTMLInputElement
     adjust(slider, '30')
     expect(slider.value).toBe('30')
-    expect(screen.getByText('30%')).toBeTruthy()
+    expect(screen.getByTestId('light-level').textContent).toBe('30%')
+    expect(screen.getByTestId('strip-level').textContent).toBe('30%')
     act(() => setLight.hook.onError?.(new Error('refused'), { level: 30 }))
     expect(slider.value).toBe('80')
   })
@@ -190,13 +193,21 @@ describe('LightPage: who controls the light', () => {
     vi.useRealTimers()
   })
 
-  it('lets go of the requested level when the power switch overrides it', () => {
+  it('turns the light off when the slider goes all the way down, letting go of the level it asked for', () => {
     render(<LightPage />)
     const slider = screen.getByLabelText('Brightness') as HTMLInputElement
     adjust(slider, '30')
-    fireEvent.click(screen.getByRole('switch', { name: 'Light power' }))
+    adjust(slider, '0')
     expect(calls.set).toHaveBeenCalledTimes(2)
+    expect(calls.set).toHaveBeenLastCalledWith({ on: false })
     expect(slider.value).toBe('80')
+  })
+
+  it('marks the quarters on the slider and moves it in fives', () => {
+    render(<LightPage />)
+    const slider = screen.getByLabelText('Brightness') as HTMLInputElement
+    expect(slider.step).toBe('5')
+    expect(within(screen.getByTestId('light-strip')).getAllByTestId('slider-mark').map(m => m.style.left)).toEqual(['25%', '50%', '75%'])
   })
 
   it('writes the state a command returns into the cache instead of fetching it again', () => {
@@ -206,18 +217,21 @@ describe('LightPage: who controls the light', () => {
     expect(setLight.setData).toHaveBeenCalledWith(undefined, state)
   })
 
-  it('drives power and brightness', () => {
+  it('drives power and brightness from the one slider', () => {
     render(<LightPage />)
     expect(screen.getByText('Light on')).toBeTruthy()
-    fireEvent.click(screen.getByRole('switch', { name: 'Light power' }))
+    expect(screen.queryByRole('switch', { name: 'Light power' })).toBeNull()
+    adjust(screen.getByLabelText('Brightness'), '0')
     expect(calls.set).toHaveBeenCalledWith({ on: false })
     adjust(screen.getByLabelText('Brightness'), '30')
     expect(calls.set).toHaveBeenCalledWith({ level: 30 })
     cleanup()
-    data.set('light', { on: false, level: 0, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null })
+    // Off, the slider sits at 0 though the light keeps its last level.
+    data.set('light', { on: false, level: 60, since: '2026-10-31T10:00:00Z', fault: null, remainingS: null })
     render(<LightPage />)
     expect(screen.getByText('Light off')).toBeTruthy()
     expect(screen.getByTestId('light-level').textContent).toBe('Off')
+    expect((screen.getByLabelText('Brightness') as HTMLInputElement).value).toBe('0')
   })
 })
 
@@ -305,20 +319,29 @@ describe('LightPage: curves', () => {
     expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'New curve', enabled: false }))
   })
 
-  it('offers Auto first, which the server fills in from the sun and the grow protocol, and says so on its card', () => {
+  it('switches Auto from the strip, not the presets', () => {
+    data.set('schedules', [daylight])
     render(<LightPage />)
-    expect(screen.getAllByTestId(/^preset-/)[0]?.dataset.testid).toBe('preset-auto')
-    expect(screen.getByTestId('preset-auto').textContent).toBe('AutoFollows sunrise and sunset through the seasons once the unit’s location is set, stretched about midday to the grow protocol’s hours: 14–15 h for greens and herbs, 15–16 h for fruiting crops.')
-    fireEvent.click(screen.getByTestId('preset-auto'))
-    expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'Auto', enabled: true, spec: { setpoints: [], sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0, auto: true } } }))
-    cleanup()
-    data.set('settings', { timezone: 'America/Los_Angeles', latitude: 37.77, longitude: -122.42 })
-    data.set('schedules', [{ ...daylight, name: 'Sun', spec: { ...spec, sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0 } } }, { ...daylight, id: 'auto', name: 'Auto', enabled: false, spec: { ...spec, sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0, auto: true } } }])
-    render(<LightPage />)
-    expect(screen.getByText(/^Follows the sun · Every day · on 15 h/)).toBeTruthy()
-    expect(screen.getByText('Auto · follows the sun · Every day · off')).toBeTruthy()
+    const auto = screen.getByRole('switch', { name: 'Auto' })
+    expect(auto.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(screen.getByText('Add curve'))
-    expect(screen.getByTestId('preset-auto').textContent).toMatch(/^AutoFollows sunrise and sunset through the seasons, stretched/)
+    expect(screen.queryByTestId('preset-auto')).toBeNull()
+    fireEvent.click(auto)
+    expect(calls.setAuto).toHaveBeenLastCalledWith({ on: true })
+  })
+
+  it('while Auto runs, lists its curve first and holds the others off, and its card\'s switch is Auto\'s', () => {
+    const sun = { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0, auto: true }
+    data.set('schedules', [{ ...daylight, enabled: false }, { ...daylight, id: 'auto', name: 'Auto', spec: { ...spec, sun } }])
+    render(<LightPage />)
+    expect(screen.getByRole('switch', { name: 'Auto' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getAllByRole('switch', { name: /^Enable / }).map(t => t.getAttribute('aria-label'))).toEqual(['Enable Auto', 'Enable Daylight curve'])
+    expect(screen.getByText(/^Auto · follows the sun · Every day · on 15 h/)).toBeTruthy()
+    expect(screen.getByText('4 setpoints · Every day · off · waiting while Auto runs')).toBeTruthy()
+    expect((screen.getByRole('switch', { name: 'Enable Daylight curve' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable Auto' }))
+    expect(calls.setAuto).toHaveBeenLastCalledWith({ on: false })
+    expect(calls.upsert).not.toHaveBeenCalled()
   })
 
   it('warns while the unit keeps UTC, since curves run on its clock', () => {

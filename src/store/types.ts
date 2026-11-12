@@ -38,6 +38,8 @@ export interface DeviceSettings {
   followGrowCycle: boolean
   /** Light curves Your schedules turned off for a schedule's light preset, to turn back on; null when none. */
   libraryLightsOff: string[] | null
+  /** Light curves turning Auto on switched off, to turn back on when it's turned off; null when none. */
+  autoLightsOff: string[] | null
   analysisIngestToken: string
   /** Pod boxes the owner moved on the cameras' stills (#143); null keeps the measured defaults. */
   podRegions: RegionCalibration | null
@@ -506,6 +508,7 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   analysisArtifacts: false,
   followGrowCycle: true,
   libraryLightsOff: null,
+  autoLightsOff: null,
   analysisIngestToken: '',
   podRegions: null,
   mirrorEndpoint: null,

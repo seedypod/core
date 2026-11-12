@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { activateEntry, activeEntryId, libraryEntries, libraryEntry } from '../../care/library'
-import { autoLight } from '../../care/lightAuto'
+import { autoLight, setAuto } from '../../care/lightAuto'
 import { readTower } from '../../care/tower'
 import { plantSlug } from '../../plants/custom'
 import { LIGHT_PRESETS } from '../../scheduler/lightPlan'
@@ -146,6 +146,16 @@ export const schedulesRouter = router({
   autoLight: publicProcedure
     .output(z.object({ protocolId: z.string(), protocolName: z.string(), minHours: z.number(), maxHours: z.number(), why: z.string() }))
     .query(({ ctx }) => autoLight(ctx.store)),
+  /** Auto on runs its curve alone and keeps the others to turn back on; off brings them back. */
+  setAuto: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/schedules/auto', tags: ['schedules'], summary: 'Turn Auto light on or off' } })
+    .input(z.object({ on: z.boolean() }))
+    .output(z.object({ on: z.boolean(), changed: z.array(z.string()) }))
+    .mutation(({ ctx, input }) => {
+      const changed = setAuto(ctx.store, input.on, now(ctx))
+      for (const id of changed) ctx.events.emit({ kind: 'schedule', action: 'changed', id })
+      return { on: input.on, changed }
+    }),
   /** Preview a light curve as 96 samples (every 15 min) for charts. */
   previewCurve: publicProcedure
     .input(LightSpec)
