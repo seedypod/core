@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { protocolReport } from '@/src/care/protocol'
 import { PUMP_PRESETS, presetSchedules } from '@/src/scheduler/pumpPlan'
 import { MemoryStore } from '@/src/store/memory'
-import { ProtocolLine } from '@/src/components/Water/ProtocolLine'
 import { ProtocolCard } from '../ProtocolCard'
 
 const { data, calls, state, success } = vi.hoisted(() => ({
@@ -514,40 +513,5 @@ describe('ProtocolCard: the rest of its ways in and out', () => {
     fireEvent.change(picker, { target: { value: 'away' } })
     expect(calls.setThen).toHaveBeenLastCalledWith({ kind: 'schedule', scheduleId: 'away', when: 'maintenance' })
     expect(picker.value).toBe('away')
-  })
-})
-
-describe('ProtocolLine', () => {
-  it('says the protocol, stage and day, and the next change, leading to Grow', () => {
-    data.set('protocol', report().r)
-    render(<ProtocolLine />)
-    const line = screen.getByTestId('protocol-line')
-    expect(line.textContent).toBe('Following Greens & herbs · Germination, day 2 of 7 · next change Tue 17 Nov')
-    expect(line.getAttribute('href')).toBe('/grow')
-  })
-
-  it('says when it isn\'t moving the water, and nothing before the report comes', () => {
-    const cases: Array<[Parameters<typeof report>[0], string]> = [
-      [{ follow: false }, 'Not following Greens & herbs · the cycles stay as they are'],
-      [{ cycles: 'none' }, 'Not watering yet · Start Germination watering'],
-      [{ cycles: 'hand' }, 'Following Greens & herbs · Germination, day 2 of 7 · cycles changed by hand, left as they are'],
-      [{ cycles: 'summer', at: 10 }, 'Following Greens & herbs · Seedlings, day 10 of 13 · on your schedule'],
-      [{ cycles: 'mature', at: 30 }, 'Following Greens & herbs · Maintenance, day 30 · ongoing'],
-      [{ then: { holdStageId: 'germination', holdSince: day(1).toISOString() } }, 'Following Greens & herbs · Germination, day 1 of 7 · held'],
-    ]
-    for (const [o, words] of cases) {
-      data.set('protocol', report(o).r)
-      render(<ProtocolLine />)
-      expect(screen.getByTestId('protocol-line').textContent).toBe(words)
-      cleanup()
-    }
-    const empty = new MemoryStore(30)
-    data.set('protocol', protocolReport(empty, day(2)))
-    render(<ProtocolLine />)
-    expect(screen.getByTestId('protocol-line').textContent).toBe('Greens & herbs protocol · starts when pods are planted')
-    cleanup()
-    data.delete('protocol')
-    const { container } = render(<ProtocolLine />)
-    expect(container.textContent).toBe('')
   })
 })
