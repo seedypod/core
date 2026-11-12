@@ -1,9 +1,14 @@
 import { z } from 'zod'
+import { autoLight } from '../../care/lightAuto'
+import { refollowSun } from '../../scheduler/scheduler'
+import { AUTO_SUN, followSun } from '../../scheduler/sun'
 import { publicProcedure, router } from '../trpc'
 
 export const SettingsSchema = z.object({
   unitName: z.string().min(1).max(40),
   timezone: z.string().min(1),
+  latitude: z.number().min(-90).max(90).nullable(),
+  longitude: z.number().min(-180).max(180).nullable(),
   temperatureUnit: z.enum(['C', 'F']),
   waterFullCm: z.number().min(0).max(100),
   waterEmptyCm: z.number().min(0).max(100),
@@ -54,8 +59,19 @@ export const settingsRouter = router({
     .input(SettingsSchema.omit({ updatedAt: true }).partial())
     .output(Public)
     .mutation(({ ctx, input }) => {
+      const now = (ctx.now ?? (() => new Date()))()
+      const starting = input.setupComplete === true && !ctx.store.settings.get().setupComplete
       const s = ctx.store.settings.update(input)
       ctx.events.emit({ kind: 'mutation', path: 'settings' })
+      // A new garden starts on Auto, unless it already has a light curve.
+      if (starting && !ctx.store.schedules.list().some(x => x.kind === 'light')) {
+        ctx.store.schedules.upsert({ id: 'auto', kind: 'light', name: 'Auto', enabled: true, days: 127, spec: followSun({ setpoints: [], sun: AUTO_SUN }, s, now, autoLight(ctx.store)) })
+        ctx.events.emit({ kind: 'schedule', action: 'changed', id: 'auto' })
+      }
+      // A new place or zone moves today's sunrise and sunset.
+      if ('latitude' in input || 'longitude' in input || 'timezone' in input) {
+        for (const id of refollowSun(ctx.store, now, autoLight(ctx.store))) ctx.events.emit({ kind: 'schedule', action: 'changed', id })
+      }
       return publicView(s)
     }),
 })

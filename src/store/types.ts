@@ -12,6 +12,9 @@ import type { RegionCalibration } from '../vision/regions'
 export interface DeviceSettings {
   unitName: string
   timezone: string
+  /** Where the unit is, for curves that follow sunrise and sunset; null until the owner sets it. */
+  latitude: number | null
+  longitude: number | null
   temperatureUnit: 'C' | 'F'
   waterFullCm: number
   waterEmptyCm: number
@@ -58,7 +61,22 @@ export interface LightSetpoint {
   /** 0–100. */
   level: number
 }
-export interface LightSpec { setpoints: LightSetpoint[] }
+/**
+ * A curve that follows the sun: each day its setpoints are rewritten from
+ * that day's sunrise and sunset, stretched or trimmed about midday to
+ * between `minHours` and `maxHours` of full light, and moved `shiftMin`.
+ */
+export interface SunFollow {
+  minHours: number
+  maxHours: number
+  /** How long each sunrise and sunset ramp takes, centred on the light's on and off times. */
+  rampMin: number
+  /** Minutes later (or earlier, negative) than the sun's midday the window centres on. */
+  shiftMin: number
+  /** Auto: take minHours and maxHours from the grow protocol instead (`AUTO_HOURS`). */
+  auto?: boolean
+}
+export interface LightSpec { setpoints: LightSetpoint[], sun?: SunFollow }
 export interface PumpSpec { minute: number, durationS: number, level?: number }
 
 export interface Schedule {
@@ -466,6 +484,8 @@ export interface AutomationRun { id: number, automationId: number, firedAt: stri
 export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   unitName: 'Gardyn',
   timezone: 'UTC',
+  latitude: null,
+  longitude: null,
   temperatureUnit: 'C',
   waterFullCm: 5,
   waterEmptyCm: 20,

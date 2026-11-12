@@ -1,9 +1,10 @@
 import { dayOn } from '@/src/lib/days'
 import { lightDay, type LightDay } from '@/src/scheduler/lightPlan'
+import type { SunFollow } from '@/src/store/types'
 import { localTime, systemZone } from '@/src/scheduler/time'
 
 export interface Setpoint { minute: number, level: number }
-export interface LightCurve { id: string, kind: 'light', name: string, enabled: boolean, days: number, spec: { setpoints: Setpoint[] } }
+export interface LightCurve { id: string, kind: 'light', name: string, enabled: boolean, days: number, spec: { setpoints: Setpoint[], sun?: SunFollow } }
 
 /** One sample every 15 minutes, midnight to midnight. */
 export const SAMPLE_MINUTES = Array.from({ length: 97 }, (_, i) => i * 15)

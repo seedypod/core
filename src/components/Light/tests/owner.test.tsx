@@ -305,6 +305,22 @@ describe('LightPage: curves', () => {
     expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'New curve', enabled: false }))
   })
 
+  it('offers Auto first, which the server fills in from the sun and the grow protocol, and says so on its card', () => {
+    render(<LightPage />)
+    expect(screen.getAllByTestId(/^preset-/)[0]?.dataset.testid).toBe('preset-auto')
+    expect(screen.getByTestId('preset-auto').textContent).toBe('AutoFollows sunrise and sunset through the seasons once the unit’s location is set, stretched about midday to the grow protocol’s hours: 14–15 h for greens and herbs, 15–16 h for fruiting crops.')
+    fireEvent.click(screen.getByTestId('preset-auto'))
+    expect(calls.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'Auto', enabled: true, spec: { setpoints: [], sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0, auto: true } } }))
+    cleanup()
+    data.set('settings', { timezone: 'America/Los_Angeles', latitude: 37.77, longitude: -122.42 })
+    data.set('schedules', [{ ...daylight, name: 'Sun', spec: { ...spec, sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0 } } }, { ...daylight, id: 'auto', name: 'Auto', enabled: false, spec: { ...spec, sun: { minHours: 14, maxHours: 16, rampMin: 60, shiftMin: 0, auto: true } } }])
+    render(<LightPage />)
+    expect(screen.getByText(/^Follows the sun · Every day · on 15 h/)).toBeTruthy()
+    expect(screen.getByText('Auto · follows the sun · Every day · off')).toBeTruthy()
+    fireEvent.click(screen.getByText('Add curve'))
+    expect(screen.getByTestId('preset-auto').textContent).toMatch(/^AutoFollows sunrise and sunset through the seasons, stretched/)
+  })
+
   it('warns while the unit keeps UTC, since curves run on its clock', () => {
     data.set('settings', { timezone: 'UTC' })
     render(<LightPage />)

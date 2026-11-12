@@ -30,6 +30,7 @@ import type { ModelRegistry } from '../vision/registry'
 import { AnalysisService } from '../vision/service'
 import { PodCodeService, type CodeReader } from '../vision/podCodes'
 import type { Context } from './context'
+import { autoLight } from '../care/lightAuto'
 
 export interface CoreOptions {
   hal: HalClient
@@ -112,7 +113,7 @@ export function createCore(o: CoreOptions): Core {
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const retention = new TelemetryRetention({ store: o.store, now: o.now })
-  const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now, clockTrusted: o.clockTrusted })
+  const scheduler = new Scheduler({ store: o.store, hal: o.hal, events, light, now: o.now, clockTrusted: o.clockTrusted, autoHours: () => autoLight(o.store) })
   const grow = new GrowEngine({ store: o.store, events, now: o.now })
   const care = new CareEngine({ store: o.store, hal: o.hal, events, now: o.now })
 
