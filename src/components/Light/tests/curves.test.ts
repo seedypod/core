@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asCurve, boostHoursToday, levelAt, litHours, mergedAt, nextDim, nextOn, runningToday, todayLevels, type LightCurve } from '../curves'
+import { asCurve, levelAt, lightToday, mergedAt, nextDim, nextOn, runningToday, todayLevels, type LightCurve } from '../curves'
 
 const day = { setpoints: [{ minute: 360, level: 0 }, { minute: 450, level: 85 }, { minute: 1140, level: 85 }, { minute: 1260, level: 0 }] }
 const curve = (id: string, enabled: boolean, days: number, spec = day): LightCurve => ({ id, kind: 'light', name: id, enabled, days, spec })
@@ -15,13 +15,6 @@ describe('levelAt', () => {
   it('holds a lone setpoint and reads an empty curve as off', () => {
     expect(levelAt({ setpoints: [{ minute: 600, level: 30 }] }, 0)).toBe(30)
     expect(levelAt({ setpoints: [] }, 0)).toBe(0)
-  })
-})
-
-describe('litHours', () => {
-  it('counts the hours the light is on at all, to the half hour', () => {
-    expect(litHours(day)).toBe(15)
-    expect(litHours({ setpoints: [{ minute: 0, level: 0 }] })).toBe(0)
   })
 })
 
@@ -49,12 +42,14 @@ describe('the day of the running curves', () => {
   const gardyn = curve('Gardyn day', true, 127, full)
   const dim = curve('Dim', true, 127)
 
-  it('takes the highest curve at each minute, and counts Boost hours to the half hour', () => {
+  it('takes the highest curve at each minute, and counts its hours of light to the half hour', () => {
     expect(mergedAt([], 600)).toBe(0)
     expect(mergedAt([gardyn, dim], 600)).toBe(100)
     expect(mergedAt([dim], 600)).toBe(85)
-    expect(boostHoursToday([gardyn], 95)).toBe(15)
-    expect(boostHoursToday([dim], 95)).toBe(0)
+    expect(lightToday([gardyn])).toEqual({ full: 15.5, lit: 16 })
+    // 85% for 11.5 hours and its ramps: dimmed hours count in part.
+    expect(lightToday([dim])).toEqual({ full: 11.5, lit: 15 })
+    expect(lightToday([gardyn, dim])).toEqual({ full: 15.5, lit: 16 })
   })
 
   it('finds when the light next comes on, today or tomorrow, and which curve brings it', () => {

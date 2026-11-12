@@ -9,7 +9,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { RuleInput } from '../autopilot/schema'
-import { boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '../scheduler/lightPlan'
+import { GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HOURS } from '../scheduler/lightPlan'
 import { dayEnabled, localTime } from '../scheduler/time'
 import { appliedPreset, dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetDays, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS } from '../scheduler/pumpPlan'
 import { SensorId } from '../hardware/contract'
@@ -18,7 +18,7 @@ import { appRouter } from '../server/routers/app'
 import { Overrides } from '../server/routers/planner'
 import { TankActionKind, TankUnit } from '../server/routers/tank'
 import { createCallerFactory } from '../server/trpc'
-import { POD_LABELS } from '../store/types'
+import { type LightSpec, POD_LABELS } from '../store/types'
 import { fetchLanModel } from '../vision/modelFetch'
 
 const createCaller = createCallerFactory(appRouter)
@@ -29,6 +29,12 @@ const OVERRIDES_HELP = 'Optional. pins: [{slot, plantId}] puts one pod of that p
 
 function text(data: unknown) {
   return { content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] }
+}
+
+/** A curve with its hours of full light, hours on, and Gardyn's rating. */
+function rated<T extends object>(curve: T, spec: LightSpec) {
+  const { full, lit } = lightHours(spec)
+  return { ...curve, fullHours: full, litHours: lit, rating: lightRating(full) }
 }
 
 export function createMcpServer(ctx: Context): McpServer {
@@ -57,18 +63,18 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async () => text(await caller.devices.list()))
 
   server.registerTool('list_schedules', {
-    description: `Light curves (interpolated setpoints by minute-of-day, the unit's local time) and pump cycles, with day masks (Mon=1 … Sun=64). Each light curve also has boostHours (hours a day at full brightness) and Gardyn's rating of them (low | ok | great | intense | too much; aim for great, 14–16 h). timezone is the unit's.`,
+    description: `Light curves (interpolated setpoints by minute-of-day, the unit's local time) and pump cycles, with day masks (Mon=1 … Sun=64). Each light curve also has fullHours (hours a day of full light, dimmed hours counted in part: two hours at 50% are one), litHours (hours the light is on at all) and Gardyn's rating of fullHours (low | ok | great | intense | too much; aim for great, 14–16 h). litHours over ${LONG_DAY_HOURS} can make lettuce and herbs bolt however dim. timezone is the unit's.`,
     inputSchema: {},
   }, async () => {
     const rows = await caller.schedules.list()
     const timezone = (await caller.settings.get()).timezone
-    return text({ timezone, schedules: rows.map(s => ('setpoints' in s.spec ? { ...s, boostHours: boostHours(s.spec), rating: lightRating(boostHours(s.spec)) } : s)) })
+    return text({ timezone, schedules: rows.map(s => ('setpoints' in s.spec ? rated(s, s.spec) : s)) })
   })
 
   server.registerTool('light_presets', {
-    description: `Starting points for a light curve, and Gardyn's guidance to judge one by: 14–16 hours a day at full brightness (Boost); dimmed hours don't count towards them; 17 or more stress the plants (bitter leaves, bolting); nights need unbroken dark (${GARDYN_LIGHT_GUIDE}). Each preset has setpoints to pass to upsert_schedule as spec.setpoints, its boostHours and rating. To set a schedule from the tower: read pods and list_schedules, pick or adjust a preset, upsert it, and turn off any other enabled curve (enabled curves stack, highest level wins). Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
+    description: `Starting points for a light curve, and Gardyn's guidance to judge one by: 14–16 hours a day at full brightness (Boost); 17 or more stress the plants (bitter leaves, bolting); nights need unbroken dark (${GARDYN_LIGHT_GUIDE}). Dimmed hours count in part (two hours at 50% are one), and a day on longer than ${LONG_DAY_HOURS} h, however dim, can make lettuce and herbs bolt: ramp up and down within the day rather than adding dim hours at its ends. Each preset has setpoints to pass to upsert_schedule as spec.setpoints, its fullHours, litHours and rating. To set a schedule from the tower: read pods and list_schedules, pick or adjust a preset, upsert it, and turn off any other enabled curve (enabled curves stack, highest level wins). Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC.`,
     inputSchema: {},
-  }, async () => text({ timezone: (await caller.settings.get()).timezone, presets: LIGHT_PRESETS.map(p => ({ ...p, boostHours: boostHours({ setpoints: p.setpoints }), rating: lightRating(boostHours({ setpoints: p.setpoints })) })) }))
+  }, async () => text({ timezone: (await caller.settings.get()).timezone, presets: LIGHT_PRESETS.map(p => rated(p, { setpoints: p.setpoints })) }))
 
   server.registerTool('pump_presets', {
     description: `Watering starting points by growth stage (germination, seedlings, young plants, mature greens and herbs, large or fruiting), with each one's runs, day mask, the day since sowing it starts (from), run-length range, notes and a citation, the preset recommended for this tower with why (days since sowing, or a fruiting crop planted), the preset the pump cycles are now if they match one, today's light window, the sowing weekday and the unit's timezone. Germination (days 0–7, every crop) is Gardyn's germination mode as a plain schedule: one 15 min run a week on the sowing weekday, so day 0 and day 7 (${GARDYN_WATERING_GUIDE}); sown after 08:00, water by hand that day (run_pump). Days count on the unit's calendar. The other stages are community starting points from r/Gardyn owners, not Gardyn's: Gardyn doesn't publish a cadence (Smart Watering adjusts it). Check the roots and adjust: dry, brittle roots want more; roots in pooled water before the next cycle want less. Each preset lists the pump schedules to pass to upsert_schedule, one per run; applying a preset means replacing the existing pump cycles (delete_schedule them first), since cycles add up. Minutes are the unit's local time: check timezone first, and tell the person if it is still UTC. followGrowCycle says whether the unit moves its cycles to each stage's preset by itself as the days pass (only forward, only while they're exactly a preset; hand-made cycles are left alone, and while germinating it keeps the weekly run on the sowing weekday).`,

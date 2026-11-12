@@ -10,13 +10,13 @@ import { fmtClock } from '@/src/components/charts/format'
 import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { lightData } from '@/src/components/charts/viz3d/shape'
 import { daysLabel } from '@/src/lib/days'
-import { BOOST_LEVEL, boostHours, GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightRating } from '@/src/scheduler/lightPlan'
+import { GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HOURS } from '@/src/scheduler/lightPlan'
 import { localTime, systemZone, zoneAbbr } from '@/src/scheduler/time'
 import { trpc } from '@/src/utils/trpc'
 import { asCycle } from '@/src/components/Water/pumpCycles'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
-import { asCurve, boostHoursToday, holdWindow, levelAt, litHours, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
+import { asCurve, holdWindow, levelAt, lightToday, nextDim, nextOn, runningToday, SAMPLE_MINUTES, todayLevels, type LightCurve } from './curves'
 
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
@@ -43,12 +43,12 @@ export function LightPage() {
   // Curves run on the unit's clock, so today and now are its, not this browser's.
   const zone = timezone ?? systemZone()
   const { minute: minutesNow, weekday } = localTime(now, zone)
-  // Each weekday's Boost hours, once per set of curves, not on every slider move.
-  const boostByDay = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map((d) => {
+  // Each weekday's hours of light, once per set of curves, not on every slider move.
+  const hoursByDay = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map((d) => {
     const today = runningToday(curves, d)
-    return today.length ? boostHoursToday(today, BOOST_LEVEL) : null
+    return today.length ? lightToday(today) : null
   }), [curves])
-  const boostH = boostByDay[weekday] ?? null
+  const hours = hoursByDay[weekday] ?? null
   const running = runningToday(curves, weekday)
   const today = todayLevels(running)
   // With nothing picked, the first curve running today is the open one.
@@ -62,7 +62,7 @@ export function LightPage() {
 
   const following = running.length === 1 ? `Following ${running[0]?.name}` : running.length > 1 ? `Following ${running.length} curves` : 'No curve today'
   const holding = o?.source === 'manual' && o.manualUntil ? `held by hand until ${clock(o.manualUntil, zone)}` : o?.source === 'autopilot' ? 'Autopilot is in charge' : null
-  const rating = boostH === null ? null : lightRating(boostH)
+  const rating = hours === null ? null : lightRating(hours.full)
 
   return (
     <div className="mx-auto flex max-w-[1000px] flex-col gap-6">
@@ -93,7 +93,7 @@ export function LightPage() {
             <div className="flex min-w-0 flex-col gap-1">
               <span className="font-mono text-[44px] font-medium leading-none" data-testid="light-level"><Pending loading={!l} sample="100%">{l && (l.on || requested ? `${level}%` : 'Off')}</Pending></span>
               <span className="min-h-[18px] text-[12px] text-fg-3" data-testid="light-summary">
-                {schedules.data === undefined ? <LoadingLine /> : boostH === null || rating === null ? 'Nothing scheduled today' : `${boostH} h at full today · ${rating.charAt(0).toUpperCase()}${rating.slice(1)}`}
+                {schedules.data === undefined ? <LoadingLine /> : hours === null || rating === null ? 'Nothing scheduled today' : [`${hours.full} h of full light today`, `${rating.charAt(0).toUpperCase()}${rating.slice(1)}`, hours.lit > LONG_DAY_HOURS && `on ${hours.lit} h, ${LONG_DAY}`].filter(Boolean).join(' · ')}
               </span>
             </div>
             <ChartNote status={status} stale={staleSince(queries)} onRetry={() => queries.forEach(q => void q.refetch())} />
@@ -162,11 +162,11 @@ export function LightPage() {
       {(adding || curves.length === 0) && (
         <Card dashed className="gap-3">
           <p className="text-[13px] text-fg-2 text-pretty">
-            {'Gardyn recommends 14–16 hours a day at full brightness (Boost); dimmed hours don’t count, 17 or more stress the plants, and nights need unbroken dark. '}
+            {'Gardyn recommends 14–16 hours a day at full brightness (Boost); 17 or more stress the plants, and nights need unbroken dark. Dimmed hours count here in part: two hours at 50% are one of full light. '}
             <a href={GARDYN_LIGHT_GUIDE} target="_blank" rel="noopener noreferrer" className="underline decoration-line-2 underline-offset-2 hover:text-fg">Gardyn’s guide</a>
             {curves.length === 0 ? '. Start from one of these:' : '. Start from:'}
           </p>
-          <div className="grid gap-2 min-[720px]:grid-cols-4">
+          <div className="grid gap-2 min-[720px]:grid-cols-3">
             {LIGHT_PRESETS.map(p => (
               <button
                 key={p.id}
@@ -291,11 +291,14 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   )
 }
 
+/** A caution once the light is on long enough, however dim, to make lettuce and herbs bolt. */
+const LONG_DAY = 'long enough to make lettuce and herbs bolt'
+
 function CurveCard({ curve: c, running, open, onOpen, onSave }: { curve: LightCurve, running: boolean, open: boolean, onOpen: (open: boolean) => void, onSave: (next: LightCurve) => void }) {
   const n = c.spec.setpoints.length
-  const boost = boostHours(c.spec)
-  const meta = [`${n} setpoint${n === 1 ? '' : 's'}`, daysLabel(c.days), c.enabled ? `${litHours(c.spec)} h of light, ${boost} h at full` : 'off'].join(' · ')
-  const rating = lightRating(boost)
+  const hours = lightHours(c.spec)
+  const meta = [`${n} setpoint${n === 1 ? '' : 's'}`, daysLabel(c.days), c.enabled ? `on ${hours.lit} h, ${hours.full} h of full light` : 'off', c.enabled && hours.lit > LONG_DAY_HOURS && LONG_DAY].filter(Boolean).join(' · ')
+  const rating = lightRating(hours.full)
   return (
     <Card className="gap-0 p-0">
       <div className="flex flex-wrap items-center gap-4 px-5 py-[18px]">
