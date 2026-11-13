@@ -24,7 +24,7 @@ export function CurveEditor({ schedule, onSave }: { schedule: LightCurve, onSave
   return (
     <div className="flex flex-col gap-3.5">
       <div className="flex flex-wrap items-center gap-3">
-        <DayPicker value={daysToList(draft.days)} onChange={v => setDraft({ ...draft, days: listToDays(v) })} labels={['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']} className="w-fit grid-cols-[repeat(7,34px)]" />
+        <DayPicker value={daysToList(draft.days)} onChange={v => setDraft({ ...draft, days: listToDays(v) })} labels={['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']} className="w-fit grid-cols-[repeat(7,44px)]" />
         <TextField aria-label="Curve name" value={draft.name} onChange={v => setDraft({ ...draft, name: v })} mono={false} className="ml-auto w-[200px]" />
       </div>
       {draft.sun
