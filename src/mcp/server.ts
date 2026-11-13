@@ -316,7 +316,7 @@ export function createMcpServer(ctx: Context): McpServer {
 
   // ── Write (all go through the HAL guard) ─────────────────────────────────
   server.registerTool('set_light', {
-    description: 'Set the grow light. level is brightness 0–100 (%). Omit on to infer from level. Note a light schedule will override this at its next setpoint change.',
+    description: 'Set the grow light. level is brightness 0–100 (%). Omit on to infer from level. It holds over Autopilot and the schedule for 30 minutes, then they take the light back.',
     inputSchema: { on: z.boolean().optional(), level: z.number().min(0).max(100).optional() },
   }, async i => text(await caller.light.set(i)))
 

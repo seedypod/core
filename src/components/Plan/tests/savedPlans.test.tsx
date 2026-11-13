@@ -6,7 +6,7 @@ import { SavedPlans, UNDO_MS } from '../SavedPlans'
 
 const ids = ['basil', 'italian-parsley', 'chives', 'catnip', 'cilantro', 'green-bok-choy', 'kale', 'kale-lacinato', 'perpetual-spinach']
 const order: SavedPlan = {
-  id: 'order', name: 'Order Y221288628', model: 'home', appliedAt: null,
+  id: 'order', name: 'Spring order', model: 'home', appliedAt: null,
   request: ids.map(plantId => ({ plantId, count: plantId === 'perpetual-spinach' ? 2 : 1 })),
   layout: {
     assignments: ids.slice(0, 4).map((plantId, i) => ({ slot: 25 + i, plantId, plantName: plantId })),
@@ -31,7 +31,7 @@ afterEach(() => {
 describe('SavedPlans', () => {
   it('sums a plan up by plant name, with counts, unplaced in amber, and the rest behind "+N more"', () => {
     render(<SavedPlans {...props()} />)
-    const card = within(screen.getByRole('group', { name: 'Order Y221288628' }))
+    const card = within(screen.getByRole('group', { name: 'Spring order' }))
     expect(card.getByTestId('plan-meta').textContent).toMatch(/^Gardyn Home·4 of 30 pods·2 unplaced·Saved /)
     expect(card.getByText('2 unplaced').className).toContain('text-warn')
     const chips = () => card.getAllByRole('listitem').map(li => li.textContent)
@@ -58,7 +58,7 @@ describe('SavedPlans', () => {
     render(<SavedPlans {...p} />)
     fireEvent.click(screen.getByRole('button', { name: 'Apply to tower' }))
     const dialog = within(screen.getByRole('dialog'))
-    expect(dialog.getByText('Apply “Order Y221288628” to your tower?')).toBeTruthy()
+    expect(dialog.getByText('Apply “Spring order” to your tower?')).toBeTruthy()
     expect(dialog.getByText('3 pods marked seeded today.')).toBeTruthy()
     expect(dialog.getByText(/^1 pod kept for a later wave with its sow date; you’ll get a reminder when each is due \(next .+\)\.$/)).toBeTruthy()
     expect(dialog.getByText('2 pods that didn’t fit are left out.')).toBeTruthy()
@@ -71,14 +71,14 @@ describe('SavedPlans', () => {
   it('takes a delete back with Undo, and otherwise removes the plan once the undo lapses', () => {
     const p = props()
     render(<SavedPlans {...p} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Order Y221288628' }))
-    expect(screen.queryByRole('group', { name: 'Order Y221288628' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Spring order' }))
+    expect(screen.queryByRole('group', { name: 'Spring order' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
     act(() => vi.advanceTimersByTime(UNDO_MS))
     expect(p.onRemove).not.toHaveBeenCalled()
-    expect(screen.getByRole('group', { name: 'Order Y221288628' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Spring order' })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Order Y221288628' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Spring order' }))
     act(() => vi.advanceTimersByTime(UNDO_MS - 1))
     expect(p.onRemove).not.toHaveBeenCalled()
     act(() => vi.advanceTimersByTime(1))
@@ -89,7 +89,7 @@ describe('SavedPlans', () => {
   it('removes a plan still waiting on its undo when the page closes', () => {
     const p = props()
     const { unmount } = render(<SavedPlans {...p} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Order Y221288628' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Spring order' }))
     unmount()
     expect(p.onRemove).toHaveBeenCalledWith('order')
   })

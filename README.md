@@ -40,7 +40,7 @@ A Gardyn has a Raspberry Pi inside and a cloud subscription in front of it. seed
 
 ## Features
 
-- **Light and water:** light curves and pump cycles, with a 30-minute manual hold.
+- **Light and water:** Auto light that follows the sun, with its hours from the grow protocol, or light curves of your own; watering that follows the grow protocol's stages, or one of your own schedules. A change on the Light page holds the light until the curve's next change, for an hour, or until you resume.
 - **Autopilot:** WHEN/IF/THEN rules over live readings. Rules run as dry-runs until you arm them, and a backtest shows what one would have done.
 - **Grow tracking:** grow cycles with reminders, the tower in 3D (pods colored by status and sized by measured growth, the tank's water level, the light bars at their level) or as a table, and camera captures with per-pod growth trends.
 - **Probes:** add pH, EC and water-temperature probes from the app, with guided calibration.
