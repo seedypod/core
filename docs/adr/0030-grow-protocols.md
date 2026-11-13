@@ -226,9 +226,11 @@ Neither can bring back an earlier stage.
 - `stageDiff(from, to)` in `src/care/protocol.ts`, shared by the UI and
   notices: "Watering goes from once a week to once a day, 15 → 10 min".
 - MCP: `grow_protocol` (read), `hold_protocol`, `advance_protocol`,
-  `set_protocol_then`, `list_schedule_library`, `activate_schedule`. These
-  change watering the way `upsert_schedule` already does; none drives the pump
-  directly (ADR 0029).
+  `set_protocol_then`, `list_schedule_library`, `activate_schedule`, and
+  `save_schedule`, which saves one of Your schedules (cycles and an optional
+  light preset, so light and water change together) and can use it at once.
+  These change watering the way `upsert_schedule` already does; none drives
+  the pump directly (ADR 0029).
 
 ## Alternatives considered
 
