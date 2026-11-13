@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Clock, Hand, Plus, Sun } from 'lucide-react'
+import { ChevronDown, ChevronUp, Clock, Hand, LocateFixed, Plus, Sun } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
@@ -325,7 +325,13 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
     sub = (
       <span className="truncate" data-testid="auto-sub">
         {place && sun
-          ? ['follows sun + extension', when, place.source === 'timezone' ? `near ${place.city}` : null].filter(Boolean).join(' · ')
+          ? (
+              <>
+                {/* A location that's set, not guessed from the timezone, shows as the locate icon. */}
+                {place.source === 'set' && <LocateFixed size={12} className="mr-1 inline-block align-[-2px] text-light" aria-label="at the unit's location" data-testid="auto-located" />}
+                {['follows sun + extension', when, place.source === 'timezone' ? `near ${place.city}` : null].filter(Boolean).join(' · ')}
+              </>
+            )
           : (
               <>
                 {'centred on 12:00 · '}

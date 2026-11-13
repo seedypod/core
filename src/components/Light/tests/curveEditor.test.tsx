@@ -59,6 +59,7 @@ describe('CurveEditor', () => {
       expect(screen.queryByLabelText('Setpoint time')).toBeNull()
       expect(screen.queryByText('Setpoint')).toBeNull()
       expect(screen.getByTestId('sun-today').textContent).toMatch(/^Today: sunrise 06:4\d, sunset 17:0\d, 10 h 1\d min of daylight\. The light comes up from 04:2\d and is off by 19:2\d\.$/)
+      expect(screen.getByTestId('sun-located')).toBeTruthy()
       fireEvent.click(screen.getByLabelText('Increase Shift'))
       fireEvent.click(screen.getByLabelText('Increase Shift'))
       fireEvent.click(screen.getByLabelText('Increase Shift'))
@@ -75,6 +76,7 @@ describe('CurveEditor', () => {
       settings.data = { timezone: 'UTC', latitude: null, longitude: null }
       render(<CurveEditor schedule={following} onSave={vi.fn()} />)
       expect(screen.getByTestId('sun-today').textContent).toBe('Set the unit’s location in Settings to follow sunrise and sunset; until then the day centres on 12:00. The light comes up from 04:30 and is off by 19:30.')
+      expect(screen.queryByTestId('sun-located')).toBeNull()
       fireEvent.click(screen.getByLabelText('Decrease Shift'))
       expect(screen.getByText('Centred 15 min earlier')).toBeTruthy()
     })
