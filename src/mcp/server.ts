@@ -434,9 +434,8 @@ export function createMcpServer(ctx: Context): McpServer {
     const saved = i.id
       ? await caller.schedules.library.update({ id: i.id, name: i.name, cycles: i.cycles, lightPresetId: i.light_preset_id })
       : await caller.schedules.library.create({ name: i.name as string, cycles: i.cycles as NonNullable<typeof i.cycles>, lightPresetId: i.light_preset_id ?? null })
-    if (!i.activate) return text(saved)
-    const all = await caller.schedules.library.activate({ id: saved.id })
-    return text(all.find(e => e.id === saved.id) ?? saved)
+    // Using it returns every schedule; this one is among them, now active.
+    return text(i.activate ? (await caller.schedules.library.activate({ id: saved.id })).find(e => e.id === saved.id) : saved)
   })
 
   server.registerTool('set_location', {
