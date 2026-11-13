@@ -329,7 +329,9 @@ export function Stepper({ value, onChange, step = 1, min = 55, max = 110, format
 
 /* ─── DayPicker ──────────────────────────────────────────────────────────
    Values are day indexes 0..6 in the order given by `days` (default Mon-first). */
-const DEFAULT_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+const DEFAULT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+/** The week's initials, for the read-only dots, whose summary names the days. */
+const DAY_INITIALS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 export function DayPicker({ value, onChange, days = DEFAULT_DAYS, labels, className }: {
   value: number[]
@@ -377,7 +379,7 @@ export function WeekdayDots({ days, summary = true, className }: {
   return (
     <span role="img" aria-label={runsOn(days)} data-testid="weekday-dots" className={cn('flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 font-mono text-[11px]', className)}>
       <span className="flex min-w-0 flex-wrap gap-0.5" aria-hidden>
-        {DEFAULT_DAYS.map((d, i) => (
+        {DAY_INITIALS.map((d, i) => (
           <span key={i} data-on={dayOn(days, i) ? 'true' : undefined} className={cn('grid size-4 place-items-center rounded-[3px] leading-none', dayOn(days, i) ? 'bg-tank/20 text-tank' : 'text-fg-3/60')}>{d}</span>
         ))}
       </span>
