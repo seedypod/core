@@ -66,10 +66,14 @@ describe('CurveEditor', () => {
       fireEvent.click(screen.getByLabelText('Increase Shift'))
       expect(screen.getByText('Centred 1 h later')).toBeTruthy()
       expect(screen.getByTestId('sun-today').textContent).toMatch(/comes up from 05:2\d and is off by 20:2\d\.$/)
+      // All the extra after sunset: on an hour after sunrise, and 14 h from there.
+      fireEvent.click(screen.getByRole('tab', { name: 'Evening' }))
+      expect(screen.getByText('On 1 h after sunrise')).toBeTruthy()
+      expect(screen.getByTestId('sun-today').textContent).toMatch(/comes up from 07:[12]\d and is off by 22:[12]\d\.$/)
       fireEvent.click(screen.getByLabelText('Decrease Most hours'))
       fireEvent.click(screen.getByLabelText('Increase Ramp'))
       fireEvent.click(screen.getByText('Save'))
-      expect(onSave).toHaveBeenCalledWith({ ...following, spec: { setpoints: [], sun: { minHours: 14, maxHours: 15.5, rampMin: 75, shiftMin: 60 } } })
+      expect(onSave).toHaveBeenCalledWith({ ...following, spec: { setpoints: [], sun: { minHours: 14, maxHours: 15.5, rampMin: 75, shiftMin: 60, extend: 'evening' } } })
     })
 
     it('asks for the unit\'s location until it has one, and centres the day on 12:00', () => {
@@ -79,6 +83,12 @@ describe('CurveEditor', () => {
       expect(screen.queryByTestId('sun-located')).toBeNull()
       fireEvent.click(screen.getByLabelText('Decrease Shift'))
       expect(screen.getByText('Centred 15 min earlier')).toBeTruthy()
+      fireEvent.click(screen.getByRole('tab', { name: 'Evening' }))
+      expect(screen.getByText('On 15 min before sunrise')).toBeTruthy()
+      fireEvent.click(screen.getByRole('tab', { name: 'Morning' }))
+      expect(screen.getByText('Off 15 min before sunset')).toBeTruthy()
+      fireEvent.click(screen.getByLabelText('Increase Shift'))
+      expect(screen.getByText('Off at sunset')).toBeTruthy()
     })
   })
 

@@ -46,9 +46,25 @@ export function sunDay(date: string, lat: number, lon: number, timezone: string)
   return { sunrise: local(noonUtc - ha), sunset: local(noonUtc + ha), noon, day: Math.round(2 * ha) }
 }
 
-/** The day's light window: sunrise to sunset stretched or trimmed about midday to the curve's hours, then shifted. Minutes, `on` before `off`, either may pass midnight. */
+/**
+ * The day's light window: sunrise to sunset stretched or trimmed to the
+ * curve's hours, then shifted. Stretched about midday by default; `evening`
+ * comes on at sunrise and puts the extra after sunset, `morning` goes off at
+ * sunset and puts it before sunrise. Without a sunrise and sunset (no place,
+ * polar night or day) it centres on midday. Minutes, `on` before `off`,
+ * either may pass midnight.
+ */
 export function sunWindow(sun: SunFollow, day: Pick<SunDay, 'noon' | 'day'>): { on: number, off: number } {
   const len = Math.min(sun.maxHours * 60, Math.max(sun.minHours * 60, day.day))
+  const hasSun = day.day > 0 && day.day < 1440
+  if (hasSun && sun.extend === 'evening') {
+    const on = day.noon - day.day / 2 + sun.shiftMin
+    return { on: Math.round(on), off: Math.round(on + len) }
+  }
+  if (hasSun && sun.extend === 'morning') {
+    const off = day.noon + day.day / 2 + sun.shiftMin
+    return { on: Math.round(off - len), off: Math.round(off) }
+  }
   const mid = day.noon + sun.shiftMin
   return { on: Math.round(mid - len / 2), off: Math.round(mid + len / 2) }
 }

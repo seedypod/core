@@ -54,6 +54,9 @@ export function lightSegments(curves: LightCurve[]): Segment[] {
   return out.map(({ ramp, ...s }) => (ramp ? { ...s, from: levels[Math.max(0, s.start - 1)] as number, to: levels[Math.min(DAY - 1, s.end)] as number } : s))
 }
 
+/** The least a bracket shows: an end anchored to the sun can land a minute off it from rounding. */
+const MIN_EXTEND = 5
+
 /** A length of the day, "10h 28m", "15h". */
 const fmtSpan = (min: number) => {
   const m = Math.round(Math.abs(min))
@@ -413,7 +416,7 @@ function SunHead({ daylight, extend, edges, width }: {
   // A label centred on its time, kept inside the lane.
   const at = (m: number, textPx: number) => ({ left: Math.max(0, Math.min(width - textPx, (pctOf(m) / 100) * width - textPx / 2)) })
   const brackets = extend && edges
-    ? ([['before', edges.on, daylight.sunrise, extend.before], ['after', daylight.sunset, edges.off, extend.after]] as const).filter(([, , , add]) => add > 0)
+    ? ([['before', edges.on, daylight.sunrise, extend.before], ['after', daylight.sunset, edges.off, extend.after]] as const).filter(([, , , add]) => add >= MIN_EXTEND)
     : []
   return (
     <div aria-hidden className="relative h-[42px] font-mono text-[11px]" data-testid="sun-head">
