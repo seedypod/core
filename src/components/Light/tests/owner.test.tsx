@@ -378,6 +378,10 @@ describe('LightPage: curves', () => {
     expect(screen.getByTestId('auto-sub').textContent).toBe('follows sun + extension · dims at 18:55 · near Los Angeles')
     expect(screen.queryByTestId('auto-located')).toBeNull()
     cleanup()
+    data.set('schedules', [{ ...daylight, id: 'auto', name: 'Auto', spec: { ...autoSpec, sun: { ...sun, extend: 'evening' } } }])
+    render(<LightPage />)
+    expect(screen.getByTestId('auto-sub').textContent).toBe('follows sun + evening extension · dims at 18:55 · near Los Angeles')
+    cleanup()
     // UTC has no city: the day centres on 12:00 until a location is set.
     data.set('settings', { timezone: 'UTC', latitude: null, longitude: null })
     render(<LightPage />)

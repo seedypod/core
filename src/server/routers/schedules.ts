@@ -11,7 +11,7 @@ import { followSun } from '../../scheduler/sun'
 import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
 
-const SunFollow = z.object({ minHours: z.number().min(1).max(20), maxHours: z.number().min(1).max(20), rampMin: z.number().int().min(0).max(240), shiftMin: z.number().int().min(-360).max(360), auto: z.boolean().optional() })
+const SunFollow = z.object({ minHours: z.number().min(1).max(20), maxHours: z.number().min(1).max(20), rampMin: z.number().int().min(0).max(240), shiftMin: z.number().int().min(-360).max(360), extend: z.enum(['both', 'evening', 'morning']).optional(), auto: z.boolean().optional() })
   .refine(s => s.minHours <= s.maxHours, { message: 'minHours is more than maxHours' })
 const LightSpec = z.object({ setpoints: z.array(z.object({ minute: z.number().int().min(0).max(1439), level: z.number().min(0).max(100) })).max(24), sun: SunFollow.optional() })
 const PumpSpec = z.object({ minute: z.number().int().min(0).max(1439), durationS: z.number().int().positive().max(3600), level: z.number().min(1).max(100).optional() })

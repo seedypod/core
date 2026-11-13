@@ -321,6 +321,7 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   }
   else if (auto) {
     // What Auto does next, and where it sees the sun from.
+    const autoExtend = running.find(c => c.spec.sun?.auto)?.spec.sun?.extend ?? 'both'
     const when = on ? (dims !== null ? `dims at ${fmtClock(dims)}` : null) : next ? `on ${next.tomorrow ? 'tomorrow ' : ''}${fmtClock(next.minute)}` : null
     sub = (
       <span className="truncate" data-testid="auto-sub">
@@ -329,7 +330,7 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
               <>
                 {/* A location that's set, not guessed from the timezone, shows as the locate icon. */}
                 {place.source === 'set' && <LocateFixed size={12} className="mr-1 inline-block align-[-2px] text-light" aria-label="at the unit's location" data-testid="auto-located" />}
-                {['follows sun + extension', when, place.source === 'timezone' ? `near ${place.city}` : null].filter(Boolean).join(' · ')}
+                {[`follows sun + ${autoExtend === 'both' ? '' : `${autoExtend} `}extension`, when, place.source === 'timezone' ? `near ${place.city}` : null].filter(Boolean).join(' · ')}
               </>
             )
           : (

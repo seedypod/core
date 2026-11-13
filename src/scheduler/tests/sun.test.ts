@@ -49,6 +49,21 @@ describe('sunWindow and sunSetpoints', () => {
     expect(sunWindow({ ...DEFAULT_SUN, shiftMin: 90 }, { noon: 720, day: 600 })).toEqual({ on: 390, off: 1230 })
   })
 
+  it('puts the extra hours all after sunset or all before sunrise, from the sun\'s day, shifted', () => {
+    // A 10 h day, 07:00–17:00, stretched to 14 h.
+    expect(sunWindow({ ...DEFAULT_SUN, extend: 'evening' }, { noon: 720, day: 600 })).toEqual({ on: 420, off: 1260 })
+    expect(sunWindow({ ...DEFAULT_SUN, extend: 'morning' }, { noon: 720, day: 600 })).toEqual({ on: 180, off: 1020 })
+    expect(sunWindow({ ...DEFAULT_SUN, extend: 'evening', shiftMin: 30 }, { noon: 720, day: 600 })).toEqual({ on: 450, off: 1290 })
+    // A long day trimmed to 16 h keeps its anchor.
+    expect(sunWindow({ ...DEFAULT_SUN, extend: 'evening' }, { noon: 780, day: 1100 })).toEqual({ on: 230, off: 1190 })
+    expect(sunWindow({ ...DEFAULT_SUN, extend: 'both' }, { noon: 720, day: 600 })).toEqual({ on: 300, off: 1140 })
+  })
+
+  it('centres on midday when there\'s no sunrise and sunset to anchor to', () => {
+    expect(sunWindow({ ...DEFAULT_SUN, extend: 'evening' }, { noon: 720, day: 0 })).toEqual({ on: 300, off: 1140 })
+    expect(sunWindow({ ...DEFAULT_SUN, extend: 'morning' }, { noon: 720, day: 1440 })).toEqual({ on: 240, off: 1200 })
+  })
+
   it('centres each ramp on on and off, so the hours of full light are the window', () => {
     const setpoints = sunSetpoints(DEFAULT_SUN, { on: 300, off: 1140 })
     expect(setpoints).toEqual([{ minute: 270, level: 0 }, { minute: 330, level: 100 }, { minute: 1110, level: 100 }, { minute: 1170, level: 0 }])

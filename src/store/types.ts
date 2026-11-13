@@ -68,13 +68,18 @@ export interface LightSetpoint {
  * that day's sunrise and sunset, stretched or trimmed about midday to
  * between `minHours` and `maxHours` of full light, and moved `shiftMin`.
  */
+/** Which ends of the sun's day the light extends past. */
+export type SunExtend = 'both' | 'evening' | 'morning'
+
 export interface SunFollow {
   minHours: number
   maxHours: number
   /** How long each sunrise and sunset ramp takes, centred on the light's on and off times. */
   rampMin: number
-  /** Minutes later (or earlier, negative) than the sun's midday the window centres on. */
+  /** Minutes later (or earlier, negative) than the sun's midday the window centres on, or than the sunrise or sunset it's anchored to. */
   shiftMin: number
+  /** Where the hours past the sun's day go: split about midday (`both`, the default), all after sunset, or all before sunrise. */
+  extend?: SunExtend
   /** Auto: take minHours and maxHours from the grow protocol instead (`AUTO_HOURS`). */
   auto?: boolean
 }

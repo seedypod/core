@@ -1,13 +1,13 @@
 import { LocateFixed, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button, GhostIcon } from '@/src/components/ds/core'
-import { DayPicker, Slider, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
+import { DayPicker, SegmentedControl, Slider, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
 import { fmtClock } from '@/src/components/charts/format'
 import { daysToList, listToDays } from '@/src/lib/days'
 import { unitPlace } from '@/src/scheduler/place'
 import { followSun, sunDay } from '@/src/scheduler/sun'
 import { localTime, systemZone } from '@/src/scheduler/time'
-import type { SunFollow } from '@/src/store/types'
+import type { SunExtend, SunFollow } from '@/src/store/types'
 import { trpc } from '@/src/utils/trpc'
 import type { LightCurve } from './curves'
 
@@ -73,6 +73,9 @@ export function CurveEditor({ schedule, onSave }: { schedule: LightCurve, onSave
 const hm = (min: number) => [Math.floor(min / 60) && `${Math.floor(min / 60)} h`, min % 60 && `${min % 60} min`].filter(Boolean).join(' ') || '0 min'
 const stepper = 'border-line bg-field [&>span]:min-w-16 [&>span]:text-[13px]'
 
+/** Where the hours past the sun's day go. */
+const EXTEND_OPTIONS = [{ value: 'both', label: 'Both ends' }, { value: 'evening', label: 'Evening' }, { value: 'morning', label: 'Morning' }] as const
+
 /** How a curve follows the sun, and what that makes today on the unit's clock and at its place. */
 function SunControls({ sun, onChange }: { sun: SunFollow, onChange: (sun: SunFollow) => void }) {
   const settings = trpc.settings.get.useQuery()
@@ -82,7 +85,14 @@ function SunControls({ sun, onChange }: { sun: SunFollow, onChange: (sun: SunFol
   const now = new Date()
   const today = at ? sunDay(localTime(now, place.timezone).date, at.latitude, at.longitude, place.timezone) : null
   const [rise, , , dark] = followSun({ setpoints: [], sun }, place, now, auto.data).setpoints
-  const shift = sun.shiftMin === 0 ? 'on midday' : `${hm(Math.abs(sun.shiftMin))} ${sun.shiftMin > 0 ? 'later' : 'earlier'}`
+  const extend = sun.extend ?? 'both'
+  // What the shift moves: midday, or the sunrise or sunset the light is anchored to.
+  const by = (after: string, before: string) => `${hm(Math.abs(sun.shiftMin))} ${sun.shiftMin > 0 ? after : before}`
+  const shift = extend === 'evening'
+    ? (sun.shiftMin === 0 ? 'On at sunrise' : `On ${by('after', 'before')} sunrise`)
+    : extend === 'morning'
+      ? (sun.shiftMin === 0 ? 'Off at sunset' : `Off ${by('after', 'before')} sunset`)
+      : `Centred ${sun.shiftMin === 0 ? 'on midday' : by('later', 'earlier')}`
   const row = 'flex flex-wrap items-center justify-between gap-3 border-b border-line py-2 text-[13px]'
   return (
     <div className="flex flex-col">
@@ -126,7 +136,17 @@ function SunControls({ sun, onChange }: { sun: SunFollow, onChange: (sun: SunFol
         <Stepper label="Ramp" className={stepper} value={sun.rampMin} min={0} max={180} step={15} format={v => `${v} min`} onChange={rampMin => onChange({ ...sun, rampMin })} />
       </div>
       <div className={row}>
-        <span>{`Centred ${shift}`}</span>
+        <span>Extend the day</span>
+        <SegmentedControl<SunExtend>
+          size="sm"
+          ariaLabel="Extend the day"
+          value={extend}
+          options={EXTEND_OPTIONS}
+          onChange={v => onChange({ ...sun, extend: v })}
+        />
+      </div>
+      <div className={row}>
+        <span>{shift}</span>
         <Stepper label="Shift" className={stepper} value={sun.shiftMin} min={-180} max={180} step={15} format={v => `${v > 0 ? '+' : ''}${v} min`} onChange={shiftMin => onChange({ ...sun, shiftMin })} />
       </div>
     </div>

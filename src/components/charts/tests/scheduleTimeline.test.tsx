@@ -115,6 +115,11 @@ describe('ScheduleTimeline', () => {
     expect(within(screen.getByTestId('schedule-timeline')).getByText('Auto')).toBeTruthy()
     expect(screen.getByRole('group').getAttribute('aria-label')).toContain('The light follows the sun: sunrise 06:48 · sunset 17:01, daylight 10h 13m · extended to 15h 30m.')
     cleanup()
+    // Extended in the evening only: on a minute off sunrise from rounding, so one bracket.
+    render(<ScheduleTimeline lead="light" curves={[curve('Evening', [{ minute: 377, level: 0 }, { minute: 437, level: 100 }, { minute: 1257, level: 100 }, { minute: 1317, level: 0 }])]} cycles={[]} timezone="UTC" sun={{ sunrise: 408, sunset: 1021 }} />)
+    expect(screen.queryByTestId('sun-extend-before')).toBeNull()
+    expect(screen.getByTestId('sun-extend-after').textContent).toBe('+4h 26m')
+    cleanup()
     // A summer's day longer than the light: no brackets, and the light trims it.
     render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" sun={{ sunrise: 300, sunset: 1320 }} />)
     expect(screen.getByTestId('legend-daylight').textContent).toBe('daylight 17h · trimmed to 15h 30m')
