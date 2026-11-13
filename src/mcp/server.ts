@@ -420,6 +420,33 @@ export function createMcpServer(ctx: Context): McpServer {
     inputSchema: { kind: z.enum(['stay', 'schedule', 'remind']), schedule_id: z.string().optional(), when: z.enum(['now', 'maintenance']).optional() },
   }, async i => text(await caller.protocol.setThen({ kind: i.kind, scheduleId: i.schedule_id, when: i.when ?? 'maintenance' })))
 
+  server.registerTool('save_schedule', {
+    description: 'Save one of Your schedules (ADR-0030), so light and water change together when it\'s used: a name, its pump cycles (minute of the unit\'s day, durationS, day mask Mon=1 … Sun=64; 1 to 12 of them, no two at one minute) and optionally a light preset id from light_presets (null leaves the light as it is, Auto included). Without id it\'s a new one; with id it changes that one, and if that one is in use the pump and light change with it. activate: true also uses it now, as activate_schedule does: its cycles replace all the pump cycles and take watering off the grow protocol, and its light preset, if any, replaces the enabled light curves. Confirm with the person first.',
+    inputSchema: {
+      id: z.string().optional(),
+      name: z.string().trim().min(1).max(60).optional(),
+      cycles: z.array(z.object({ minute: z.number().int().min(0).max(1439), durationS: z.number().int().positive().max(3600), days: z.number().int().min(1).max(127) })).optional(),
+      light_preset_id: z.string().nullable().optional(),
+      activate: z.boolean().optional(),
+    },
+  }, async (i) => {
+    if (!i.id && (!i.name || !i.cycles)) throw new Error('a new schedule needs a name and its cycles')
+    const saved = i.id
+      ? await caller.schedules.library.update({ id: i.id, name: i.name, cycles: i.cycles, lightPresetId: i.light_preset_id })
+      : await caller.schedules.library.create({ name: i.name as string, cycles: i.cycles as NonNullable<typeof i.cycles>, lightPresetId: i.light_preset_id ?? null })
+    // Using it returns every schedule; this one is among them, now active.
+    return text(i.activate ? (await caller.schedules.library.activate({ id: saved.id })).find(e => e.id === saved.id) : saved)
+  })
+
+  server.registerTool('set_location', {
+    description: 'Set where the unit is, for sunrise and sunset: latitude and longitude in degrees (two or three decimals is plenty), or both null to go back to the timezone\'s city. Sun-following light curves, Auto among them, move to the new sun at once; list_schedules shows their new setpoints. Confirm with the person first.',
+    inputSchema: { latitude: z.number().min(-90).max(90).nullable(), longitude: z.number().min(-180).max(180).nullable() },
+  }, async (i) => {
+    if ((i.latitude === null) !== (i.longitude === null)) throw new Error('give both latitude and longitude, or neither')
+    const s = await caller.settings.update({ latitude: i.latitude, longitude: i.longitude })
+    return text({ latitude: s.latitude, longitude: s.longitude, timezone: s.timezone })
+  })
+
   server.registerTool('activate_schedule', {
     description: 'Use one of Your schedules, or a built-in preset (id preset:<id>), now: its cycles replace all the pump cycles, and its light preset, if any, replaces the enabled light curves (others are turned off, not deleted). Using one of yours takes watering off the grow protocol; using the current stage\'s preset hands it back. Confirm with the person first.',
     inputSchema: { id: z.string() },
