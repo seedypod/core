@@ -28,6 +28,8 @@ export function useLightControl() {
     // Only the newest command's answer: an older one arriving late would put the old level back. The live event still refreshes the rest.
     onSuccess: (state, _, { command }) => {
       if (command === newest.current) utils.light.get.setData(undefined, state)
+      // The set starts or moves a hand's hold, which the strip reads from the owner.
+      void utils.light.owner.invalidate()
     },
     // Only the level still on show: a refused older command mustn't undo a newer one.
     onError: (_, sent) => setHeld(h => (h === sent.level ? null : h)),
@@ -41,14 +43,17 @@ export function useLightControl() {
     level: held ?? l?.level ?? 0,
     /** Whether a requested level is on show, which turns the light on if it's off. */
     requested: held !== null,
+    /** Whether a command is on its way. */
+    pending: setLight.isPending,
     // The switch follows the tap; a refused command puts it back when the mutation ends.
     lightOn: (setLight.isPending ? setLight.variables.on : undefined) ?? !!l?.on,
     /** Shows a level without sending it, for the ticks of a drag. */
     preview: hold,
-    commit: (level: number) => setLight.mutate({ level }),
-    power: (on: boolean) => {
+    /** Sets a level, held until `until` (null: until resumed; left out, the server's 30 minutes). */
+    commit: (level: number, until?: string | null) => setLight.mutate(until === undefined ? { level } : { level, until }),
+    power: (on: boolean, until?: string | null) => {
       hold(null)
-      setLight.mutate({ on })
+      setLight.mutate(until === undefined ? { on } : { on, until })
     },
   }
 }

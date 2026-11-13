@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asCurve, levelAt, lightToday, mergedAt, nextDim, nextOn, runningToday, todayLevels, type LightCurve } from '../curves'
+import { asCurve, levelAt, lightEdges, lightToday, mergedAt, nextChange, nextDim, nextOn, runningToday, todayLevels, type LightCurve } from '../curves'
 
 const day = { setpoints: [{ minute: 360, level: 0 }, { minute: 450, level: 85 }, { minute: 1140, level: 85 }, { minute: 1260, level: 0 }] }
 const curve = (id: string, enabled: boolean, days: number, spec = day): LightCurve => ({ id, kind: 'light', name: id, enabled, days, spec })
@@ -62,5 +62,31 @@ describe('the day of the running curves', () => {
     expect(nextDim([gardyn], 600)).toBe(1261)
     expect(nextDim([gardyn], 100)).toBeNull()
     expect(nextDim([curve('Always', true, 127, { setpoints: [{ minute: 0, level: 50 }] })], 600)).toBeNull()
+  })
+})
+
+describe('nextChange', () => {
+  const c = curve('day', true, 127)
+  it('is where a held level starts to change, today or tomorrow', () => {
+    expect(nextChange([c], [c], 600)).toBe(1141)
+    expect(nextChange([c], [c], 1300)).toBe(1440 + 361)
+    expect(nextChange([c], [], 1300)).toBeNull()
+  })
+
+  it('ends a ramp under way where it settles, not a minute in', () => {
+    expect(nextChange([c], [c], 400)).toBe(450)
+    expect(nextChange([c], [c], 1200)).toBe(1260)
+  })
+
+  it('is null for a level that never changes', () => {
+    const flat = curve('flat', true, 127, { setpoints: [{ minute: 0, level: 40 }] })
+    expect(nextChange([flat], [flat], 600)).toBeNull()
+  })
+})
+
+describe('lightEdges', () => {
+  it('puts on and off halfway up each ramp, and is null with no light', () => {
+    expect(lightEdges([curve('day', true, 127)])).toEqual({ on: 405, off: 1201 })
+    expect(lightEdges([])).toBeNull()
   })
 })

@@ -3,7 +3,7 @@ import { Sun } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card } from '@/src/components/ds/core'
 import { fmtClock } from '@/src/components/charts/format'
-import { holdWindow, mergedAt, nextDim, nextOn, runningToday, type LightCurve } from '@/src/components/Light/curves'
+import { holdWindow, lightEdges, mergedAt, nextDim, nextOn, runningToday, type LightCurve } from '@/src/components/Light/curves'
 import { fmtMinutes, nextRun, type PumpCycle } from '@/src/components/Water/pumpCycles'
 import { fmtIn } from '@/src/components/System/statusData'
 import { useNow } from '@/src/components/System/useNow'
@@ -54,6 +54,12 @@ export function lightSegments(curves: LightCurve[]): Segment[] {
   return out.map(({ ramp, ...s }) => (ramp ? { ...s, from: levels[Math.max(0, s.start - 1)] as number, to: levels[Math.min(DAY - 1, s.end)] as number } : s))
 }
 
+/** A length of the day, "10h 28m", "15h". */
+const fmtSpan = (min: number) => {
+  const m = Math.round(Math.abs(min))
+  return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`
+}
+
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 interface Mark {
@@ -98,8 +104,8 @@ export interface ScheduleTimelineProps {
   cycles: PumpCycle[]
   /** The unit's zone: the schedules run on its clock. */
   timezone?: string
-  /** A hand holding the light: since when, until when, at what level. */
-  hold?: { since: string, until: string, level: number } | null
+  /** A hand holding the light: since when, until when (null: until someone resumes), at what level. */
+  hold?: { since: string, until: string | null, level: number } | null
   /** The pump running now. */
   pumpRun?: { since: string, remainingS: number | null } | null
   /** Today's sunrise and sunset (minutes of the unit's day) when the light follows the sun. */
@@ -131,10 +137,10 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   const segments = useMemo(() => lightSegments(lightMuted ? curves : running), [curves, running, lightMuted])
 
   const lightMarks: Mark[] = segments.filter(s => s.from > 0 || s.to > 0).map(s => lightMark(s, lightMuted))
-  const holding = hold && Date.parse(hold.until) > nowMs ? hold : null
+  const holding = hold && (hold.until === null || Date.parse(hold.until) > nowMs) ? hold : null
   if (holding) {
-    const { fromMin, untilMin } = holdWindow(holding.since, holding.until, now, zone)
-    if (untilMin > fromMin) lightMarks.push({ start: fromMin, end: untilMin, label: `hold ${holding.level}%`, title: `Held by hand at ${holding.level}% · ${span(fromMin, untilMin)}`, kind: 'hold' })
+    const { fromMin, untilMin } = holdWindow(holding.since, holding.until ?? new Date(nowMs + DAY * 60_000).toISOString(), now, zone)
+    if (untilMin > fromMin) lightMarks.push({ start: fromMin, end: untilMin, label: `hold ${holding.level ? `${holding.level}%` : 'off'}`, title: `Held by hand ${holding.level ? `at ${holding.level}%` : 'off'} · ${span(fromMin, untilMin)}`, kind: 'hold' })
   }
   const waterMarks: Mark[] = cycles.flatMap((c) => {
     const today = c.enabled && dayOn(c.days, weekday)
@@ -155,7 +161,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
     if (next) nextLine = `next · Watering ${fmtMinutes(next.cycle.spec.durationS)} ${inMin < DAY ? fmtIn(inMin) : `${WEEKDAYS[localTime(next.at, zone).weekday]} ${fmtClock(next.cycle.spec.minute)}`}`
   }
   else if (holding) {
-    nextLine = `next · Held at ${holding.level}% until ${clock(holding.until)}`
+    nextLine = `next · Held ${holding.level ? `at ${holding.level}%` : 'off'} until ${holding.until === null ? 'you resume' : clock(holding.until)}`
   }
   else if (mergedAt(running, Math.floor(nowMin)) > 0) {
     const dims = nextDim(running, nowMin)
@@ -203,8 +209,17 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   const muted = [...lightMarks, ...waterMarks].some(m => m.muted)
 
   const describe = (marks: Mark[], none: string) => (marks.length ? marks.map(m => m.title).join('; ') : none)
-  const sunWords = sun && sun.sunrise !== null && sun.sunset !== null ? `sunrise ${fmtClock(sun.sunrise)} · sunset ${fmtClock(sun.sunset)}` : null
-  const summary = `Today on the unit's clock, ${nowText}.${sunWords ? ` The light follows the sun: ${sunWords}.` : ''} ${rows.map(r => `${r.name}: ${describe(r.marks, r.id === 'light' ? 'no light scheduled' : 'no pump runs')}`).join('. ')}.`
+  const daylight = sun && sun.sunrise !== null && sun.sunset !== null ? { sunrise: sun.sunrise, sunset: sun.sunset } : null
+  const sunWords = daylight ? `sunrise ${fmtClock(daylight.sunrise)} · sunset ${fmtClock(daylight.sunset)}` : null
+  // How far the light runs past the sun at each end, and the day that makes.
+  const edges = daylight && !lightMuted ? lightEdges(running) : null
+  const extend = daylight && edges
+    ? { before: daylight.sunrise - edges.on, after: edges.off - daylight.sunset, day: edges.off - edges.on }
+    : null
+  const daylightWords = daylight
+    ? [`daylight ${fmtSpan(daylight.sunset - daylight.sunrise)}`, extend && extend.day !== daylight.sunset - daylight.sunrise && `${extend.day > daylight.sunset - daylight.sunrise ? 'extended' : 'trimmed'} to ${fmtSpan(extend.day)}`].filter(Boolean).join(' · ')
+    : null
+  const summary = `Today on the unit's clock, ${nowText}.${sunWords ? ` The light follows the sun: ${sunWords}, ${daylightWords}.` : ''} ${rows.map(r => `${r.name}: ${describe(r.marks, r.id === 'light' ? 'no light scheduled' : 'no pump runs')}`).join('. ')}.`
 
   return (
     <Card className="gap-3" data-testid="schedule-timeline">
@@ -212,12 +227,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
         <span className="text-[15px] font-medium">Today</span>
         {nextLine && <span className="font-mono text-xs text-fg-2" data-testid="timeline-next">{nextLine}</span>}
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-fg-2">
-          {sunWords && (
-            <span className="flex items-center gap-1.5 text-light" data-testid="legend-sun">
-              <Sun size={11} aria-hidden />
-              {sunWords}
-            </span>
-          )}
+          {daylightWords && <span className="text-light" data-testid="legend-daylight">{daylightWords}</span>}
           <span className="flex items-center gap-1.5" data-testid="legend-ahead">
             <span className="h-2 w-3.5 rounded-[2px] border border-line-2 bg-active" style={AHEAD} />
             ahead
@@ -242,9 +252,21 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
         <div aria-hidden className="pointer-events-none absolute top-0 right-0 bottom-5" style={{ left: LABEL_W + 8 }}>
           {ticks.map(t => <span key={t} className="absolute inset-y-0 w-px bg-grid" style={{ left: `${pctOf(t)}%` }} />)}
         </div>
+        {daylight && (
+          <>
+            <span />
+            <SunHead daylight={daylight} extend={extend} edges={edges} width={width} />
+          </>
+        )}
         {rows.map((r, i) => (
-          <Row key={r.id} id={r.id} name={r.name} sub={r.id === 'light' && sun ? 'Auto' : undefined} sun={r.id === 'light' ? sun : null} marks={r.marks} nowPct={nowPct} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
+          <Row key={r.id} id={r.id} name={r.name} sub={r.id === 'light' && sun ? 'Auto' : undefined} marks={r.marks} nowPct={nowPct} width={width} active={active} onActive={setActive} laneRef={i === 0 ? setLane : undefined} />
         ))}
+        {/* The sun's own day across every row: a lit window from sunrise to sunset, edged at each. */}
+        {daylight && (
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0" style={{ left: LABEL_W + 8 }}>
+            <span data-testid="sun-daylight" className="absolute inset-y-0 border-x border-light/45 bg-light/[0.06]" style={{ left: `${pctOf(daylight.sunrise)}%`, width: `${pctOf(daylight.sunset) - pctOf(daylight.sunrise)}%` }} />
+          </div>
+        )}
 
         <span />
         <div className="relative h-5 font-mono text-[11px] text-fg-3" aria-hidden>
@@ -253,7 +275,7 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
               {t === DAY ? '24:00' : fmtClock(t)}
             </span>
           ))}
-          <span className="absolute top-0.5 whitespace-nowrap rounded-tag bg-fg px-1.5 text-inverse" style={{ left: Math.max(0, Math.min(width - pillW, (nowPct / 100) * width - pillW / 2)) }} data-testid="timeline-now-label">
+          <span className="absolute top-0.5 z-[3] whitespace-nowrap rounded-tag bg-fg px-1.5 text-inverse" style={{ left: Math.max(0, Math.min(width - pillW, (nowPct / 100) * width - pillW / 2)) }} data-testid="timeline-now-label">
             {nowText}
           </span>
         </div>
@@ -267,11 +289,10 @@ export function ScheduleTimeline({ lead, curves, cycles, timezone, hold, pumpRun
   )
 }
 
-function Row({ id, name, sub, sun, marks, nowPct, width, active, onActive, laneRef }: {
+function Row({ id, name, sub, marks, nowPct, width, active, onActive, laneRef }: {
   id: string
   name: string
   sub?: string
-  sun?: ScheduleTimelineProps['sun']
   marks: Mark[]
   /** Where now is across the lane: what's right of it is still ahead. */
   nowPct: number
@@ -313,13 +334,6 @@ function Row({ id, name, sub, sun, marks, nowPct, width, active, onActive, laneR
         {sub && <span className="truncate text-[10px] text-light">{sub}</span>}
       </div>
       <div ref={laneRef} className="relative rounded-[2px] bg-active/60" style={{ height: LANE_H }} data-testid={`lane-${id}`}>
-        {/* The sun's own day under the light: a warm line from sunrise to sunset, and a dashed mark at each. */}
-        {sun && sun.sunrise !== null && sun.sunset !== null && (
-          <span aria-hidden data-testid="sun-daylight" className="pointer-events-none absolute bottom-0 z-[3] h-[3px] rounded-full bg-light/80" style={{ left: `${pctOf(sun.sunrise)}%`, width: `${pctOf(sun.sunset) - pctOf(sun.sunrise)}%` }} />
-        )}
-        {sun && ([['sunrise', sun.sunrise], ['sunset', sun.sunset]] as const).map(([k, m]) => m !== null && (
-          <span key={k} aria-hidden data-testid={`sun-${k}`} className="pointer-events-none absolute -inset-y-1 z-[3] border-l border-dashed border-light" style={{ left: `${pctOf(m)}%` }} />
-        ))}
         {placed.map(({ m, key, leftPx, widthPx }) => (
           <button
             key={key}
@@ -383,5 +397,45 @@ function Row({ id, name, sub, sun, marks, nowPct, width, active, onActive, laneR
         )}
       </div>
     </>
+  )
+}
+
+/**
+ * Over the lanes: sunrise and sunset with their sun, and a bracket from each to
+ * where the light comes on or goes off past it, with how much it adds.
+ */
+function SunHead({ daylight, extend, edges, width }: {
+  daylight: { sunrise: number, sunset: number }
+  extend: { before: number, after: number } | null
+  edges: { on: number, off: number } | null
+  width: number
+}) {
+  // A label centred on its time, kept inside the lane.
+  const at = (m: number, textPx: number) => ({ left: Math.max(0, Math.min(width - textPx, (pctOf(m) / 100) * width - textPx / 2)) })
+  const brackets = extend && edges
+    ? ([['before', edges.on, daylight.sunrise, extend.before], ['after', daylight.sunset, edges.off, extend.after]] as const).filter(([, , , add]) => add > 0)
+    : []
+  return (
+    <div aria-hidden className="relative h-[42px] font-mono text-[11px]" data-testid="sun-head">
+      {([['sunrise', daylight.sunrise], ['sunset', daylight.sunset]] as const).map(([k, m]) => {
+        // On a phone the sun says which is which.
+        const text = width < 420 ? fmtClock(m) : `${k} ${fmtClock(m)}`
+        return (
+          <span key={k} data-testid={`sun-${k}`} title={`${k} ${fmtClock(m)}`} className="absolute top-0 flex items-center gap-1 whitespace-nowrap text-light" style={at(m, text.length * 6.6 + 15)}>
+            <Sun size={11} />
+            {text}
+          </span>
+        )
+      })}
+      {brackets.map(([k, from, to, add]) => {
+        const text = `+${fmtSpan(add)}`
+        return (
+          <span key={k} data-testid={`sun-extend-${k}`}>
+            <span className="absolute top-[17px] whitespace-nowrap text-fg" style={at((from + to) / 2, text.length * 6.6)}>{text}</span>
+            <span className="absolute top-[33px] h-[7px] border-x border-t border-light/70" style={{ left: `${pctOf(from)}%`, width: `${pctOf(to) - pctOf(from)}%` }} />
+          </span>
+        )
+      })}
+    </div>
   )
 }

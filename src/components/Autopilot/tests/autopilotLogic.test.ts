@@ -40,6 +40,7 @@ describe('autopilot logic', () => {
     const names = new Map([[4, 'Dim when hot']])
     expect(lightLine({ source: 'autopilot', level: 60, leaseId: 'rule:4:1', manualUntil: null }, names)).toBe('Light: set by Dim when hot · 60%')
     expect(lightLine({ source: 'autopilot', level: null, leaseId: null, manualUntil: null }, names)).toBe('Light: set by a rule')
+    expect(lightLine({ source: 'manual', level: 30, leaseId: null, manualUntil: null }, names)).toBe('Light: held by hand until resumed · 30%')
     expect(lightLine({ source: 'schedule', level: 30, leaseId: null, manualUntil: null }, names)).toBe('Light: following the schedule · 30%')
     expect(lightLine({ source: null, level: null, leaseId: null, manualUntil: null }, names)).toBe('Light: idle')
     expect(lightLine({ source: 'manual', level: 90, leaseId: null, manualUntil: '2026-10-31T12:30:00Z' }, names)).toMatch(/^Light: held by hand until .+ · 90%$/)

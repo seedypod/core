@@ -102,18 +102,35 @@ describe('ScheduleTimeline', () => {
     expect(screen.getByTestId('timeline-now').style.left).toBe(`${(540 / 1440) * 100}%`)
   })
 
-  it('marks sunrise and sunset on the light row when the light follows the sun', () => {
+  it('shows the sun\'s day across the rows, and brackets how far the light runs past it at each end', () => {
     render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" sun={{ sunrise: 408, sunset: 1021 }} />)
-    expect(screen.getByTestId('legend-sun').textContent).toBe('sunrise 06:48 · sunset 17:01')
-    expect(screen.getByTestId('sun-sunrise').style.left).toBe(`${(408 / 1440) * 100}%`)
-    expect(screen.getByTestId('sun-sunset').style.left).toBe(`${(1021 / 1440) * 100}%`)
+    expect(screen.getByTestId('legend-daylight').textContent).toBe('daylight 10h 13m · extended to 15h 30m')
+    expect(screen.getByTestId('sun-sunrise').textContent).toBe('sunrise 06:48')
+    expect(screen.getByTestId('sun-sunset').textContent).toBe('sunset 17:01')
+    expect(screen.getByTestId('sun-daylight').style.left).toBe(`${(408 / 1440) * 100}%`)
     expect(Number.parseFloat(screen.getByTestId('sun-daylight').style.width)).toBeCloseTo(((1021 - 408) / 1440) * 100)
+    // Halfway up each ramp, 05:45 and 21:15, is where the light comes on and goes off.
+    expect(screen.getByTestId('sun-extend-before').textContent).toBe('+1h 3m')
+    expect(screen.getByTestId('sun-extend-after').textContent).toBe('+4h 14m')
     expect(within(screen.getByTestId('schedule-timeline')).getByText('Auto')).toBeTruthy()
-    expect(screen.getByRole('group').getAttribute('aria-label')).toContain('The light follows the sun: sunrise 06:48 · sunset 17:01.')
+    expect(screen.getByRole('group').getAttribute('aria-label')).toContain('The light follows the sun: sunrise 06:48 · sunset 17:01, daylight 10h 13m · extended to 15h 30m.')
+    cleanup()
+    // A summer's day longer than the light: no brackets, and the light trims it.
+    render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" sun={{ sunrise: 300, sunset: 1320 }} />)
+    expect(screen.getByTestId('legend-daylight').textContent).toBe('daylight 17h · trimmed to 15h 30m')
+    expect(screen.queryByTestId('sun-extend-before')).toBeNull()
     cleanup()
     render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" />)
-    expect(screen.queryByTestId('legend-sun')).toBeNull()
+    expect(screen.queryByTestId('legend-daylight')).toBeNull()
     expect(screen.queryByTestId('sun-sunrise')).toBeNull()
+    expect(screen.queryByTestId('sun-daylight')).toBeNull()
+  })
+
+  it('says a hold until someone resumes runs to the end of today, and words a hold off', () => {
+    render(<ScheduleTimeline lead="light" curves={[day]} cycles={[]} timezone="UTC" hold={{ since: new Date(NOW.getTime() - 60_000).toISOString(), until: null, level: 0 }} />)
+    expect(screen.getByTestId('timeline-next').textContent).toBe('next · Held off until you resume')
+    const mark = screen.getAllByTestId('mark-light').find(m => m.dataset.kind === 'hold')
+    expect(mark?.getAttribute('aria-label')).toMatch(/^Held by hand off · \d\d:\d\d–24:00$/)
   })
 
   it('mutes cycles that are off or not today, with the legend saying so', () => {

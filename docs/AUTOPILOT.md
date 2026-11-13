@@ -140,9 +140,13 @@ The log keeps 30 days.
 
 Three things can set the light, and the highest one with an opinion wins:
 
-1. **You.** Setting the light from the app, Home Assistant, an agent or the
-   unit's button holds it for 30 minutes. **Light → Resume** hands it back
-   early.
+1. **You.** Any stop but Auto on the Light page's slider holds the light. By
+   default the hold lasts until the curve next changes the light. The bar
+   under the hold can make it 1 hour, or until you resume it. Setting the
+   light from Home Assistant, an agent or the unit's button holds it for 30
+   minutes, unless the request gives an `until` time (or `null`). **Resume**
+   hands the light back early. A hold that waits for you to resume ends if
+   core restarts.
 2. **Autopilot.** A rule that sets the light holds it while its condition is
    true. A rule that fires at a time of day holds it for the minutes you chose
    (60 by default).
@@ -160,7 +164,7 @@ light at the moment.
   - `POST /automations/backtest`, and `GET /automations/backtests` for every
     rule's 7-day summary at once
   - `PUT /autopilot/enabled` (the kill switch)
-  - `GET /light/owner`, `POST /light/resume`
+  - `GET /light/owner`, `POST /light/hold` (`{ until }`: when the hold ends, or `null` to wait for resume), `POST /light/resume`
 
   Rules are JSON: `trigger`, `conditions` and `actions`, as described in
   [ADR 0020](adr/0020-autopilot-reactive-automations.md). The API accepts
