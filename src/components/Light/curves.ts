@@ -92,3 +92,42 @@ export function sunToday(running: LightCurve[], place: { latitude?: number | nul
   if (!running.some(c => c.spec.sun) || !at) return null
   return sunDay(localTime(now, timezone).date, at.latitude, at.longitude, timezone)
 }
+
+/** A level held this long is a step; shorter runs of one level are a ramp's rounding. */
+const SETTLE_MIN = 10
+
+/**
+ * When the running curves next change the light after `nowMin`, as minutes
+ * from today's midnight (past 1440 is tomorrow's, from `tomorrow`), or null if
+ * they hold one level for the next day. A ramp under way is one change, ending
+ * where it settles, so a hold until the next change doesn't end a minute in.
+ */
+export function nextChange(today: LightCurve[], tomorrow: LightCurve[], nowMin: number): number | null {
+  const at = (m: number) => (m < 1440 ? mergedAt(today, m) : mergedAt(tomorrow, m - 1440))
+  const start = Math.floor(nowMin)
+  const end = start + 1440
+  const level = at(start)
+  let next = start + 1
+  while (next <= end && at(next) === level) next++
+  if (next > end) return null
+  let from = start
+  while (from > Math.max(0, start - SETTLE_MIN) && at(from - 1) === level) from--
+  if (next - from >= SETTLE_MIN) return next
+  for (let m = next; m <= end; m++) {
+    let k = m
+    while (k - m + 1 < SETTLE_MIN && at(k + 1) === at(m)) k++
+    if (k - m + 1 >= SETTLE_MIN) return m
+  }
+  return null
+}
+
+/** Where today's light is at least half its peak: a ramp centred on its on and off, so this is when it's on and off. Null with no light. */
+export function lightEdges(curves: LightCurve[]): { on: number, off: number } | null {
+  const levels = Array.from({ length: 1440 }, (_, m) => mergedAt(curves, m))
+  const peak = Math.max(0, ...levels)
+  if (peak === 0) return null
+  const on = levels.findIndex(v => v >= peak / 2)
+  // Strictly over half on the way down, so a ramp's midpoint is its off, as its midpoint going up is its on.
+  const off = levels.findLastIndex(v => v > peak / 2) + 1
+  return { on, off }
+}

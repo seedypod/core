@@ -11,35 +11,37 @@ test('home shows the tower with the cycle and pod counts over it, and the API an
   expect((await r.json()).system.model).toContain('sim')
 })
 
-test('the light slider turns the light on from 0 and off back at 0', async ({ page }) => {
-  // By hand, so Auto is off (a new garden starts on it, and it locks the slider); then from off.
+test('the light slider holds the light on from Off and off back at Off', async ({ page }) => {
+  // By hand, so Auto is off (a new garden starts on it), and from off.
   await page.request.post('/api/schedules/auto', { data: { on: false } })
   await page.request.post('/api/light', { data: { on: false } })
   await page.goto('/light')
   const slider = page.getByLabel('Brightness')
-  await expect(slider).toHaveValue('0')
+  const strip = page.getByTestId('light-strip')
+  await expect(slider).toHaveAttribute('aria-valuetext', 'Off')
   await slider.press('ArrowRight')
   await expect.poll(async () => (await (await page.request.get('/api/light')).json()).on).toBe(true)
-  await expect(page.getByTestId('strip-level')).toHaveText('5%')
+  await expect(strip.getByText('Hold · 25%')).toBeVisible()
+  await expect(strip.getByTestId('hold-bar')).toContainText('holding 25% until')
   await slider.press('ArrowLeft')
   await expect.poll(async () => (await (await page.request.get('/api/light')).json()).on).toBe(false)
-  await expect(page.getByTestId('strip-level')).toHaveText('Off')
+  await expect(strip.getByText('Hold · Off')).toBeVisible()
+  await strip.getByRole('radio', { name: 'I resume' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/light/owner')).json()).manualUntil).toBeNull()
+  await strip.getByText('Resume schedule').click()
+  await expect(strip.getByTestId('hold-bar')).toHaveCount(0)
 })
 
-test('Auto switches from the strip, running its curve alone, and off brings the others back', async ({ page }) => {
+test('Auto turns on from its stop, running its curve alone, and its card\'s switch brings the others back', async ({ page }) => {
+  await page.request.post('/api/schedules/auto', { data: { on: false } })
   await page.goto('/light')
-  const auto = page.getByTestId('light-strip').getByRole('switch', { name: 'Auto', exact: true })
   const lightCurves = async () => ((await (await page.request.get('/api/schedules')).json()) as Array<{ id: string, kind: string, enabled: boolean, spec: { sun?: { auto?: boolean } } }>).filter(s => s.kind === 'light')
   const before = (await lightCurves()).filter(s => s.enabled && !s.spec.sun?.auto).map(s => s.id)
-  if ((await auto.getAttribute('aria-checked')) === 'true') {
-    await auto.click()
-    await expect(auto).toHaveAttribute('aria-checked', 'false')
-  }
-  await auto.click()
-  await expect(auto).toHaveAttribute('aria-checked', 'true')
+  const slider = page.getByLabel('Brightness')
+  await slider.press('Home')
+  await expect(slider).toHaveAttribute('aria-valuetext', 'Auto')
   await expect.poll(async () => (await lightCurves()).filter(s => s.enabled).map(s => s.spec.sun?.auto)).toEqual([true])
-  await auto.click()
-  await expect(auto).toHaveAttribute('aria-checked', 'false')
+  await page.getByRole('switch', { name: 'Enable Auto' }).click()
   await expect.poll(async () => (await lightCurves()).filter(s => s.enabled && !s.spec.sun?.auto).map(s => s.id).sort()).toEqual([...before].sort())
 })
 

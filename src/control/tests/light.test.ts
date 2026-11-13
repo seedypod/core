@@ -44,6 +44,24 @@ describe('LightArbiter', () => {
     expect(r.writes).toEqual([80, 60, 100, 70])
   })
 
+  it('holds until a given time, or until resumed, and moves a hold\'s end', async () => {
+    const r = rig()
+    await r.light.setSchedule(80)
+    await r.light.setManual(20, r.at() + 60_000)
+    expect(r.light.status().manualUntil).toBe(new Date(r.at() + 60_000).toISOString())
+    expect(r.light.holdUntil(null)).toBe(true)
+    r.advance(48 * 3_600_000)
+    expect(r.light.status()).toMatchObject({ source: 'manual', level: 20, manualUntil: null })
+    expect(r.light.holdUntil(r.at() + 1000)).toBe(true)
+    r.advance(2000)
+    await r.light.setSchedule(80)
+    await r.light.idle()
+    expect(r.light.status()).toMatchObject({ source: 'schedule', level: 80 })
+    expect(r.light.holdUntil(null)).toBe(false)
+    await r.light.setManual(30, null)
+    expect(r.light.status()).toMatchObject({ source: 'manual', manualUntil: null })
+  })
+
   it('breaks priority ties by the newest lease and resumes early on request', async () => {
     const r = rig()
     await r.light.setLeases([lease('rule:1:0', 30, 50, r.at() + 1e6, 1), lease('rule:2:0', 45, 50, r.at() + 1e6, 2)])

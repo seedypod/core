@@ -63,6 +63,18 @@ describe('routers', () => {
     expect(seen).toContain('actuators.light')
   })
 
+  it('light.set holds until a given time or until resumed, and light.hold moves the end', async () => {
+    const { c } = caller()
+    const until = new Date(Date.now() + 3_600_000).toISOString()
+    await c.light.set({ level: 40, until })
+    expect(await c.light.owner()).toMatchObject({ source: 'manual', level: 40, manualUntil: until })
+    expect(await c.light.hold({ until: null })).toMatchObject({ source: 'manual', manualUntil: null })
+    await expect(c.light.hold({ until: new Date(Date.now() - 1000).toISOString() })).rejects.toThrow('already past')
+    await c.light.resume()
+    await expect(c.light.hold({ until: null })).rejects.toThrow('isn\'t held by hand')
+    await expect(c.light.set({ level: 40, until: new Date(Date.now() - 1000).toISOString() })).rejects.toThrow('already past')
+  })
+
   it('pump commands say whether they start the pump, so a Stop is never taken for a run someone started', async () => {
     const { c, events } = caller()
     const seen: string[] = []

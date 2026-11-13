@@ -58,7 +58,7 @@ export interface LightOwner { source: 'manual' | 'autopilot' | 'schedule' | null
 /** Who holds the light right now, in one line. */
 export function lightLine(light: LightOwner, names: Map<number, string>): string {
   const who = light.source === 'manual'
-    ? `held by hand until ${new Date(light.manualUntil ?? '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    ? `held by hand until ${light.manualUntil ? new Date(light.manualUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'resumed'}`
     : light.source === 'autopilot'
       ? `set by ${names.get(Number(light.leaseId?.split(':')[1])) ?? 'a rule'}`
       : light.source === 'schedule' ? 'following the schedule' : 'idle'

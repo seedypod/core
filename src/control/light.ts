@@ -31,6 +31,7 @@ export interface LightStatus {
   level: number | null
   /** The winning Autopilot lease, when Autopilot is in charge. */
   leaseId: string | null
+  /** When a hand's hold ends; null while holding until someone resumes, or with no hold. */
   manualUntil: string | null
   schedule: number | null
 }
@@ -71,10 +72,21 @@ export class LightArbiter {
     this.unsubscribe()
   }
 
-  /** A person set the light: apply it now and hold it. Resolves with hald's state. */
-  async setManual(level: number): Promise<ActuatorState> {
-    this.manual = { level, until: this.now() + this.holdMs }
+  /**
+   * A person set the light: apply it now and hold it, for `holdMs` unless
+   * `until` (epoch ms) says when it ends, or null holds until someone resumes.
+   * Resolves with hald's state.
+   */
+  async setManual(level: number, until?: number | null): Promise<ActuatorState> {
+    this.manual = { level, until: until === undefined ? this.now() + this.holdMs : until ?? Infinity }
     return this.write(level)
+  }
+
+  /** Move a hold's end (epoch ms, or null for until someone resumes); false with no hold to move. */
+  holdUntil(until: number | null): boolean {
+    if (this.resolve().source !== 'manual' || !this.manual) return false
+    this.manual.until = until ?? Infinity
+    return true
   }
 
   /** Release a manual hold early and fall back to Autopilot or the schedule. */
@@ -97,7 +109,7 @@ export class LightArbiter {
 
   status(): LightStatus {
     const r = this.resolve()
-    return { source: r.source, level: r.level, leaseId: r.leaseId, manualUntil: this.manual ? new Date(this.manual.until).toISOString() : null, schedule: this.schedule }
+    return { source: r.source, level: r.level, leaseId: r.leaseId, manualUntil: this.manual && Number.isFinite(this.manual.until) ? new Date(this.manual.until).toISOString() : null, schedule: this.schedule }
   }
 
   /** Resolves when every queued write has settled. */

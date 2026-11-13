@@ -19,6 +19,18 @@ async function set(ctx: Parameters<Parameters<typeof publicProcedure.mutation>[0
   }
 }
 
+const LightOwner = z.object({ source: z.enum(['manual', 'autopilot', 'schedule']).nullable(), level: z.number().nullable(), leaseId: z.string().nullable(), manualUntil: z.string().nullable(), schedule: z.number().nullable() })
+/** When a hand's hold ends: a time ahead, or null for until someone resumes. */
+const HoldUntil = z.string().datetime({ offset: true }).nullable()
+
+/** A hold's end as epoch ms (null stays null); one already past is refused. */
+function holdEnd(until: string | null, now: number): number | null {
+  if (until === null) return null
+  const at = Date.parse(until)
+  if (at <= now) throw new TRPCError({ code: 'BAD_REQUEST', message: 'until is already past' })
+  return at
+}
+
 export const lightRouter = router({
   get: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/light', tags: ['light'] } })
@@ -26,13 +38,14 @@ export const lightRouter = router({
     .query(({ ctx }) => ctx.hal.snapshot().actuators.light ?? null),
   set: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/light', tags: ['light'], summary: 'Turn the grow light on/off and set brightness 0–100' } })
-    .input(ActuatorCommand.omit({ durationS: true }))
+    .input(ActuatorCommand.omit({ durationS: true }).extend({ until: HoldUntil.optional().describe('When the hold ends; null holds until resumed; left out, 30 minutes') }))
     .output(ActuatorState)
     .mutation(async ({ ctx, input }) => {
       // A person set the light: it holds over Autopilot and the curve for a while (ADR-0020).
       const level = input.on === false ? 0 : input.level ?? (ctx.hal.snapshot().actuators.light?.level || 100)
+      const until = input.until === undefined ? undefined : holdEnd(input.until, (ctx.now ?? (() => new Date()))().getTime())
       try {
-        const state = await ctx.light.setManual(level)
+        const state = await ctx.light.setManual(level, until)
         ctx.events.emit({ kind: 'mutation', path: 'actuators.light' })
         return state
       }
@@ -43,11 +56,20 @@ export const lightRouter = router({
     }),
   owner: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/light/owner', tags: ['light'], summary: 'Who controls the light now: manual hold, Autopilot or the schedule' } })
-    .output(z.object({ source: z.enum(['manual', 'autopilot', 'schedule']).nullable(), level: z.number().nullable(), leaseId: z.string().nullable(), manualUntil: z.string().nullable(), schedule: z.number().nullable() }))
+    .output(LightOwner)
     .query(({ ctx }) => ctx.light.status()),
+  hold: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/light/hold', tags: ['light'], summary: 'Change when a manual hold ends: a time, or null to hold until resumed' } })
+    .input(z.object({ until: HoldUntil }))
+    .output(LightOwner)
+    .mutation(({ ctx, input }) => {
+      if (!ctx.light.holdUntil(holdEnd(input.until, (ctx.now ?? (() => new Date()))().getTime()))) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'the light isn\'t held by hand' })
+      ctx.events.emit({ kind: 'mutation', path: 'actuators.light' })
+      return ctx.light.status()
+    }),
   resume: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/light/resume', tags: ['light'], summary: 'End a manual hold and hand the light back to Autopilot or the schedule' } })
-    .output(z.object({ source: z.enum(['manual', 'autopilot', 'schedule']).nullable(), level: z.number().nullable(), leaseId: z.string().nullable(), manualUntil: z.string().nullable(), schedule: z.number().nullable() }))
+    .output(LightOwner)
     .mutation(async ({ ctx }) => {
       await ctx.light.resume()
       await ctx.light.idle()

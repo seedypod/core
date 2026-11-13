@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Badge, Button, Card, GhostIcon } from '@/src/components/ds/core'
-import { Slider, Toggle } from '@/src/components/ds/forms'
+import { Toggle } from '@/src/components/ds/forms'
 import { LineChart } from '@/src/components/ds/charts'
 import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 import { fmtClock } from '@/src/components/charts/format'
@@ -18,7 +18,8 @@ import { unitPlace, type Place } from '@/src/scheduler/place'
 import type { SunDay } from '@/src/scheduler/sun'
 import { CurveEditor } from './CurveEditor'
 import { useLightControl } from './useLightControl'
-import { asCurve, holdWindow, levelAt, lightToday, nextDim, nextOn, runningToday, SAMPLE_MINUTES, sunToday, todayLevels, type LightCurve } from './curves'
+import { asCurve, holdWindow, levelAt, lightToday, nextChange, nextDim, nextOn, runningToday, SAMPLE_MINUTES, sunToday, todayLevels, type LightCurve } from './curves'
+import { LightStops, type Stop } from './LightStops'
 
 const EYEBROW = 'font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fg-3'
 const AXIS = 'flex justify-between font-mono text-[10px] text-fg-3'
@@ -28,11 +29,12 @@ const RATING_TONE: Record<ReturnType<typeof lightRating>, string> = { 'low': 'bg
 const clock = (iso: string, zone: string) => fmtClock(localTime(new Date(iso), zone).minute)
 
 export function LightPage() {
-  const { light: l, query: lightQuery, level, requested, lightOn, preview, commit, power } = useLightControl()
+  const { light: l, query: lightQuery, level, requested, pending, lightOn, preview, commit, power } = useLightControl()
   const schedules = trpc.schedules.list.useQuery()
   const utils = trpc.useUtils()
   const owner = trpc.light.owner.useQuery(undefined, { refetchInterval: 15_000 })
   const resume = trpc.light.resume.useMutation({ onSuccess: () => utils.light.invalidate() })
+  const holdUntil = trpc.light.hold.useMutation({ onSuccess: () => utils.light.invalidate() })
   const o = owner.data
   const upsert = trpc.schedules.upsert.useMutation({ onSuccess: () => utils.schedules.invalidate() })
   const setAuto = trpc.schedules.setAuto.useMutation({ onSuccess: () => utils.schedules.invalidate() })
@@ -62,12 +64,32 @@ export function LightPage() {
   const nowAt = minutesNow / 15
   const queries = [schedules, lightQuery]
   const status = vizStatus(queries, today === null)
+  const held = o?.source === 'manual'
+  // A hold until someone resumes runs past the end of today's chart.
+  const heldUntil = held ? o.manualUntil ?? new Date(now.getTime() + 86_400_000).toISOString() : null
   const scene = status === 'ready' && today
-    ? lightData({ planned: today, nowMin: minutesNow + now.getSeconds() / 60, level: l?.on ? l.level : 0, hold: o?.source === 'manual' && o.manualUntil && l ? holdWindow(l.since, o.manualUntil, now, zone) : null })
+    ? lightData({ planned: today, nowMin: minutesNow + now.getSeconds() / 60, level: l?.on ? l.level : 0, hold: heldUntil && l ? holdWindow(l.since, heldUntil, now, zone) : null })
     : null
+  // A new hold lasts until the curves next change the light, unless someone picks otherwise.
+  const nowMin = minutesNow + now.getSeconds() / 60
+  const change = nextChange(running, runningToday(curves, (weekday + 1) % 7), nowMin)
+  const changeAt = change === null ? null : new Date(Math.round((now.getTime() + (change - nowMin) * 60_000) / 60_000) * 60_000).toISOString()
+  const holdMode = !held ? null : o.manualUntil === null ? 'resume' : changeAt && Math.abs(Date.parse(o.manualUntil) - Date.parse(changeAt)) < 120_000 ? 'change' : 'timed'
+  const pick = (stop: Stop) => {
+    if (stop === 'auto') {
+      preview(null)
+      if (!autoOn) setAuto.mutate({ on: true })
+      else if (held) resume.mutate()
+      return
+    }
+    // A hold keeps how it ends; a new one ends at the next change.
+    const until = !held ? changeAt : holdMode === 'change' ? changeAt : o.manualUntil
+    if (stop === 0) power(false, until)
+    else commit(stop, until)
+  }
 
   const following = running.length === 1 ? `Following ${running[0]?.name}` : running.length > 1 ? `Following ${running.length} curves` : 'No curve today'
-  const holding = o?.source === 'manual' && o.manualUntil ? `held by hand until ${clock(o.manualUntil, zone)}` : o?.source === 'autopilot' ? 'Autopilot is in charge' : null
+  const holding = held ? `held by hand until ${o.manualUntil ? clock(o.manualUntil, zone) : 'you resume'}` : o?.source === 'autopilot' ? 'Autopilot is in charge' : null
   const rating = hours === null ? null : lightRating(hours.full)
 
   return (
@@ -89,15 +111,17 @@ export function LightPage() {
           zone={zone}
           // Off reads as the slider at 0, unless a level has just been asked for.
           level={lightOn || requested ? level : 0}
+          requested={requested || pending}
           auto={autoOn}
           sun={sun}
           place={unitPlace({ ...settings.data, timezone: zone })}
-          onAuto={on => setAuto.mutate({ on })}
+          changeAt={changeAt}
+          holdMode={holdMode}
           resuming={resume.isPending}
           onResume={() => resume.mutate()}
-          onPower={power}
+          onPick={pick}
+          onHoldUntil={until => holdUntil.mutate({ until })}
           onPreview={preview}
-          onCommit={commit}
         />
         <div className="flex flex-col gap-3 px-[22px] pb-5 pt-4">
           <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
@@ -153,7 +177,7 @@ export function LightPage() {
         curves={curves}
         cycles={(schedules.data ?? []).flatMap(s => asCycle(s) ?? [])}
         timezone={timezone}
-        hold={o?.source === 'manual' && o.manualUntil && l ? { since: l.since, until: o.manualUntil, level: l.on ? l.level : 0 } : null}
+        hold={held && l ? { since: l.since, until: o.manualUntil, level: l.on ? l.level : 0 } : null}
         sun={sun}
       />
 
@@ -231,15 +255,18 @@ export function LightPage() {
 }
 
 type Owner = { source: 'manual' | 'autopilot' | 'schedule' | null, manualUntil: string | null, schedule: number | null } | undefined
+/** How a hand's hold ends: at the curves' next change, at a time, or when someone resumes. */
+type HoldMode = 'change' | 'timed' | 'resume'
 
 /**
  * The top band of the Light card, the Water strip's twin: what the light is
- * doing and why (the curve it follows and when it next dims or comes on, a
- * hand's hold with Resume, or Autopilot), with power and brightness at the
- * right. It tints amber while the light is on. A change here holds for 30
- * minutes, as before.
+ * doing and why (Auto and the sun it follows, a curve and when it next dims or
+ * comes on, a hand's hold, or Autopilot), with the stepped slider at the
+ * right. Any stop but Auto holds the light; the bar under a hold says until
+ * when, by default the curves' next change, and hands back with Resume. It
+ * tints amber while the light is on.
  */
-function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, auto, sun, place, onAuto, resuming, onResume, onPower, onPreview, onCommit }: {
+function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zone, level, requested, auto, sun, place, changeAt, holdMode, resuming, onResume, onPick, onHoldUntil, onPreview }: {
   on: boolean
   known: boolean
   owner: Owner
@@ -251,47 +278,54 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   weekday: number
   zone: string
   level: number
-  /** Whether Auto runs the light, and switching it. */
+  /** Whether `level` is one just asked for, shown before the light gets there. */
+  requested: boolean
+  /** Whether Auto runs the light. */
   auto: boolean
   /** Today's sun, when a curve follows it; and where the unit sees it from, set or guessed from its timezone. */
   sun: SunDay | null
   place: Place | null
-  onAuto: (on: boolean) => void
+  /** When the curves next change the light, which a new hold lasts until; null if they don't within a day. */
+  changeAt: string | null
+  holdMode: HoldMode | null
   resuming: boolean
   onResume: () => void
-  onPower: (on: boolean) => void
-  onPreview: (level: number) => void
-  onCommit: (level: number) => void
+  onPick: (stop: Stop) => void
+  onHoldUntil: (until: string | null) => void
+  onPreview: (level: number | null) => void
 }) {
   // Scanning the day's minutes runs once per minute and set of curves, not on every render (a drag renders many).
   const dims = useMemo(() => nextDim(runningToday(curves, weekday), minute), [curves, weekday, minute])
   const next = useMemo(() => nextOn(runningToday(curves, weekday), runningToday(curves, (weekday + 1) % 7), minute), [curves, weekday, minute])
-  const held = o?.source === 'manual' && o.manualUntil
+  const held = o?.source === 'manual'
   const following = running.length === 1 ? running[0]?.name : running.length > 1 ? `${running.length} curves` : null
+  const by = auto ? 'Auto' : 'The curve'
+  const lit = level > 0 ? `${level}%` : 'Off'
   let title = known ? `${auto ? 'Auto · ' : ''}${on ? 'Light on' : 'Light off'}` : 'Light'
   let sub: ReactNode = null
   if (held) {
-    title = `Held by hand until ${clock(o.manualUntil ?? '', zone)}`
+    title = `Hold · ${lit}`
     sub = (
-      <>
-        <span className="truncate">{`then ${o.schedule !== null ? `the curve (${o.schedule}% at this hour)` : 'the curve or Autopilot'}`}</span>
-        <button type="button" disabled={resuming} onClick={onResume} className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-fg underline underline-offset-2 disabled:opacity-60">Resume schedule</button>
-      </>
+      <span className="truncate" data-testid="hold-sub">
+        {o.schedule === null
+          ? 'no curve runs now'
+          : o.schedule > 0
+            ? `${by} would be at ${o.schedule}% now`
+            : level === 0 && next ? `${by} would turn on ${next.tomorrow ? 'tomorrow ' : ''}at ${fmtClock(next.minute)}` : `${by} would be off now`}
+      </span>
     )
   }
   else if (o?.source === 'autopilot') {
+    title = known ? `Autopilot · ${on ? 'Light on' : 'Light off'}` : 'Light'
     sub = <span className="truncate">Autopilot is setting the light</span>
   }
   else if (auto) {
-    // What Auto made of today: when the light comes up and goes off, from sunrise and sunset.
-    const curve = running.find(c => c.spec.sun?.auto)
-    const pts = curve ? [...curve.spec.setpoints].sort((a, b) => a.minute - b.minute) : []
-    const up = pts.find(p => p.level === 0 && pts.some(q => q.minute > p.minute && q.level > 0))
-    const off = [...pts].reverse().find(p => p.level === 0 && pts.some(q => q.minute < p.minute && q.level > 0))
+    // What Auto does next, and where it sees the sun from.
+    const when = on ? (dims !== null ? `dims at ${fmtClock(dims)}` : null) : next ? `on ${next.tomorrow ? 'tomorrow ' : ''}${fmtClock(next.minute)}` : null
     sub = (
       <span className="truncate" data-testid="auto-sub">
         {place && sun
-          ? [`sunrise ${sun.sunrise === null ? '–' : fmtClock(sun.sunrise)}`, `sunset ${sun.sunset === null ? '–' : fmtClock(sun.sunset)}`, up && off ? `light ${fmtClock(up.minute)}–${fmtClock(off.minute)}` : null, place.source === 'timezone' ? `near ${place.city}` : null].filter(Boolean).join(' · ')
+          ? ['follows sun + extension', when, place.source === 'timezone' ? `near ${place.city}` : null].filter(Boolean).join(' · ')
           : (
               <>
                 {'centred on 12:00 · '}
@@ -308,33 +342,56 @@ function LightStrip({ on, known, owner: o, running, curves, minute, weekday, zon
   else if (known) {
     sub = <span className="truncate">{next ? `Next on ${next.tomorrow ? 'tomorrow ' : ''}${fmtClock(next.minute)} (${next.name})` : 'no curve to turn it on'}</span>
   }
+  const value: Stop | number = !requested && !held && auto && o?.source !== 'autopilot' ? 'auto' : level
+  const options: { mode: HoldMode, label: string, until: () => string | null, disabled?: boolean }[] = [
+    { mode: 'change', label: changeAt ? `next change ${clock(changeAt, zone)}` : 'next change', until: () => changeAt, disabled: !changeAt },
+    { mode: 'timed', label: holdMode === 'timed' && o?.manualUntil ? clock(o.manualUntil, zone) : '1 h', until: () => new Date(Date.now() + 3_600_000).toISOString() },
+    { mode: 'resume', label: 'I resume', until: () => null },
+  ]
   return (
     <div
       data-testid="light-strip"
       data-state={on ? 'on' : 'off'}
       data-auto={auto ? 'true' : undefined}
-      className={cn('flex flex-col gap-3 border-b border-line px-[22px] py-3.5 @min-[620px]:flex-row @min-[620px]:items-center @min-[620px]:justify-between', on ? 'bg-light/10' : 'bg-active/40', auto && !held && 'light-auto')}
+      className={cn('flex flex-col gap-3 border-b border-line px-[22px] py-3.5', on ? 'bg-light/10' : 'bg-active/40', auto && !held && 'light-auto')}
     >
-      <div className="flex h-11 min-w-0 items-center gap-3">
-        {held ? <Hand size={14} className="shrink-0 text-light" /> : auto ? <Sun size={16} className={cn('light-auto-sun shrink-0', on ? 'text-light' : 'text-fg-3')} aria-hidden /> : <span className={cn('size-2.5 shrink-0 rounded-full', on ? 'bg-light' : 'bg-fg-3')} />}
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-[15px] font-medium leading-tight">{title}</span>
-          <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-fg-3">{sub}</span>
-        </div>
-      </div>
-      <div className="flex h-10 items-center gap-4">
-        <label className="flex cursor-pointer items-center gap-2 text-[13px] text-fg-2">
-          <Toggle on={auto} size="md" label="Auto" onChange={onAuto} />
-          Auto
-        </label>
-        {/* One slider for both: all the way down is off. */}
-        <div className="flex items-center gap-2.5" title={auto ? 'Auto sets the brightness from sunrise and sunset. Turn Auto off to set it by hand.' : 'A change here holds for 30 minutes, then the curve or Autopilot takes over again.'}>
-          <div className="w-[200px] max-w-[40vw]">
-            <Slider value={level} step={5} disabled={auto} marks={[25, 50, 75]} onChange={onPreview} onCommit={v => (v === 0 ? onPower(false) : onCommit(v))} label="Brightness" />
+      <div className="flex flex-col gap-3 @min-[620px]:flex-row @min-[620px]:items-center @min-[620px]:justify-between">
+        <div className="flex h-11 min-w-0 items-center gap-3">
+          {held ? <Hand size={14} className="shrink-0 text-light" /> : auto ? <Sun size={16} className={cn('light-auto-sun shrink-0', on ? 'text-light' : 'text-fg-3')} aria-hidden /> : <span className={cn('size-2.5 shrink-0 rounded-full', on ? 'bg-light' : 'bg-fg-3')} />}
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className={cn('text-[15px] font-medium leading-tight', held && level === 0 && 'text-fg-2')}>{title}</span>
+            <span className="flex min-w-0 items-center gap-1.5 font-mono text-[12px] text-fg-3">{sub}</span>
           </div>
-          <span className="w-9 text-right font-mono text-[12px] text-fg-2" data-testid="strip-level">{level > 0 ? `${level}%` : 'Off'}</span>
         </div>
+        <LightStops
+          className="w-full @min-[620px]:w-[360px]"
+          value={value}
+          auto={auto}
+          onPreview={onPreview}
+          onPick={onPick}
+        />
       </div>
+      {held && (
+        <div data-testid="hold-bar" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-ctl bg-active/70 px-3 py-2 font-mono text-[12px]">
+          <span>{`holding ${level > 0 ? `${level}%` : 'off'} until`}</span>
+          <div role="radiogroup" aria-label="Hold until" className="flex rounded-ctl bg-surface p-0.5">
+            {options.map(opt => (
+              <button
+                key={opt.mode}
+                type="button"
+                role="radio"
+                aria-checked={holdMode === opt.mode}
+                disabled={opt.disabled}
+                onClick={() => holdMode !== opt.mode && onHoldUntil(opt.until())}
+                className={cn('cursor-pointer rounded-[5px] border-0 px-2.5 py-1 disabled:cursor-default disabled:opacity-45', holdMode === opt.mode ? 'bg-light/15 text-light' : 'bg-transparent text-fg-2 hover:text-fg')}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button type="button" disabled={resuming} onClick={onResume} className="ml-auto shrink-0 cursor-pointer border-0 bg-transparent p-0 text-light disabled:opacity-60">{`Resume ${auto ? 'Auto' : 'schedule'}`}</button>
+        </div>
+      )}
     </div>
   )
 }

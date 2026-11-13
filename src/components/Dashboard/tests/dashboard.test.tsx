@@ -35,7 +35,7 @@ vi.mock('@/src/utils/trpc', () => {
     },
   })
   const router = (prefix: string): unknown => new Proxy({}, { get: (_, k: string) => (k === 'useQuery' || k === 'useMutation' ? proc(prefix)[k] : router(prefix ? `${prefix}.${k}` : k)) })
-  return { apiBase: () => '', trpc: new Proxy({}, { get: (_, k: string) => (k === 'useUtils' ? () => ({ settings: { invalidate: vi.fn() }, light: { get: { setData: (_: unknown, v: unknown) => setData('light', v) } }, pump: { invalidate: invalidatePump, get: { setData: (_: unknown, v: unknown) => setData('pump', v) } } }) : router(k)) }) }
+  return { apiBase: () => '', trpc: new Proxy({}, { get: (_, k: string) => (k === 'useUtils' ? () => ({ settings: { invalidate: vi.fn() }, light: { get: { setData: (_: unknown, v: unknown) => setData('light', v) }, owner: { invalidate: vi.fn() } }, pump: { invalidate: invalidatePump, get: { setData: (_: unknown, v: unknown) => setData('pump', v) } } }) : router(k)) }) }
 })
 
 describe('readings on the cards Home', () => {
