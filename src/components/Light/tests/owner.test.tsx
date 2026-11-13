@@ -369,12 +369,14 @@ describe('LightPage: curves', () => {
     expect(shown()).toBe('Auto')
     expect(screen.getByTestId('stops-auto').dataset.on).toBe('true')
     expect(screen.getByTestId('auto-sub').textContent).toBe('follows sun + extension · dims at 18:55')
+    expect(screen.getByTestId('auto-located').getAttribute('aria-label')).toBe('at the unit\'s location')
     expect(screen.getByTestId('legend-daylight').textContent).toMatch(/^daylight 10h \d+m · extended to 14h 30m$/)
     cleanup()
     // No location set: the timezone's city stands in, and the line says so.
     data.set('settings', { timezone: 'America/Los_Angeles', latitude: null, longitude: null })
     render(<LightPage />)
     expect(screen.getByTestId('auto-sub').textContent).toBe('follows sun + extension · dims at 18:55 · near Los Angeles')
+    expect(screen.queryByTestId('auto-located')).toBeNull()
     cleanup()
     // UTC has no city: the day centres on 12:00 until a location is set.
     data.set('settings', { timezone: 'UTC', latitude: null, longitude: null })

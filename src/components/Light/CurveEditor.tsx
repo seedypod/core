@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from 'lucide-react'
+import { LocateFixed, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button, GhostIcon } from '@/src/components/ds/core'
 import { DayPicker, Slider, Stepper, TextField, Toggle } from '@/src/components/ds/forms'
@@ -87,6 +87,7 @@ function SunControls({ sun, onChange }: { sun: SunFollow, onChange: (sun: SunFol
   return (
     <div className="flex flex-col">
       <p className="pb-2 text-[13px] text-fg-2 text-pretty" data-testid="sun-today">
+        {at?.source === 'set' && <LocateFixed size={12} className="mr-1 inline-block align-[-2px] text-light" aria-label="At the unit's location" data-testid="sun-located" />}
         {today
           ? `Today${at?.source === 'timezone' ? ` near ${at.city} (from the timezone)` : ''}: sunrise ${today.sunrise === null ? '–' : fmtClock(today.sunrise)}, sunset ${today.sunset === null ? '–' : fmtClock(today.sunset)}, ${hm(today.day)} of daylight. `
           : 'Set the unit’s location in Settings to follow sunrise and sunset; until then the day centres on 12:00. '}
