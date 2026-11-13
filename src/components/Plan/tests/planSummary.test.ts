@@ -13,7 +13,7 @@ const CATALOG = [
 
 function plan(over: Partial<SavedPlan> = {}): SavedPlan {
   return {
-    id: 'order', name: 'Order Y221288628', model: 'home', appliedAt: null,
+    id: 'order', name: 'Spring order', model: 'home', appliedAt: null,
     request: ORDER.map(plantId => ({ plantId, count: twice.has(plantId) ? 2 : 1 })),
     layout: {
       assignments: [{ slot: 25, plantId: 'basil', plantName: 'Basil' }, { slot: 26, plantId: 'kale', plantName: 'Kale' }, { slot: 27, plantId: 'kale', plantName: 'Kale' }],
