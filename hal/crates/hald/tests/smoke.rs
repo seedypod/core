@@ -81,7 +81,7 @@ fn check_validates_and_reports_unknown_kinds() {
     // The pump current guard ships off until a baseline is measured.
     assert!(v["limits"]["pump_dry_current_a"].is_null());
     assert_eq!(v["limits"]["pump_dry_after_ms"], 300);
-    assert_eq!(v["limits"]["pump_dry_grace_ms"], 1000);
+    assert_eq!(v["limits"]["pump_dry_grace_ms"], 3000);
     assert_eq!(v["limits"]["pump_dry_grace_min_ms"], 300);
     assert_eq!(v["limits"]["pump_dry_grace_max_ms"], 5000);
     // Both asked, no cutoff yet: the tank level alone, and a warning that says so.

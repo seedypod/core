@@ -1822,7 +1822,7 @@ mod tests {
                 &limits["pumpDryGraceMaxMs"]
             ),
             (
-                &serde_json::json!(1000),
+                &serde_json::json!(3000),
                 &serde_json::json!(300),
                 &serde_json::json!(5000)
             )
@@ -1976,12 +1976,12 @@ mod tests {
         let (ended, _) = run_until_stopped(&mut r, 60).expect("the run ends");
         assert_eq!(ended + 100, 5000, "on its deadline");
         assert_eq!(r.engine.pump.fault(), None);
-        // The supply sags under the pump: past the 1 s grace, 0.3 s of it stops the pump.
+        // The supply sags under the pump: past the 3 s grace, 0.3 s of it stops the pump.
         r.world.lock().unwrap().supply_sag_v = Some(10.2);
         r.engine
             .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))), r.now);
         let (after, out) = run_until_stopped(&mut r, 50).expect("the brown-out guard never tripped");
-        assert_eq!(after, 1300);
+        assert_eq!(after, 3300);
         let why = "brown-out: supply fell to 10.2 V for 0.3 s";
         assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["fault"], why);
         assert_eq!(

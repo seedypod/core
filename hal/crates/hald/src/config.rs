@@ -508,8 +508,9 @@ impl From<&Limits> for PumpLimits {
 
 /// Three reads at the guard's 100 ms: a pump pulling air stops in about a third of a second.
 pub const PUMP_DRY_AFTER_MS: u64 = 300;
-/// Spin-up and priming after a start, before the current is judged.
-pub const PUMP_DRY_GRACE_MS: u64 = 1000;
+/// Spin-up and priming after a start, before the current is judged: the unit's
+/// pump takes ~2.3 s to reach its wet current at 100 % duty (2026-11-16 traces).
+pub const PUMP_DRY_GRACE_MS: u64 = 3000;
 /// No setting may hold the current guard off longer than this after a start.
 pub const PUMP_DRY_MAX_MS: u64 = 10_000;
 /// The brown-out cutoff: a 12 V supply 10 % low, the bottom of its usual
@@ -1203,7 +1204,7 @@ kind = "pwm_pump"
         // No baseline yet: the current guard ships off, with the guard's own timings.
         let guard = PumpLimits::default();
         assert_eq!(p.dry_current_a, None);
-        assert_eq!((p.dry_after_ms, p.dry_grace_ms), (300, 1000));
+        assert_eq!((p.dry_after_ms, p.dry_grace_ms), (300, 3000));
         assert_eq!(
             (p.dry_after_ms, p.dry_grace_ms),
             (guard.dry_after_ms, guard.dry_grace_ms)
@@ -1235,7 +1236,7 @@ kind = "pwm_pump"
                 c.limits.dry_grace_ms(),
                 c.limits.pump_dry_grace_max_ms
             ),
-            (300, 1000, 5000)
+            (300, 3000, 5000)
         );
         let level: Config = toml::from_str("[limits]\npump_dry_guard = \"current\"\n").unwrap();
         assert_eq!(PumpLimits::from(&level.limits).dry_guard, DryGuard::Current);
