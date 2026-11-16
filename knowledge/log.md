@@ -1,5 +1,9 @@
 # Knowledge update log
 
+## 2026-11-16
+
+- **Creation**: [Pump wet trace](operations/pump-wet-trace-2026-11-16.md), the unit's first real wet pump-current trace (0.93 A at 100 % duty, ~2.3 s ramp), with the capture's CSV. It puts the guard's synthetic 1.87 A assumption and the 1000 ms default grace in question (#220).
+
 ## 2026-11-11
 
 - **Creation**: [Germination](plants/germination.md), Gardyn's guidance for sprouting yCubes in the tower, behind the grow protocol's germination and seedling checks (ADR 0030). Gardyn says nothing about domes in the tower, so there's no dome check.
