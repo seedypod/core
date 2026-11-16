@@ -2,6 +2,7 @@
 
 ## 2026-11-16
 
+- **Creation**: [Pump dry and air-lock trace](operations/pump-dry-trace-2026-11-16.md), the supervised dry run (#220): 0.55–0.71 A dry vs 0.93 A wet, a ~70 s air lock after re-submerging that cleared by itself, pointing to a 0.80 A cutoff and a grace of at least 3000 ms.
 - **Creation**: [Pump wet trace](operations/pump-wet-trace-2026-11-16.md), the unit's first real wet pump-current trace (0.93 A at 100 % duty, ~2.3 s ramp), with the capture's CSV. It puts the guard's synthetic 1.87 A assumption and the 1000 ms default grace in question (#220).
 
 ## 2026-11-11
