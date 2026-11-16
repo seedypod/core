@@ -73,7 +73,7 @@ impl Default for PumpLimits {
             over_temp_c: Some(36.0),
             dry_current_a: None,
             dry_after_ms: 300,
-            dry_grace_ms: 1000,
+            dry_grace_ms: 3000,
             dry_guard: DryGuard::Both,
             brownout_v: Some(10.8),
             brownout_ms: 300,
@@ -858,11 +858,20 @@ mod tests {
 
     // ---- which guard: pump_dry_guard ------------------------------------------
 
+    /// The 1 s grace the guard's timing tests were drawn for, before the unit's
+    /// ramp moved the default to 3 s.
+    fn one_second_grace() -> PumpLimits {
+        PumpLimits {
+            dry_grace_ms: 1000,
+            ..PumpLimits::default()
+        }
+    }
+
     fn mode(m: DryGuard) -> PumpGuard {
         PumpGuard::new(PumpLimits {
             dry_current_a: Some(1.2),
             dry_guard: m,
-            ..PumpLimits::default()
+            ..one_second_grace()
         })
     }
 
@@ -1028,9 +1037,9 @@ mod tests {
 
     // ---- the current guard (#220) -------------------------------------------
 
-    /// Pump-current traces: the 4 Hz ones as `hald --pump-trace` writes them, the
-    /// 10 Hz ones at the rate hald now feeds the guard. The synthetic ones stand
-    /// in until the unit's wet and dry runs are recorded; add those here.
+    /// Synthetic pump-current traces at 30 % duty, for the guard's timing: the
+    /// 4 Hz ones as `hald --pump-trace` writes them, the 10 Hz ones at the rate
+    /// hald now feeds the guard. The unit's own runs are `UNIT_*` below.
     const WET_TRACES: &[(&str, &str)] = &[
         (
             "wet.synthetic",
@@ -1063,10 +1072,24 @@ mod tests {
         ),
     ];
 
-    /// The cutoff the traces are judged against: well under the 1.87 A seen wet at 30 % duty.
+    /// The cutoff the synthetic traces are judged against: well under the 1.87 A
+    /// seen wet at 30 % duty, with the 1 s grace their timing was drawn for.
     fn current_guard() -> PumpGuard {
         PumpGuard::new(PumpLimits {
             dry_current_a: Some(1.2),
+            ..one_second_grace()
+        })
+    }
+
+    /// The unit's wet and air-locked dry runs at 100 % duty (2026-11-16): 0.93 A
+    /// wet after a ~2.3 s ramp, 0.55–0.71 A dry.
+    const UNIT_WET: &str = include_str!("../fixtures/pump_current/wet.unit-2026-11-16.csv");
+    const UNIT_DRY: &str = include_str!("../fixtures/pump_current/dry.unit-2026-11-16.csv");
+
+    /// The cutoff set on the unit from its traces, with the default grace.
+    fn unit_guard() -> PumpGuard {
+        PumpGuard::new(PumpLimits {
+            dry_current_a: Some(0.8),
             ..PumpLimits::default()
         })
     }
@@ -1134,6 +1157,33 @@ mod tests {
     }
 
     #[test]
+    fn the_units_wet_run_never_trips_its_cutoff_with_the_default_grace() {
+        assert!(trace(UNIT_WET).len() > 100);
+        assert_eq!(replay(&mut unit_guard(), UNIT_WET), None);
+    }
+
+    #[test]
+    fn a_one_second_grace_would_stop_the_units_pump_while_it_spins_up() {
+        let mut g = PumpGuard::new(PumpLimits {
+            dry_current_a: Some(0.8),
+            ..one_second_grace()
+        });
+        let (at, _) = replay(&mut g, UNIT_WET).expect("tripped in the ramp");
+        assert!(at < 3000, "tripped at {at} ms");
+    }
+
+    #[test]
+    fn the_units_dry_run_trips_within_a_second_of_the_intake_coming_out() {
+        // Wet to 30 s; the reads fall under 0.8 A from 31.07 s.
+        let (at, fault) = replay(&mut unit_guard(), UNIT_DRY).expect("never tripped");
+        assert!((31_000..=32_100).contains(&at), "tripped at {at} ms");
+        assert!(
+            fault.contains("below 0.8 A for 0.3 s: it's pulling air"),
+            "{fault}"
+        );
+    }
+
+    #[test]
     fn the_fault_names_the_current_and_latches_like_a_dry_run() {
         let mut g = current_guard();
         let t0 = Instant::now();
@@ -1169,7 +1219,7 @@ mod tests {
         let mut g = PumpGuard::new(PumpLimits {
             dry_current_a: Some(1.2),
             dry_after_ms: 100,
-            ..PumpLimits::default()
+            ..one_second_grace()
         });
         let t0 = Instant::now();
         g.request(&on(None, None), wet(), t0).unwrap();
@@ -1343,7 +1393,7 @@ mod tests {
 
     #[test]
     fn a_sagging_supply_stops_the_pump_past_the_grace_and_latches_until_acknowledged() {
-        let mut g = PumpGuard::new(PumpLimits::default());
+        let mut g = PumpGuard::new(one_second_grace());
         let t0 = Instant::now();
         let ms = |n| t0 + Duration::from_millis(n);
         g.request(&on(None, Some(60)), wet(), t0).unwrap();
@@ -1368,7 +1418,7 @@ mod tests {
 
     #[test]
     fn a_good_read_starts_the_sag_count_again_and_a_missing_one_never_trips_it() {
-        let mut g = PumpGuard::new(PumpLimits::default());
+        let mut g = PumpGuard::new(one_second_grace());
         let t0 = Instant::now();
         let ms = |n| t0 + Duration::from_millis(n);
         g.request(&on(None, Some(60)), wet(), t0).unwrap();
@@ -1394,7 +1444,7 @@ mod tests {
     fn it_takes_three_low_supply_reads_however_long_they_take_and_a_new_run_counts_afresh() {
         let mut g = PumpGuard::new(PumpLimits {
             brownout_ms: 100,
-            ..PumpLimits::default()
+            ..one_second_grace()
         });
         let t0 = Instant::now();
         let s = |n| t0 + Duration::from_secs(n);
@@ -1446,7 +1496,7 @@ mod tests {
 
     #[test]
     fn the_pis_under_voltage_flag_trips_on_two_reads_in_a_row() {
-        let mut g = PumpGuard::new(PumpLimits::default());
+        let mut g = PumpGuard::new(one_second_grace());
         let t0 = Instant::now();
         let ms = |n| t0 + Duration::from_millis(n);
         g.request(&on(None, Some(60)), wet(), t0).unwrap();

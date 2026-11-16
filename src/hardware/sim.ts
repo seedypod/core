@@ -24,7 +24,7 @@ export interface SimHalOptions {
 }
 
 /** A stock hal.toml: no current cutoff yet, so hald guards on the tank level alone. */
-const DEFAULT_LIMITS: SystemInfo['limits'] = { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'level', pumpDryGraceMs: 1000, pumpDryGraceMinMs: 300, pumpDryGraceMaxMs: 5000, pumpBrownoutV: 10.8, pumpBrownoutMs: 300, pumpBrownoutPi: false }
+const DEFAULT_LIMITS: SystemInfo['limits'] = { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'level', pumpDryGraceMs: 3000, pumpDryGraceMinMs: 300, pumpDryGraceMaxMs: 5000, pumpBrownoutV: 10.8, pumpBrownoutMs: 300, pumpBrownoutPi: false }
 
 /** What hald can add at runtime: the same descriptors hald publishes (the fixture is checked against hald's `SensorKind`s). */
 const ADDABLE = DeviceKindInfo.array().parse(kindsFixture)

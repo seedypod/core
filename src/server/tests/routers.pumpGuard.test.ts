@@ -40,7 +40,7 @@ describe('the pump dry-run guard from core', () => {
     const { c, events } = caller()
     const seen: string[] = []
     events.subscribe(e => seen.push(e.kind === 'mutation' ? e.path : e.kind))
-    expect((await c.system.info()).system?.limits).toMatchObject({ pumpDryGuard: 'level', pumpDryGraceMs: 1000, pumpDryGraceMinMs: 300, pumpDryGraceMaxMs: 5000 })
+    expect((await c.system.info()).system?.limits).toMatchObject({ pumpDryGuard: 'level', pumpDryGraceMs: 3000, pumpDryGraceMinMs: 300, pumpDryGraceMaxMs: 5000 })
     expect(await c.pump.setDryGrace({ ms: 1200 })).toMatchObject({ pumpDryGraceMs: 1200 })
     expect((await c.pump.setDryGrace({ ms: 0 })).pumpDryGraceMs).toBe(300)
     expect((await c.pump.setDryGrace({ ms: 10_000 })).pumpDryGraceMs).toBe(5000)
