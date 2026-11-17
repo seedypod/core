@@ -30,6 +30,10 @@ const { state, calls, invalidate } = vi.hoisted(() => ({
     seen: [] as number[],
     /** grow.updatePod refuses with this. */
     updateFails: null as string | null,
+    /** The catalog has not answered yet. */
+    catalogPending: false,
+    /** Every mutation reports this error. */
+    failure: null as null | string,
   },
   calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn(), swapPods: vi.fn(), updatePod: vi.fn() },
   invalidate: vi.fn(),
@@ -45,6 +49,7 @@ vi.mock('@/src/utils/trpc', async () => {
     useMutation: (o?: { onSuccess?: () => void }) => ({
       isPending: false,
       data: data?.(),
+      error: state.failure === null ? null : { message: state.failure },
       mutate: (input: unknown, m?: { onSuccess?: () => void }) => {
         fn(input)
         o?.onSuccess?.()
@@ -59,6 +64,7 @@ vi.mock('@/src/utils/trpc', async () => {
         zones: { useQuery: ({ model }: { model: Model }) => ({ data: state.loading ? undefined : { ...MODELS[model], slots: slots(model), counts: zoneCounts(model) } }) },
         catalog: { useQuery: (i: { q?: string, category?: string }) => {
           calls.catalog(i)
+          if (state.catalogPending) return { data: undefined }
           return { data: { plants: [...searchPlants(i as Parameters<typeof searchPlants>[0]).slice(0, 12), ...state.custom] } }
         } },
         layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[], overrides?: PlanOverrides }) => {
@@ -88,6 +94,7 @@ vi.mock('@/src/utils/trpc', async () => {
         }),
         updatePod: { useMutation: (o?: { onSuccess?: () => void }) => ({
           isPending: false,
+          error: state.failure === null ? null : { message: state.failure },
           mutate: (i: { slot: number, plant?: string | null, status?: string }) => {
             calls.updatePod(i)
             const { slot, plant, status } = i
@@ -118,6 +125,8 @@ beforeEach(() => {
   state.podsPending = false
   state.seen = []
   state.updateFails = null
+  state.catalogPending = false
+  state.failure = null
   for (const f of [...Object.values(calls), invalidate]) f.mockReset()
   tower.props = null
   tower.unavailable = false
@@ -309,6 +318,15 @@ describe('PlanPage', () => {
     fireEvent.dragStart(cell(chives), { dataTransfer })
     fireEvent.dragOver(cell(basil), { dataTransfer })
     expect(cell(basil).className).toContain('ring-fg-3')
+    // Leaving another pod, or a drag let go of, clears the ring; leaving the ringed one does too.
+    fireEvent.dragLeave(cell(chives), { dataTransfer })
+    expect(cell(basil).className).toContain('ring-fg-3')
+    fireEvent.dragEnd(cell(chives), { dataTransfer })
+    expect(cell(basil).className).not.toContain('ring-fg-3')
+    fireEvent.dragOver(cell(basil), { dataTransfer })
+    fireEvent.dragLeave(cell(basil), { dataTransfer })
+    expect(cell(basil).className).not.toContain('ring-fg-3')
+    fireEvent.dragOver(cell(basil), { dataTransfer })
     fireEvent.drop(cell(basil), { dataTransfer })
     expect(cell(basil).className).not.toContain('ring-fg-3')
     expect([slotOf('Basil'), slotOf('Chives')]).toEqual([basil, chives])
@@ -467,9 +485,27 @@ describe('PlanPage', () => {
     fireEvent.click(cell(9))
     expect(calls.swapPods).not.toHaveBeenCalled()
 
+    // A planned plant swapped onto it moves its record the other way.
+    fireEvent.click(cell(30))
+    fireEvent.change(panel().getByLabelText('Plant'), { target: { value: 'borage' } })
+    startSwap(cell(30))
     fireEvent.click(cell(4))
+    expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 30, b: 4 })
+    rerender(<PlanPage />)
+
+    fireEvent.click(cell(30))
     fireEvent.click(panel().getByRole('button', { name: 'Remove' }))
-    expect(calls.updatePod).toHaveBeenLastCalledWith({ slot: 4, plant: null, plantedAt: null, status: 'empty', notes: '' })
+    expect(calls.updatePod).toHaveBeenLastCalledWith({ slot: 30, plant: null, plantedAt: null, status: 'empty', notes: '' })
+  })
+
+  it('says why a pod edit failed, and opens a pod before the catalog answers', () => {
+    state.failure = 'the unit is offline'
+    state.catalogPending = true
+    render(<PlanPage />)
+    flat()
+    expect(screen.getAllByText('the unit is offline')).toHaveLength(2)
+    fireEvent.click(screen.getByTestId('plan-grid').querySelector('[data-slot="3"]') as HTMLElement)
+    expect(panel().queryAllByRole('option', { name: /./ }).filter(o => !(o as HTMLOptionElement).disabled)).toHaveLength(0)
   })
 
   it('names a planted plant the catalog doesn’t know, and closes the panel on another model', () => {

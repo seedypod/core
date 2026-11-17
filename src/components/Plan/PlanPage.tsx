@@ -263,8 +263,9 @@ export function PlanPage() {
     }
     const was = bySlot.get(slot)?.plantId ?? null
     if (was === plantId) return
-    setPicks(p => ({ ...p, ...(was && { [was]: Math.max(0, (p[was] ?? 0) - 1) }), ...(plantId && { [plantId]: (p[plantId] ?? 0) + 1 }) }))
-    setEdited({ ...overrides, pins: placePins(layout.data?.assignments ?? [], slot, plantId) })
+    if (was) bump(was, -1)
+    if (plantId) bump(plantId, 1)
+    setEdited({ ...overrides, pins: placePins([...bySlot.values()], slot, plantId) })
   }
   const shown: View = noWebGL ? '2d' : view
   const openSlot = open === null ? undefined : zones.data?.slots.find(s => s.slot === open)
