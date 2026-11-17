@@ -2,13 +2,15 @@
  "version": 1,
  "generatedFrom": [
   "scripts/plants/gardyn-zone-guide.txt",
-  "scripts/plants/gardyn-store-ycubes.txt"
+  "scripts/plants/gardyn-store-ycubes.txt",
+  "scripts/plants/gardyn-plant-book-sprout.txt"
  ],
  "sources": {
   "zone": "https://help.mygardyn.com/en/articles/11547329",
   "zoneMap": "https://help.mygardyn.com/en/articles/11567361",
   "store": "https://mygardyn.com/collections/ycubes",
-  "succession": "https://help.mygardyn.com/en/articles/1782337"
+  "succession": "https://help.mygardyn.com/en/articles/1782337",
+  "sprout": "https://mygardyn.com/plant-book"
  },
  "categoryHarvestMedians": {
   "green": [
@@ -38,6 +40,242 @@
   "legume": [
    2,
    3
+  ]
+ },
+ "categorySproutMedians": {
+  "flower": [
+   10,
+   14
+  ],
+  "fruiting": [
+   10,
+   28
+  ],
+  "green": [
+   7,
+   21
+  ],
+  "herb": [
+   7,
+   21
+  ],
+  "legume": [
+   10,
+   14
+  ],
+  "lettuce": [
+   7,
+   10
+  ]
+ },
+ "sproutDays": {
+  "arugula": [
+   4,
+   21
+  ],
+  "basil": [
+   5,
+   21
+  ],
+  "bi-color-sunflower": [
+   10,
+   14
+  ],
+  "bronze-arrow": [
+   7,
+   10
+  ],
+  "burrito-pepper": [
+   10,
+   28
+  ],
+  "catnip": [
+   10,
+   14
+  ],
+  "chamomile": [
+   10,
+   14
+  ],
+  "chives": [
+   7,
+   21
+  ],
+  "cilantro": [
+   5,
+   21
+  ],
+  "collard-greens": [
+   7,
+   21
+  ],
+  "cucumber": [
+   10,
+   14
+  ],
+  "dill": [
+   7,
+   24
+  ],
+  "garlic-chives": [
+   10,
+   21
+  ],
+  "goliath-pepper": [
+   10,
+   28
+  ],
+  "green-beans": [
+   10,
+   14
+  ],
+  "green-bok-choy": [
+   5,
+   10
+  ],
+  "hon-tsai-tai": [
+   5,
+   10
+  ],
+  "hungarian-hot-wax-pepper": [
+   10,
+   28
+  ],
+  "jalapeno": [
+   10,
+   28
+  ],
+  "kale": [
+   7,
+   21
+  ],
+  "lavender": [
+   15,
+   30
+  ],
+  "lemon-balm": [
+   7,
+   14
+  ],
+  "lime-basil": [
+   5,
+   21
+  ],
+  "lollo-rossa": [
+   7,
+   10
+  ],
+  "mint": [
+   10,
+   21
+  ],
+  "monte-carlo": [
+   7,
+   10
+  ],
+  "oregano": [
+   7,
+   21
+  ],
+  "poblano-pepper": [
+   10,
+   28
+  ],
+  "purple-beans": [
+   10,
+   14
+  ],
+  "purple-bok-choy": [
+   5,
+   10
+  ],
+  "purple-cayenne-pepper": [
+   10,
+   28
+  ],
+  "purslane": [
+   7,
+   21
+  ],
+  "radicchio": [
+   7,
+   10
+  ],
+  "red-cherry-tomato": [
+   7,
+   28
+  ],
+  "red-mini-strawberries": [
+   10,
+   15
+  ],
+  "red-oak-leaf-lettuce": [
+   7,
+   10
+  ],
+  "red-swiss-chard": [
+   7,
+   21
+  ],
+  "romaine": [
+   7,
+   10
+  ],
+  "rosemary": [
+   15,
+   25
+  ],
+  "rouge-dhiver": [
+   7,
+   10
+  ],
+  "sage": [
+   7,
+   21
+  ],
+  "stevia": [
+   14,
+   21
+  ],
+  "sunflower": [
+   10,
+   14
+  ],
+  "sweet-pepper": [
+   10,
+   28
+  ],
+  "thyme": [
+   7,
+   21
+  ],
+  "wasabi-greens": [
+   4,
+   21
+  ],
+  "watercress": [
+   7,
+   21
+  ],
+  "wheatgrass": [
+   1,
+   7
+  ],
+  "yellow-beans": [
+   10,
+   14
+  ],
+  "yellow-cherry-tomato": [
+   7,
+   28
+  ],
+  "yellow-mini-strawberry": [
+   10,
+   15
+  ],
+  "yellow-swiss-chard": [
+   7,
+   21
   ]
  },
  "plants": [

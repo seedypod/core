@@ -3,6 +3,7 @@
 Inputs (both in this folder, raw extracts with provenance headers):
   gardyn-zone-guide.txt     name|zone              (Gardyn light-zone placement guide)
   gardyn-store-ycubes.txt   name|handle|yield|care|first harvest  (Gardyn yCube store)
+  gardyn-plant-book-sprout.txt  id|days to sprout|page  (Gardyn Plant Book)
 
 Everything else is derived by rules in this file and flagged as inferred:
   category      by name (fruiting, vegetable, legume, flower, herb, green, lettuce)
@@ -12,6 +13,8 @@ Everything else is derived by rules in this file and flagged as inferred:
   placement     'bottomCenter' for cucumbers (Gardyn's explicit exception)
   harvestMonths from the store when present; otherwise the median of the same
                 category in the store, flagged estimated
+  sproutDays    per plant id from the Plant Book, kept beside the plants
+                with each category's median for the plants it lacks
 
 Run:  python3 -I scripts/plants/build-catalog.py
 """
@@ -103,6 +106,13 @@ def months(s):
     return [int(m[0]), int(m[1])] if len(m) == 2 else None
 
 
+def days(s):
+    m = [int(n) for n in re.findall(r'\d+', s)]
+    if s.startswith('<') and len(m) == 1:
+        return [1, m[0]]
+    return m if len(m) == 2 else None
+
+
 def main():
     zones = {}
     for name, zone in rows('gardyn-zone-guide.txt'):
@@ -130,6 +140,8 @@ def main():
             by_cat.setdefault(category(name), []).append(s['harvest'])
     median = {c: [round(statistics.median(h[0] for h in hs)), round(statistics.median(h[1] for h in hs))] for c, hs in by_cat.items()}
 
+    sprout = {pid: days(d) for pid, d, _page in rows('gardyn-plant-book-sprout.txt')}
+
     plants = []
     for name in sorted(zones):
         cat = category(name)
@@ -154,17 +166,29 @@ def main():
             'inStore': bool(s),
         })
 
+    unknown = sorted(set(sprout) - {p['id'] for p in plants})
+    if unknown:
+        raise SystemExit(f'sprout days for plants not in the catalog: {unknown}')
+    by_cat = {}
+    for p in plants:
+        if sprout.get(p['id']):
+            by_cat.setdefault(p['category'], []).append(sprout[p['id']])
+    sprout_median = {c: [round(statistics.median(d[0] for d in ds)), round(statistics.median(d[1] for d in ds))] for c, ds in sorted(by_cat.items())}
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     doc = {
         'version': 1,
-        'generatedFrom': ['scripts/plants/gardyn-zone-guide.txt', 'scripts/plants/gardyn-store-ycubes.txt'],
+        'generatedFrom': ['scripts/plants/gardyn-zone-guide.txt', 'scripts/plants/gardyn-store-ycubes.txt', 'scripts/plants/gardyn-plant-book-sprout.txt'],
         'sources': {
             'zone': 'https://help.mygardyn.com/en/articles/11547329',
             'zoneMap': 'https://help.mygardyn.com/en/articles/11567361',
             'store': 'https://mygardyn.com/collections/ycubes',
             'succession': 'https://help.mygardyn.com/en/articles/1782337',
+            'sprout': 'https://mygardyn.com/plant-book',
         },
         'categoryHarvestMedians': median,
+        'categorySproutMedians': sprout_median,
+        'sproutDays': {pid: d for pid, d in sorted(sprout.items()) if d},
         'plants': plants,
     }
     OUT.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n')
