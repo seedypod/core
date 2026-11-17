@@ -10,6 +10,7 @@ import { cameraOf, podRegions, type RegionCalibration } from '@/src/vision/regio
 import { CATALOG } from './plants/catalog'
 import { PlantModel } from './PlantModel'
 import { ProtocolCard } from './ProtocolCard'
+import { SwapBanner } from './SwapBanner'
 import { PlantThumb, podForm } from './PlantThumb'
 import { ageDays, heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
@@ -203,13 +204,7 @@ export function GrowPage() {
 
       <div className="flex flex-wrap items-start gap-5">
         <div className="min-w-0 flex-1 basis-[480px]">
-          {swapping !== null && (
-            <div data-testid="swap-banner" className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[10px] border border-line-2 bg-active/60 px-3 py-2 text-[13px]">
-              <ArrowLeftRight size={16} className="shrink-0 text-fg-2" />
-              <span className="flex-1">{`Pick the pod to swap pod ${swapping}${all.find(p => p.slot === swapping)?.plant ? ` (${all.find(p => p.slot === swapping)?.plant})` : ''} with.`}</span>
-              <Button className="px-3 py-[5px] text-[13px]" onClick={() => setSwapping(null)}>Cancel</Button>
-            </div>
-          )}
+          {swapping !== null && <SwapBanner slot={swapping} plant={all.find(p => p.slot === swapping)?.plant} onCancel={() => setSwapping(null)} />}
           {swapPods.error && <InlineError>{swapPods.error.message}</InlineError>}
           {shown === 'tower' && (
             <TowerView
