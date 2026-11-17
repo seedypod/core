@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '../Chart3D'
+import type { PickHooks, VizSpot } from '../base'
+import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus, type ChartPick } from '../Chart3D'
 import type { TankData } from '../shape'
 
 const fake = vi.hoisted(() => ({
   calls: [] as string[],
   fail: false,
+  hooks: null as PickHooks | null,
+  spots: {} as Record<number, VizSpot>,
 }))
 
 vi.mock('../scenes', () => {
@@ -22,6 +25,10 @@ vi.mock('../scenes', () => {
         fake.calls.push('dispose')
         canvas.remove()
       },
+      listen: (h: PickHooks | null) => {
+        fake.hooks = h
+      },
+      spot: (id: number) => fake.spots[id] ?? null,
     }
   }
   return { createTodayViz: make('today'), createTankViz: make('tank'), createLightViz: make('light'), createPodsViz: make('pods'), createSensorsViz: make('sensors') }
@@ -35,6 +42,8 @@ const flush = () => act(async () => {
 beforeEach(() => {
   fake.calls = []
   fake.fail = false
+  fake.hooks = null
+  fake.spots = {}
 })
 afterEach(() => {
   cleanup()
@@ -111,6 +120,89 @@ describe('Chart3D with WebGL', () => {
     unmount()
     await flush()
     expect(fake.calls).toEqual([])
+  })
+})
+
+describe('Chart3D with pods to pick', () => {
+  beforeEach(() => {
+    vi.stubGlobal('WebGLRenderingContext', function WebGLRenderingContext() {})
+    fake.spots = { 3: { x: 30, y: 40, width: 600, height: 250 }, 5: { x: 50, y: 60, width: 600, height: 250 } }
+  })
+  const points = [{ id: 3, label: 'Pod 3, Basil' }, { id: 5, label: 'Pod 5, empty' }, { id: 9, label: 'Pod 9, Mint' }]
+  const chart = (pick: Partial<ChartPick> = {}) => (
+    <Chart3D
+      kind="pods"
+      data={null}
+      status="loading"
+      label="Leaf cover"
+      fallback={null}
+      pick={{ points, pinned: null, onPick: () => {}, card: (id, at) => <div data-testid="card">{`${id} at ${at.x},${at.y}`}</div>, ...pick }}
+    />
+  )
+  const card = () => screen.queryByTestId('card')?.textContent ?? null
+  const hooks = () => fake.hooks as PickHooks
+
+  it('shows the hovered pod\'s card at its spot, then the pinned one\'s, and follows it as the chart turns', async () => {
+    const onPick = vi.fn()
+    const { rerender } = render(chart({ onPick }))
+    await flush()
+    expect(card()).toBeNull()
+    act(() => hooks().hover(3))
+    expect(card()).toBe('3 at 30,40')
+    act(() => hooks().hover(null))
+    expect(card()).toBeNull()
+    act(() => hooks().pick(5))
+    expect(onPick).toHaveBeenCalledWith(5)
+    rerender(chart({ onPick, pinned: 5 }))
+    expect(card()).toBe('5 at 50,60')
+    // Hovering another shows it in place of the pinned pod, until the pointer moves off.
+    act(() => hooks().hover(3))
+    expect(card()).toBe('3 at 30,40')
+    act(() => hooks().hover(null))
+    expect(card()).toBe('5 at 50,60')
+    fake.spots[5] = { x: 80, y: 60, width: 600, height: 250 }
+    act(() => hooks().moved())
+    expect(card()).toBe('5 at 80,60')
+    // Less than a pixel isn't a move.
+    fake.spots[5] = { x: 80.2, y: 60, width: 600, height: 250 }
+    act(() => hooks().moved())
+    expect(card()).toBe('5 at 80,60')
+    // Turned out of sight, the card goes.
+    delete fake.spots[5]
+    act(() => hooks().moved())
+    expect(card()).toBeNull()
+  })
+
+  it('offers a keyboard a button per pod: focus shows its card and a ring on it, Enter or a click picks it', async () => {
+    const onPick = vi.fn()
+    render(chart({ onPick, pinned: 3 }))
+    await flush()
+    const group = screen.getByTestId('viz-pods-points')
+    expect(group.className).toBe('sr-only')
+    expect(screen.getByRole('button', { name: 'Pod 3, Basil' }).getAttribute('aria-pressed')).toBe('true')
+    const five = screen.getByRole('button', { name: 'Pod 5, empty' })
+    expect(five.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.focus(five)
+    expect(card()).toBe('5 at 50,60')
+    const ring = screen.getByTestId('viz-focus')
+    expect([ring.style.left, ring.style.top]).toEqual(['50px', '60px'])
+    fireEvent.click(five)
+    expect(onPick).toHaveBeenCalledWith(5)
+    fireEvent.blur(five)
+    expect(screen.queryByTestId('viz-focus')).toBeNull()
+    // Back to the pinned pod's card once focus leaves.
+    expect(card()).toBe('3 at 30,40')
+    // A pod the chart can't place has no card.
+    fireEvent.focus(screen.getByRole('button', { name: 'Pod 9, Mint' }))
+    expect(card()).toBeNull()
+  })
+
+  it('leaves a chart without pods to pick as it was', async () => {
+    render(<Chart3D kind="tank" data={null} status="loading" label="Tank" fallback={null} />)
+    await flush()
+    expect(fake.hooks).toBeNull()
+    expect(screen.getByRole('img', { name: 'Tank' }).parentElement?.tagName).toBe('DIV')
+    expect(screen.queryByTestId('viz-tank-points')).toBeNull()
   })
 })
 

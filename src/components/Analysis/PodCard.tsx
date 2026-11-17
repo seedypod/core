@@ -56,10 +56,11 @@ export interface Reading { key: string, label: string, color: string, text: stri
  * analyser's reading, and the trend. With a `story` (the Pods tab) it leads
  * with the pod's state and sprouting window, its leaf cover and who labelled
  * it, its confirmed code, and links to the pod and to relabelling it.
+ * Without a `box` it takes its place in the flow, for a page that places it.
  */
 export function PodCard({ slot, box, pod, trend, readings, pinned, onClose, story, onRelabel }: {
   slot: number
-  box: Rect
+  box?: Rect
   pod: Pod | undefined
   trend: Trend | undefined
   readings: Reading[]
@@ -80,8 +81,8 @@ export function PodCard({ slot, box, pod, trend, readings, pinned, onClose, stor
       role="dialog"
       aria-label={`Pod ${slot}`}
       data-testid="pod-card"
-      className="pointer-events-auto absolute z-10 m-1 flex w-[230px] max-w-[calc(100%-8px)] flex-col gap-2 rounded-[10px] border border-line bg-surface/95 p-3 text-left shadow-lg backdrop-blur-sm"
-      style={cardPlace(box)}
+      className={cn('pointer-events-auto z-10 m-1 flex w-[230px] max-w-[calc(100%-8px)] flex-col gap-2 rounded-[10px] border border-line bg-surface/95 p-3 text-left shadow-lg backdrop-blur-sm', box ? 'absolute' : 'relative shrink-0')}
+      style={box && cardPlace(box)}
     >
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

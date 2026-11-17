@@ -186,7 +186,7 @@ function PodPhoto({ photo, boxes, pod, trend, story, shown, pinned, compact, onH
 }
 
 /** A pod's words for screen readers: `Pod 16, Perpetual Spinach, sprouted, 1% leaf cover`. */
-function podLabel(slot: number, pod: Pod | undefined, story: PodStory | undefined, cover: number | null): string {
+export function podLabel(slot: number, pod: Pod | undefined, story: PodStory | undefined, cover: number | null): string {
   if (!story || story.state.stage === 'empty') return `Pod ${slot}, empty`
   return [`Pod ${slot}`, pod?.plant ?? 'unnamed', story.state.stage, cover !== null && `${pct(cover)} leaf cover`, story.sprout === 'late' && 'sprouting late'].filter(Boolean).join(', ')
 }

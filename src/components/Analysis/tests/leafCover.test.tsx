@@ -15,6 +15,7 @@ vi.mock('@/src/utils/trpc', () => ({
   },
 }))
 
+const props = { stories: new Map(), pinned: null, onPick: () => {}, onUnpin: () => {}, onRelabel: () => {} }
 const pod = (slot: number, status = 'growing') => ({ slot, status, plant: status === 'empty' ? null : 'Basil' })
 
 beforeEach(() => {
@@ -25,7 +26,7 @@ afterEach(cleanup)
 
 describe('LeafCover', () => {
   it('says what the spheres mean, shows the latest frame\'s time, and without WebGL draws a bar per pod', () => {
-    render(<LeafCover capturedAt="2026-11-10T08:00:00Z" />)
+    render(<LeafCover capturedAt="2026-11-10T08:00:00Z" {...props} />)
     const card = screen.getByRole('region', { name: 'Leaf cover per pod' })
     // Pod 1 is empty (as are 6, 11, …), so its reading doesn't count.
     expect(within(card).getByText('Sphere size is leaf cover from the latest frame. Grey pods are empty.')).toBeTruthy()
@@ -41,13 +42,13 @@ describe('LeafCover', () => {
 
   it('says it is loading until both requests answer', () => {
     q.trends.data = undefined
-    render(<LeafCover capturedAt={null} />)
+    render(<LeafCover capturedAt={null} {...props} />)
     expect(screen.getByTestId('loading-line')).toBeTruthy()
   })
 
   it('offers Retry when the pods fail to load', () => {
     q.pods = { data: undefined, error: new Error('down'), refetch: vi.fn() }
-    render(<LeafCover capturedAt={null} />)
+    render(<LeafCover capturedAt={null} {...props} />)
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(q.pods.refetch).toHaveBeenCalled()
     expect(q.trends.refetch).toHaveBeenCalled()

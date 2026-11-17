@@ -54,7 +54,8 @@ export interface LightData {
   ticks: Tick[]
 }
 
-export interface PodsData { towers: Array<{ label: string, pods: Array<number | null> }> }
+/** Each tower's pods top to bottom: leaf cover (null when empty or unmeasured), and the pod's slot. */
+export interface PodsData { towers: Array<{ label: string, pods: Array<number | null>, slots: number[] }> }
 
 export type SensorGroup = 'environment' | 'water' | 'pump'
 export interface Ridge { key: string, label: string, group: SensorGroup, values: number[], current: string }
@@ -222,7 +223,10 @@ export function podsData(pods: ReadonlyArray<{ slot: number, empty: boolean, cov
   // Sized for the highest slot, so a list with gaps still lands each pod where the tower has it.
   const places = podPlaces(Math.max(pods.length, ...pods.map(p => p.slot)))
   const columns = Math.max(0, ...places.map(p => p.column + 1))
-  const towers: PodsData['towers'] = Array.from({ length: columns }, (_, c) => ({ label: `Tower ${c + 1}`, pods: places.filter(p => p.column === c).map(() => null) }))
+  const towers: PodsData['towers'] = Array.from({ length: columns }, (_, c) => {
+    const down = places.filter(p => p.column === c)
+    return { label: `Tower ${c + 1}`, pods: down.map(() => null), slots: down.map(p => p.slot) }
+  })
   for (const p of pods) {
     const place = places.find(pl => pl.slot === p.slot)
     const tower = place && towers[place.column]

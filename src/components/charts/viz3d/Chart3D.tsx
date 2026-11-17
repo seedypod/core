@@ -5,12 +5,14 @@
  * data, empty and error all sit in the same space. Drag it sideways to spin
  * it; a double click puts it back. Without WebGL, or if the
  * context can't be made or is lost, `fallback` (the flat chart) stands in.
+ * With `pick` (the pods), hovering a pod or tabbing to it shows its card
+ * beside it, and a click or tap picks it.
  */
 import { RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
-import type { Viz } from './base'
+import type { PickHooks, Viz, VizSpot } from './base'
 import type { VizState } from './motion'
 import type * as Scenes from './scenes'
 import type { LightData, PodsData, SensorsData, TankData, TodayData } from './shape'
@@ -39,7 +41,19 @@ export function staleSince(queries: ReadonlyArray<{ data?: unknown, error?: unkn
   return stale.length ? Math.min(...stale.map(q => q.dataUpdatedAt as number)) : null
 }
 
-export function Chart3D<K extends VizKind>({ kind, data, status, label, message, fallback, onUnavailable, className }: {
+/** What a chart with pods to pick needs from its page. */
+export interface ChartPick {
+  /** Each pod by its id, named for a keyboard and a screen reader. */
+  points: Array<{ id: number, label: string }>
+  pinned: number | null
+  onPick: (id: number) => void
+  /** The card for the pod hovered, focused or pinned, at its spot on the chart. */
+  card: (id: number, at: VizSpot) => ReactNode
+}
+
+const sameSpot = (a: VizSpot, b: VizSpot) => Math.round(a.x) === Math.round(b.x) && Math.round(a.y) === Math.round(b.y) && a.width === b.width && a.height === b.height
+
+export function Chart3D<K extends VizKind>({ kind, data, status, label, message, fallback, onUnavailable, className, pick }: {
   kind: K
   data: VizData[K] | null
   status: VizState
@@ -50,15 +64,33 @@ export function Chart3D<K extends VizKind>({ kind, data, status, label, message,
   fallback: ReactNode
   onUnavailable?: () => void
   className?: string
+  pick?: ChartPick
 }) {
   const host = useRef<HTMLDivElement>(null)
   const viz = useRef<Viz<VizData[K]> | null>(null)
   const [failed, setFailed] = useState(() => !hasWebGL())
   const shown = useRef<{ status: VizState | null, key: string }>({ status: null, key: '' })
-  const latest = useRef({ data, status })
+  const [hovered, setHovered] = useState<number | null>(null)
+  const [focused, setFocused] = useState(false)
+  // Where the pod shown stands, kept with its id so a stale spot never places another pod's card.
+  const [at, setAt] = useState<{ id: number, spot: VizSpot } | null>(null)
+  const showing = pick ? hovered ?? pick.pinned : null
+  const latest = useRef({ data, status, pick, showing })
   useEffect(() => {
-    latest.current = { data, status }
+    latest.current = { data, status, pick, showing }
   })
+  const locate = (id: number | null) => {
+    const spot = id === null ? null : viz.current?.spot?.(id) ?? null
+    setAt(prev => (spot && id !== null ? (prev?.id === id && sameSpot(prev.spot, spot) ? prev : { id, spot }) : null))
+  }
+  const hover = (id: number | null) => {
+    setHovered(id)
+    locate(id ?? latest.current.pick?.pinned ?? null)
+  }
+  const choose = (id: number) => {
+    latest.current.pick?.onPick(id)
+    locate(id)
+  }
 
   const apply = (v: Viz<VizData[K]>) => {
     const { data: d, status: s } = latest.current
@@ -95,6 +127,10 @@ export function Chart3D<K extends VizKind>({ kind, data, status, label, message,
       viz.current = v
       shown.current = { status: null, key: '' }
       apply(v)
+      if (latest.current.pick) {
+        const hooks: PickHooks = { hover, pick: choose, moved: () => locate(latest.current.showing) }
+        v.listen?.(hooks)
+      }
     }).catch(() => {
       if (alive) setFailed(true)
     })
@@ -114,7 +150,7 @@ export function Chart3D<K extends VizKind>({ kind, data, status, label, message,
 
   if (failed) return <>{fallback}</>
   const note = status === 'empty' || status === 'error' ? message : undefined
-  return (
+  const chart = (
     <div
       ref={host}
       role="img"
@@ -126,6 +162,35 @@ export function Chart3D<K extends VizKind>({ kind, data, status, label, message,
       style={{ aspectRatio: ASPECT[kind] }}
     >
       {note && <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center px-6 text-center text-[12px] text-fg-3">{note}</div>}
+    </div>
+  )
+  if (!pick) return chart
+  const spot = showing !== null && at?.id === showing ? at.spot : null
+  return (
+    <div className="relative w-full">
+      {chart}
+      {/* Off screen, a button per pod, so a keyboard reaches them: focus shows the pod's card, Enter picks it. */}
+      <div className="sr-only" data-testid={`viz-${kind}-points`}>
+        {pick.points.map(p => (
+          <button
+            key={p.id}
+            type="button"
+            aria-label={p.label}
+            aria-pressed={pick.pinned === p.id}
+            onFocus={() => {
+              setFocused(true)
+              hover(p.id)
+            }}
+            onBlur={() => {
+              setFocused(false)
+              hover(null)
+            }}
+            onClick={() => choose(p.id)}
+          />
+        ))}
+      </div>
+      {spot && focused && <span aria-hidden data-testid="viz-focus" className="pointer-events-none absolute z-[2] size-6 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-fg" style={{ left: spot.x, top: spot.y }} />}
+      {spot && showing !== null && pick.card(showing, spot)}
     </div>
   )
 }

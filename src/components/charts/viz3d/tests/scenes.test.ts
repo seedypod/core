@@ -103,7 +103,7 @@ const TODAY: TodayData = {
 }
 const TANK: TankData = { levels: ramp(120, i => 0.8 - (i % 40) / 100), topUps: [40 / 119, 80 / 119], cutoff: 0.3, current: 0.4, ticks: ramp(5, k => ({ at: k / 4, label: ['Mon', 'Tue', 'Thu', 'Sat', 'Sun'][k] as string })), marks: { full: 'full · 2 in', now: 'now · 5.1 in', cutoff: 'cutoff 27% · 6.3 in', empty: 'empty · 7.9 in' }, low: false, warnOnly: false, pumping: true, runFrom: 0.9, runs: [0.2, 0.5, 0.8], upcoming: [0.3, 0.7] }
 const LIGHT: LightData = { planned: ramp(97, i => (i > 28 && i < 84 ? 0.9 : 0)), actual: ramp(97, i => (i < 60 ? (i > 28 ? 0.9 : 0) : Number.NaN)), hold: { from: 0.55, until: 0.65 }, now: 0.62, nowLevel: 0.45, nowTime: '14:52', boost: 0.95, ticks: DAY_TICKS }
-const PODS: PodsData = { towers: ['1', '2', '3'].map((l, t) => ({ label: `Tower ${l}`, pods: ramp(10, k => ((t * 10 + k) % 4 === 0 ? null : ((t * 10 + k) % 10) / 10)) })) }
+const PODS: PodsData = { towers: ['1', '2', '3'].map((l, t) => ({ label: `Tower ${l}`, pods: ramp(10, k => ((t * 10 + k) % 4 === 0 ? null : ((t * 10 + k) % 10) / 10)), slots: ramp(10, k => k * 3 + t + 1) })) }
 const SENSORS: SensorsData = {
   series: ['Air temperature', 'Humidity', 'Board temperature', 'Distance to water', 'Tank', 'Pump voltage', 'Pump current', 'Pump power'].map((label, k) => ({ key: `s${k}`, label, group: k < 3 ? 'environment' : k < 5 ? 'water' : 'pump', values: ramp(100, i => 0.5 + 0.4 * Math.sin(i / 8 + k)), current: '25.9 °C' })),
   ticks: [{ at: 0, label: '−24h' }, { at: 0.5, label: '−12h' }, { at: 1, label: 'now' }],
@@ -264,7 +264,7 @@ describe('scenes sized by their data', () => {
   it('draws a Studio as two wire towers of 8, a leaf only on a measured pod, and back to three of 10 for a Home', () => {
     const el = sized(600, 2.4)
     const viz = createPodsViz(el, env)
-    viz.setData({ towers: [{ label: 'Tower 1', pods: Array(8).fill(0.4) }, { label: 'Tower 2', pods: Array(8).fill(null) }] })
+    viz.setData({ towers: [{ label: 'Tower 1', pods: Array(8).fill(0.4), slots: ramp(8, k => k * 2 + 1) }, { label: 'Tower 2', pods: Array(8).fill(null), slots: ramp(8, k => k * 2 + 2) }] })
     advance(16)
     advance(700, 3)
     // Two tower labels, no third.
@@ -303,7 +303,7 @@ describe('scenes sized by their data', () => {
     for (const s of scales) expect(s).toBeGreaterThanOrEqual(0.04 - 1e-6)
     expect(new Set(scales.map(s => s.toFixed(4))).size).toBeGreaterThan(1)
     const grey = ((leafLines()[0] as THREE.LineSegments).material as THREE.LineBasicMaterial).color.clone()
-    viz.setData({ towers: [{ label: 'Tower 1', pods: Array(10).fill(0.5) }] })
+    viz.setData({ towers: [{ label: 'Tower 1', pods: Array(10).fill(0.5), slots: ramp(10, k => k + 1) }] })
     advance(700, 4)
     const green = ((leafLines()[0] as THREE.LineSegments).material as THREE.LineBasicMaterial).color
     expect(green.equals(grey)).toBe(false)
@@ -541,6 +541,121 @@ describe('the shared base', () => {
     advance(16)
     expect(state.renders).toBeGreaterThanOrEqual(2)
     delete document.documentElement.dataset.theme
+    viz.dispose()
+  })
+})
+
+describe('picking a pod on the towers', () => {
+  /** A settled pods chart whose canvas sits where its host does, telling `hooks` what the pointer finds. */
+  function towers() {
+    const el = sized(600, 2.4)
+    const viz = createPodsViz(el, env)
+    const hooks = { hover: vi.fn(), pick: vi.fn(), moved: vi.fn() }
+    viz.listen?.(hooks)
+    viz.setData(PODS)
+    advance(16)
+    advance(700, 3)
+    const canvas = el.querySelector('canvas') as HTMLCanvasElement
+    canvas.getBoundingClientRect = el.getBoundingClientRect
+    return { viz, hooks, canvas }
+  }
+  const slots = PODS.towers.flatMap(t => t.slots)
+
+  it('says where each pod stands on the chart, inside it, and nothing for a pod it doesn\'t have', () => {
+    const { viz, hooks } = towers()
+    expect(hooks.moved).toHaveBeenCalled()
+    for (const s of slots) {
+      const at = viz.spot?.(s)
+      expect(at).toMatchObject({ width: 600, height: 250 })
+      expect(at?.x).toBeGreaterThan(0)
+      expect(at?.x).toBeLessThan(600)
+      expect(at?.y).toBeGreaterThan(0)
+      expect(at?.y).toBeLessThan(250)
+    }
+    // Tower 1's top pod sits left of Tower 3's, and above its own bottom one.
+    expect(viz.spot?.(1)?.x).toBeLessThan(viz.spot?.(3)?.x ?? 0)
+    expect(viz.spot?.(1)?.y).toBeLessThan(viz.spot?.(28)?.y ?? 0)
+    expect(viz.spot?.(31)).toBeNull()
+    viz.dispose()
+  })
+
+  it('names the pod under the pointer as it moves, points at it, and lets go when the pointer leaves', () => {
+    const { viz, hooks, canvas } = towers()
+    // Most pods answer at their own spot; the ones round the back of a column are hidden behind it.
+    const answered = slots.filter((s) => {
+      const at = viz.spot?.(s)
+      hooks.hover.mockClear()
+      pointer(canvas, 'pointermove', at?.x ?? 0, at?.y ?? 0)
+      return hooks.hover.mock.calls.at(-1)?.[0] === s
+    })
+    expect(answered.length).toBeGreaterThan(15)
+    expect(canvas.style.cursor).toBe('pointer')
+    hooks.hover.mockClear()
+    pointer(canvas, 'pointermove', 2, 2)
+    expect(hooks.hover).toHaveBeenCalledWith(null)
+    expect(canvas.style.cursor).toBe('grab')
+    const at = viz.spot?.(answered[0] as number)
+    pointer(canvas, 'pointermove', at?.x ?? 0, at?.y ?? 0)
+    // The same pod again tells nothing new.
+    pointer(canvas, 'pointermove', at?.x ?? 0, at?.y ?? 0)
+    expect(hooks.hover.mock.calls.filter(c => c[0] === answered[0])).toHaveLength(1)
+    canvas.dispatchEvent(new MouseEvent('pointerleave'))
+    expect(hooks.hover).toHaveBeenLastCalledWith(null)
+    viz.dispose()
+  })
+
+  it('picks the pod a click or tap lands on, but not at the end of a drag that turns the chart', () => {
+    const { viz, hooks, canvas } = towers()
+    const s = slots.find((s) => {
+      const at = viz.spot?.(s)
+      pointer(canvas, 'pointermove', at?.x ?? 0, at?.y ?? 0)
+      return hooks.hover.mock.calls.at(-1)?.[0] === s
+    }) as number
+    const at = viz.spot?.(s) as { x: number, y: number }
+    pointer(canvas, 'pointerdown', at.x, at.y)
+    pointer(canvas, 'pointerup', at.x + 1, at.y + 1)
+    expect(hooks.pick).toHaveBeenCalledWith(s)
+    hooks.pick.mockClear()
+    pointer(canvas, 'pointerdown', at.x, at.y, 'touch')
+    pointer(canvas, 'pointerup', at.x, at.y, 'touch')
+    expect(hooks.pick).toHaveBeenCalledWith(s)
+    hooks.pick.mockClear()
+    // A drag turns the chart and lands wherever; a touch the browser takes for a scroll is cancelled.
+    pointer(canvas, 'pointerdown', at.x - 40, at.y)
+    pointer(canvas, 'pointermove', at.x, at.y)
+    pointer(canvas, 'pointerup', at.x, at.y)
+    pointer(canvas, 'pointerdown', at.x, at.y, 'touch')
+    pointer(canvas, 'pointercancel', at.x, at.y, 'touch')
+    // A click on the bare background picks nothing.
+    pointer(canvas, 'pointerdown', 2, 2)
+    pointer(canvas, 'pointerup', 2, 2)
+    expect(hooks.pick).not.toHaveBeenCalled()
+    viz.dispose()
+  })
+
+  it('tells nothing once it stops listening, nor before data gives the pods their slots', () => {
+    const el = sized(600, 2.4)
+    const viz = createPodsViz(el, env)
+    const hooks = { hover: vi.fn(), pick: vi.fn(), moved: vi.fn() }
+    // Not drawn yet, so nowhere to stand.
+    expect(viz.spot?.(1)).toBeNull()
+    viz.listen?.(hooks)
+    advance(16, 2)
+    expect(viz.spot?.(1)).toBeNull()
+    viz.setData(PODS)
+    advance(700, 3)
+    const canvas = el.querySelector('canvas') as HTMLCanvasElement
+    canvas.getBoundingClientRect = el.getBoundingClientRect
+    viz.listen?.(null)
+    hooks.moved.mockClear()
+    const at = viz.spot?.(1)
+    pointer(canvas, 'pointermove', at?.x ?? 0, at?.y ?? 0)
+    pointer(canvas, 'pointerdown', at?.x ?? 0, at?.y ?? 0)
+    pointer(canvas, 'pointerup', at?.x ?? 0, at?.y ?? 0)
+    advance(16)
+    expect(hooks.hover).not.toHaveBeenCalled()
+    expect(hooks.pick).not.toHaveBeenCalled()
+    expect(hooks.moved).not.toHaveBeenCalled()
     viz.dispose()
   })
 })
