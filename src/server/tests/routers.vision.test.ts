@@ -205,6 +205,24 @@ describe('vision router (ADR-0019)', () => {
     await expect(c.vision.setLabel({ captureId: 'upper-0', slot: 16, label: 'ready' })).rejects.toThrow(/pod 16 is not on the upper camera/)
   })
 
+  it('lists one pod\'s labels over a window of photo times', async () => {
+    const { c } = await scored(3)
+    expect(await c.vision.podLabels({ slot: 1, limit: 200 })).toEqual([])
+    await c.vision.setLabel({ captureId: 'upper-2', slot: 1, label: 'sprouted' })
+    await c.vision.setLabel({ captureId: 'upper-0', slot: 1, label: 'seeded' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 1, label: 'seeded' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 2, label: 'growing' })
+    expect(await c.vision.podLabels({ slot: 1, limit: 200 })).toEqual([
+      { captureId: 'upper-0', ts: '2026-01-01T00:00:00Z', label: 'seeded', source: 'picked' },
+      // Carried from the photo before, so the suggestion was accepted.
+      { captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', label: 'seeded', source: 'accepted' },
+      { captureId: 'upper-2', ts: '2026-01-03T00:00:00Z', label: 'sprouted', source: 'picked' },
+    ])
+    expect((await c.vision.podLabels({ slot: 1, from: '2026-01-02T00:00:00Z', to: '2026-01-02T00:00:00Z', limit: 200 })).map(l => l.captureId)).toEqual(['upper-1'])
+    expect((await c.vision.podLabels({ slot: 1, limit: 1 })).map(l => l.captureId)).toEqual(['upper-2'])
+    await expect(c.vision.podLabels({ slot: 1, limit: 1001 })).rejects.toThrow()
+  })
+
   it('scores each analyser against the labels on the same photo and pod', async () => {
     const { c, ctx } = await scored(2)
     expect(await c.vision.agreement()).toEqual({ pods: 0, analyzers: [] })

@@ -54,7 +54,7 @@ vi.mock('@/src/utils/trpc', () => {
     apiBase: () => '',
     trpc: {
       useUtils: () => ({ vision: { invalidate } }),
-      vision: { analyzers: query('analyzers'), status: query('status'), podTrends: query('podTrends'), allPodSeries: query('allPodSeries'), compare: query('compare'), capture: query('capture'), regions: query('regions'), suggestions: query('suggestions'), labels: query('labels'), labelStats: query('labelStats'), podCodes: query('podCodes'), boxesOff: query('boxesOff'), agreement: query('agreement'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
+      vision: { analyzers: query('analyzers'), status: query('status'), podTrends: query('podTrends'), allPodSeries: query('allPodSeries'), compare: query('compare'), capture: query('capture'), regions: query('regions'), suggestions: query('suggestions'), labels: query('labels'), labelStats: query('labelStats'), podCodes: query('podCodes'), boxesOff: query('boxesOff'), agreement: query('agreement'), podLabels: query('podLabels'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
       camera: { list: query('frames'), get: query('still') },
       grow: { pods: query('pods'), current: query('current') },
       datasets: { summary: query('summary') },

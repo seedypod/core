@@ -340,6 +340,13 @@ export class MemoryStore implements Store {
     range: (fromTs: string, toTs: string): PodLabel[] =>
       [...this.labelRows.values()].filter(l => l.ts >= fromTs && l.ts <= toTs)
         .sort((a, b) => a.ts.localeCompare(b.ts) || a.captureId.localeCompare(b.captureId) || a.slot - b.slot).map(l => ({ ...l })),
+    forSlot: (slot: number, q: { from?: string, to?: string, limit: number }): PodLabel[] => {
+      // Code-unit order, as SQLite compares text.
+      const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+      return [...this.labelRows.values()]
+        .filter(l => l.slot === slot && (q.from === undefined || l.ts >= q.from) && (q.to === undefined || l.ts <= q.to))
+        .sort((a, b) => cmp(b.ts, a.ts) || cmp(b.captureId, a.captureId)).slice(0, q.limit).reverse().map(l => ({ ...l }))
+    },
     list: (q: { label?: PodLabelValue, camera?: 'upper' | 'lower', limit: number, before?: PodLabelCursor }): PodLabel[] => {
       // Code-unit order, as SQLite compares text, so both stores page alike.
       const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)

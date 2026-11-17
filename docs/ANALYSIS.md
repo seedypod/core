@@ -112,6 +112,10 @@ chart under it starts on **All pods**: a small chart of each planted pod's
 leaf cover from the primary analyser over about the last week, all on one
 scale, so the pods that are coming up stand out. Pick a pod there or in the
 **Pod** picker for **One pod over time**, which draws one line per analyser.
+The line under it reads the analysers against your labels for that pod on the
+photos you labelled, by the same 2 % rule as the agreement with labels, and
+marks the chart where the label changes; with no labelled photo in the chart,
+it reads them against the pod's record instead.
 
 **Keep analysis masks** (Settings → Cameras) also stores `exg-otsu`'s
 plant/not-plant mask for each photo as a 1-bit PBM image, about 115 kB each.
@@ -224,7 +228,9 @@ one unlabelled. `GET /api/vision/captures/{captureId}/labels`,
 `GET /api/vision/labels` for the counts and the labelled photos, and
 `GET /api/vision/labels/pods` for the labelled pods themselves (`label`,
 `camera`, `limit` and `cursor`; pass the response's `next` back as `cursor`
-for the next page). The `list_labels` MCP tool returns the same, and
+for the next page). `GET /api/vision/pods/{slot}/labels` gives one pod's
+labels over a window of photo times (`from`, `to`, `limit`), oldest first, as
+`captureId`, `ts`, `label` and `source`. The `list_labels` MCP tool returns the same, and
 `list_analyses` the summary under `labels`. Labelling stays in the app:
 agents can read labels but not set or clear them.
 

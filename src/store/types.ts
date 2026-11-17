@@ -464,6 +464,8 @@ export interface Store {
     forCapture(captureId: string): PodLabel[]
     /** Labels whose capture time falls in [fromTs, toTs], oldest first, then by slot. */
     range(fromTs: string, toTs: string): PodLabel[]
+    /** One pod's newest `limit` labels whose capture time falls in [from, to] (either end open), oldest first. */
+    forSlot(slot: number, q: { from?: string, to?: string, limit: number }): PodLabel[]
     /** Newest capture first, then by pod; `before` continues after a page's last row. */
     list(q: { label?: PodLabelValue, camera?: 'upper' | 'lower', limit: number, before?: PodLabelCursor }): PodLabel[]
     /** How many pods carry each label. */
