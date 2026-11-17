@@ -394,6 +394,26 @@ for (const [name, make] of impls) {
       expect(store.podLabels.forCapture('upper-b')).toEqual([{ captureId: 'upper-b', ts: '2026-11-02T00:00:00.000Z', camera: 'upper', slot: 4, label: 'unhealthy', labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null, source: 'picked', suggested: null, suggestedBy: null, suggestedConfidence: null }])
     })
 
+    it('pod labels list one pod\'s newest within a window, oldest first', () => {
+      store = make()
+      const at = (captureId: string, ts: string, slot: number, label: PodLabelValue) =>
+        store.podLabels.set({ captureId, ts, camera: 'upper', slot, label, labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null })
+      expect(store.podLabels.forSlot(3, { limit: 10 })).toEqual([])
+      at('upper-c', '2026-11-03T00:00:00.000Z', 3, 'sprouted')
+      at('upper-a', '2026-11-01T00:00:00.000Z', 3, 'seeded')
+      at('upper-b', '2026-11-02T00:00:00.000Z', 3, 'seeded')
+      at('upper-b2', '2026-11-02T00:00:00.000Z', 3, 'seeded')
+      at('upper-b', '2026-11-02T00:00:00.000Z', 4, 'growing')
+      const ids = (q: { from?: string, to?: string, limit: number }) => store.podLabels.forSlot(3, q).map(l => l.captureId)
+      expect(ids({ limit: 10 })).toEqual(['upper-a', 'upper-b', 'upper-b2', 'upper-c'])
+      expect(ids({ from: '2026-11-02T00:00:00.000Z', limit: 10 })).toEqual(['upper-b', 'upper-b2', 'upper-c'])
+      expect(ids({ to: '2026-11-02T00:00:00.000Z', limit: 10 })).toEqual(['upper-a', 'upper-b', 'upper-b2'])
+      expect(ids({ from: '2026-11-02T00:00:00.000Z', to: '2026-11-02T00:00:00.000Z', limit: 10 })).toEqual(['upper-b', 'upper-b2'])
+      // The newest of them, still oldest first.
+      expect(ids({ limit: 2 })).toEqual(['upper-b2', 'upper-c'])
+      expect(store.podLabels.forSlot(4, { limit: 10 }).map(l => [l.captureId, l.label, l.source])).toEqual([['upper-b', 'growing', 'picked']])
+    })
+
     it('pod labels keep how they were saved, count by source and find each pod\'s last label (#261)', () => {
       store = make()
       const base = { camera: 'upper' as const, labelledAt: '2026-11-09T00:00:00.000Z', plant: null, plantedAt: null }

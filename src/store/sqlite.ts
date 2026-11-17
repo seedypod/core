@@ -400,6 +400,12 @@ export class SqliteStore implements Store {
     range: (fromTs: string, toTs: string): PodLabel[] =>
       this.db.select().from(t.podLabels).where(and(gte(t.podLabels.ts, fromTs), lte(t.podLabels.ts, toTs)))
         .orderBy(asc(t.podLabels.ts), asc(t.podLabels.captureId), asc(t.podLabels.slot)).all().map(rowToLabel),
+    forSlot: (slot: number, q: { from?: string, to?: string, limit: number }): PodLabel[] =>
+      this.db.select().from(t.podLabels).where(and(
+        eq(t.podLabels.slot, slot),
+        q.from === undefined ? undefined : gte(t.podLabels.ts, q.from),
+        q.to === undefined ? undefined : lte(t.podLabels.ts, q.to),
+      )).orderBy(desc(t.podLabels.ts), desc(t.podLabels.captureId)).limit(q.limit).all().reverse().map(rowToLabel),
     list: (q: { label?: PodLabelValue, camera?: 'upper' | 'lower', limit: number, before?: PodLabelCursor }): PodLabel[] => {
       const b = q.before
       return this.db.select().from(t.podLabels).where(and(

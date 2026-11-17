@@ -6,8 +6,9 @@ import { TimeChart } from '@/src/components/charts/TimeChart'
 import { InlineError } from '@/src/components/ds/core'
 import { fmtStamp } from '@/src/lib/timeAgo'
 import type { AppRouter } from '@/src/server/routers/app'
-import type { PodStatus } from '@/src/store/types'
+import type { PodLabelValue, PodStatus } from '@/src/store/types'
 import { apiBase, trpc } from '@/src/utils/trpc'
+import { AGREE_GREEN, agrees } from '@/src/vision/agreement'
 import { POD_STATES } from '@/src/vision/podState'
 import { cameraOf, type PodRegions } from '@/src/vision/regions'
 import { Agreement } from './Agreement'
@@ -149,6 +150,61 @@ export function podReading(status: PodStatus | undefined, series: Array<{ name: 
   return null
 }
 
+const versionOf = (name: string) => name.slice(name.lastIndexOf('@'))
+const allOf = (n: number) => (n === 2 ? 'both photos' : `all ${n} photos`)
+
+/**
+ * One line on what the versions read over the chart against the grower's
+ * labels for the pod, on the photos they were given on, by the same rule as
+ * the agreement with labels (unhealthy pods aren't scored). Null when no
+ * charted photo carries a label that says anything about green area, so the
+ * pod's record can speak instead.
+ */
+export function labelReading(labels: Array<{ captureId: string, label: PodLabelValue }>, series: Array<{ name: string, points: Array<{ captureId: string, value: number }> }>): string | null {
+  const labelOf = new Map(labels.map(l => [l.captureId, l.label]))
+  const photos = new Set<string>()
+  const scored = series.map((s) => {
+    const by = new Map<PodLabelValue, { miss: number, total: number }>()
+    for (const p of s.points) {
+      const label = labelOf.get(p.captureId)
+      if (!label) continue
+      const ok = agrees(label, { metric: 'green_fraction', value: p.value, detail: null })
+      if (ok === null) continue
+      photos.add(p.captureId)
+      const c = by.get(label) ?? { miss: 0, total: 0 }
+      c.total += 1
+      if (!ok) c.miss += 1
+      by.set(label, c)
+    }
+    return { name: s.name, by: [...by] }
+  }).filter(s => s.by.length > 0)
+  if (scored.length === 0) return null
+  const line = pct(AGREE_GREEN)
+  if (scored.every(s => s.by.every(([, c]) => c.miss === 0))) return `Every version agrees with your labels on ${photos.size === 1 ? 'the photo' : allOf(photos.size)} you labelled.`
+  const off = scored.filter(s => s.by.some(([, c]) => c.miss > 0))
+  const on = scored.filter(s => !off.includes(s))
+  const misses = off.map((s) => {
+    const parts = s.by.filter(([, c]) => c.miss > 0).map(([label, c]) => {
+      // A label that wants no plant up is missed by reading over the line, and the other way about.
+      const side = agrees(label, { metric: 'green_fraction', value: 0, detail: null }) ? 'over' : 'under'
+      const which = c.total === 1 ? 'the photo' : c.miss === c.total ? allOf(c.total) : `${c.miss} of ${c.total} photos`
+      return `${side} ${line} on ${which} you labelled ${label}`
+    })
+    return `${s.name} read ${listed(parts)}`
+  })
+  if (on.length === 0) return `${misses.join('; ')}.`
+  // Every scored version of one number agreeing reads as that number's versions.
+  const v = versionOf(on[0]?.name ?? '')
+  const whole = on.length > 1 && on.every(s => versionOf(s.name) === v) && off.every(s => versionOf(s.name) !== v)
+  const agreeing = whole ? `the ${v} versions agree` : `${listed(on.map(s => s.name))} ${on.length === 1 ? 'agrees' : 'agree'}`
+  return `${misses.join('; ')}; ${agreeing}.`
+}
+
+/** A mark on the chart where the grower's label for the pod changes, the first one included. */
+export function labelMarks(labels: Array<{ ts: string, label: PodLabelValue }>): Array<{ x: number, label: string }> {
+  return labels.filter((l, i) => labels[i - 1]?.label !== l.label).map(l => ({ x: Date.parse(l.ts), label: l.label }))
+}
+
 /** `n` items spread evenly from the first to the last. */
 export function spread<T>(items: T[], n: number): T[] {
   if (items.length <= n) return items
@@ -157,9 +213,10 @@ export function spread<T>(items: T[], n: number): T[] {
 
 /**
  * One pod across every analyser version, following the pod last picked here
- * or on Pods, with its crop from the newest photo and a strip of photos over
- * the chart's window to show why a line jumps. With no pod picked, every
- * planted pod side by side, any of which can be picked.
+ * or on Pods, with its crop from the newest photo, a strip of photos over
+ * the chart's window to show why a line jumps, and the lines read against the
+ * grower's labels in the window (or the pod's record with none). With no pod
+ * picked, every planted pod side by side, any of which can be picked.
  */
 function PodOverTime({ colorOf, slot, onSlot, pods, trends, boxes }: {
   colorOf: (k: string) => string
@@ -172,6 +229,9 @@ function PodOverTime({ colorOf, slot, onSlot, pods, trends, boxes }: {
   const one = slot > 0
   const cmp = trpc.vision.compare.useQuery({ slot: Math.max(1, slot), metric: 'green_fraction', limit: 200 }, { enabled: one })
   const states = trpc.vision.compare.useQuery({ slot: Math.max(1, slot), metric: 'pod_state', limit: 1 }, { enabled: one })
+  // The chart's window, so only the labels it can show are read.
+  const span = (cmp.data ?? []).flatMap(s => s.points.map(p => p.ts)).sort()
+  const labels = trpc.vision.podLabels.useQuery({ slot: Math.max(1, slot), from: span[0], to: span.at(-1), limit: 200 }, { enabled: one && span.length > 0 })
   if (!one) return (
     <Panel>
       <span className="text-[15px] font-medium">All pods over time</span>
@@ -187,7 +247,9 @@ function PodOverTime({ colorOf, slot, onSlot, pods, trends, boxes }: {
   const shots = [...new Map(data.flatMap(s => s.points).map(p => [p.captureId, p.ts])).entries()]
     .map(([captureId, ts]) => ({ captureId, ts }))
     .sort((a, b) => a.ts.localeCompare(b.ts))
-  const reading = podReading(pod?.status, data.map(s => ({ name: key(s), values: s.points.map(p => p.value) })))
+  const labelled = labels.data ?? []
+  const reading = labelReading(labelled, data.map(s => ({ name: key(s), points: s.points })))
+    ?? podReading(pod?.status, data.map(s => ({ name: key(s), values: s.points.map(p => p.value) })))
   return (
     <Panel>
       <div className="flex items-start gap-3">
@@ -201,7 +263,7 @@ function PodOverTime({ colorOf, slot, onSlot, pods, trends, boxes }: {
           All pods
         </button>
       </div>
-      <TimeChart series={series} height={180} yMin={0} yMax={1} formatY={pct} formatX={x => new Date(x).toLocaleDateString()} />
+      <TimeChart series={series} height={180} yMin={0} yMax={1} formatY={pct} formatX={x => new Date(x).toLocaleDateString()} markers={labelMarks(labelled)} />
       {camera && box && shots.length > 1 && (
         <div className="grid grid-cols-5 gap-1.5" data-testid="pod-strip">
           {spread(shots, STRIP).map(s => <Shot key={s.captureId} id={s.captureId} ts={s.ts} slot={slot} box={box} />)}

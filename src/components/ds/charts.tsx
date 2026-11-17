@@ -127,7 +127,7 @@ export function LineChart({ series, min, max, height = 80, className, xLabel, fo
       ))}
       {markers.map(m => (
         <line
-          key={`marker-${m.label}`}
+          key={`marker-${m.at}-${m.label}`}
           x1={(xPct(m.at) / 100) * width}
           x2={(xPct(m.at) / 100) * width}
           y1={0}
@@ -184,7 +184,7 @@ export function LineChart({ series, min, max, height = 80, className, xLabel, fo
       ))}
       {markers.map(m => (
         <span
-          key={`marker-${m.label}`}
+          key={`marker-${m.at}-${m.label}`}
           aria-hidden
           data-testid="chart-marker"
           className={cn('pointer-events-none absolute bottom-0 font-mono text-[10px] leading-3 whitespace-nowrap text-fg-2', xPct(m.at) > 55 ? 'pr-1' : 'pl-1')}

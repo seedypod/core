@@ -294,6 +294,11 @@ export const visionRouter = router({
     .input(z.object({ captureId: z.string() }))
     .output(z.array(Label))
     .query(({ ctx, input }) => ctx.store.podLabels.forCapture(input.captureId)),
+  podLabels: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/pods/{slot}/labels', tags: ['vision'], summary: 'One pod\'s labels over a window of photo times (from and to, either open), oldest first: the newest `limit` of them, each with its photo and how it was saved' } })
+    .input(z.object({ slot: z.number().int().min(1).max(60), from: z.string().optional(), to: z.string().optional(), limit: z.number().int().min(1).max(1000).default(200) }))
+    .output(z.array(z.object({ captureId: z.string(), ts: z.string(), label: LabelValue, source: z.enum(LABEL_SOURCES) })))
+    .query(({ ctx, input }) => ctx.store.podLabels.forSlot(input.slot, input).map(({ captureId, ts, label, source }) => ({ captureId, ts, label, source }))),
   labelStats: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/vision/labels', tags: ['vision'], summary: 'How many pods carry each label, and the labelled captures, newest first' } })
     .input(z.object({ limit: z.number().int().min(1).max(500).default(50) }).optional())
