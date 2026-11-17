@@ -9,6 +9,7 @@ import { shareablePairs, shareUrl, unitFingerprint } from '../../vision/shareCod
 import { CATALOG } from '../../components/Grow/plants/catalog'
 import { podTrends } from '../../vision/analyze'
 import { POD_STATE_ID } from '../../vision/podState'
+import { boxesOff } from '../../vision/boxesOff'
 import { seenEmpty } from '../../vision/seenEmpty'
 import { suggestLabel, type Suggestion } from '../../vision/suggestLabel'
 import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions, type RegionCalibration } from '../../vision/regions'
@@ -218,6 +219,10 @@ export const visionRouter = router({
     .input(z.object({ analyzer: z.string().optional() }).optional())
     .output(z.array(Trend))
     .query(({ ctx, input }) => podTrends(ctx.store, 30, input?.analyzer)),
+  boxesOff: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/boxes-off', tags: ['vision'], summary: 'Pod boxes that look off their pod: a suggestion dismissed on two photos or more this week while the box is still the measured default' } })
+    .output(z.array(z.object({ camera: CameraName, slot: z.number(), photos: z.number() })))
+    .query(({ ctx }) => boxesOff(ctx.store, ctx.now?.() ?? new Date())),
   seenEmpty: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/vision/seen-empty', tags: ['vision'], summary: 'Pods the cameras see empty though their record holds a plant' } })
     .output(z.array(z.object({ slot: z.number(), confidence: z.number(), ts: z.string() })))
@@ -347,15 +352,17 @@ export const visionRouter = router({
     .output(z.array(SuggestionOut))
     .query(({ ctx, input }) => [...suggestionsFor(ctx, input.captureId, shotOf(ctx, input.captureId))].map(([slot, s]) => ({ slot, ...s }))),
   acceptSuggestions: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/vision/captures/{captureId}/suggestions/accept', tags: ['vision'], summary: 'Accept the rest (#261): save every unlabelled pod\'s suggestion in one capture as accepted; pods with no suggestion, or a dismissed one, stay unlabelled' } })
-    .input(z.object({ captureId: z.string() }))
+    .meta({ openapi: { method: 'POST', path: '/vision/captures/{captureId}/suggestions/accept', tags: ['vision'], summary: 'Accept the rest (#261): save every unlabelled pod\'s suggestion in one capture as accepted, or only those in `slots`; pods with no suggestion, or a dismissed one, stay unlabelled' } })
+    .input(z.object({ captureId: z.string(), slots: z.array(z.number().int().min(1).max(30)).max(15).optional() }))
     .output(z.object({ captureId: z.string(), slots: z.array(z.number()) }))
     .mutation(({ ctx, input }) => {
       const shot = shotOf(ctx, input.captureId)
       const labelled = new Set(ctx.store.podLabels.forCapture(input.captureId).map(l => l.slot))
       const slots: number[] = []
+      // Only the pods the tagger shows, when it says which: a removed box has no pod to label.
+      const only = input.slots && new Set(input.slots)
       for (const [slot, s] of suggestionsFor(ctx, input.captureId, shot)) {
-        if (labelled.has(slot)) continue
+        if (labelled.has(slot) || (only && !only.has(slot))) continue
         saveLabel(ctx, input.captureId, shot, slot, s.label, s)
         slots.push(slot)
       }

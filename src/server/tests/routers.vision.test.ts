@@ -326,6 +326,23 @@ describe('vision router (ADR-0019)', () => {
     await expect(c.vision.dismissSuggestion({ captureId: 'nope', slot: 2 })).rejects.toThrow(/no capture nope/)
   })
 
+  it('accepts only the pods Teach shows, and names a box dismissed on photo after photo until it moves', async () => {
+    const { c, ctx } = await scored(3)
+    ctx.now = () => new Date('2026-01-05T08:00:00.000Z')
+    for (const slot of [1, 2, 3]) await c.vision.setLabel({ captureId: 'upper-0', slot, label: 'seeded' })
+    expect(await c.vision.acceptSuggestions({ captureId: 'upper-1', slots: [1, 3] })).toEqual({ captureId: 'upper-1', slots: [1, 3] })
+    expect((await c.vision.labels({ captureId: 'upper-1' })).map(l => l.slot)).toEqual([1, 3])
+    await expect(c.vision.acceptSuggestions({ captureId: 'upper-1', slots: [31] })).rejects.toThrow()
+
+    expect(await c.vision.boxesOff()).toEqual([])
+    await c.vision.dismissSuggestion({ captureId: 'upper-1', slot: 2 })
+    expect(await c.vision.boxesOff()).toEqual([])
+    await c.vision.dismissSuggestion({ captureId: 'upper-2', slot: 2 })
+    expect(await c.vision.boxesOff()).toEqual([{ camera: 'upper', slot: 2, photos: 2 }])
+    await c.vision.setRegions({ camera: 'upper', regions: [], removed: [2] })
+    expect(await c.vision.boxesOff()).toEqual([])
+  })
+
   it('keeps a sown pod\'s plant with each label, but not a planned one or one sown after the photo\'s day', async () => {
     const { c, ctx } = await scored(2)
     const sow = (slot: number, plant: string, plantedAt: string | null, status: 'empty' | 'seeded' | 'growing') => ctx.store.pods.update(slot, { plant, plantedAt, status }, '2025-12-20T00:00:00Z')

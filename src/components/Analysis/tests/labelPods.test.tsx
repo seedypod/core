@@ -118,13 +118,12 @@ describe('LabelPods', () => {
     expect(chip('Seeded').getAttribute('aria-label')).toBe('Seeded, 3 labelled')
     expect(chip('Unhealthy').getAttribute('aria-label')).toBe('Unhealthy, 1 labelled')
     expect(screen.queryByLabelText('Label counts')).toBeNull()
-    expect(screen.getByText('11 pods labelled')).toBeTruthy()
     expect((screen.getByRole('img') as HTMLImageElement).src).toBe('http://unit/api/captures/upper-0.jpg')
     expect(screen.getByTestId('label-pods-upper').querySelectorAll('button')).toHaveLength(15)
     expect(pod(2).getAttribute('aria-label')).toBe('Pod 2: sprouted')
     expect(pod(2).textContent).toBe('2 · sprouted')
     expect(pod(1).getAttribute('aria-pressed')).toBe('false')
-    expect(screen.getByText(/1 of 15 pods labelled/)).toBeTruthy()
+    expect(screen.getByText(/ · upper · 1 of 15 labelled$/)).toBeTruthy()
   })
 
   it('offers seeded between empty and sprouted, says what each label means, and how to remove one', () => {
@@ -136,12 +135,16 @@ describe('LabelPods', () => {
     expect(chip('Sprouted').getAttribute('title')).toBe('Only seed leaves: the first pair of small, rounded leaves')
     expect(chip('Growing').getAttribute('title')).toBe('True leaves showing (the plant\'s own leaf shape), not ready yet')
     expect(chip('Seeded').getAttribute('title')).toBe('A yCube in, nothing visible yet')
-    expect(screen.getByText('Tap a dashed pod with no label picked to accept its suggestion. Pick a label and tap pods to set it; tap again with the same label, or use Clear, to remove it. Clear also removes a suggestion from a pod that can\'t be seen, on that photo only; tap again with Clear to bring it back.')).toBeTruthy()
+    // Under the photo, what a tap does with the chip picked.
+    expect(screen.getByText('Tap a dashed pod to accept it · dashed = suggestion')).toBeTruthy()
     expect(chip('Clear').getAttribute('title')).toBe('Taps take a pod\'s label off, or dismiss its suggestion')
-    // Without a way to the pod boxes, no link to them.
-    expect(screen.queryByRole('button', { name: /Box not on a pod/ })).toBeNull()
+    fireEvent.click(chip('Clear'))
+    expect(screen.getByText('Tap a pod to take its label off, or dismiss its suggestion on this photo · dashed = suggestion')).toBeTruthy()
+    // Without a way to the pod boxes, no card for them.
+    expect(screen.queryByRole('region', { name: 'Pod bounds' })).toBeNull()
     expect(screen.getByText(/Empty is capped, Seeded has a yCube/)).toBeTruthy()
     fireEvent.click(chip('Seeded'))
+    expect(screen.getByText('Tap a pod to set Seeded · dashed = suggestion')).toBeTruthy()
     fireEvent.click(pod(7))
     expect(calls.setLabel).toHaveBeenLastCalledWith({ captureId: 'upper-0', slot: 7, label: 'seeded' })
     expect(pod(7).getAttribute('aria-label')).toBe('Pod 7: seeded')
@@ -221,18 +224,10 @@ describe('LabelPods', () => {
     expect(calls.setLabel).toHaveBeenLastCalledWith({ captureId: 'lower-0', slot: 30, label: 'growing' })
   })
 
-  it('says one pod labelled in the singular', () => {
-    data.set('frames:upper', [frame('upper', 0)])
-    data.set('stats', { ...stats, pods: 1 })
-    render(<LabelPods boxes={boxes} />)
-    expect(screen.getByText('1 pod labelled')).toBeTruthy()
-  })
-
   it('says when a camera has no photos, and takes a demo still as it is', () => {
     data.set('frames:lower', [{ ...frame('lower', 0), path: 'data:image/svg+xml;utf8,<svg/>' }])
     render(<LabelPods boxes={boxes} />)
     expect(screen.getByText('No photos from this camera yet.')).toBeTruthy()
-    expect(screen.getByText('0 pods labelled')).toBeTruthy()
     expect(calls.labels).toHaveBeenLastCalledWith({ captureId: '' }, { enabled: false })
     expect((screen.getByRole('button', { name: 'Older photo' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('tab', { name: 'Lower' }))
@@ -255,7 +250,7 @@ describe('LabelPods', () => {
     expect(screen.getByTestId('label-pods-upper').querySelectorAll('button')).toHaveLength(15)
     expect(screen.getByTestId('label-pods-lower').querySelectorAll('button')).toHaveLength(15)
     expect(screen.getAllByRole('img').map(i => (i as HTMLImageElement).src)).toEqual(['http://unit/api/captures/upper-0.jpg', 'http://unit/api/captures/lower-0.jpg'])
-    expect(screen.getByText(/1 of 30 pods labelled/)).toBeTruthy()
+    expect(screen.getByText(/ · both · 1 of 30 labelled$/)).toBeTruthy()
     // Side by side, the word doesn't fit a box: the fill says it.
     expect(pod(20).textContent).toBe('20')
     expect(pod(20).getAttribute('aria-label')).toBe('Pod 20: ready')
@@ -265,7 +260,7 @@ describe('LabelPods', () => {
     expect(calls.setLabel).toHaveBeenLastCalledWith({ captureId: 'upper-0', slot: 3, label: 'growing' })
     fireEvent.click(pod(16))
     expect(calls.setLabel).toHaveBeenLastCalledWith({ captureId: 'lower-0', slot: 16, label: 'growing' })
-    expect(screen.getByText(/3 of 30 pods labelled/)).toBeTruthy()
+    expect(screen.getByText(/ · both · 3 of 30 labelled$/)).toBeTruthy()
 
     const older = screen.getByRole('button', { name: 'Older photo' }) as HTMLButtonElement
     fireEvent.click(older)
@@ -276,7 +271,7 @@ describe('LabelPods', () => {
     expect(screen.getAllByRole('img')).toHaveLength(1)
     expect(screen.getByText('No lower still this round.')).toBeTruthy()
     expect(screen.queryByTestId('label-pods-lower')).toBeNull()
-    expect(screen.getByText(/0 of 15 pods labelled/)).toBeTruthy()
+    expect(screen.getByText(/ · both · 0 of 15 labelled$/)).toBeTruthy()
     expect(older.disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Newer photo' }))
     expect(screen.getAllByRole('img')).toHaveLength(2)
@@ -436,7 +431,7 @@ describe('LabelPods suggestions (#261)', () => {
   const FROM = '2026-11-13T10:00:00Z'
   const hint = (slot: number, l: string, by: string, more: Record<string, unknown> = {}) => ({ slot, label: l, by, confidence: null, from: null, ...more })
   const hints = [hint(2, 'sprouted', 'carry', { from: FROM }), hint(3, 'growing', 'pod-state@1', { confidence: 0.86 }), hint(4, 'seeded', 'record'), hint(5, 'ready', 'carry', { from: FROM })]
-  const accept = () => screen.getByRole('button', { name: 'Accept the rest on the upper photo' })
+  const accept = () => screen.getByRole('button', { name: /^Accept all/ })
   beforeEach(() => {
     data.set('frames:upper', [frame('upper', 0)])
     data.set('hints:upper-0', hints)
@@ -453,7 +448,7 @@ describe('LabelPods suggestions (#261)', () => {
     expect(pod(2).getAttribute('title')).toBe(`Suggested sprouted: last labelled sprouted on ${new Date(FROM).toLocaleDateString([], { day: 'numeric', month: 'short' })}. ${NOT_VISIBLE}`)
     expect(pod(3).getAttribute('title')).toBe(`Suggested growing: pod-state 86%. ${NOT_VISIBLE}`)
     expect(pod(4).getAttribute('title')).toBe(`Suggested seeded: the pod record says seeded. ${NOT_VISIBLE}`)
-    expect(NOT_VISIBLE).toContain('Analysis → Latest photos → Pod bounds → Edit boxes')
+    expect(NOT_VISIBLE).toContain('Analysis → Teach → Pod bounds → Adjust boxes')
     // A saved label replaces its suggestion.
     expect(pod(5).textContent).toBe('5 · growing')
     expect(pod(5).className).toContain('border-solid')
@@ -490,23 +485,57 @@ describe('LabelPods suggestions (#261)', () => {
     expect(calls.setLabel).toHaveBeenLastCalledWith({ captureId: 'upper-0', slot: 4, label: 'seeded' })
   })
 
-  it('accepts the rest of a photo\'s suggestions in one go, and never saves a pod without one', () => {
+  it('accepts all of a photo\'s suggestions in one go, and never saves a pod without one', () => {
     render(<LabelPods boxes={boxes} />)
     fireEvent.click(pod(2))
-    expect(accept().textContent).toBe('Accept the rest (2)')
+    expect(accept().textContent).toBe('Accept all 2')
     fireEvent.click(accept())
-    expect(calls.accept).toHaveBeenCalledWith({ captureId: 'upper-0' })
+    expect(calls.accept).toHaveBeenCalledWith({ captureId: 'upper-0', slots: [3, 4] })
     expect(invalidate).toHaveBeenCalled()
     expect([3, 4].map(s => pod(s).getAttribute('aria-label'))).toEqual(['Pod 3: growing', 'Pod 4: seeded'])
     expect(pod(5).getAttribute('aria-label')).toBe('Pod 5: growing')
     // The untouched pods with no suggestion stay unlabelled, and nothing is left to accept.
     expect(pod(1).getAttribute('aria-label')).toBe('Pod 1: not labelled')
     expect(calls.setLabel).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(/4 of 15 pods labelled/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /Accept the rest/ })).toBeNull()
+    expect(screen.getByText(/ · upper · 4 of 15 labelled$/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Accept all/ })).toBeNull()
+    expect(screen.getByText('Nothing suggested waits here. Pick a label and tap pods to tag them.')).toBeTruthy()
   })
 
-  it('puts the suggestions back when the unit refuses Accept the rest, and says why', () => {
+  it('accepts only the pods shown, on each photo of a round', () => {
+    // Pod 4's box was removed: its suggestion isn't shown, so Accept all leaves it.
+    const without4 = (c: 'upper' | 'lower') => Object.fromEntries(Object.entries(podRegions(c)).filter(([s]) => s !== '4'))
+    data.set('frames:lower', [{ ...frame('lower', 0), ts: '2026-11-09T10:00:20Z' }])
+    data.set('hints:lower-0', [hint(16, 'empty', 'record')])
+    render(<LabelPods boxes={without4} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Both' }))
+    expect(screen.getByRole('region', { name: 'Suggestions' }).textContent).toContain('Suggestions on these photos3')
+    fireEvent.click(accept())
+    expect(calls.accept.mock.calls).toEqual([[{ captureId: 'upper-0', slots: [2, 3] }], [{ captureId: 'lower-0', slots: [16] }]])
+    expect(pod(16).getAttribute('aria-label')).toBe('Pod 16: empty')
+  })
+
+  it('says what the photo\'s suggestions are and how often their suggesters were right', () => {
+    data.set('stats', { ...stats, sources: { picked: 3, accepted: 7, corrected: 2 }, suggesters: [{ by: 'carry', accepted: 6, corrected: 1, right: 0.857 }, { by: 'pod-state@1', accepted: 1, corrected: 1, right: 0.5 }] })
+    render(<LabelPods boxes={boxes} />)
+    const card = screen.getByRole('region', { name: 'Suggestions' })
+    expect(card.textContent).toContain('Suggestions on this photo3')
+    // Pod 5 is labelled, so its suggestion doesn't wait.
+    expect(within(card).getByTestId('suggestion-breakdown').textContent).toBe('1 seeded, 1 sprouted, 1 growing.')
+    expect(within(card).getByTestId('suggestion-sources').textContent).toBe('carry 86% right · pod-state 50% right · record not checked yet')
+  })
+
+  it('reviews one by one from the first dashed pod, accepting with each tap', () => {
+    render(<LabelPods boxes={boxes} />)
+    fireEvent.click(chip('Ready'))
+    fireEvent.click(screen.getByRole('button', { name: 'Review one by one' }))
+    expect(chip('Ready').getAttribute('aria-pressed')).toBe('false')
+    expect(document.activeElement).toBe(pod(2))
+    fireEvent.click(pod(2))
+    expect(calls.setLabel).toHaveBeenLastCalledWith({ captureId: 'upper-0', slot: 2, label: 'sprouted' })
+  })
+
+  it('puts the suggestions back when the unit refuses Accept all, and says why', () => {
     mutation.acceptFail = true
     mutation.acceptError = { message: 'no capture upper-0' }
     render(<LabelPods boxes={boxes} />)
@@ -514,21 +543,11 @@ describe('LabelPods suggestions (#261)', () => {
     expect(pod(2).getAttribute('aria-label')).toBe('Pod 2: suggested sprouted')
     expect(screen.getByText('no capture upper-0')).toBeTruthy()
   })
-
-  it('counts labels by how they were saved, and how often each suggester was right', () => {
-    data.set('stats', { ...stats, sources: { picked: 3, accepted: 7, corrected: 2 }, suggesters: [{ by: 'carry', accepted: 6, corrected: 1, right: 0.857 }, { by: 'pod-state@1', accepted: 1, corrected: 1, right: 0.5 }] })
-    render(<LabelPods boxes={boxes} />)
-    expect(screen.getByTestId('label-sources').textContent).toBe('3 picked · 7 accepted · 2 corrected · carry 86% right · pod-state@1 50% right')
-    cleanup()
-    data.set('stats', stats)
-    render(<LabelPods boxes={boxes} />)
-    expect(screen.queryByTestId('label-sources')).toBeNull()
-  })
 })
 
 describe('LabelPods dismissed suggestions (#261)', () => {
   const hint = (slot: number, l: string) => ({ slot, label: l, by: 'record', confidence: null, from: null })
-  const accept = () => screen.queryByRole('button', { name: 'Accept the rest on the lower photo' })
+  const accept = () => screen.queryByRole('button', { name: /^Accept all/ })
   const lowerPod = (slot: number) => screen.getByRole('button', { name: new RegExp(`^Pod ${slot}:`) })
   beforeEach(() => {
     data.set('frames:lower', [frame('lower', 0)])
@@ -552,20 +571,20 @@ describe('LabelPods dismissed suggestions (#261)', () => {
     expect(lowerPod(28).getAttribute('data-dismissed')).toBe('true')
     expect(lowerPod(28).getAttribute('aria-label')).toBe('Pod 28: suggestion dismissed')
     expect(lowerPod(28).getAttribute('title')).toBe('Suggestion dismissed on this photo. Tap with Clear to bring it back.')
-    expect(accept()?.textContent).toBe('Accept the rest (3)')
+    expect(accept()?.textContent).toBe('Accept all 3')
 
     fireEvent.click(lowerPod(28))
     expect(calls.restore).toHaveBeenLastCalledWith({ captureId: 'lower-0', slot: 28 })
     expect(lowerPod(28).textContent).toBe('28 · seeded?')
     expect(lowerPod(28).getAttribute('data-dismissed')).toBeNull()
-    expect(accept()?.textContent).toBe('Accept the rest (4)')
+    expect(accept()?.textContent).toBe('Accept all 4')
     // Clear on a pod with neither a label nor a suggestion does nothing.
     fireEvent.click(lowerPod(16))
     expect(calls.dismiss).toHaveBeenCalledTimes(1)
     expect(calls.restore).toHaveBeenCalledTimes(1)
   })
 
-  it('reads dismissals from the unit, so a reload keeps them, and Accept the rest skips them', () => {
+  it('reads dismissals from the unit, so a reload keeps them, and Accept all skips them', () => {
     data.set('dismissed:lower-0', [{ slot: 28, dismissedAt: '2026-11-14T10:00:00Z' }, { slot: 29, dismissedAt: '2026-11-14T10:00:01Z' }])
     render(<LabelPods boxes={boxes} />)
     lower()
@@ -574,9 +593,9 @@ describe('LabelPods dismissed suggestions (#261)', () => {
     // A tap with no label picked doesn't accept a dismissed suggestion.
     fireEvent.click(lowerPod(28))
     expect(calls.setLabel).not.toHaveBeenCalled()
-    expect(accept()?.textContent).toBe('Accept the rest (2)')
+    expect(accept()?.textContent).toBe('Accept all 2')
     fireEvent.click(accept() as HTMLElement)
-    expect(calls.accept).toHaveBeenCalledWith({ captureId: 'lower-0' })
+    expect(calls.accept).toHaveBeenCalledWith({ captureId: 'lower-0', slots: [22, 25] })
     expect([22, 25].map(s => lowerPod(s).getAttribute('aria-label'))).toEqual(['Pod 22: seeded', 'Pod 25: seeded'])
     expect([28, 29].map(s => lowerPod(s).getAttribute('aria-label'))).toEqual(['Pod 28: suggestion dismissed', 'Pod 29: suggestion dismissed'])
     // A label picked on a dismissed pod still saves.
@@ -632,10 +651,16 @@ describe('LabelPods dismissed suggestions (#261)', () => {
     expect(screen.getByText('no capture lower-0')).toBeTruthy()
   })
 
-  it('links to the pod boxes for a box that isn\'t on a pod', () => {
+  it('says which boxes look off their pod, and opens the boxes to adjust', () => {
     const edit = vi.fn()
-    render(<LabelPods boxes={boxes} onEditBoxes={edit} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Box not on a pod? Move it in Pod bounds' }))
+    const { rerender } = render(<LabelPods boxes={boxes} onEditBoxes={edit} />)
+    const card = () => screen.getByRole('region', { name: 'Pod bounds' })
+    expect(within(card()).getByTestId('bounds-summary').textContent).toBe('No box looks off its pod.')
+    rerender(<LabelPods boxes={boxes} onEditBoxes={edit} boxesOff={[{ camera: 'lower', slot: 27, photos: 2 }, { camera: 'lower', slot: 28, photos: 4 }]} />)
+    expect(within(card()).getByTestId('bounds-summary').textContent).toBe('2 boxes look off their pods (27, 28)')
+    rerender(<LabelPods boxes={boxes} onEditBoxes={edit} boxesOff={[{ camera: 'lower', slot: 28, photos: 4 }]} />)
+    expect(within(card()).getByTestId('bounds-summary').textContent).toBe('1 box looks off its pod (28)')
+    fireEvent.click(within(card()).getByRole('button', { name: 'Adjust boxes' }))
     expect(edit).toHaveBeenCalledTimes(1)
   })
 })

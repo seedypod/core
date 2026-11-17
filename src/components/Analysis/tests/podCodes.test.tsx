@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CodeGlyphs, PodCodes } from '../PodCodes'
+import { CodeGlyphs, codesWaiting, PodCodes } from '../PodCodes'
 
 const { state, calls, invalidate } = vi.hoisted(() => ({
   state: { data: undefined as unknown, share: undefined as unknown, read: { isPending: false, isSuccess: false, data: undefined as unknown, error: null as null | { message: string } } },
@@ -59,30 +59,48 @@ describe('PodCodes (#224)', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('lists only read pods: the record\'s plant as a guess to confirm, a confirmed one with a tick', () => {
+  it('lists only read pods compactly: the record\'s plant as a guess to ✓, a confirmed one with a tick, and fix on each', () => {
     state.data = {
       available: true,
       pods: [pod(1, 'ooh|', 'Chives', 'Basil'), pod(6, 'oo||', null, 'Green Bok Choy'), pod(8, 'o||o', null, null)],
       pairs: [{ code: 'ooh|', plant: 'Chives', confirmedAt: 't' }],
     }
     render(<PodCodes />)
+    // Two of the three still wait on the grower.
+    expect(screen.getByText(/^2 to confirm · read /)).toBeTruthy()
     const six = screen.getByTestId('pod-code-6')
-    expect(six.textContent).toContain('Pod 6reads as○○⦶⦶●·Green Bok Choy?')
-    fireEvent.click(within(six).getByRole('button', { name: 'Confirm' }))
+    expect(six.textContent).toBe('Pod 6○○⦶⦶●Green Bok Choy?fix')
+    fireEvent.click(within(six).getByRole('button', { name: 'Confirm pod 6 as Green Bok Choy' }))
     expect(calls.confirm).toHaveBeenCalledWith({ code: 'oo||', plant: 'Green Bok Choy' })
     expect(invalidate).toHaveBeenCalled()
+    // Fix opens the editor in the row.
+    const fix = within(six).getByRole('button', { name: 'Correct pod 6' })
+    expect(fix.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(fix)
+    expect(fix.getAttribute('aria-expanded')).toBe('true')
+    expect((screen.getByLabelText('Pod 6\'s plant') as HTMLInputElement).value).toBe('Green Bok Choy')
 
     const one = screen.getByTestId('pod-code-1')
     expect(within(one).getByLabelText('confirmed')).toBeTruthy()
-    expect(within(one).queryByRole('button', { name: 'Confirm' })).toBeNull()
+    expect(within(one).queryByRole('button', { name: /^Confirm/ })).toBeNull()
+    expect(within(one).getByRole('button', { name: 'Correct pod 1' })).toBeTruthy()
     expect(one.textContent).toContain('Chives')
     expect(one.textContent).not.toContain('Basil')
 
     // No plant on record: say which.
     const eight = screen.getByTestId('pod-code-8')
     expect(eight.textContent).toContain('which plant?')
-    expect(within(eight).queryByRole('button', { name: 'Confirm' })).toBeNull()
+    expect(within(eight).queryByRole('button', { name: /^Confirm/ })).toBeNull()
+    expect(within(eight).getByRole('button', { name: 'Say which plant is in pod 8' }).textContent).toBe('say which')
     expect(screen.queryByTestId('pod-code-9')).toBeNull()
+  })
+
+  it('counts only the codes waiting on the grower', () => {
+    expect(codesWaiting([{ confirmed: null }, { confirmed: 'Kale' }, { confirmed: null }])).toBe(2)
+    expect(codesWaiting([])).toBe(0)
+    state.data = { available: false, pods: [pod(6, 'oo||', 'Kale', 'Kale')], pairs: [] }
+    render(<PodCodes />)
+    expect(screen.queryByText(/to confirm/)).toBeNull()
   })
 
   it('shows a shared match as a known code, which still needs a tap and saves the owner\'s own pair (#259)', () => {
@@ -92,10 +110,10 @@ describe('PodCodes (#224)', () => {
     expect(six.textContent).toContain('Green Bok Choy · known code')
     expect(six.textContent).not.toContain('Cilantro')
     expect(calls.confirm).not.toHaveBeenCalled()
-    fireEvent.click(within(six).getByRole('button', { name: 'Confirm' }))
+    fireEvent.click(within(six).getByRole('button', { name: 'Confirm pod 6 as Green Bok Choy' }))
     expect(calls.confirm).toHaveBeenCalledWith({ code: 'oo||', plant: 'Green Bok Choy' })
     // Correcting starts from the known code, and offers both plants.
-    fireEvent.click(within(six).getByRole('button', { name: 'Correct' }))
+    fireEvent.click(within(six).getByRole('button', { name: 'Correct pod 6' }))
     expect((screen.getByLabelText('Pod 6\'s plant') as HTMLInputElement).value).toBe('Green Bok Choy')
     expect([...document.querySelectorAll('#pod-code-plants-6 option')].map(o => (o as HTMLOptionElement).value)).toEqual(['Cilantro', 'Green Bok Choy'])
   })
@@ -163,7 +181,7 @@ describe('PodCodes (#224)', () => {
   it('corrects a code to another plant, offering the plants it knows', () => {
     state.data = { available: true, pods: [pod(6, 'oo||', null, 'Basil')], pairs: [{ code: 'ooh|', plant: 'Chives', confirmedAt: 't' }] }
     render(<PodCodes />)
-    fireEvent.click(screen.getByRole('button', { name: 'Correct' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Correct pod 6' }))
     const field = screen.getByLabelText('Pod 6\'s plant') as HTMLInputElement
     expect(field.value).toBe('Basil')
     const options = [...document.querySelectorAll('#pod-code-plants-6 option')].map(o => (o as HTMLOptionElement).value)
