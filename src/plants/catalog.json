@@ -3,14 +3,16 @@
  "generatedFrom": [
   "scripts/plants/gardyn-zone-guide.txt",
   "scripts/plants/gardyn-store-ycubes.txt",
-  "scripts/plants/gardyn-plant-book-sprout.txt"
+  "scripts/plants/gardyn-plant-book-sprout.txt",
+  "scripts/plants/isu-germination.txt"
  ],
  "sources": {
   "zone": "https://help.mygardyn.com/en/articles/11547329",
   "zoneMap": "https://help.mygardyn.com/en/articles/11567361",
   "store": "https://mygardyn.com/collections/ycubes",
   "succession": "https://help.mygardyn.com/en/articles/1782337",
-  "sprout": "https://mygardyn.com/plant-book"
+  "sprout": "https://mygardyn.com/plant-book",
+  "germination": "https://yardandgarden.extension.iastate.edu/how-to/germination-requirements-annuals-and-vegetables"
  },
  "categoryHarvestMedians": {
   "green": [
@@ -44,19 +46,19 @@
  },
  "categorySproutMedians": {
   "flower": [
-   10,
+   7,
    14
   ],
   "fruiting": [
-   10,
-   28
+   7,
+   14
   ],
   "green": [
-   7,
+   6,
    21
   ],
   "herb": [
-   7,
+   10,
    21
   ],
   "legume": [
@@ -65,13 +67,21 @@
   ],
   "lettuce": [
    7,
-   10
+   14
+  ],
+  "vegetable": [
+   4,
+   7
   ]
  },
  "sproutDays": {
   "arugula": [
    4,
    21
+  ],
+  "banana-pepper": [
+   7,
+   10
   ],
   "basil": [
    5,
@@ -81,17 +91,61 @@
    10,
    14
   ],
+  "black-pearl-pepper": [
+   7,
+   10
+  ],
+  "blue-cornflower": [
+   7,
+   14
+  ],
+  "breen": [
+   7,
+   14
+  ],
   "bronze-arrow": [
    7,
    10
+  ],
+  "bulls-blood-beets": [
+   5,
+   8
+  ],
+  "bunching-onions": [
+   4,
+   20
   ],
   "burrito-pepper": [
    10,
    28
   ],
+  "buttercrunch": [
+   7,
+   14
+  ],
+  "butterhead": [
+   7,
+   14
+  ],
+  "candy-cane-pepper": [
+   7,
+   10
+  ],
+  "cardinale": [
+   7,
+   14
+  ],
   "catnip": [
    10,
    14
+  ],
+  "celery": [
+   14,
+   21
+  ],
+  "celosia-mix": [
+   7,
+   10
   ],
   "chamomile": [
    10,
@@ -117,6 +171,22 @@
    7,
    24
   ],
+  "dragon-beans": [
+   8,
+   10
+  ],
+  "fairytale-eggplant": [
+   7,
+   10
+  ],
+  "flashy-trout-back": [
+   7,
+   14
+  ],
+  "fuchsia-snapdragon": [
+   7,
+   14
+  ],
   "garlic-chives": [
    10,
    21
@@ -133,6 +203,18 @@
    5,
    10
   ],
+  "green-cabbage": [
+   4,
+   7
+  ],
+  "green-salanova": [
+   7,
+   14
+  ],
+  "holy-basil": [
+   10,
+   14
+  ],
   "hon-tsai-tai": [
    5,
    10
@@ -140,6 +222,14 @@
   "hungarian-hot-wax-pepper": [
    10,
    28
+  ],
+  "iceberg": [
+   7,
+   14
+  ],
+  "italian-parsley": [
+   20,
+   25
   ],
   "jalapeno": [
    10,
@@ -149,6 +239,10 @@
    7,
    21
   ],
+  "kale-lacinato": [
+   4,
+   7
+  ],
   "lavender": [
    15,
    30
@@ -157,12 +251,40 @@
    7,
    14
   ],
+  "lemon-hot-pepper": [
+   7,
+   10
+  ],
   "lime-basil": [
    5,
    21
   ],
   "lollo-rossa": [
    7,
+   10
+  ],
+  "mammoth-basil": [
+   10,
+   14
+  ],
+  "mini-broccoli": [
+   4,
+   7
+  ],
+  "mini-cauliflower": [
+   4,
+   7
+  ],
+  "mini-eggplant": [
+   7,
+   10
+  ],
+  "mini-pumpkin": [
+   5,
+   10
+  ],
+  "mini-squash": [
+   5,
    10
   ],
   "mint": [
@@ -173,13 +295,41 @@
    7,
    10
   ],
+  "muir-lettuce": [
+   7,
+   14
+  ],
+  "nasturtium": [
+   10,
+   14
+  ],
   "oregano": [
    7,
    21
   ],
+  "peas": [
+   9,
+   14
+  ],
+  "pink-celery": [
+   14,
+   21
+  ],
+  "pink-petunia": [
+   7,
+   10
+  ],
   "poblano-pepper": [
    10,
    28
+  ],
+  "portulaca-mix": [
+   7,
+   10
+  ],
+  "purple-basil": [
+   10,
+   14
   ],
   "purple-beans": [
    10,
@@ -193,6 +343,18 @@
    10,
    28
   ],
+  "purple-kohlrabi": [
+   4,
+   7
+  ],
+  "purple-petunia": [
+   7,
+   10
+  ],
+  "purple-snapdragon": [
+   7,
+   14
+  ],
   "purslane": [
    7,
    21
@@ -205,6 +367,10 @@
    7,
    28
   ],
+  "red-impatiens": [
+   10,
+   14
+  ],
   "red-mini-strawberries": [
    10,
    15
@@ -212,6 +378,18 @@
   "red-oak-leaf-lettuce": [
    7,
    10
+  ],
+  "red-romaine": [
+   7,
+   14
+  ],
+  "red-sails-lettuce": [
+   7,
+   14
+  ],
+  "red-salad-bowl": [
+   7,
+   14
   ],
   "red-swiss-chard": [
    7,
@@ -233,6 +411,14 @@
    7,
    21
   ],
+  "scarlet-snapdragon": [
+   7,
+   14
+  ],
+  "shishito-pepper": [
+   7,
+   10
+  ],
   "stevia": [
    14,
    21
@@ -245,9 +431,21 @@
    10,
    28
   ],
+  "sweet-thai-basil": [
+   10,
+   14
+  ],
+  "thai-eggplant": [
+   7,
+   10
+  ],
   "thyme": [
    7,
    21
+  ],
+  "violet-impatiens": [
+   10,
+   14
   ],
   "wasabi-greens": [
    4,
@@ -261,6 +459,14 @@
    1,
    7
   ],
+  "white-kohlrabi": [
+   4,
+   7
+  ],
+  "white-petunia": [
+   7,
+   10
+  ],
   "yellow-beans": [
    10,
    14
@@ -273,9 +479,17 @@
    10,
    15
   ],
+  "yellow-snapdragon": [
+   7,
+   14
+  ],
   "yellow-swiss-chard": [
    7,
    21
+  ],
+  "zinnia": [
+   5,
+   7
   ]
  },
  "plants": [

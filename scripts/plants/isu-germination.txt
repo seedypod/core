@@ -1,0 +1,56 @@
+# Iowa State University Extension, "Germination Requirements for Annuals and Vegetables" (Jauron, Steil; last reviewed December 2023), "Days to Germination", read 2026-11-17.
+# https://yardandgarden.extension.iastate.edu/how-to/germination-requirements-annuals-and-vegetables
+# id|days to germination|table row. Only plants with no Plant Book page (gardyn-plant-book-sprout.txt) whose crop is a row in the table; figures are per crop, not per variety.
+# Not listed: crops the table has no row for, endive-lettuce (endive, not lettuce), bare-root-strawberries (not grown from seed).
+banana-pepper|7-10|Pepper
+black-pearl-pepper|7-10|Pepper
+blue-cornflower|7-14|Bachelor's Button (Centaurea cyanus)
+breen|7-14|Lettuce
+bulls-blood-beets|5-8|Beets
+bunching-onions|4-20|Onion
+buttercrunch|7-14|Lettuce
+butterhead|7-14|Lettuce
+candy-cane-pepper|7-10|Pepper
+cardinale|7-14|Lettuce
+celery|14-21|Celery
+celosia-mix|7-10|Cockscomb (Celosia spp.)
+dragon-beans|8-10|Beans
+fairytale-eggplant|7-10|Eggplant
+flashy-trout-back|7-14|Lettuce
+fuchsia-snapdragon|7-14|Snapdragon (Antirrhinum majus)
+green-cabbage|4-7|Cabbage
+green-salanova|7-14|Lettuce
+holy-basil|10-14|Basil
+iceberg|7-14|Lettuce
+italian-parsley|20-25|Parsley
+kale-lacinato|4-7|Kale
+lemon-hot-pepper|7-10|Pepper
+mammoth-basil|10-14|Basil
+mini-broccoli|4-7|Broccoli
+mini-cauliflower|4-7|Cauliflower
+mini-eggplant|7-10|Eggplant
+mini-pumpkin|5-10|Squash and Pumpkin
+mini-squash|5-10|Squash and Pumpkin
+muir-lettuce|7-14|Lettuce
+nasturtium|10-14|Nasturtium (Tropaeolum majus)
+peas|9-14|Peas
+pink-celery|14-21|Celery
+pink-petunia|7-10|Petunia (Petunia x hybrida)
+portulaca-mix|7-10|Moss Rose (Portulaca grandiflora)
+purple-basil|10-14|Basil
+purple-kohlrabi|4-7|Kohlrabi
+purple-petunia|7-10|Petunia (Petunia x hybrida)
+purple-snapdragon|7-14|Snapdragon (Antirrhinum majus)
+red-impatiens|10-14|Impatiens (Impatiens wallerana)
+red-romaine|7-14|Lettuce
+red-sails-lettuce|7-14|Lettuce
+red-salad-bowl|7-14|Lettuce
+scarlet-snapdragon|7-14|Snapdragon (Antirrhinum majus)
+shishito-pepper|7-10|Pepper
+sweet-thai-basil|10-14|Basil
+thai-eggplant|7-10|Eggplant
+violet-impatiens|10-14|Impatiens (Impatiens wallerana)
+white-kohlrabi|4-7|Kohlrabi
+white-petunia|7-10|Petunia (Petunia x hybrida)
+yellow-snapdragon|7-14|Snapdragon (Antirrhinum majus)
+zinnia|5-7|Zinnia (Zinnia elegans)

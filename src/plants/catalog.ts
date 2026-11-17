@@ -60,10 +60,10 @@ const catalog = Catalog.parse(raw)
 export const PLANTS: readonly Plant[] = catalog.plants.map(p => ({ ...p, tolerates: defaultTolerance(p) }))
 export const CATALOG_SOURCES = catalog.sources
 
-/** Days from sowing to the first sprout, [from, to]; `estimated` when it is the category's median because the Plant Book gives none for the plant. */
+/** Days from sowing to the first sprout, [from, to]; `estimated` when it is the category's median because neither source gives one for the plant. */
 export interface SproutWindow { days: [number, number], estimated: boolean }
 
-/** A plant's sprouting window from Gardyn's Plant Book, else its category's median; null for a category the book has no plant in. */
+/** A plant's sprouting window from Gardyn's Plant Book or Iowa State's germination table, else its category's median; null for a category neither has a plant in. */
 export function sproutWindow(p: Pick<Plant, 'id' | 'category'>): SproutWindow | null {
   const own = catalog.sproutDays[p.id]
   if (own) return { days: own, estimated: false }
