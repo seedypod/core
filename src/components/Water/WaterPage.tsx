@@ -1,6 +1,6 @@
 import { withUnit } from '@/src/lib/sensorMeta'
 import { toDisplay } from '@/src/lib/units'
-import { Play, Square } from 'lucide-react'
+import { Play, ShieldCheck, Square } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, Card, InlineError, Skeleton } from '@/src/components/ds/core'
@@ -11,7 +11,7 @@ import { bin } from '@/src/components/charts/TimeChart'
 import { Chart3D, ChartNote, LoadingLine, Pending, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { tankData, type TankMarks } from '@/src/components/charts/viz3d/shape'
 import { hasWebGL } from '@/src/components/Grow/TowerView'
-import type { Reading, SensorId } from '@/src/hardware/contract'
+import type { DryGuard, Reading, SensorId } from '@/src/hardware/contract'
 import { dayOn } from '@/src/lib/days'
 import { pumpFault } from '@/src/lib/pumpFault'
 import { localTime, systemZone } from '@/src/scheduler/time'
@@ -23,7 +23,8 @@ import { asCycle, fmtCountdown, fmtMinutes, fmtWhen, levelAt, nextRun, runSource
 import { useNow } from '@/src/components/System/useNow'
 import { useTankReserve } from './useTankReserve'
 import { YourSchedules } from './YourSchedules'
-import { DryGuardLine } from './DryGuardLine'
+import { DryGuardCard } from './DryGuardCard'
+import { fmtAmps, guardChip, guards, tripWords } from './dryGuard'
 import { DueChores } from '@/src/components/Care/ChoreItem'
 import { ScheduleTimeline } from '@/src/components/charts/ScheduleTimeline'
 
@@ -52,12 +53,18 @@ export function WaterPage() {
   // The tank in 3D heads the page; without WebGL the flat meter and the history chart below stand in.
   const [flat, setFlat] = useState(() => !hasWebGL())
   const p = pump.data
+  const lastRun = trpc.pump.lastRun.useQuery(undefined, { refetchInterval: p?.on ? 5_000 : 60_000 })
+  // An hour of distance reads, for how much the sensor jitters.
+  const distanceHistory = trpc.telemetry.history.useQuery({ sensor: 'water_distance', hours: 1, maxPoints: 2000 }, { refetchInterval: 5 * 60_000 })
   const s: Partial<Record<SensorId, Reading>> = sensors.data ?? {}
   const limits = system.data?.system?.limits
   const cfg = settings.data
   const tank = s.water_level_pct && Math.round(s.water_level_pct.value)
   // The one place "in the reserve" is decided, for the readout, the meter and the scene alike.
-  const { cutoff, low } = useTankReserve(s)
+  const { cutoff, low: belowCut } = useTankReserve(s)
+  // The level cutoff stops the pump only while the tank-level guard is on; otherwise it just warns.
+  const levelStops = guards(limits?.pumpDryGuard ?? 'level').level
+  const low = belowCut && levelStops
   const cycles = useMemo(() => (schedules.data ?? []).flatMap(x => asCycle(x) ?? []).sort((a, b) => a.spec.minute - b.spec.minute), [schedules.data])
   const curves = useMemo(() => (schedules.data ?? []).flatMap(x => asCurve(x) ?? []), [schedules.data])
   const now = new Date()
@@ -82,6 +89,10 @@ export function WaterPage() {
   const light = lightWindow(runningToday(curves, weekday).map(c => c.spec))
 
   // The strip below says what the current guard measured; up here, which fault it is.
+  // A dry-run trip is the guard doing its job: amber, said in words, with a way on. Other faults stay red.
+  const dryTrip = p?.fault && !p.on ? tripWords(p.fault, lastRun.data, limits, iso => fmtTime(Date.parse(iso))) : null
+  const guard = limits?.pumpDryGuard ? { mode: limits.pumpDryGuard, cutoff: limits.pumpDryCurrentA ?? null } : null
+  const clear = useClearFault()
   const pumpLine = p ? (p.on ? `watering at ${p.level}%` : p.fault ? `pump fault: ${pumpFault(p.fault).reason}` : 'pump idle') : '…'
   const subtitle = [pumpLine, next ? `next run ${fmtClock(next.cycle.spec.minute)}` : null].filter(Boolean).join(' · ')
   const limitsLine = limits ? `Up to ${fmtMinutes(limits.pumpMaxRunS)} per run at ${limits.pumpMaxDuty}% duty. Won't start below ${limits.waterLowCm == null ? '— cm' : withUnit(limits.waterLowCm, 'cm')} of water.` : undefined
@@ -92,11 +103,11 @@ export function WaterPage() {
         <h1 className="text-2xl font-semibold">Water</h1>
         <div className="flex flex-wrap items-center gap-3">
           <p className={cn('text-[13px]', p?.fault ? 'text-danger' : 'text-fg-2')}>{subtitle}</p>
-          {p?.fault && <ClearFault />}
+          {p?.fault && !dryTrip && <ClearFault />}
         </div>
       </div>
 
-      <Card tone={p?.fault ? 'danger' : undefined} className="@container gap-0 overflow-hidden p-0">
+      <Card tone={p?.fault ? (dryTrip ? 'warn' : 'danger') : undefined} className="@container gap-0 overflow-hidden p-0">
         <PumpStrip
           pump={p ?? undefined}
           at={pump.dataUpdatedAt}
@@ -116,8 +127,13 @@ export function WaterPage() {
           stopping={stop.isPending}
           onRun={() => runNow(Number(dur))}
           onStop={() => stop.mutate()}
+          guard={guard}
+          trip={dryTrip}
+          clearing={clear.pending}
+          onToppedUp={() => clear.clear()}
+          onRunAgain={() => clear.clear(() => runNow(Number(dur)))}
         />
-        <DryGuardLine limits={limits} />
+        {dryTrip && clear.error && <div className="border-b border-line px-[22px] py-2"><InlineError>{clear.error}</InlineError></div>}
         {asked !== null && p?.on && <Started onSeen={() => setAsked(null)} />}
         <div className="flex flex-col gap-3.5 px-[22px] pb-5 pt-4">
           {flat
@@ -141,6 +157,7 @@ export function WaterPage() {
                   capacityL={cfg?.tankCapacityL}
                   cutoff={cutoff}
                   low={low}
+                  warnOnly={!levelStops}
                   current={s.water_level_pct?.value ?? null}
                   run={p?.on ? { since: p.since } : null}
                   ran={(runs.data ?? []).filter(r => cycles.some(c => c.id === r.scheduleId)).map(r => r.firedAt)}
@@ -149,15 +166,27 @@ export function WaterPage() {
                   marks={{
                     full: `full · ${cfg ? withUnit(cfg.waterFullCm, 'cm') : '—'}`,
                     now: `now · ${fmt(s.water_distance)}`,
-                    cutoff: cutoff !== null && limits?.waterLowCm != null ? `cutoff ${cutoff}% · ${withUnit(limits.waterLowCm, 'cm')}` : null,
+                    cutoff: cutoff !== null && limits?.waterLowCm != null ? `${levelStops ? 'cutoff' : 'warn'} ${cutoff}% · ${withUnit(limits.waterLowCm, 'cm')}` : null,
                     empty: `empty · ${cfg ? withUnit(cfg.waterEmptyCm, 'cm') : '—'}`,
-                    short: { full: 'full', now: `now ${fmt(s.water_distance)}`, cutoff: cutoff !== null ? `cutoff ${cutoff}%` : null, empty: 'empty' },
+                    short: { full: 'full', now: `now ${fmt(s.water_distance)}`, cutoff: cutoff !== null ? `${levelStops ? 'cutoff' : 'warn'} ${cutoff}%` : null, empty: 'empty' },
                   }}
                   onUnavailable={() => setFlat(true)}
                 />
               )}
         </div>
       </Card>
+
+      <DryGuardCard
+        limits={limits}
+        run={lastRun.data ?? null}
+        pumpA={s.pump_a?.value}
+        pumpOn={p?.on}
+        levelPct={s.water_level_pct?.value}
+        distanceCm={s.water_distance?.value}
+        distances={(distanceHistory.data ?? []).map(r => r.value)}
+        fullCm={cfg?.waterFullCm}
+        emptyCm={cfg?.waterEmptyCm}
+      />
 
       <ScheduleTimeline
         lead="water"
@@ -251,7 +280,15 @@ function TankReadout({ tank, capacityL, reserve = false }: { tank: number | unde
 }
 
 /** The key to the hatching: the water under the pump cutoff, which the pump won't draw. */
-function ReserveLegend({ cutoff }: { cutoff: number }) {
+function ReserveLegend({ cutoff, warnOnly }: { cutoff: number, warnOnly?: boolean }) {
+  if (warnOnly) {
+    return (
+      <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-fg-3">
+        <span aria-hidden className="h-0 w-3.5 border-t border-dashed border-fg-3" />
+        {`warns below ${cutoff}% · the tank level doesn't stop the pump`}
+      </span>
+    )
+  }
   return (
     <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pod-ready">
       <span aria-hidden className="tank-reserve h-2.5 w-3.5 rounded-[2px]" />
@@ -317,7 +354,7 @@ function RangeTabs({ value, onChange }: { value: Hours, onChange: (v: Hours) => 
  * then the history and the glass on one scale. Without WebGL it calls
  * `onUnavailable`, and the page goes flat.
  */
-function TankBody({ hours, onHours, tank, capacityL, cutoff, low, current, run, ran, nowMin, later, marks, onUnavailable }: {
+function TankBody({ hours, onHours, tank, capacityL, cutoff, low, warnOnly, current, run, ran, nowMin, later, marks, onUnavailable }: {
   hours: Hours
   onHours: (h: Hours) => void
   /** A preset's run times (minutes of the day) shown before it's applied. */
@@ -326,6 +363,8 @@ function TankBody({ hours, onHours, tank, capacityL, cutoff, low, current, run, 
   cutoff: number | null
   /** The water is down in the reserve under the cutoff, so the pump won't start. */
   low: boolean
+  /** The cutoff only warns: the tank-level guard is off. */
+  warnOnly: boolean
   current: number | null
   run: { since: string } | null
   /** When scheduled runs fired. */
@@ -350,6 +389,7 @@ function TankBody({ hours, onHours, tank, capacityL, cutoff, low, current, run, 
         topUps: t.topUps,
         cutoffPct: cutoff,
         low,
+        warnOnly,
         currentPct: current,
         ticks,
         marks,
@@ -387,7 +427,7 @@ function TankBody({ hours, onHours, tank, capacityL, cutoff, low, current, run, 
         fallback={null}
         onUnavailable={onUnavailable}
       />
-      {cutoff !== null && status === 'ready' && <div className="flex justify-end"><ReserveLegend cutoff={cutoff} /></div>}
+      {cutoff !== null && status === 'ready' && <div className="flex justify-end"><ReserveLegend cutoff={cutoff} warnOnly={warnOnly} /></div>}
     </>
   )
 }
@@ -411,7 +451,7 @@ const CHIP = 'grid size-8 cursor-pointer place-items-center rounded-[7px] border
  * power, a countdown and Stop, and a progress line along its foot. Both states
  * are the same height, so the body below never moves.
  */
-function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, runError, asked, onGiveUp, source, limits, dur, onDur, starting, stopping, onRun, onStop }: {
+function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, runError, asked, onGiveUp, source, limits, dur, onDur, starting, stopping, onRun, onStop, guard, trip, clearing, onToppedUp, onRunAgain }: {
   pump: { on: boolean, level: number, since: string, fault: string | null, remainingS: number | null } | undefined
   at: number
   readings: Partial<Record<SensorId, Reading>>
@@ -433,8 +473,32 @@ function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, ru
   stopping: boolean
   onRun: () => void
   onStop: () => void
+  /** The dry-run guard in effect, for the idle chip and the running bar. */
+  guard: { mode: DryGuard, cutoff: number | null } | null
+  /** A dry-run trip in words, when that's why the pump stopped. */
+  trip: string | null
+  clearing: boolean
+  onToppedUp: () => void
+  onRunAgain: () => void
 }) {
   const running = !!p?.on
+  if (!running && trip) {
+    return (
+      <div data-testid="pump-strip" data-state="tripped" className="flex flex-col gap-3 border-b border-warn-line bg-warn-bg px-[22px] py-3.5 @min-[620px]:flex-row @min-[620px]:items-center @min-[620px]:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="size-2.5 shrink-0 rounded-full bg-pod-ready" />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[15px] font-medium leading-tight">Stopped · pump ran dry</span>
+            <span className="text-[12.5px] text-fg-2" data-testid="trip-words">{trip}</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button disabled={clearing} onClick={onToppedUp}>I topped it up</Button>
+          <Button variant="primary" disabled={clearing} onClick={onRunAgain}>Run again</Button>
+        </div>
+      </div>
+    )
+  }
   const usual = (
     <span className="truncate">
       {unscheduled && <button type="button" onClick={onSchedule} className="cursor-pointer border-0 bg-transparent p-0 text-fg-2 underline underline-offset-2 hover:text-fg">No watering schedule</button>}
@@ -469,7 +533,7 @@ function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, ru
     >
       {running && p
         ? (
-            <PumpRunning pump={p} at={at} readings={s} source={source} stopping={stopping} onStop={onStop} status={status} />
+            <PumpRunning pump={p} at={at} readings={s} source={source} stopping={stopping} onStop={onStop} status={status} cutoff={guard && guards(guard.mode).current ? guard.cutoff : null} />
           )
         : (
             <>
@@ -478,7 +542,13 @@ function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, ru
                 p ? (p.fault ? 'Pump fault' : 'Pump idle') : 'Pump',
                 subtitle(),
               )}
-              <div className="flex h-10 items-center gap-2">
+              <div className="flex h-10 flex-wrap items-center gap-2">
+                {guard && (
+                  <a href="#dry-guard" data-testid="guard-chip" className="mr-2 flex items-center gap-1.5 rounded-full border border-line-2 px-2.5 py-1 font-mono text-[11.5px] text-fg-2 no-underline hover:text-fg" title="Dry-run guard">
+                    <ShieldCheck size={13} aria-hidden />
+                    {`guard · ${guardChip(guard.mode)}`}
+                  </a>
+                )}
                 <span className="text-[12px] text-fg-3">Run for</span>
                 <div role="radiogroup" aria-label="Run length" className="flex gap-1">
                   {DURATIONS.map(d => (
@@ -507,7 +577,7 @@ function PumpStrip({ pump: p, at, readings: s, next, unscheduled, onSchedule, ru
 }
 
 /** The strip while the pump runs; its own component for the countdown's clock. */
-function PumpRunning({ pump: p, at, readings: s, source, stopping, onStop, status }: {
+function PumpRunning({ pump: p, at, readings: s, source, stopping, onStop, status, cutoff }: {
   pump: { level: number, since: string, remainingS: number | null }
   at: number
   readings: Partial<Record<SensorId, Reading>>
@@ -515,6 +585,8 @@ function PumpRunning({ pump: p, at, readings: s, source, stopping, onStop, statu
   stopping: boolean
   onStop: () => void
   status: (dot: string, title: string, sub: ReactNode) => ReactNode
+  /** The current cutoff in force, to draw the live current against. */
+  cutoff: number | null
 }) {
   const run = useRun(p.since, p.remainingS, at)
   const sub = [source ?? 'Manual', `${p.level}% duty`, fmt(s.pump_w), fmt(s.pump_a), fmt(s.pump_v)].join(' · ')
@@ -522,6 +594,7 @@ function PumpRunning({ pump: p, at, readings: s, source, stopping, onStop, statu
     <>
       {status('animate-pulse bg-tank motion-reduce:animate-none', 'Watering', <span className="truncate">{sub}</span>)}
       <div className="flex h-10 items-center gap-3">
+        {cutoff !== null && s.pump_a && <CurrentMargin a={s.pump_a.value} cutoff={cutoff} />}
         {run
           ? (
               <span className="flex items-baseline gap-1.5">
@@ -594,6 +667,46 @@ function TankHistory({ cutoff }: { cutoff: number | null }) {
 
 function fmt(r: { value: number, unit: string } | undefined): string {
   return r ? withUnit(r.value, r.unit) : '—'
+}
+
+/** While the pump runs: its current against the cutoff, so the margin shows shrinking as the tank empties. */
+function CurrentMargin({ a, cutoff }: { a: number, cutoff: number }) {
+  const span = Math.max(cutoff * 1.6, a * 1.25)
+  const at = (v: number) => `${Math.max(0, Math.min(100, (v / span) * 100))}%`
+  const near = a < cutoff * 1.1
+  return (
+    <div data-testid="current-margin" className="hidden w-[180px] flex-col gap-1 @min-[720px]:flex" role="meter" aria-label="Pump current against its cutoff" aria-valuenow={a} aria-valuemin={0} aria-valuemax={span}>
+      <span className="flex justify-between font-mono text-[11px]">
+        <span className={near ? 'text-warn' : 'text-[var(--accent-water)]'}>{fmtAmps(a)}</span>
+        <span className="text-[var(--tank-reserve)]">{`cutoff ${Number(cutoff.toFixed(2))}`}</span>
+      </span>
+      <span className="relative h-1.5 rounded-full bg-line">
+        <span className="absolute inset-y-0 left-0 rounded-full bg-[var(--accent-water)] transition-[width] duration-700" style={{ width: at(a) }} />
+        <span className="absolute -top-1 h-3.5 w-0.5 rounded-full bg-[var(--tank-reserve)]" style={{ left: at(cutoff) }} />
+      </span>
+    </div>
+  )
+}
+
+/** Acknowledges the pump's latched fault, then optionally does something once it's cleared (Run again). */
+function useClearFault() {
+  const utils = trpc.useUtils()
+  const alerts = trpc.alerts.list.useQuery({ activeOnly: true })
+  const ack = trpc.alerts.acknowledge.useMutation()
+  const fault = (alerts.data ?? []).find(a => a.kind === 'pump_fault')
+  return {
+    pending: ack.isPending,
+    error: ack.error?.message ?? null,
+    clear: (then?: () => void) => {
+      if (!fault) return then?.()
+      ack.mutate({ id: fault.id }, {
+        onSuccess: () => {
+          void utils.alerts.invalidate()
+          void utils.pump.invalidate().then(() => then?.())
+        },
+      })
+    },
+  }
 }
 
 /** Clears the pump's latched fault from here, as Alerts does, once the cause is fixed. A dry-run clears by itself after a minute of good water. */

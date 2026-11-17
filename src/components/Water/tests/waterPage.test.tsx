@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as Chart3DModule from '@/src/components/charts/viz3d/Chart3D'
 import { START_WAIT_MS, WaterPage } from '../WaterPage'
@@ -37,7 +37,7 @@ vi.mock('../YourSchedules', () => ({
     <section id="pump-cycles" data-testid="your-schedules" data-live={live.map(c => c.id).join(',')} data-light={JSON.stringify(light)} data-limits={JSON.stringify(limits)} data-entries={entries.length} data-zone={zone} />
   ),
 }))
-vi.mock('../DryGuardLine', () => ({ DryGuardLine: ({ limits }: { limits: unknown }) => <div data-testid="dry-guard-line" data-limits={JSON.stringify(limits)} /> }))
+vi.mock('../DryGuardCard', () => ({ DryGuardCard: ({ limits }: { limits: unknown }) => <div data-testid="dry-guard-card" data-limits={JSON.stringify(limits)} /> }))
 
 vi.mock('@/src/utils/trpc', () => {
   const query = (name: string) => ({ useQuery: () => ({ data: data.get(name) }) })
@@ -61,11 +61,12 @@ vi.mock('@/src/utils/trpc', () => {
   return {
     trpc: {
       useUtils: () => ({ pump: { invalidate: calls.invalidatePump, get: { setData: calls.setPump } }, schedules: { invalidate: vi.fn() }, tank: { invalidate: vi.fn() }, care: { invalidate: vi.fn() }, alerts: { invalidate: vi.fn() }, settings: { invalidate: vi.fn() }, grow: { invalidate: vi.fn() }, protocol: { invalidate: calls.invalidateProtocol } }),
-      alerts: { list: query('alerts'), acknowledge: { useMutation: (o: { onSuccess: () => void }) => ({ isPending: false, error: state.ackError, mutate: (i: unknown) => {
+      alerts: { list: query('alerts'), acknowledge: { useMutation: (o?: { onSuccess?: () => void }) => ({ isPending: false, error: state.ackError, mutate: (i: unknown, m?: { onSuccess?: () => void }) => {
         calls.ack(i)
-        o.onSuccess()
+        o?.onSuccess?.()
+        m?.onSuccess?.()
       } }) } },
-      pump: { get: query('pump'), runOnce: mutation('runOnce'), stop: mutation('stop') },
+      pump: { get: query('pump'), runOnce: mutation('runOnce'), stop: mutation('stop'), lastRun: query('lastRun') },
       sensors: { latest: query('sensors') },
       care: { chores: query('chores') },
       tank: { actions: query('tankActions'), logAction: { useMutation: () => ({ mutate: vi.fn(), error: null }) }, removeAction: { useMutation: () => ({ mutate: vi.fn(), error: null }) } },
@@ -142,7 +143,7 @@ describe('WaterPage: tank and pump', () => {
     // The pump's limits are Run's tooltip.
     expect(strip.getByRole('button', { name: 'Run' }).getAttribute('title')).toBe('Up to 15 min per run at 30% duty. Won\'t start below 16 cm of water.')
     // Under the strip, the dry-run guard line gets hald's limits.
-    expect(JSON.parse(screen.getByTestId('dry-guard-line').dataset.limits ?? 'null')).toEqual({ pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16 })
+    expect(JSON.parse(screen.getByTestId('dry-guard-card').dataset.limits ?? 'null')).toEqual({ pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16 })
   })
 
   it('shows the due chores with the rows the sidebar\'s Needs you shares', () => {
@@ -242,20 +243,21 @@ describe('WaterPage: tank and pump', () => {
     expect(within(screen.getByTestId('pump-strip')).getByText('dry run')).toBeTruthy()
   })
 
-  it('says what the pump drew when its current stopped it', () => {
-    data.set('pump', { ...idle, fault: 'dry-run: pump drew 0.4 A, below 1.2 A for 5 s: it\'s pulling air' })
+  it('says, in amber, which guard stopped a dry pump and what the other signal read', () => {
+    data.set('pump', { ...idle, fault: 'dry-run: pump drew 0.29 A, below 0.45 A for 0.3 s: it\'s pulling air' })
+    data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16, pumpDryGuard: 'both', pumpDryCurrentA: 0.45 } } })
+    data.set('lastRun', { startedAt: at(20).toISOString(), endedAt: new Date(at(20).getTime() + 42_000).toISOString(), everyMs: 100, samples: [], wetA: 0.53, endedBy: 'fault', fault: 'dry-run: pump drew 0.29 A', levelPct: 31, levelCm: 15.4 })
     render(<WaterPage />)
-    const strip = within(screen.getByTestId('pump-strip'))
-    expect(strip.getByText('Pump fault')).toBeTruthy()
-    const why = strip.getByText('Pump drew 0.4 A, below 1.2 A for 5 s: it\'s pulling air')
-    expect(why.getAttribute('title')).toBe(why.textContent)
-    expect(screen.getByText(/pump fault: dry-run(?!:)/)).toBeTruthy()
-    expect(strip.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    const strip = screen.getByTestId('pump-strip')
+    expect(strip.dataset.state).toBe('tripped')
+    expect(within(strip).getByText('Stopped · pump ran dry')).toBeTruthy()
+    expect(within(strip).getByTestId('trip-words').textContent).toMatch(/current fell to 0.29 A \(cutoff 0.45\) after 42 s\. The tank read 31%, so the level guard alone would have missed it\./)
+    expect(screen.queryByRole('button', { name: 'Clear fault' })).toBeNull()
   })
 
   it('clears a latched pump fault from the page, without going to Alerts', () => {
-    data.set('pump', { ...idle, fault: 'dry-run' })
-    data.set('alerts', [{ id: 174, kind: 'pump_fault', active: true, detail: 'pump: dry-run' }])
+    data.set('pump', { ...idle, fault: 'over-temp' })
+    data.set('alerts', [{ id: 174, kind: 'pump_fault', active: true, detail: 'pump: over-temp' }])
     render(<WaterPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Clear fault' }))
     expect(calls.ack).toHaveBeenCalledWith({ id: 174 })
@@ -266,11 +268,51 @@ describe('WaterPage: tank and pump', () => {
     render(<WaterPage />)
     expect(screen.queryByRole('button', { name: 'Clear fault' })).toBeNull()
     cleanup()
-    data.set('alerts', [{ id: 174, kind: 'pump_fault', active: true, detail: 'pump: dry-run' }])
+    data.set('alerts', [{ id: 174, kind: 'pump_fault', active: true, detail: 'pump: over-temp' }])
     state.ackError = { message: 'the daemon is offline' }
     render(<WaterPage />)
     expect(screen.getByText('the daemon is offline')).toBeTruthy()
     state.ackError = null
+  })
+
+  it('after a dry run, "I topped it up" clears the fault and "Run again" clears it and runs', async () => {
+    data.set('pump', { ...idle, fault: 'dry-run' })
+    data.set('alerts', [{ id: 175, kind: 'pump_fault', active: true, detail: 'pump: dry-run' }])
+    calls.invalidatePump.mockResolvedValue(undefined)
+    render(<WaterPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'I topped it up' }))
+    expect(calls.ack).toHaveBeenCalledWith({ id: 175 })
+    expect(calls.runOnce).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Run again' }))
+    await waitFor(() => expect(calls.runOnce).toHaveBeenCalledWith({ durationS: 300 }))
+  })
+
+  it('says why clearing a dry-run trip failed', () => {
+    data.set('pump', { ...idle, fault: 'dry-run' })
+    data.set('alerts', [{ id: 175, kind: 'pump_fault', active: true, detail: 'pump: dry-run' }])
+    state.ackError = { message: 'the daemon is offline' }
+    render(<WaterPage />)
+    expect(screen.getAllByText('the daemon is offline')).toHaveLength(1)
+    state.ackError = null
+  })
+
+  it('while the pump runs, shows its current against the cutoff, amber once it nears it', () => {
+    data.set('pump', { ...idle, on: true, level: 100, remainingS: 300 })
+    data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'both', pumpDryCurrentA: 0.8 } } })
+    data.set('sensors', { water_level_pct: { value: 71, unit: '%' }, water_distance: { value: 9.4, unit: 'cm' }, pump_a: { value: 0.93, unit: 'A' }, pump_v: { value: 12.1, unit: 'V' } })
+    render(<WaterPage />)
+    const meter = screen.getByRole('meter', { name: 'Pump current against its cutoff' })
+    expect(meter.textContent).toBe('0.93 Acutoff 0.8')
+    expect(within(meter).getByText('0.93 A').className).not.toMatch(/text-warn/)
+    cleanup()
+    data.set('sensors', { water_level_pct: { value: 71, unit: '%' }, water_distance: { value: 9.4, unit: 'cm' }, pump_a: { value: 0.84, unit: 'A' }, pump_v: { value: 12.1, unit: 'V' } })
+    render(<WaterPage />)
+    expect(within(screen.getByRole('meter', { name: 'Pump current against its cutoff' })).getByText('0.84 A').className).toMatch(/text-warn/)
+    cleanup()
+    // The level guard alone has no current to compare.
+    data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'level', pumpDryCurrentA: 0.8 } } })
+    render(<WaterPage />)
+    expect(screen.queryByRole('meter', { name: 'Pump current against its cutoff' })).toBeNull()
   })
 
   it('waits for readings without guessing', () => {
@@ -486,6 +528,16 @@ describe('WaterPage with WebGL: the tank hero', () => {
   })
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('with the current guard alone, the tank cutoff is only a warning: no reserve, no low', () => {
+    data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'current', pumpDryCurrentA: 0.8 } } })
+    data.set('sensors', { water_level_pct: { value: 20, unit: '%' }, water_distance: { value: 17, unit: 'cm' }, pump_a: { value: 0, unit: 'A' }, pump_v: { value: 12.3, unit: 'V' } })
+    render(<WaterPage />)
+    expect(screen.getByTestId('tank-3d').dataset.low).toBe('false')
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/· warn 27% · 16 cm ·/)
+    expect(screen.getAllByText('warns below 27% · the tank level doesn\'t stop the pump').length).toBeGreaterThan(0)
+    expect(within(screen.getByTestId('pump-strip')).getByTestId('guard-chip').textContent).toBe('guard · current')
   })
 
   it('puts the level once in big type over one line, the range as plain tabs, and the history and glass on one scale', () => {

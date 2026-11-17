@@ -29,6 +29,8 @@ export interface TankData {
   marks: TankMarks
   /** The water is down in the reserve under the cutoff, so the pump won't start. */
   low: boolean
+  /** The cutoff only warns (the tank-level guard is off): drawn grey and dashed, never as a reserve. */
+  warnOnly: boolean
   /** The pump is running now. */
   pumping: boolean
   /** Where along the window this run began (0..1): from there the line is the water this run drew down. */
@@ -160,7 +162,7 @@ export function todayData(input: {
 }
 
 /** The tank over its window (0–100%), its top-ups, the pump cutoff, where it is now (and whether that's under the cutoff), scheduled runs done and to come, and, while the pump runs, where the run began. */
-export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], marks: TankMarks, low?: boolean, pumping?: boolean, runFrom?: number | null, runs?: number[], upcoming?: number[] }): TankData {
+export function tankData(input: { levels: number[], topUps: number[], cutoffPct: number | null, currentPct: number | null, ticks: Tick[], marks: TankMarks, low?: boolean, warnOnly?: boolean, pumping?: boolean, runFrom?: number | null, runs?: number[], upcoming?: number[] }): TankData {
   const finite = input.levels.filter(Number.isFinite)
   const current = input.currentPct ?? finite.at(-1) ?? null
   return {
@@ -171,6 +173,7 @@ export function tankData(input: { levels: number[], topUps: number[], cutoffPct:
     ticks: input.ticks,
     marks: input.marks,
     low: input.low ?? false,
+    warnOnly: input.warnOnly ?? false,
     pumping: input.pumping ?? false,
     runFrom: input.pumping && input.runFrom != null ? Math.max(0, Math.min(1, input.runFrom)) : null,
     runs: (input.runs ?? []).filter(r => r >= 0 && r <= 1),

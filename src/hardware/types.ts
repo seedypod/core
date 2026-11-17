@@ -1,4 +1,4 @@
-import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, ButtonPress, CalibrationCommand, CalibrationResult, DeviceInventory, DeviceResult, Limits, Reading, SensorId, SystemInfo } from './contract'
+import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, ButtonPress, CalibrationCommand, CalibrationResult, DeviceInventory, DeviceResult, Limits, PumpGuardCommand, PumpRun, Reading, SensorId, SystemInfo } from './contract'
 
 export interface HalSnapshot {
   system: SystemInfo | null
@@ -8,6 +8,8 @@ export interface HalSnapshot {
   alerts: Partial<Record<AlertKind, Alert>>
   /** Configured sensor devices and addable kinds; null until hald publishes it. */
   devices: DeviceInventory | null
+  /** The pump's last run as hald recorded it; absent until one ends, and from an older hald. */
+  lastRun?: PumpRun | null
 }
 
 export type HalEvent
@@ -18,6 +20,7 @@ export type HalEvent
     | { type: 'system', system: SystemInfo }
     | { type: 'devices', devices: DeviceInventory }
     | { type: 'button', press: ButtonPress }
+    | { type: 'pumpRun', run: PumpRun }
 
 export type Unsubscribe = () => void
 
@@ -37,11 +40,12 @@ export interface HalClient {
   /** Remove an app-added probe; sensors from hal.toml are refused. */
   removeSensor(kind: string, addr: number): Promise<DeviceResult>
   /**
-   * Ask for the pump current guard's spin-up grace (ms). hald holds it to
-   * hal.toml's bounds and resolves with the limits it then reports. It's the one
-   * dry-run setting core may change: the mode and the cutoff are hal.toml only.
+   * Change the dry-run guard: the spin-up grace (ms), the current cutoff (A) and
+   * which guard runs, any of them. hald holds the numbers to hal.toml's bounds,
+   * refuses a guard when hal.toml locks it, and resolves with the limits it then
+   * reports. Nothing here can turn the guard off.
    */
-  setPumpDryGrace(ms: number): Promise<Limits>
+  setPumpGuard(cmd: PumpGuardCommand): Promise<Limits>
   captureStill(camera: 'upper' | 'lower'): Promise<Uint8Array>
   /**
    * A still at the sensor's full size (2592×1944), where the yCube dot codes

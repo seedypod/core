@@ -327,10 +327,10 @@ export function createMcpServer(ctx: Context): McpServer {
 
   server.registerTool('stop_pump', { description: 'Stop the pump immediately.', inputSchema: {} }, async () => text(await caller.pump.stop()))
 
-  server.registerTool('set_pump_dry_grace', {
-    description: 'Set the spin-up grace of the pump\'s dry-run current check: how long after a start (ms) the pump current isn\'t judged, while it primes. The unit holds it to the bounds in its hal.toml (system.limits.pumpDryGraceMinMs to pumpDryGraceMaxMs in status) and returns its limits. Too short can stop a pump that is only priming; too long lets a dry one run longer. It is the only dry-run setting that can be changed here: which guard runs (tank level, pump current or both) and the current cutoff are set on the unit only.',
-    inputSchema: { ms: z.number().int().min(0).max(10_000) },
-  }, async i => text(await caller.pump.setDryGrace({ ms: i.ms })))
+  server.registerTool('set_pump_guard', {
+    description: 'Change the pump\'s dry-run guard, any of: guard (which signals stop a dry pump: level = the tank level, current = the pump current, both = either), current_a (the cutoff: below it, past the grace, the pump is pulling air) and grace_ms (how long after a start the current isn\'t judged, while the pump primes). The unit holds current_a and grace_ms to the bounds in its hal.toml (system.limits.pumpDryCurrentMinA..MaxA and pumpDryGraceMinMs..MaxMs in status), refuses guard when hal.toml locks it (pumpDryGuardApp false), and returns its limits. Nothing turns the guard off. Pick the cutoff between the pump\'s wet and dry current (status pump_a while it runs; about 85 % of wet); too high stops a healthy pump, too low misses a dry one. current without a cutoff, or without a pump monitor, falls back to the tank level: pumpDryGuard is what runs, pumpDryGuardAsked what was asked, pumpDryGuardWhy why they differ. Change these only when the person asks.',
+    inputSchema: { guard: z.enum(['level', 'current', 'both']).optional(), current_a: z.number().positive().max(10).optional(), grace_ms: z.number().int().min(0).max(10_000).optional() },
+  }, async i => text(await caller.pump.setGuard({ guard: i.guard, currentA: i.current_a, graceMs: i.grace_ms })))
 
   server.registerTool('acknowledge_alert', {
     description: 'Acknowledge an alert by id (from status). For latched hardware faults (pump_fault, dose_fault) this re-enables the actuator — only do it after the cause is fixed (e.g. tank refilled, dosing checked). For reminders it marks the chore done.',

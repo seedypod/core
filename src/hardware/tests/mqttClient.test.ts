@@ -201,34 +201,54 @@ describe('MqttHalClient', () => {
   })
 })
 
-describe('the dry-run grace', () => {
+describe('the dry-run guard', () => {
   const system = (limits: Record<string, unknown>) => ({ contract: 1, unitId: U, model: 'gardyn 3.0', halVersion: '0.1.0', caps: { sensors: ['pump_a'], actuators: ['light', 'pump'], cameras: [] }, limits: { pumpMaxRunS: 900, pumpMaxDuty: 30, waterLowCm: 16, ...limits } })
-  const guarded = { pumpDryGuard: 'both', pumpDryGraceMs: 1000, pumpDryGraceMinMs: 300, pumpDryGraceMaxMs: 5000 }
+  const graceOnly = { pumpDryGuard: 'both', pumpDryGraceMs: 1000, pumpDryGraceMinMs: 300, pumpDryGraceMaxMs: 5000 }
+  const guarded = { ...graceOnly, pumpDryGuardAsked: 'both', pumpDryGuardApp: true, pumpDryCurrentA: null, pumpDryCurrentMinA: 0.3, pumpDryCurrentMaxA: 3, waterLowMinCm: 8, waterLowMaxCm: 19, waterLowHoldMs: 0, waterLowHoldMinMs: 0, waterLowHoldMaxMs: 60_000 }
 
-  it('asks hald for a grace and resolves with the limits it republishes', async () => {
+  it('asks hald for a change and resolves with the limits it republishes', async () => {
     const { mqtt, client } = make()
     mqtt.msg(`seedypod/${U}/system`, system(guarded))
-    const p = client.setPumpDryGrace(10_000)
-    expect(mqtt.published.at(-1)).toMatchObject({ topic: `seedypod/${U}/pump/guard/set`, payload: JSON.stringify({ dryGraceMs: 10_000 }), opts: { qos: 1 } })
+    const p = client.setPumpGuard({ dryGraceMs: 10_000, dryCurrentA: 0.8, dryGuard: 'current', waterLowCm: 15, waterLowHoldMs: 5000 })
+    expect(mqtt.published.at(-1)).toMatchObject({ topic: `seedypod/${U}/pump/guard/set`, opts: { qos: 1 } })
+    expect(JSON.parse(mqtt.published.at(-1)?.payload ?? '{}')).toEqual({ dryGraceMs: 10_000, dryCurrentA: 0.8, dryGuard: 'current', waterLowCm: 15, waterLowHoldMs: 5000 })
     // hald holds it to its bounds; core takes what hald reports.
-    mqtt.msg(`seedypod/${U}/system`, system({ ...guarded, pumpDryGraceMs: 5000 }))
-    await expect(p).resolves.toMatchObject({ pumpDryGraceMs: 5000, pumpDryGuard: 'both' })
+    mqtt.msg(`seedypod/${U}/system`, system({ ...guarded, pumpDryGraceMs: 5000, pumpDryGuard: 'current', pumpDryCurrentA: 0.8 }))
+    await expect(p).resolves.toMatchObject({ pumpDryGraceMs: 5000, pumpDryGuard: 'current', pumpDryCurrentA: 0.8 })
     expect(client.snapshot().system?.limits.pumpDryGraceMs).toBe(5000)
   })
 
-  it('refuses for a hald that has no grace to set, and times out on one that never answers', async () => {
+  it('refuses what an older hald can\'t take, and times out on one that never answers', async () => {
     const { mqtt, client } = make()
-    await expect(client.setPumpDryGrace(1000)).rejects.toBeInstanceOf(HalRefused)
+    await expect(client.setPumpGuard({ dryGraceMs: 1000 })).rejects.toBeInstanceOf(HalRefused)
     mqtt.msg(`seedypod/${U}/system`, system({}))
-    await expect(client.setPumpDryGrace(1000)).rejects.toThrow(/update it/)
+    await expect(client.setPumpGuard({ dryGraceMs: 1000 })).rejects.toThrow(/grace; update it/)
+    // A hald with the grace but not the rest takes only the grace.
+    mqtt.msg(`seedypod/${U}/system`, system(graceOnly))
+    await expect(client.setPumpGuard({ dryCurrentA: 0.8 })).rejects.toThrow(/cutoff or guard; update it/)
+    await expect(client.setPumpGuard({ dryGuard: 'current' })).rejects.toThrow(/cutoff or guard; update it/)
     expect(mqtt.published).toHaveLength(0)
-    mqtt.msg(`seedypod/${U}/system`, system(guarded))
-    const late = client.setPumpDryGrace(1000)
+    mqtt.msg(`seedypod/${U}/system`, system({ ...guarded, waterLowHoldMs: undefined }))
+    await expect(client.setPumpGuard({ waterLowCm: 15 })).rejects.toThrow(/tank-level cutoff; update it/)
+    mqtt.msg(`seedypod/${U}/system`, system({ ...guarded, pumpDryGuardApp: false }))
+    await expect(client.setPumpGuard({ dryGuard: 'level' })).rejects.toThrow(/locked in hal.toml/)
+    expect(mqtt.published).toHaveLength(0)
+    const late = client.setPumpGuard({ dryGraceMs: 1000 })
     // Some other publish in between isn't the answer.
     mqtt.msg(`seedypod/${U}/availability`, 'online')
-    await expect(late).rejects.toThrow(/did not report the dry-run grace within 50 ms/)
-    // Only the grace goes on the wire: no mode, no cutoff.
-    expect(() => client.setPumpDryGrace(-1)).toThrow()
+    await expect(late).rejects.toThrow(/did not report the dry-run guard within 50 ms/)
+    expect(() => client.setPumpGuard({ dryGraceMs: -1 })).toThrow()
+    expect(() => client.setPumpGuard({})).toThrow()
     expect(Object.keys(JSON.parse(mqtt.published.at(-1)?.payload ?? '{}'))).toEqual(['dryGraceMs'])
+  })
+
+  it('keeps the last run hald recorded, and tells subscribers', () => {
+    const { mqtt, client } = make()
+    const seen: string[] = []
+    client.subscribe(e => seen.push(e.type))
+    const run = { startedAt: '2026-11-16T16:00:00Z', endedAt: '2026-11-16T16:10:00Z', everyMs: 100, samples: [[0, 0, 12.5], [100, 0.2, 12.4]], wetA: 0.93, endedBy: 'deadline', fault: null, levelPct: 60, levelCm: 11 }
+    mqtt.msg(`seedypod/${U}/pump/run`, run)
+    expect(client.snapshot().lastRun).toEqual(run)
+    expect(seen).toEqual(['pumpRun'])
   })
 })

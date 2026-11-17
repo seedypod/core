@@ -19,7 +19,7 @@ export interface HalFactoryOptions {
 export async function createHal(opts: HalFactoryOptions): Promise<HalClient> {
   const url = opts.mqttUrl ?? process.env.HAL_MQTT_URL
   if (!url) {
-    return new SimHal({ timeScale: Number(process.env.SIM_TIME_SCALE ?? 1) })
+    return new SimHal({ timeScale: Number(process.env.SIM_TIME_SCALE ?? 1), seedRun: true })
   }
   const unitId = opts.unitId ?? process.env.HAL_UNIT_ID
   if (!unitId) throw new Error('HAL_UNIT_ID is required with HAL_MQTT_URL (the daemon prints it at startup / `hald --check`)')

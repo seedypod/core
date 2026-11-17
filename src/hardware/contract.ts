@@ -59,8 +59,8 @@ export type ActuatorCommand = z.infer<typeof ActuatorCommand>
 
 /**
  * Which dry-run guard stops a running pump: the tank level, the pump current, or
- * either. Set in hal.toml on the unit and nowhere else (pump safety outranks the
- * app), so core only ever reads it.
+ * either. hal.toml sets the default and may lock it; otherwise the app may pick
+ * one. There is no "off": some guard always runs.
  */
 export const DryGuard = z.enum(['level', 'current', 'both'])
 export type DryGuard = z.infer<typeof DryGuard>
@@ -71,6 +71,30 @@ export const Limits = z.object({
   waterLowCm: z.number().nullable(),
   /** The dry-run guard in effect, after hald's fallbacks; absent from an older hald. */
   pumpDryGuard: DryGuard.optional(),
+  /** The guard asked for (hal.toml's, or the app's), and why the one in effect differs, if it does. */
+  pumpDryGuardAsked: DryGuard.optional(),
+  pumpDryGuardWhy: z.string().optional(),
+  /** Whether the app may pick the guard; false when hal.toml locks it. Absent from an older hald. */
+  pumpDryGuardApp: z.boolean().optional(),
+  /**
+   * The pump current (A) below which a running pump is pulling air, and the
+   * bounds a PumpGuardCommand's cutoff is clamped into. The cutoff is null until
+   * one is set; the bounds are absent from a hald that can't take one from the app.
+   */
+  pumpDryCurrentA: z.number().positive().nullable().optional(),
+  pumpDryCurrentMinA: z.number().positive().optional(),
+  pumpDryCurrentMaxA: z.number().positive().optional(),
+  /**
+   * The tank-level guard's cutoff (`waterLowCm`, above) may be set from the app
+   * within these bounds (cm from the sensor), and it must read past the cutoff
+   * this long (ms) before it stops a running pump; a start is refused at once.
+   * In current-only mode the cutoff is only a warning. Absent from an older hald.
+   */
+  waterLowMinCm: z.number().positive().optional(),
+  waterLowMaxCm: z.number().positive().optional(),
+  waterLowHoldMs: z.number().int().nonnegative().optional(),
+  waterLowHoldMinMs: z.number().int().nonnegative().optional(),
+  waterLowHoldMaxMs: z.number().int().nonnegative().optional(),
   /** The current guard's spin-up grace in effect (ms), and the bounds a PumpGuardCommand is clamped into. */
   pumpDryGraceMs: z.number().int().nonnegative().optional(),
   pumpDryGraceMinMs: z.number().int().nonnegative().optional(),
@@ -88,13 +112,37 @@ export const Limits = z.object({
 export type Limits = z.infer<typeof Limits>
 
 /**
- * `pump/guard/set`: ask for the current guard's spin-up grace; hald clamps it
- * into hal.toml's bounds. The one guard setting core may change: there is no
- * field for the mode or the cutoff, and hald refuses a payload with any other.
+ * `pump/guard/set`: change the dry-run guard. Any of the spin-up grace and the
+ * current cutoff, each clamped into hal.toml's bounds, and the guard to run,
+ * refused when hal.toml locks it. None of them can turn the guard off: the
+ * cutoff can be changed but not cleared, and there is no "off" mode.
  */
 export const PumpGuardCommand = z.object({
-  dryGraceMs: z.number().int().nonnegative(),
-}).strict()
+  dryGraceMs: z.number().int().nonnegative().optional(),
+  dryCurrentA: z.number().positive().optional(),
+  dryGuard: DryGuard.optional(),
+  waterLowCm: z.number().positive().optional(),
+  waterLowHoldMs: z.number().int().nonnegative().optional(),
+}).strict().refine(c => Object.values(c).some(v => v !== undefined), 'nothing to change')
+
+/**
+ * `pump/run` (retained): the pump's last run, sent when it ends. The current
+ * and supply every `everyMs` for its first 12 s (ms since the start, A, V; null
+ * for a failed read), the median current past the grace (`wetA`), how it ended,
+ * and the tank as it ended.
+ */
+export const PumpRun = z.object({
+  startedAt: z.string(),
+  endedAt: z.string(),
+  everyMs: z.number().int().positive(),
+  samples: z.array(z.tuple([z.number().int().nonnegative(), z.number().nullable(), z.number().nullable()])).max(200),
+  wetA: z.number().nullable(),
+  endedBy: z.enum(['deadline', 'stop', 'fault']),
+  fault: z.string().nullable(),
+  levelPct: z.number().nullable(),
+  levelCm: z.number().nullable(),
+})
+export type PumpRun = z.infer<typeof PumpRun>
 export type PumpGuardCommand = z.infer<typeof PumpGuardCommand>
 
 export const SystemInfo = z.object({
@@ -225,4 +273,5 @@ export const topics = {
   alert: (u: string, kind: AlertKind) => `${topics.prefix(u)}/alert/${kind}`,
   alertAck: (u: string, kind: AlertKind) => `${topics.prefix(u)}/alert/${kind}/ack`,
   pumpGuardSet: (u: string) => `${topics.prefix(u)}/pump/guard/set`,
+  pumpRun: (u: string) => `${topics.prefix(u)}/pump/run`,
 } as const
