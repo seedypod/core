@@ -26,8 +26,12 @@ const { state, calls, invalidate } = vi.hoisted(() => ({
     layoutPending: false,
     podsPending: false,
     loading: false,
+    /** Pods the cameras see empty, as vision.seenEmpty answers. */
+    seen: [] as number[],
+    /** grow.updatePod refuses with this. */
+    updateFails: null as string | null,
   },
-  calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn(), swapPods: vi.fn() },
+  calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn(), swapPods: vi.fn(), updatePod: vi.fn() },
   invalidate: vi.fn(),
 }))
 
@@ -50,7 +54,7 @@ vi.mock('@/src/utils/trpc', async () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ planner: { invalidate, plans: { invalidate } }, grow: { invalidate } }),
+      useUtils: () => ({ planner: { invalidate, plans: { invalidate } }, grow: { invalidate }, vision: { seenEmpty: { invalidate } } }),
       planner: {
         zones: { useQuery: ({ model }: { model: Model }) => ({ data: state.loading ? undefined : { ...MODELS[model], slots: slots(model), counts: zoneCounts(model) } }) },
         catalog: { useQuery: (i: { q?: string, category?: string }) => {
@@ -82,6 +86,16 @@ vi.mock('@/src/utils/trpc', async () => {
           const [pa, pb] = [at(a), at(b)]
           state.pods = [...state.pods.filter(p => p.slot !== a && p.slot !== b), { ...pb, slot: a }, { ...pa, slot: b }]
         }),
+        updatePod: { useMutation: () => ({
+          mutateAsync: async (i: { slot: number, plant: string | null, status: string }) => {
+            calls.updatePod(i)
+            if (state.updateFails) throw new Error(state.updateFails)
+            state.pods = state.pods.map(p => (p.slot === i.slot ? { ...p, plant: i.plant, status: i.status } : p))
+          },
+        }) },
+      },
+      vision: {
+        seenEmpty: { useQuery: () => ({ data: state.seen.map(slot => ({ slot, confidence: 0.9, ts: '2026-11-16T10:00:00Z' })) }) },
       },
     },
   }
@@ -95,6 +109,8 @@ beforeEach(() => {
   state.layoutPending = false
   state.loading = false
   state.podsPending = false
+  state.seen = []
+  state.updateFails = null
   for (const f of [...Object.values(calls), invalidate]) f.mockReset()
   tower.props = null
   tower.unavailable = false
@@ -592,5 +608,56 @@ describe('PlanPage', () => {
     expect(screen.getByTestId('plan-grid')).toBeTruthy()
     expect(screen.queryByRole('tablist', { name: 'Plan view' })).toBeNull()
     expect(screen.getByText(/swap them\. Italic = in the tower now\./)).toBeTruthy()
+  })
+
+  it('flags planted pods the cameras see empty on the tower and the grid, and marks them empty after one confirm', async () => {
+    state.pods = [{ slot: 4, plant: 'Kale', status: 'growing' }, { slot: 5, plant: 'Basil', status: 'harvest' }, { slot: 6, plant: 'Mint', status: 'growing' }]
+    // Pod 7 is already empty and pod 31 is past the Home tower, so neither is named.
+    state.seen = [4, 5, 7, 31]
+    const { rerender } = render(<PlanPage />)
+    const notice = screen.getByRole('status', { name: 'Pods seen empty' })
+    expect(notice.textContent).toContain('Cameras see pods 4, 5 empty.')
+    expect(towerPods().filter(p => p.seenEmpty).map(p => p.slot)).toEqual([4, 5])
+    flat()
+    const grid = screen.getByTestId('plan-grid')
+    expect(within(grid).getAllByTestId('seen-empty')).toHaveLength(2)
+    // The plant fades, rather than taking an outline: those mark zones.
+    expect(within(grid).getByRole('button', { name: 'Pod 4, Kale, cameras see it empty' }).querySelector('.opacity-50')?.textContent).toBe('Kale')
+    expect(within(grid).getByRole('button', { name: 'Pod 6, Mint' }).querySelector('.opacity-50')).toBeNull()
+
+    // Nothing changes until it's confirmed.
+    fireEvent.click(within(notice).getByRole('button', { name: 'Mark empty' }))
+    expect(notice.textContent).toContain('Mark pods 4, 5 empty?')
+    fireEvent.click(within(notice).getByRole('button', { name: 'Cancel' }))
+    expect(calls.updatePod).not.toHaveBeenCalled()
+    fireEvent.click(within(notice).getByRole('button', { name: 'Mark empty' }))
+    await act(async () => fireEvent.click(within(notice).getByRole('button', { name: 'Yes, mark empty' })))
+    expect(calls.updatePod.mock.calls.map(c => c[0])).toEqual([
+      { slot: 4, plant: null, plantedAt: null, status: 'empty', notes: '' },
+      { slot: 5, plant: null, plantedAt: null, status: 'empty', notes: '' },
+    ])
+    expect(invalidate).toHaveBeenCalledTimes(3)
+    // The pods are free for the plan now, once the queries answer again.
+    rerender(<PlanPage />)
+    expect(screen.queryByRole('status', { name: 'Pods seen empty' })).toBeNull()
+    expect(within(grid).queryAllByTestId('seen-empty')).toHaveLength(0)
+  })
+
+  it('names a single pod seen empty, says why marking it failed, and says nothing on a replant', async () => {
+    state.pods = [{ slot: 4, plant: 'Kale', status: 'growing' }]
+    state.seen = [4]
+    state.updateFails = 'pod 4 is busy'
+    render(<PlanPage />)
+    const notice = screen.getByRole('status', { name: 'Pods seen empty' })
+    expect(notice.textContent).toContain('Cameras see pod 4 empty.')
+    fireEvent.click(within(notice).getByRole('button', { name: 'Mark empty' }))
+    await act(async () => fireEvent.click(within(notice).getByRole('button', { name: 'Yes, mark empty' })))
+    expect(notice.textContent).toContain('pod 4 is busy')
+    expect(notice.textContent).toContain('Mark pod 4 empty?')
+    cleanup()
+    state.plans = [{ id: 'p1', name: 'Fresh', model: 'home', mode: 'batch', appliedAt: null, start: null, layout: { model: 'home', assignments: [], unplaced: [], free: [], overrides: { replant: true } }, request: [{ plantId: 'oregano', count: 1 }] }]
+    render(<PlanPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open in planner' }))
+    expect(screen.queryByRole('status', { name: 'Pods seen empty' })).toBeNull()
   })
 })

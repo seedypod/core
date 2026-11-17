@@ -201,6 +201,21 @@ describe('TowerView', () => {
     expect(screen.getByRole('button', { name: 'Pod 1: Ready to harvest' })).toBeTruthy()
   })
 
+  it('flags a pod the cameras see empty quietly, and says so in its callout', async () => {
+    const seen = [{ slot: 1, status: 'attention' as const, plant: 'Kale', seenEmpty: true }]
+    const { rerender } = render(<TowerView pods={seen} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    mounted.at = { x: 200, y: 300 }
+    act(() => mounted.opts?.onRender?.())
+    const flag = screen.getByRole('button', { name: 'Pod 1: Cameras see this pod empty' })
+    expect(flag.style.background).toBe('var(--text-3)')
+    // Not the pulse a pod that needs attention gets.
+    expect(flag.querySelector('.motion-safe\\:animate-ping')).toBeNull()
+    rerender(<TowerView pods={seen} waterPct={null} lightLevel={0} selected={1} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    act(() => mounted.opts?.onRender?.())
+    expect(screen.getByRole('group', { name: 'Pod 1' }).textContent).toContain('Cameras see this pod empty.')
+  })
+
   it('passes pod clicks to onSelect and part clicks to onPart', async () => {
     const onSelect = vi.fn()
     const onPart = vi.fn()
