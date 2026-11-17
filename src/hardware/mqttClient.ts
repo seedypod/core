@@ -9,7 +9,7 @@
  * without a broker; production passes an `mqtt.js` client.
  */
 import type { AlertKind, CalibrationCommand, Limits } from './contract'
-import { ActuatorCommand, ActuatorId, ActuatorState, Alert, ButtonPress, CalibrationCommand as CalibrationCommandSchema, CalibrationResult, DeviceInventory, DeviceResult, PumpGuardCommand, Reading, SensorId, SystemInfo, topics } from './contract'
+import { ActuatorCommand, ActuatorId, ActuatorState, Alert, ButtonPress, CalibrationCommand as CalibrationCommandSchema, CalibrationResult, DeviceInventory, DeviceResult, PumpGuardCommand, PumpRun, Reading, SensorId, SystemInfo, topics } from './contract'
 import type { HalClient, HalEvent, HalSnapshot, Unsubscribe } from './types'
 import { HalRefused } from './sim'
 
@@ -57,7 +57,7 @@ export class MqttHalClient implements HalClient {
     this.timeoutMs = o.commandTimeoutMs ?? 5000
     this.fetchImpl = o.fetchImpl ?? fetch
     const p = topics.prefix(this.u)
-    const subscribe = () => o.mqtt.subscribe([`${p}/availability`, `${p}/system`, `${p}/sensor/+`, `${p}/sensor/+/calibration`, `${p}/actuator/+/state`, `${p}/alert/+`, `${p}/event/button`, `${p}/devices`, `${p}/devices/result`])
+    const subscribe = () => o.mqtt.subscribe([`${p}/availability`, `${p}/system`, `${p}/sensor/+`, `${p}/sensor/+/calibration`, `${p}/actuator/+/state`, `${p}/alert/+`, `${p}/event/button`, `${p}/devices`, `${p}/devices/result`, `${p}/pump/run`])
     // Re-subscribe on every reconnect, and now if the caller handed us a client that is already connected.
     o.mqtt.on('connect', subscribe)
     if (o.mqtt.connected) subscribe()
@@ -137,14 +137,21 @@ export class MqttHalClient implements HalClient {
     })
   }
 
-  /** Resolves with the limits hald republishes once it has the grace; an older hald has none to set. */
-  setPumpDryGrace(ms: number): Promise<Limits> {
-    const parsed = PumpGuardCommand.parse({ dryGraceMs: ms })
-    if (this.snap.system?.limits.pumpDryGraceMs === undefined) return Promise.reject(new HalRefused('this hald can\'t set the dry-run grace; update it'))
+  /**
+   * Resolves with the limits hald republishes once it has the change. An older
+   * hald can't take what it doesn't report: the grace, or the cutoff and guard.
+   */
+  setPumpGuard(cmd: PumpGuardCommand): Promise<Limits> {
+    const parsed = PumpGuardCommand.parse(cmd)
+    const limits = this.snap.system?.limits
+    if (parsed.dryGraceMs !== undefined && limits?.pumpDryGraceMs === undefined) return Promise.reject(new HalRefused('this hald can\'t set the dry-run grace; update it'))
+    if ((parsed.dryCurrentA !== undefined || parsed.dryGuard !== undefined) && limits?.pumpDryGuardApp === undefined) return Promise.reject(new HalRefused('this hald can\'t set the dry-run cutoff or guard; update it'))
+    if ((parsed.waterLowCm !== undefined || parsed.waterLowHoldMs !== undefined) && limits?.waterLowHoldMs === undefined) return Promise.reject(new HalRefused('this hald can\'t set the tank-level cutoff; update it'))
+    if (parsed.dryGuard !== undefined && parsed.dryGuard !== limits?.pumpDryGuardAsked && limits?.pumpDryGuardApp === false) return Promise.reject(new HalRefused('the dry-run guard is locked in hal.toml on the unit'))
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         off()
-        reject(new Error(`hald did not report the dry-run grace within ${this.timeoutMs} ms`))
+        reject(new Error(`hald did not report the dry-run guard within ${this.timeoutMs} ms`))
       }, this.timeoutMs)
       const off = this.subscribe((e) => {
         if (e.type !== 'system') return
@@ -254,6 +261,11 @@ export class MqttHalClient implements HalClient {
         const alert = Alert.parse(JSON.parse(payload))
         this.snap.alerts[alert.kind] = alert
         return this.emit({ type: 'alert', alert })
+      }
+      if (rel === 'pump/run') {
+        const run = PumpRun.parse(JSON.parse(payload))
+        this.snap.lastRun = run
+        return this.emit({ type: 'pumpRun', run })
       }
       if (rel === 'devices') {
         const devices = DeviceInventory.parse(JSON.parse(payload))

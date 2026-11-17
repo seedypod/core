@@ -35,7 +35,8 @@ describe('SimHal safety invariants (mirror of hal-core::safety)', () => {
     for (let i = 0; i < 30; i++) h.tick(60)
     const snap = h.snapshot()
     expect(snap.actuators.pump?.on).toBe(false)
-    expect(snap.actuators.pump?.fault).toBe('dry-run')
+    // The fault names the guard that fired and what it read.
+    expect(snap.actuators.pump?.fault).toMatch(/^dry-run: tank level read [\d.]+ cm, past 8 cm/)
     expect(snap.alerts.pump_fault?.active).toBe(true)
     await expect(h.setActuator('pump', { on: true })).rejects.toBeInstanceOf(HalRefused)
     await h.acknowledgeAlert('pump_fault')

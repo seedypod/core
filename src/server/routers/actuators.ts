@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import type { ActuatorId } from '../../hardware/contract'
-import { ActuatorCommand, ActuatorState, Limits } from '../../hardware/contract'
+import { ActuatorCommand, ActuatorState, DryGuard, Limits, PumpRun } from '../../hardware/contract'
 import { HalRefused } from '../../hardware/sim'
 import { publicProcedure, router } from '../trpc'
 
@@ -98,15 +98,36 @@ export const pumpRouter = router({
     .input(z.void())
     .output(ActuatorState)
     .mutation(({ ctx }) => set(ctx, 'pump', { on: false })),
-  // The one dry-run guard setting the app may change. Which guard runs, and its
-  // current cutoff, are hal.toml only: pump safety outranks the app.
+  // The dry-run guard: its spin-up grace, its current cutoff and which guard
+  // runs. The unit holds the numbers to hal.toml's bounds and may lock the guard;
+  // nothing here can turn it off.
+  setGuard: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/pump/guard', tags: ['pump'], summary: 'Change the pump dry-run guard: which signals stop a dry pump (tank level, pump current or both), the current cutoff in A, the spin-up grace in ms, the tank-level cutoff in cm from the sensor and how long the level must stay past it in ms; the unit holds the numbers to the bounds in its hal.toml' } })
+    .input(z.object({ guard: DryGuard.optional(), currentA: z.number().positive().max(10).optional(), graceMs: z.number().int().min(0).max(10_000).optional(), waterLowCm: z.number().positive().max(100).optional(), waterLowHoldMs: z.number().int().min(0).max(60_000).optional() }).refine(i => Object.values(i).some(v => v !== undefined), 'nothing to change'))
+    .output(Limits)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const limits = await ctx.hal.setPumpGuard({ dryGuard: input.guard, dryCurrentA: input.currentA, dryGraceMs: input.graceMs, waterLowCm: input.waterLowCm, waterLowHoldMs: input.waterLowHoldMs })
+        ctx.events.emit({ kind: 'mutation', path: 'pump.guard' })
+        return limits
+      }
+      catch (e) {
+        if (e instanceof HalRefused) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: e.message })
+        throw e
+      }
+    }),
+  lastRun: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/pump/last-run', tags: ['pump'], summary: 'The pump\'s last run as the unit recorded it: its first 12 s of current and supply, its wet current, how it ended and the tank as it ended; null until a run ends' } })
+    .input(z.void())
+    .output(PumpRun.nullable())
+    .query(({ ctx }) => ctx.hal.snapshot().lastRun ?? null),
   setDryGrace: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/pump/dry-grace', tags: ['pump'], summary: 'Set how long after a start the pump current isn\'t checked, while the pump spins up; the unit holds it to the bounds in its hal.toml' } })
     .input(z.object({ ms: z.number().int().min(0).max(10_000) }))
     .output(Limits)
     .mutation(async ({ ctx, input }) => {
       try {
-        const limits = await ctx.hal.setPumpDryGrace(input.ms)
+        const limits = await ctx.hal.setPumpGuard({ dryGraceMs: input.ms })
         ctx.events.emit({ kind: 'mutation', path: 'pump.dryGrace' })
         return limits
       }

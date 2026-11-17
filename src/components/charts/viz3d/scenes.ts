@@ -171,6 +171,12 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
   const cutRing = base.ring(R * 1.08, [0, 0, 0], 'amber', 0.95)
   // One dashed cutoff line, across the history and through the glass.
   const cutLine = base.dashed([[x0, 0, 0.01], [CX + R + 0.16, 0, 0.01]], 'amber', 0.14, 0.1, 0.8)
+  // A cutoff that only warns (the tank-level guard is off): a grey dashed ring and line, no reserve, so the chart never shows a cutoff that isn't enforced.
+  const warnRing = base.dashed(Array.from({ length: 65 }, (_, i) => [Math.cos((i / 64) * Math.PI * 2) * R * 1.08, 0, Math.sin((i / 64) * Math.PI * 2) * R * 1.08] as [number, number, number]), 'fg3', 0.09, 0.08, 0.85)
+  const warnLine = base.dashed([[x0, 0, 0.01], [CX + R + 0.16, 0, 0.01]], 'fg3', 0.08, 0.12, 0.6)
+  // The water's idle life: a ripple spreading from the middle of the surface now and then, faint.
+  const ripple = base.ring(R * 0.94, [0, 0, 0], 'tank', 0.5)
+  let warned = false
   // Where the line meets the glass: level with the end of the history, or, while pumping, the run's draw-down into the level now.
   const linkGeo = new T.BufferGeometry().setFromPoints([new T.Vector3(x0 + W, 0, 0), new T.Vector3(CX - R, 0, 0)])
   const link = new T.Line(linkGeo, new T.LineBasicMaterial({ transparent: true }))
@@ -263,10 +269,20 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
     ;(water.material as THREE.MeshBasicMaterial).color.copy(inkMix(base, 'tank', f.state === 'error' ? 0 : e, c))
     ;(water.material as THREE.MeshBasicMaterial).opacity = f.state === 'error' ? 0.25 : low ? 0.3 : 0.5
     const pumping = shown && !!data?.pumping
-    const rock = pumping && !f.reduced ? 0.025 * Math.sin(f.t * 5) : 0
+    // Pumping, the surface rocks; idle, it barely sways, and a ripple spreads across it every few seconds.
+    const still = f.reduced || !shown
+    const rock = still ? 0 : pumping ? 0.025 * Math.sin(f.t * 5) : 0.005 * Math.sin(f.t * 1.3)
     surface.position.set(CX, h + rock, 0)
     surface.rotation.z = rock * 0.6
+    surface.rotation.x = still ? 0 : (pumping ? 0.01 : 0.004) * Math.sin(f.t * 0.9 + 1)
     surface.visible = shown
+    const phase = (f.t / 3.4) % 1
+    ripple.visible = !still && h > 0.06
+    if (ripple.visible) {
+      ripple.position.set(CX, h + rock + 0.002, 0)
+      ripple.scale.set(0.15 + phase * 0.85, 1, 0.15 + phase * 0.85)
+      ripple.material.opacity = 0.45 * (1 - phase) * (pumping ? 0.6 : 1)
+    }
     for (const b of bubbles) {
       b.mesh.visible = pumping && h > 0.15
       if (!b.mesh.visible) continue
@@ -274,9 +290,21 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
       b.mesh.position.set(CX + Math.cos(b.a + f.t * 0.3) * b.r, 0.05 + rise * (h - 0.1), Math.sin(b.a + f.t * 0.3) * b.r)
     }
     const cut = shown && data?.cutoff != null ? data.cutoff * H : null
-    cutRing.visible = cut !== null
-    cutLine.visible = cut !== null
-    reserve.visible = cut !== null && cut > 0
+    const warn = !!data?.warnOnly
+    cutRing.visible = cut !== null && !warn
+    cutLine.visible = cut !== null && !warn
+    warnRing.visible = cut !== null && warn
+    warnLine.visible = warnRing.visible
+    if (warnRing.visible && cut !== null) {
+      warnRing.position.set(CX, cut, 0)
+      warnLine.position.set(0, cut, 0)
+    }
+    if (warn !== warned) {
+      marks.cutoff.label.setInk(warn ? 'fg3' : 'amber')
+      base.tint(marks.cutoff.tick.material, warn ? 'fg3' : 'amber')
+      warned = warn
+    }
+    reserve.visible = cut !== null && cut > 0 && !warn
     glassReserve.visible = reserve.visible
     if (cut !== null) {
       cutRing.position.set(CX, cut, 0)
@@ -325,7 +353,8 @@ export function createTankViz(container: HTMLElement, env?: Env): Viz<TankData> 
       d.position.set(x0 + at * W, level.yAt(at), 0.03)
       d.scale.setScalar(Math.max(0.001, pointEase(f.p, at * 120, 120)))
     })
-    return pumping && !f.reduced
+    // The water always moves a little, so the loop keeps going unless motion is reduced.
+    return shown && !f.reduced
   }
 
   return viz(base, (d: TankData) => {

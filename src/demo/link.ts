@@ -18,7 +18,7 @@ import { createCallerFactory } from '../server/trpc'
 let ctx: Context | null = null
 function demoContext(): Context {
   if (!ctx) {
-    const hal = new SimHal({ timeScale: 60, tickMs: 1000 })
+    const hal = new SimHal({ timeScale: 60, tickMs: 1000, seedRun: true })
     const store = new MemoryStore()
     seedDemo(store, hal)
     const core = createCore({ hal, store, version: 'demo', startServices: true, captureMinBytes: 1, database: demoDatabase(), flashSource: demoFlashSource })
