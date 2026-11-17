@@ -9,6 +9,7 @@ import { shareablePairs, shareUrl, unitFingerprint } from '../../vision/shareCod
 import { CATALOG } from '../../components/Grow/plants/catalog'
 import { podTrends } from '../../vision/analyze'
 import { POD_STATE_ID } from '../../vision/podState'
+import { seenEmpty } from '../../vision/seenEmpty'
 import { suggestLabel, type Suggestion } from '../../vision/suggestLabel'
 import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
 import type { Context } from '../context'
@@ -210,6 +211,10 @@ export const visionRouter = router({
     .input(z.object({ analyzer: z.string().optional() }).optional())
     .output(z.array(Trend))
     .query(({ ctx, input }) => podTrends(ctx.store, 30, input?.analyzer)),
+  seenEmpty: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/seen-empty', tags: ['vision'], summary: 'Pods the cameras see empty though their record holds a plant' } })
+    .output(z.array(z.object({ slot: z.number(), confidence: z.number(), ts: z.string() })))
+    .query(({ ctx }) => seenEmpty(ctx.store, ctx.now?.() ?? new Date())),
   podSeries: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/vision/pods/{slot}', tags: ['vision'] } })
     .input(z.object({ slot: z.number().int().min(1).max(60) }))

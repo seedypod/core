@@ -69,6 +69,16 @@ describe('vision router (ADR-0019)', () => {
     expect(await none.vision.allPodSeries()).toEqual([])
   })
 
+  it('names planted pods the cameras see empty', async () => {
+    const { c, ctx } = await scored(0)
+    ctx.now = () => new Date('2026-01-02T06:00:00Z')
+    ctx.store.pods.update(4, { plant: 'Kale', plantedAt: '2025-12-01', status: 'growing' }, '2025-12-01T00:00:00Z')
+    ctx.store.analyses.add([{ captureId: 'upper-1', ts: '2026-01-02T00:00:00Z', camera: 'upper', analyzer: 'pod-state', version: 1, source: 'device', slot: 4, metric: 'pod_state', value: 0, detail: { state: 'empty', confidence: 0.91 }, artifact: null }])
+    expect(await c.vision.seenEmpty()).toEqual([{ slot: 4, confidence: 0.91, ts: '2026-01-02T00:00:00Z' }])
+    ctx.now = undefined
+    expect(await c.vision.seenEmpty()).toEqual([])
+  })
+
   it('re-runs an analyser in the background and refuses remote ones', async () => {
     const { ctx, c } = await scored()
     expect(await c.vision.rerun({ analyzer: 'exg-otsu', limit: 10 })).toEqual({ captures: 3 })

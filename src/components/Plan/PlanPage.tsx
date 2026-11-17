@@ -1,4 +1,4 @@
-import { Box, LayoutGrid, Minus, Pencil, Plus, Sprout } from 'lucide-react'
+import { Box, EyeOff, LayoutGrid, Minus, Pencil, Plus, Sprout } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
@@ -12,6 +12,7 @@ import { PageHeader } from '@/src/components/ds/layout'
 import { trpc } from '@/src/utils/trpc'
 import { CustomPlantDialog, type EditablePlant } from '@/src/components/Plan/CustomPlantDialog'
 import { SavedPlans } from '@/src/components/Plan/SavedPlans'
+import { SeenEmpty } from '@/src/components/Plan/SeenEmpty'
 import { Unplaced } from '@/src/components/Plan/Unplaced'
 
 type Model = 'home' | 'studio'
@@ -46,7 +47,7 @@ function savedView(): View {
 
 interface Slot { slot: number, zone: string | null }
 interface Assignment { slot: number, plantId: string, plantName: string, reason: string, fallback: number, shift?: 'lower' | 'higher' | null }
-interface Planted { slot: number, status: PodStatus, plant: string | null }
+interface Planted { slot: number, status: PodStatus, plant: string | null, seenEmpty?: boolean }
 
 /** Outlines a pod placed away from its ideal zone: solid amber below it (less light), dashed above it (more light). */
 const SHIFT_OUTLINE = { lower: 'outline outline-1 outline-[var(--status-warn)]', higher: 'outline-dashed outline-1 outline-[var(--accent-light)]' }
@@ -109,7 +110,7 @@ function PlanGrid({ cols, slots, bySlot, planted, onSwap }: { cols: number, slot
             role="button"
             tabIndex={a || ex || picked !== null ? 0 : -1}
             aria-pressed={picked === s.slot}
-            aria-label={`Pod ${s.slot}${plant ? `, ${plant}` : ''}`}
+            aria-label={`Pod ${s.slot}${plant ? `, ${plant}` : ''}${ex?.seenEmpty ? ', cameras see it empty' : ''}`}
             draggable={!!(a || ex)}
             onDragStart={e => e.dataTransfer.setData('text/plain', String(s.slot))}
             onDragOver={(e) => {
@@ -134,11 +135,14 @@ function PlanGrid({ cols, slots, bySlot, planted, onSwap }: { cols: number, slot
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >
             <div className="flex items-center justify-between font-mono text-[10px] text-fg-3">
-              <span>{s.slot}</span>
+              <span className="flex items-center gap-1">
+                {s.slot}
+                {ex?.seenEmpty && <EyeOff size={10} aria-hidden="true" data-testid="seen-empty" />}
+              </span>
               <span>{z === 'medium' ? 'med' : z}</span>
             </div>
             {plant && (
-              <div className="flex min-w-0 items-center gap-1.5">
+              <div className={cn('flex min-w-0 items-center gap-1.5', ex?.seenEmpty && 'opacity-50')}>
                 <PlantThumb plant={plant} stage={a ? PLANNED_FORM : podForm(ex ?? { status: 'empty' })} size={24} />
                 <span className={cn('min-w-0 truncate text-[12px] leading-tight', a ? 'text-fg' : 'text-fg-2 italic')}>{plant}</span>
               </div>
@@ -199,6 +203,7 @@ export function PlanPage() {
   const layout = trpc.planner.layout.useQuery({ model, plants: request, respectExisting: true, ...(overrides && { overrides }) }, { enabled: true })
   const sowing = trpc.planner.sowing.useQuery({ plants: request, mode, ...(start && { start }) }, { enabled: request.length > 0 })
   const pods = trpc.grow.pods.useQuery()
+  const seen = trpc.vision.seenEmpty.useQuery()
   const plans = trpc.planner.plans.useQuery()
   const save = trpc.planner.savePlan.useMutation({ onSuccess: () => utils.planner.plans.invalidate() })
   const apply = trpc.planner.applyPlan.useMutation({
@@ -215,7 +220,8 @@ export function PlanPage() {
   const empty = layout.data?.free.length ?? (zones.data ? zones.data.slots.length - (pods.data ?? []).filter(p => p.status !== 'empty' && p.slot <= zones.data.slots.length).length : 0)
   const bySlot = new Map((layout.data?.assignments ?? []).map(a => [a.slot, a]))
   // A replant lays out the whole tower, so nothing planted now holds a pod.
-  const planted = new Map(overrides?.replant ? [] : (pods.data ?? []).filter(p => p.status !== 'empty').map(p => [p.slot, { slot: p.slot, status: p.status, plant: p.plant }]))
+  const seenSlots = new Set((seen.data ?? []).map(s => s.slot))
+  const planted = new Map(overrides?.replant ? [] : (pods.data ?? []).filter(p => p.status !== 'empty').map(p => [p.slot, { slot: p.slot, status: p.status, plant: p.plant, ...(seenSlots.has(p.slot) && { seenEmpty: true }) }]))
   const swap = (from: number, to: number) => setEdited({ ...overrides, pins: swapPins(layout.data?.assignments ?? [], from, to) })
   // A planted pod's record moves with its yCube; a plant planned on either side moves the other way, once the records have.
   const move = (from: number, to: number) => swapPods.mutate({ a: from, b: to }, { onSuccess: () => (bySlot.has(from) || bySlot.has(to)) && swap(from, to) })
@@ -275,6 +281,7 @@ export function PlanPage() {
               </div>
             )}
           />
+          <SeenEmpty slots={[...planted.values()].filter(p => p.seenEmpty && p.slot <= (zones.data?.slots.length ?? 0)).map(p => p.slot)} />
           {zones.data && shown === '2d' && <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} onSwap={exchange} />}
           {zones.data && shown === '3d' && (
             <div className="mt-3">

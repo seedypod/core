@@ -75,6 +75,8 @@ export interface PodState {
   harvest?: PodHarvest | null
   /** A pod a plan puts a plant in, not yet sown: drawn as the grown plant, so the tower previews the plan. */
   planned?: boolean
+  /** The cameras see the pod empty though its record holds a plant: flagged, quietly. */
+  seenEmpty?: boolean
 }
 
 /** What the core's harvest outlook says about a pod, as the views use it. */
