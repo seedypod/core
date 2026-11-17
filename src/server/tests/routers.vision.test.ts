@@ -205,6 +205,30 @@ describe('vision router (ADR-0019)', () => {
     await expect(c.vision.setLabel({ captureId: 'upper-0', slot: 16, label: 'ready' })).rejects.toThrow(/pod 16 is not on the upper camera/)
   })
 
+  it('scores each analyser against the labels on the same photo and pod', async () => {
+    const { c, ctx } = await scored(2)
+    expect(await c.vision.agreement()).toEqual({ pods: 0, analyzers: [] })
+    const posted = (captureId: string, slot: number, metric: string, value: number, detail: Record<string, unknown> | null = null) => ({ captureId, ts: '2026-01-01T00:00:00Z', camera: 'upper' as const, analyzer: 'leaf-unet', version: 2, source: 'remote' as const, slot, metric, value, detail, artifact: null })
+    ctx.store.analyses.add([
+      posted('upper-0', 1, 'green_fraction', 0),
+      posted('upper-0', 2, 'green_fraction', 0.01),
+      posted('upper-1', 1, 'green_fraction', 0.3),
+      posted('upper-0', 1, 'pod_state', 0, { state: 'empty', confidence: 0.9 }),
+    ])
+    await c.vision.setLabel({ captureId: 'upper-0', slot: 1, label: 'seeded' })
+    await c.vision.setLabel({ captureId: 'upper-0', slot: 2, label: 'growing' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 1, label: 'sprouted' })
+    await c.vision.setLabel({ captureId: 'upper-1', slot: 2, label: 'unhealthy' })
+    const got = await c.vision.agreement()
+    expect(got.pods).toBe(4)
+    expect(got.analyzers.filter(a => a.analyzer === 'leaf-unet')).toEqual([
+      { analyzer: 'leaf-unet', version: 2, metric: 'green_fraction', agree: 2, total: 3 },
+      { analyzer: 'leaf-unet', version: 2, metric: 'pod_state', agree: 1, total: 1 },
+    ])
+    // The unit's own analysers scored every pod on both photos; the unhealthy one isn't counted.
+    expect(got.analyzers.filter(a => a.analyzer !== 'leaf-unet').map(a => [a.analyzer, a.total]).sort()).toEqual([['exg-otsu', 3], ['green-threshold', 3]])
+  })
+
   it('suggests each pod\'s label from its last one or a confident pod-state, and records how each was saved (#261)', async () => {
     const { c, ctx } = await scored(3)
     const seen: string[] = []
