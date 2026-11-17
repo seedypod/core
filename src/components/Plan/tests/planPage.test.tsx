@@ -27,7 +27,7 @@ const { state, calls, invalidate } = vi.hoisted(() => ({
     podsPending: false,
     loading: false,
   },
-  calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn() },
+  calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn(), swapPods: vi.fn() },
   invalidate: vi.fn(),
 }))
 
@@ -41,9 +41,10 @@ vi.mock('@/src/utils/trpc', async () => {
     useMutation: (o?: { onSuccess?: () => void }) => ({
       isPending: false,
       data: data?.(),
-      mutate: (input: unknown) => {
+      mutate: (input: unknown, m?: { onSuccess?: () => void }) => {
         fn(input)
         o?.onSuccess?.()
+        m?.onSuccess?.()
       },
     }),
   })
@@ -71,7 +72,17 @@ vi.mock('@/src/utils/trpc', async () => {
         updatePlant: mutation(calls.updatePlant),
         removePlant: mutation(calls.removePlant),
       },
-      grow: { pods: { useQuery: () => ({ data: state.loading || state.podsPending ? undefined : state.pods }) } },
+      grow: {
+        pods: { useQuery: () => ({ data: state.loading || state.podsPending ? undefined : state.pods }) },
+        // Swaps the records, as the router does, so the page lays out around where they land.
+        swapPods: mutation((i) => {
+          calls.swapPods(i)
+          const { a, b } = i as { a: number, b: number }
+          const at = (slot: number) => state.pods.find(p => p.slot === slot) ?? { slot, plant: null, status: 'empty' }
+          const [pa, pb] = [at(a), at(b)]
+          state.pods = [...state.pods.filter(p => p.slot !== a && p.slot !== b), { ...pb, slot: a }, { ...pa, slot: b }]
+        }),
+      },
     },
   }
 })
@@ -237,7 +248,7 @@ describe('PlanPage', () => {
     expect(calls.removePlant).toHaveBeenCalledWith({ id: 'okra' })
   })
 
-  it('swaps two planned pods by tapping one then the other, or by dragging, and never moves a planted pod', () => {
+  it('swaps two planned pods by tapping one then the other, or by dragging, without touching the pods', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
     render(<PlanPage />)
     flat()
@@ -258,16 +269,54 @@ describe('PlanPage', () => {
     expect([slotOf('Basil'), slotOf('Chives')]).toEqual([chives, basil])
     expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual(expect.arrayContaining([{ slot: chives, plantId: 'basil' }, { slot: basil, plantId: 'chives' }]))
 
-    // Dragged back; a planted pod (Mint, pod 1) takes no drop.
+    // Dragged back, the pod it's over ringed until the drop.
     const data = new Map<string, string>()
     const dataTransfer = { setData: (k: string, v: string) => data.set(k, v), getData: (k: string) => data.get(k) ?? '' }
     fireEvent.dragStart(cell(chives), { dataTransfer })
+    fireEvent.dragOver(cell(basil), { dataTransfer })
+    expect(cell(basil).className).toContain('ring-fg-3')
     fireEvent.drop(cell(basil), { dataTransfer })
+    expect(cell(basil).className).not.toContain('ring-fg-3')
     expect([slotOf('Basil'), slotOf('Chives')]).toEqual([basil, chives])
-    fireEvent.dragStart(cell(basil), { dataTransfer })
-    fireEvent.drop(cell(1), { dataTransfer })
-    expect(slotOf('Basil')).toBe(basil)
-    expect(slotOf('Mint')).toBe(1)
+    expect(calls.swapPods).not.toHaveBeenCalled()
+  })
+
+  it('swaps planted pods’ records, by dragging or tapping, and moves a plant planned on the other side the other way', () => {
+    state.pods = [{ slot: 4, plant: 'Oregano', status: 'growing' }, { slot: 5, plant: 'Italian Parsley', status: 'growing' }]
+    // The pods query answers again once a swap invalidates it.
+    const { rerender } = render(<PlanPage />)
+    flat()
+    const grid = within(screen.getByTestId('plan-grid'))
+    const slotOf = (name: string) => Number(grid.getAllByText(name)[0]?.closest('[data-slot]')?.getAttribute('data-slot'))
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (k: string, v: string) => data.set(k, v), getData: (k: string) => data.get(k) ?? '' }
+
+    // Planted onto planted: the records swap.
+    expect(cell(4).getAttribute('draggable')).toBe('true')
+    fireEvent.dragStart(cell(4), { dataTransfer })
+    fireEvent.drop(cell(5), { dataTransfer })
+    expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 4, b: 5 })
+    rerender(<PlanPage />)
+    expect([slotOf('Oregano'), slotOf('Italian Parsley')]).toEqual([5, 4])
+
+    // Tapped back onto an empty pod: the record moves there.
+    fireEvent.click(cell(5))
+    fireEvent.click(cell(30))
+    expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 5, b: 30 })
+    rerender(<PlanPage />)
+    expect(slotOf('Oregano')).toBe(30)
+    expect(calls.layout.mock.lastCall?.[0].overrides).toBeUndefined()
+
+    // Onto a planned pod: the planted record moves there and the plan takes the pod it left.
+    search('basil')
+    add('Basil')
+    const basil = slotOf('Basil')
+    fireEvent.dragStart(cell(30), { dataTransfer })
+    fireEvent.drop(cell(basil), { dataTransfer })
+    expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 30, b: basil })
+    expect([slotOf('Oregano'), slotOf('Basil')]).toEqual([basil, 30])
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual([{ slot: 30, plantId: 'basil' }])
   })
 
   it('swaps from the keyboard, moves a plant to a free pod, and lets go of a pod tapped twice', () => {
@@ -330,7 +379,7 @@ describe('PlanPage', () => {
     expect(screen.getByText(/^0 planned · 29 empty ·/)).toBeTruthy()
     expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there.')).toBeTruthy()
     flat()
-    expect(screen.getByText('Drag a plant onto another pod, or tap one then the other, to swap them. Italic = already planted.')).toBeTruthy()
+    expect(screen.getByText('Drag a plant onto another pod, or tap one then the other, to swap them. Italic = in the tower now.')).toBeTruthy()
     cleanup()
 
     // Nothing has answered: no count to give yet.
@@ -363,7 +412,7 @@ describe('PlanPage', () => {
     expect(screen.queryByText(/lower than ideal/)).toBeNull()
     expect(towerPods().filter(p => p.harvest?.reason === 'Planned: medium zone, allowed by the caller (ideal low).')).toHaveLength(1)
     flat()
-    expect(screen.getByText(/Italic = already planted\. Dashed outlines sit higher than ideal/)).toBeTruthy()
+    expect(screen.getByText(/Italic = in the tower now\. Dashed outlines sit higher than ideal/)).toBeTruthy()
     expect(screen.queryByText(/lower than ideal/)).toBeNull()
     const higher = screen.getByTitle('medium zone, allowed by the caller (ideal low)')
     expect(higher.className).toContain('outline-dashed')
@@ -507,6 +556,6 @@ describe('PlanPage', () => {
     expect(await screen.findByText(/needs WebGL/)).toBeTruthy()
     expect(screen.getByTestId('plan-grid')).toBeTruthy()
     expect(screen.queryByRole('tablist', { name: 'Plan view' })).toBeNull()
-    expect(screen.getByText(/swap them\. Italic = already planted\./)).toBeTruthy()
+    expect(screen.getByText(/swap them\. Italic = in the tower now\./)).toBeTruthy()
   })
 })
