@@ -368,6 +368,7 @@ describe('AnalysisPage', () => {
       captures: [],
     })
     render(<AnalysisPage />)
+    open('Methods')
     expect(screen.queryByTestId('teach-summary')).toBeNull()
     expect(screen.getByText('How leaf cover is measured from camera frames')).toBeTruthy()
     open('Teach')
