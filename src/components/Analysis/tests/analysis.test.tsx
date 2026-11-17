@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnalysisPage } from '../AnalysisPage'
+import type * as LabelPodsModule from '../LabelPods'
 
 const { data, calls, invalidate, demo } = vi.hoisted(() => ({
   demo: { on: false },
@@ -12,7 +14,10 @@ const { data, calls, invalidate, demo } = vi.hoisted(() => ({
 
 vi.mock('@/src/demo/mode', () => ({ isDemo: () => demo.on }))
 // The tagger has its own tests (labelPods.test.tsx); here it only has to be on the page with the pod boxes.
-vi.mock('../LabelPods', () => ({ LabelPods: ({ boxes, onEditBoxes, boxesOff }: { boxes: (c: 'upper' | 'lower') => Record<number, unknown>, onEditBoxes: () => void, boxesOff: Array<{ slot: number }> }) => (
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to, search, ...rest }: { children: ReactNode, to: string, search?: { pod: number } }) => <a href={search ? `${to}?pod=${search.pod}` : to} {...rest}>{children}</a>,
+}))
+vi.mock('../LabelPods', async orig => ({ ...(await orig<typeof LabelPodsModule>()), LabelPods: ({ boxes, onEditBoxes, boxesOff }: { boxes: (c: 'upper' | 'lower') => Record<number, unknown>, onEditBoxes: () => void, boxesOff: Array<{ slot: number }> }) => (
   <div>
     <span data-testid="label-pods-stub">{Object.keys(boxes('lower')).join(',')}</span>
     <span data-testid="boxes-off-stub">{boxesOff.map(b => b.slot).join(',')}</span>
@@ -51,7 +56,7 @@ vi.mock('@/src/utils/trpc', () => {
       useUtils: () => ({ vision: { invalidate } }),
       vision: { analyzers: query('analyzers'), status: query('status'), podTrends: query('podTrends'), allPodSeries: query('allPodSeries'), compare: query('compare'), capture: query('capture'), regions: query('regions'), suggestions: query('suggestions'), labels: query('labels'), labelStats: query('labelStats'), podCodes: query('podCodes'), boxesOff: query('boxesOff'), agreement: query('agreement'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
       camera: { list: query('frames'), get: query('still') },
-      grow: { pods: query('pods') },
+      grow: { pods: query('pods'), current: query('current') },
       datasets: { summary: query('summary') },
     },
   }
@@ -235,19 +240,22 @@ describe('AnalysisPage', () => {
   })
 
   it('shows everything known about a pod on hover, and pins it on a click for Methods to chart', () => {
-    const state = { ...row('pod-state', 1, 1), metric: 'pod_state', detail: { state: 'sprouted', confidence: 0.9, probabilities: { empty: 0, sprouted: 0.9, unhealthy: 0.06 } } }
-    data.set('analyzers', [...(data.get('analyzers') as object[]), { ...base, id: 'pod-state', version: 1, label: 'Pod state (learned)', description: 'A small CNN.', primary: false, metrics: [{ name: 'pod_state', label: 'Pod state', description: '' }] }])
-    data.set('capture:upper-1', [row('exg-otsu', 1, 0.02), row('green-threshold', 1, 0.018), state])
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-09T12:00:00Z'))
     data.set('pods', [{ slot: 1, plant: 'Cilantro', status: 'seeded', plantedAt: '2026-01-01', notes: 'pinned to pod 1 by the caller' }, { slot: 3, plant: null, status: 'empty', plantedAt: null, notes: '' }])
     data.set('podTrends', [{ slot: 1, green: 0.018, verdict: 'growing', slope: 0.01, samples: 48, recent: [0, 0, 0.01, 0.018] }])
+    data.set('suggestions:upper-1', [{ slot: 1, label: 'sprouted', by: 'pod-state@1', confidence: 0.9, from: null }])
     render(<AnalysisPage />)
     expect(screen.queryByTestId('pod-card')).toBeNull()
-    const hit = screen.getAllByRole('button', { name: 'Pod 1 details' })[0] as HTMLElement
+    const hit = screen.getByRole('button', { name: 'Pod 1, Cilantro, sprouted, 2% leaf cover' })
     fireEvent.pointerEnter(hit)
     const card = screen.getByRole('dialog', { name: 'Pod 1' })
     expect(card.textContent).toContain('Cilantro')
-    expect(card.textContent).toContain('Seeded · day')
-    expect([...card.querySelectorAll('.font-mono.text-fg')].map(e => e.textContent)).toEqual(['2%', '2%', 'sprouted 90%'])
+    expect(card.textContent).toContain('Sprouted')
+    expect(card.textContent).toContain('day 8 · sprouted')
+    expect(card.textContent).toContain('leaf cover2% ↑ from 0%')
+    expect(card.textContent).toContain('sproutsday 5–21 typical')
+    expect(card.textContent).toContain('labelpod-state 90%')
     expect(card.textContent).toContain('Growing over the last 4 photos')
     expect(card.textContent).toContain('pinned to pod 1 by the caller')
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
@@ -257,8 +265,9 @@ describe('AnalysisPage', () => {
     fireEvent.click(hit)
     expect(hit.getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('dialog', { name: 'Pod 1' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Open pod' }).getAttribute('href')).toBe('/grow?pod=1')
     // Hovering another pod shows it for a moment; leaving it brings the pinned one back.
-    const other = screen.getAllByRole('button', { name: 'Pod 3 details' })[0] as HTMLElement
+    const other = screen.getByRole('button', { name: 'Pod 3, empty' })
     fireEvent.focus(other)
     expect(screen.getByRole('dialog', { name: 'Pod 3' }).textContent).toContain('Empty')
     fireEvent.blur(other)
@@ -272,11 +281,12 @@ describe('AnalysisPage', () => {
     expect(screen.getByText('One pod over time')).toBeTruthy()
     expect(screen.getByText('Pod 1 · Cilantro')).toBeTruthy()
     expect(calls.compare).toHaveBeenLastCalledWith({ slot: 1, metric: 'pod_state', limit: 1 })
+    vi.useRealTimers()
   })
 
   it('lets a pod\'s card reach past the photo\'s edge rather than cutting it off', () => {
     render(<AnalysisPage />)
-    fireEvent.pointerEnter(screen.getAllByRole('button', { name: 'Pod 2 details' })[0] as HTMLElement)
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Pod 2, empty' }))
     const clipped: string[] = []
     for (let el = screen.getByRole('dialog', { name: 'Pod 2' }).parentElement; el && el.tagName !== 'FIGURE'; el = el.parentElement) {
       if (el.classList.contains('overflow-hidden')) clipped.push(el.className)
@@ -285,11 +295,20 @@ describe('AnalysisPage', () => {
   })
 
   it('says a pod marked empty has no cover, and hides the pod targets while the boxes are edited', () => {
-    data.set('pods', [{ slot: 2, plant: null, status: 'empty', plantedAt: null, notes: '' }])
+    const state = { ...row('pod-state', 1, 1), metric: 'pod_state', detail: { state: 'sprouted', confidence: 0.9, probabilities: { empty: 0, sprouted: 0.9, unhealthy: 0.06 } } }
+    data.set('analyzers', [...(data.get('analyzers') as object[]), { ...base, id: 'pod-state', version: 1, label: 'Pod state (learned)', description: 'A small CNN.', primary: false, metrics: [{ name: 'pod_state', label: 'Pod state', description: '' }] }])
+    data.set('capture:upper-1', [row('exg-otsu', 1, 0.02), row('green-threshold', 1, 0.018), state, row('green-threshold', 2, 0.1)])
+    data.set('pods', [{ slot: 1, plant: 'Cilantro', status: 'seeded', plantedAt: '2026-01-01', notes: '' }, { slot: 2, plant: null, status: 'empty', plantedAt: null, notes: '' }])
     render(<AnalysisPage />)
+    open('Teach')
+    // The bounds' card lists every analyser's reading of the pod.
+    fireEvent.pointerEnter(screen.getAllByRole('button', { name: 'Pod 1 details' })[0] as HTMLElement)
+    const card = screen.getByRole('dialog', { name: 'Pod 1' })
+    expect(card.textContent).toContain('Seeded · day')
+    expect([...card.querySelectorAll('.font-mono.text-fg')].map(e => e.textContent)).toEqual(['2%', '2%', 'sprouted 90%'])
+    expect(screen.queryByRole('link', { name: 'Open pod' })).toBeNull()
     fireEvent.pointerEnter(screen.getAllByRole('button', { name: 'Pod 2 details' })[0] as HTMLElement)
     expect(screen.getByRole('dialog', { name: 'Pod 2' }).textContent).toContain('Marked empty, so none of this counts as cover.')
-    open('Teach')
     fireEvent.click(screen.getByText('Edit boxes'))
     expect(screen.queryByTestId('pod-hits')).toBeNull()
     expect(screen.queryByTestId('pod-card')).toBeNull()
@@ -412,6 +431,71 @@ describe('AnalysisPage', () => {
     expect(screen.getByTestId('leaf-cover-stub')).toBeTruthy()
     expect(screen.queryByAltText('lower camera at 2026-01-02T00:00:00Z')).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Lower' })).toBeNull()
+  })
+
+  it('tags each pod with its plant and cover, coloured by its state, and flags a seeded pod past its sprouting window', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-23T12:00:00Z'))
+    data.set('current', { cycle: null, day: 22 })
+    data.set('pods', [
+      { slot: 16, plant: 'Perpetual Spinach', status: 'seeded', plantedAt: '2026-01-15', notes: '' },
+      { slot: 17, plant: null, status: 'empty', plantedAt: null, notes: '' },
+      { slot: 21, plant: 'Red Swiss Chard', status: 'seeded', plantedAt: '2026-01-01', notes: '' },
+      { slot: 22, plant: 'Pink Swiss Chard', status: 'growing', plantedAt: '2026-01-01', notes: '' },
+    ])
+    data.set('podTrends', [{ slot: 16, green: 0.01, verdict: 'growing', slope: 0.01, samples: 4, recent: [0, 0.01] }, { slot: 21, green: 0, verdict: 'unknown', slope: 0, samples: 1, recent: [0] }])
+    data.set('labels:lower-1', [{ captureId: 'lower-1', ts: '2026-01-23T08:00:00Z', camera: 'lower', slot: 16, label: 'sprouted', labelledAt: '2026-01-23T09:00:00Z', plant: 'Perpetual Spinach', plantedAt: '2026-01-15', source: 'picked', suggested: null, suggestedBy: null, suggestedConfidence: null }])
+    data.set('podCodes', { available: true, pairs: [], pods: [{ slot: 16, camera: 'lower', code: 'oo/h', confidence: 0.9, ts: '2026-01-23T08:00:00Z', confirmed: 'Perpetual Spinach', recorded: null, shared: null, guess: 'Perpetual Spinach', from: 'own', disagrees: false }] })
+    render(<AnalysisPage />)
+    expect(screen.getByText('Day 22 · 3 planted · 2 sprouted · 1 looks late')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Lower' }))
+    const boxes = screen.getByTestId('pod-boxes-lower')
+    const tag = (slot: number) => boxes.querySelector(`[data-slot="${slot}"]`)?.nextElementSibling?.textContent
+    expect(tag(16)).toBe('16 Spinach · 1%')
+    expect(tag(21)).toBe('21 Chard · late?')
+    expect(tag(17)).toBe('17')
+    expect(boxes.querySelector('[data-slot="16"]')?.getAttribute('data-stage')).toBe('sprouted')
+    expect(boxes.querySelector('[data-slot="21"]')?.getAttribute('data-late')).toBe('true')
+    expect((boxes.querySelector('[data-slot="21"]') as HTMLElement).style.borderColor).toBe('var(--status-warn)')
+    expect(boxes.querySelector('[data-slot="17"]')?.className).toContain('border-dashed')
+    expect(screen.getByRole('button', { name: 'Pod 21, Red Swiss Chard, seeded, 0% leaf cover, sprouting late' })).toBeTruthy()
+
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Pod 16, Perpetual Spinach, sprouted, 1% leaf cover' }))
+    const card = screen.getByRole('dialog', { name: 'Pod 16' })
+    expect(card.textContent).toContain('day 8 · sprouted')
+    expect(card.textContent).toMatch(/labelyou · /)
+    expect(card.textContent).toContain('confirmed')
+    expect(screen.getByLabelText('open, open, slanted bar, half, solid')).toBeTruthy()
+    fireEvent.pointerLeave(screen.getByRole('button', { name: /^Pod 16,/ }))
+    fireEvent.pointerEnter(screen.getByRole('button', { name: /^Pod 21,/ }))
+    expect(screen.getByRole('dialog', { name: 'Pod 21' }).textContent).toContain('day 22 · late')
+    vi.useRealTimers()
+  })
+
+  it('lists the planted pods beside the photo, reveals the empty ones, and pins a pod from its row', () => {
+    data.set('pods', [
+      { slot: 16, plant: 'Perpetual Spinach', status: 'seeded', plantedAt: null, notes: '' },
+      { slot: 17, plant: null, status: 'empty', plantedAt: null, notes: '' },
+      { slot: 18, plant: null, status: 'empty', plantedAt: null, notes: '' },
+      { slot: 25, plant: 'Green Bok Choy', status: 'seeded', plantedAt: null, notes: '' },
+    ])
+    data.set('podTrends', [{ slot: 25, green: 0.004, verdict: 'unknown', slope: 0, samples: 1, recent: [] }])
+    render(<AnalysisPage />)
+    const list = screen.getByTestId('pod-list')
+    expect(list.textContent).toContain('PLANTED · 2')
+    const rows = () => [...list.querySelectorAll('button[aria-pressed]')].map(b => b.textContent)
+    expect(rows()).toEqual(['16Perpetual Spinachseeded—', '25Green Bok Choyseeded0%'])
+    fireEvent.click(screen.getByRole('button', { name: '+ 2 empty' }))
+    expect(rows()).toHaveLength(4)
+    expect(rows()[1]).toBe('17Empty')
+    fireEvent.click(screen.getByRole('button', { name: 'Hide empty' }))
+    const row = screen.getByRole('button', { name: /^25Green Bok Choy/ })
+    fireEvent.click(row)
+    expect(row.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: /^Pod 25,/ }).getAttribute('aria-pressed')).toBe('true')
+    // Relabel takes the pinned pod to Teach.
+    fireEvent.click(screen.getByRole('button', { name: 'Relabel' }))
+    expect(screen.getByRole('tab', { name: 'Teach' }).getAttribute('aria-selected')).toBe('true')
   })
 
   it('opens the tab a link asks for', () => {

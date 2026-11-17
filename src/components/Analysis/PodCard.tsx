@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { X } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
 import { cn } from '@/lib/utils'
@@ -7,6 +8,9 @@ import type { AppRouter } from '@/src/server/routers/app'
 import type { Rect } from '@/src/vision/greenArea'
 import { POD_STATES } from '@/src/vision/podState'
 import type { PodRegions } from '@/src/vision/regions'
+import { LABEL_COLOR } from './LabelPods'
+import { CodeGlyphs } from './PodCodes'
+import { coverChange, labelledBy, sproutChip, windowText, type PodStory } from './pods'
 
 type Outputs = inferRouterOutputs<AppRouter>
 type Result = Outputs['vision']['capture'][number]
@@ -17,6 +21,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`
 const at = (n: number) => `${n * 100}%`
 const TREND: Record<string, string> = { growing: 'Growing', stalled: 'Stalled', declining: 'Shrinking', unknown: 'Not enough photos for a trend' }
 const STATUS: Record<string, string> = { empty: 'Empty', seeded: 'Seeded', growing: 'Growing', harvest: 'Ready to harvest', attention: 'Needs attention' }
+const name = (s: string) => s[0]?.toUpperCase() + s.slice(1)
 
 /** A learned analyser's guess in words: the likeliest class, and the runner-up when it is close enough to matter. */
 export function stateGuess(r: Pick<Result, 'value' | 'detail'>): string {
@@ -46,8 +51,13 @@ export function cardPlace(r: Rect) {
 /** A column per analyser on this photo: its label, mark colour, and reading of the pod. */
 export interface Reading { key: string, label: string, color: string, text: string }
 
-/** Everything known about one pod on one photo: the pod record, each analyser's reading, and the trend. */
-export function PodCard({ slot, box, pod, trend, readings, pinned, onClose }: {
+/**
+ * Everything known about one pod on one photo: the pod record, each
+ * analyser's reading, and the trend. With a `story` (the Pods tab) it leads
+ * with the pod's state and sprouting window, its leaf cover and who labelled
+ * it, its confirmed code, and links to the pod and to relabelling it.
+ */
+export function PodCard({ slot, box, pod, trend, readings, pinned, onClose, story, onRelabel }: {
   slot: number
   box: Rect
   pod: Pod | undefined
@@ -55,11 +65,16 @@ export function PodCard({ slot, box, pod, trend, readings, pinned, onClose }: {
   readings: Reading[]
   pinned: boolean
   onClose: () => void
+  story?: PodStory
+  onRelabel?: () => void
 }) {
   const empty = !pod || pod.status === 'empty'
   const days = ageDays(pod?.plantedAt)
   const note = pod?.notes?.trim()
   const recent = trend?.recent ?? []
+  const late = story?.sprout === 'late'
+  const chip = story && sproutChip(story.day, story.sprout)
+  const cover = coverChange(recent, trend?.green ?? null)
   return (
     <div
       role="dialog"
@@ -72,12 +87,50 @@ export function PodCard({ slot, box, pod, trend, readings, pinned, onClose }: {
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="font-mono text-[10px] tracking-[0.06em] text-fg-3">{`POD ${slot}`}</span>
           <span className="truncate text-[15px] font-medium">{pod?.plant ?? 'Empty'}</span>
-          <span className="text-xs text-fg-2">
-            {[STATUS[pod?.status ?? 'empty'] ?? pod?.status, days !== null && `day ${Math.floor(days)}`].filter(Boolean).join(' · ')}
-          </span>
+          {!story && (
+            <span className="text-xs text-fg-2">
+              {[STATUS[pod?.status ?? 'empty'] ?? pod?.status, days !== null && `day ${Math.floor(days)}`].filter(Boolean).join(' · ')}
+            </span>
+          )}
         </div>
         {pinned && <button type="button" aria-label="Close" onClick={onClose} className="cursor-pointer border-0 bg-transparent p-0 text-fg-3 hover:text-fg"><X size={14} /></button>}
       </div>
+      {story && (
+        <div className="flex flex-wrap gap-1.5">
+          <span className="flex items-center gap-[5px] rounded-full border border-line-2 px-2 py-0.5 text-[11px]">
+            <span aria-hidden className="size-1.5 rounded-full" style={{ background: LABEL_COLOR[story.state.stage] }} />
+            {name(story.state.stage)}
+          </span>
+          {chip && <span className={cn('rounded-full border px-2 py-0.5 text-[11px]', late ? 'border-warn-line text-warn' : 'border-line text-fg-2')}>{chip}</span>}
+        </div>
+      )}
+      {story && !empty && (
+        <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-[5px] font-mono text-[11px] text-fg-3">
+          {cover && (
+            <>
+              <dt>leaf cover</dt>
+              <dd className="m-0 text-fg">{cover}</dd>
+            </>
+          )}
+          {story.window && (
+            <>
+              <dt>sprouts</dt>
+              <dd className={cn('m-0', late ? 'text-warn' : 'text-fg-2')}>{windowText(story.window)}</dd>
+            </>
+          )}
+          <dt>label</dt>
+          <dd className="m-0 text-fg-2">{labelledBy(story.state)}</dd>
+          {story.code && (
+            <>
+              <dt>code</dt>
+              <dd className="m-0 text-fg-2">
+                <CodeGlyphs code={story.code} />
+                {' confirmed'}
+              </dd>
+            </>
+          )}
+        </dl>
+      )}
       {readings.length > 0 && (
         <div className="flex flex-col gap-1 border-t border-line pt-2">
           {readings.map(r => (
@@ -100,6 +153,12 @@ export function PodCard({ slot, box, pod, trend, readings, pinned, onClose }: {
         </div>
       )}
       {note && <p className="m-0 line-clamp-2 border-t border-line pt-2 text-[11px] text-fg-3" title={note}>{note}</p>}
+      {story && (
+        <div className="flex gap-3 text-xs">
+          <Link to="/grow" search={{ pod: slot }} className="text-pod-ok underline underline-offset-2">Open pod</Link>
+          {onRelabel && <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-pod-ok underline underline-offset-2" onClick={onRelabel}>Relabel</button>}
+        </div>
+      )}
     </div>
   )
 }
