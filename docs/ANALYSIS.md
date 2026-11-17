@@ -120,7 +120,15 @@ It is off by default to spare the SD card.
 ## Label pods
 
 A trained pod model needs examples: photos where someone has said what each
-pod shows. **Analysis → Label pods** is where you give them.
+pod shows. **Analysis → Teach** is where you give them. Teach is one queue of
+what waits on you, and its tab carries the count from any tab: the
+suggestions not yet labelled on each camera's newest still, the
+[pod codes](#pod-codes) not yet confirmed, and the boxes that look off their
+pod. A box looks off when you dismissed its pod's suggestion on two photos or
+more in the last week and the box is still where it was measured
+(`GET /api/vision/boxes-off`); moving or removing it takes it off the list.
+The subtitle says how many pods are labelled and how often each suggester
+was right on the labels you reviewed.
 
 1. Pick the camera: **Upper**, **Lower**, or **Both** to see the two stills
    from one round of captures together (stacked on a phone, side by side on a
@@ -133,13 +141,16 @@ pod shows. **Analysis → Label pods** is where you give them.
    shows it dashed with a question mark, for example `6 · sprouted?`; its
    tooltip says where it came from (*last labelled sprouted on 13 Nov*,
    *pod-state 86%*). With no label picked, tap a pod to accept its
-   suggestion. **Accept the rest** under each photo accepts every remaining
-   suggestion on it; pods without one stay unlabelled.
+   suggestion. The **Suggestions** card beside the photo says how many wait
+   and of what; **Accept all** accepts every one shown (a pod whose box was
+   removed is never saved), and **Review one by one** starts at the first
+   dashed pod. Pods without a suggestion stay unlabelled.
    If a pod can't be seen on the photo, or its box sits over the tower
    rather than a cup, pick **Clear** and tap it: that
    [dismisses the suggestion](#dismissed-suggestions) on that photo, so
-   **Accept the rest** skips it. Tap it again with **Clear** to bring the
-   suggestion back.
+   **Accept all** skips it. Tap it again with **Clear** to bring the
+   suggestion back. For a box that isn't on its cup, **Pod bounds → Adjust
+   boxes** opens the box editor below the tagger.
 3. For the pods that changed, or that have no suggestion, pick a label (tap
    the picked one again to put it down):
    - **Empty**: a capped pod, no yCube.
@@ -225,17 +236,18 @@ tower body). **Clear** on such a pod dismisses its suggestion on that photo
 only; the dashed tag goes, and the box's tooltip says it was dismissed. The
 unit keeps the dismissal, so a reload doesn't bring the suggestion back.
 `GET /api/vision/captures/{captureId}/suggestions` leaves dismissed pods out,
-and **Accept the rest** (`POST …/suggestions/accept`) skips them on the unit,
-not only in the app. A label picked on a dismissed pod is saved as `picked`,
+and **Accept all** (`POST …/suggestions/accept`, optionally with the `slots`
+shown) skips them on the unit, not only in the app. A label picked on a dismissed pod is saved as `picked`,
 since there was no suggestion to accept or correct.
 
 A dismissal is not a label. It never shows in the label counts, the
 `picked`/`accepted`/`corrected` line, **All labels** or `labels.jsonl`; the
 dataset export carries dismissals in their own file,
 `suggestion_dismissals.json`. Nothing hides a pod on its own: a box that
-doesn't sit on a pod should be moved in **Analysis → Latest photos → Pod
-bounds → Edit boxes** (the tooltip on each suggested pod says so, and the
-link under the label chips opens it).
+doesn't sit on a pod should be moved in **Analysis → Teach → Pod bounds →
+Adjust boxes** (the tooltip on each suggested pod says so). A pod dismissed
+on two photos or more in a week counts as a box that looks off until its box
+is moved or removed.
 
 Scripts use `PUT /api/vision/captures/{captureId}/suggestions/{slot}/dismissal`
 to dismiss, `DELETE` on the same path to bring the suggestion back, and
@@ -244,18 +256,19 @@ photo's dismissals (`slot`, `dismissedAt`).
 
 ### Pod codes
 
-Under the photo, **Pod codes** lists the pods whose yCube dot code was read
-([Dot codes](#dot-codes), #224), and only those. **Read codes** takes a
+Beside the photo, the **Pod codes** card lists the pods whose yCube dot code
+was read ([Dot codes](#dot-codes), #224), and only those, with how many wait
+to be confirmed. **Read codes** takes a
 full-size pod-ID still on each camera and reads it. That's slow on a Pi Zero,
 and a camera whose still is dark, damaged or fails keeps its last reads. Each
-row shows what the pod reads as and the plant that code is:
+row shows the pod, its dots and the plant that code is:
 
 - With no plant confirmed for the code, it offers the
   [shared table](#shared-pod-codes)'s plant as a known code
   (`Basil · known code`), or else the pod record's plant as a guess
-  (`Basil?`). **Confirm** saves the pair.
-- **Correct** (or **Say which**, when the pod has no plant) saves the code
-  as another plant.
+  (`Basil?`). **✓** saves the pair.
+- **fix** (or **say which**, when the pod has no plant) opens the row to save
+  the code as another plant.
 - A confirmed code shows its plant with a tick. If the shared table names
   another plant for it, the row says so; yours is kept.
 
@@ -318,7 +331,7 @@ merging.
 The owner moves yCubes by hand, so the tower can drift from the pod records
 and from the plan. A pod whose code is confirmed says what it holds. When that
 disagrees with its record or the plan applied last, **Needs you** shows one
-line, *Pods out of order*. It links to the list above Pod codes, which names
+line, *Pods out of order*. It links to the list below Pod codes in Teach, which names
 each pod and offers two fixes:
 
 - **Update the records to match the tower**: swaps of pod records, the same

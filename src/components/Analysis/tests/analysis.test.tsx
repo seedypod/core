@@ -12,9 +12,10 @@ const { data, calls, invalidate, demo } = vi.hoisted(() => ({
 
 vi.mock('@/src/demo/mode', () => ({ isDemo: () => demo.on }))
 // The tagger has its own tests (labelPods.test.tsx); here it only has to be on the page with the pod boxes.
-vi.mock('../LabelPods', () => ({ LabelPods: ({ boxes, onEditBoxes }: { boxes: (c: 'upper' | 'lower') => Record<number, unknown>, onEditBoxes: () => void }) => (
+vi.mock('../LabelPods', () => ({ LabelPods: ({ boxes, onEditBoxes, boxesOff }: { boxes: (c: 'upper' | 'lower') => Record<number, unknown>, onEditBoxes: () => void, boxesOff: Array<{ slot: number }> }) => (
   <div>
     <span data-testid="label-pods-stub">{Object.keys(boxes('lower')).join(',')}</span>
+    <span data-testid="boxes-off-stub">{boxesOff.map(b => b.slot).join(',')}</span>
     <button type="button" onClick={onEditBoxes}>stub move boxes</button>
   </div>
 ) }))
@@ -27,7 +28,7 @@ vi.mock('@/src/utils/trpc', () => {
     if (name === 'capture') calls.capture(input, opts)
     if (name === 'summary') calls.summary(input)
     // Per camera or per capture when a test sets it so, else one answer for every input.
-    const by = name === 'frames' ? (input as { camera: string }).camera : name === 'capture' ? (input as { captureId: string }).captureId : name === 'compare' ? (input as { metric: string }).metric : null
+    const by = name === 'frames' ? (input as { camera: string }).camera : ['capture', 'suggestions', 'labels'].includes(name) ? (input as { captureId: string }).captureId : name === 'compare' ? (input as { metric: string }).metric : null
     const answer = by !== null && data.has(`${name}:${by}`) ? data.get(`${name}:${by}`) : data.get(name)
     return { data: opts?.enabled === false ? undefined : answer }
   } })
@@ -48,7 +49,7 @@ vi.mock('@/src/utils/trpc', () => {
     apiBase: () => '',
     trpc: {
       useUtils: () => ({ vision: { invalidate } }),
-      vision: { analyzers: query('analyzers'), status: query('status'), podTrends: query('podTrends'), allPodSeries: query('allPodSeries'), compare: query('compare'), capture: query('capture'), regions: query('regions'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
+      vision: { analyzers: query('analyzers'), status: query('status'), podTrends: query('podTrends'), allPodSeries: query('allPodSeries'), compare: query('compare'), capture: query('capture'), regions: query('regions'), suggestions: query('suggestions'), labels: query('labels'), labelStats: query('labelStats'), podCodes: query('podCodes'), boxesOff: query('boxesOff'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
       camera: { list: query('frames') },
       grow: { pods: query('pods') },
       datasets: { summary: query('summary') },
@@ -215,6 +216,56 @@ describe('AnalysisPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'stub move boxes' }))
     expect(scroll).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
     expect(scroll.mock.contexts[0]).toBe(document.getElementById('pod-bounds'))
+    // Adjust boxes opens the editor, and asking again keeps the draft.
+    const box = screen.getByRole('button', { name: 'Pod 1 box' })
+    fireEvent.keyDown(box, { key: 'ArrowRight' })
+    const moved = box.style.left
+    fireEvent.click(screen.getByRole('button', { name: 'stub move boxes' }))
+    expect(screen.getByRole('button', { name: 'Pod 1 box' }).style.left).toBe(moved)
+  })
+
+  it('counts what waits on the grower on the Teach tab, seen from any tab', () => {
+    const hint = (slot: number, label = 'empty') => ({ slot, label, by: 'carry', confidence: null, from: null })
+    // Pod 2 is labelled already, and pod 30's box was removed: neither waits.
+    data.set('suggestions:upper-1', [hint(1), hint(2), hint(3, 'seeded')])
+    data.set('labels:upper-1', [{ slot: 2, label: 'empty' }])
+    data.set('suggestions:lower-1', [hint(16), hint(30)])
+    data.set('regions', [{ camera: 'lower', calibrated: true, removed: [30], regions: Array.from({ length: 14 }, (_, i) => ({ slot: 16 + i, x: 0, y: 0, w: 0.1, h: 0.1, moved: false })) }])
+    data.set('podCodes', { available: true, pairs: [], pods: [{ slot: 1, confirmed: null }, { slot: 6, confirmed: 'Kale' }, { slot: 8, confirmed: null }] })
+    data.set('boxesOff', [{ camera: 'lower', slot: 28, photos: 2 }])
+    render(<AnalysisPage />)
+    // 3 suggestions + 2 codes + 1 box.
+    expect(screen.getByRole('tab', { name: 'Teach, 6 waiting' })).toBeTruthy()
+    expect(screen.getByTestId('teach-count').textContent).toBe('6')
+    fireEvent.click(screen.getByRole('tab', { name: /^Teach/ }))
+    expect(screen.getByTestId('boxes-off-stub').textContent).toBe('28')
+    fireEvent.click(screen.getByRole('tab', { name: 'Methods' }))
+    expect(screen.getByRole('tab', { name: 'Teach, 6 waiting' })).toBeTruthy()
+  })
+
+  it('shows no count when nothing waits', () => {
+    data.set('podCodes', { available: true, pairs: [], pods: [{ slot: 6, confirmed: 'Kale' }] })
+    data.set('boxesOff', [])
+    render(<AnalysisPage />)
+    expect(screen.getByRole('tab', { name: 'Teach' })).toBeTruthy()
+    expect(screen.queryByTestId('teach-count')).toBeNull()
+  })
+
+  it('says on Teach how many pods are labelled and how often each suggester was right', () => {
+    data.set('labelStats', {
+      counts: {},
+      pods: 171,
+      sources: { picked: 40, accepted: 120, corrected: 11 },
+      suggesters: [{ by: 'carry', accepted: 82, corrected: 18, right: 0.82 }, { by: 'record', accepted: 3, corrected: 2, right: 0.6 }, { by: 'pod-state@2', accepted: 1, corrected: 0, right: 1 }],
+      captures: [],
+    })
+    render(<AnalysisPage />)
+    expect(screen.queryByTestId('teach-summary')).toBeNull()
+    expect(screen.getByText('How leaf cover is measured from camera frames')).toBeTruthy()
+    open('Teach')
+    const summary = screen.getByTestId('teach-summary')
+    expect(summary.textContent).toBe('171 pods labelled · carry 82% right · record 60% right · pod-state 100% right')
+    expect(summary.getAttribute('title')).toBe('40 picked · 120 accepted · 11 corrected')
   })
 
   it('starts on every planted pod side by side, on one scale, and charts one when it is picked', () => {

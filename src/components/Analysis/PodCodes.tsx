@@ -28,32 +28,45 @@ export function CodeGlyphs({ code }: { code: string }) {
   )
 }
 
-/** One pod's code: what it reads as, the plant it would be, and confirm or correct. */
+/** The read codes still waiting on the grower: every one not confirmed yet. */
+export const codesWaiting = (pods: Array<Pick<View, 'confirmed'>>) => pods.filter(p => !p.confirmed).length
+
+/** One pod's code as a compact row: the pod, its dots, the plant it would be, ✓ to confirm, and fix to correct. */
 function CodeRow({ pod, suggestions, onSave, saving }: { pod: View, suggestions: string[], onSave: (plant: string) => void, saving: boolean }) {
   const [fixing, setFixing] = useState(false)
   const [plant, setPlant] = useState(pod.guess ?? '')
   const guess = pod.guess
   return (
-    <li className="flex flex-col gap-2 border-t border-line py-2.5 first:border-t-0" data-testid={`pod-code-${pod.slot}`}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px]">
-        <span className="font-mono text-[11px] text-fg-3">{`Pod ${pod.slot}`}</span>
-        <span className="text-fg-2">reads as</span>
-        <CodeGlyphs code={pod.code} />
-        <span className="text-fg-3">·</span>
-        {pod.confirmed
-          ? (
-              <span className="flex items-center gap-1">
-                {pod.confirmed}
-                <Check size={13} className="text-ok" aria-label="confirmed" />
-              </span>
-            )
-          : pod.from === 'shared'
-            ? <span title="Other units confirmed this code; confirm it is right here too">{`${guess} · known code`}</span>
-            : <span>{guess ? `${guess}?` : 'which plant?'}</span>}
-        <span className="ml-auto flex gap-1.5">
-          {!pod.confirmed && guess && <Button size="sm" variant="primary" disabled={saving} onClick={() => onSave(guess)}>Confirm</Button>}
-          <Button size="sm" disabled={saving} onClick={() => setFixing(f => !f)}>{pod.confirmed || guess ? 'Correct' : 'Say which'}</Button>
+    <li className="flex flex-col gap-2 border-t border-line py-1.5 first:border-t-0" data-testid={`pod-code-${pod.slot}`}>
+      <div className="flex min-w-0 items-center gap-2 text-xs">
+        <span className="w-6 shrink-0 font-mono text-[11px] text-fg-3">
+          <span className="sr-only">Pod </span>
+          {pod.slot}
         </span>
+        <CodeGlyphs code={pod.code} />
+        <span className="min-w-0 flex-1 truncate">
+          {pod.confirmed
+            ? (
+                <span className="flex items-center gap-1">
+                  <span className="truncate">{pod.confirmed}</span>
+                  <Check size={13} className="shrink-0 text-ok" aria-label="confirmed" />
+                </span>
+              )
+            : pod.from === 'shared'
+              ? <span title="Other units confirmed this code; confirm it is right here too">{`${guess} · known code`}</span>
+              : guess ? `${guess}?` : 'which plant?'}
+        </span>
+        {!pod.confirmed && guess && <Button size="sm" icon={Check} className="px-2 py-1" aria-label={`Confirm pod ${pod.slot} as ${guess}`} disabled={saving} onClick={() => onSave(guess)} />}
+        <button
+          type="button"
+          aria-label={`${pod.confirmed || guess ? 'Correct' : 'Say which plant is in'} pod ${pod.slot}`}
+          aria-expanded={fixing}
+          disabled={saving}
+          className="shrink-0 cursor-pointer border-0 bg-transparent p-1 text-[11px] text-fg-2 underline hover:text-fg disabled:cursor-default disabled:opacity-45"
+          onClick={() => setFixing(f => !f)}
+        >
+          {pod.confirmed || guess ? 'fix' : 'say which'}
+        </button>
       </div>
       {pod.disagrees && <span className="text-xs text-pod-attention">{`Other units say this code is ${pod.shared}. Yours is kept.`}</span>}
       {fixing && (
@@ -117,10 +130,10 @@ function SharePodCodes() {
 }
 
 /**
- * yCube dot codes (#224), in Label pods: only pods a code was read under,
- * each with the plant its code is (once the owner has said), else the shared
- * table's plant as a known code (#259), else the pod record's plant as a
- * guess. Confirm or correct saves the owner's own code → plant pair;
+ * yCube dot codes (#224), a card in Teach: only pods a code was read under,
+ * one compact row each, with the plant its code is (once the owner has said),
+ * else the shared table's plant as a known code (#259), else the pod record's
+ * plant as a guess. ✓ or fix saves the owner's own code → plant pair;
  * it never changes a pod's record or a plan. Read codes takes a full-size
  * still on each camera, which is slow on a Pi Zero.
  */
@@ -136,21 +149,25 @@ export function PodCodes() {
   const suggestions = [...new Set([...data.pods.flatMap(p => [p.recorded, p.shared].filter(x => x !== null)), ...data.pairs.map(p => p.plant)])].sort()
   const newest = data.pods.reduce<string | null>((a, p) => (a && a > p.ts ? a : p.ts), null)
   const failed = read.data?.filter(r => r.error)
+  const waiting = codesWaiting(data.pods)
   return (
-    <section className="flex flex-col gap-2 rounded-[10px] border border-line p-3" aria-label="Pod codes">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-auto flex min-w-0 flex-col gap-[3px]">
-          <span className="flex items-center gap-1.5 text-[13px] font-medium">
-            <ScanLine size={14} className="text-fg-3" />
-            Pod codes
-          </span>
-          <span className="text-xs text-fg-3">
-            {newest ? `The dots under each yCube, read ${fmtStamp(newest)}. Confirm or correct what each code is; that teaches the unit, and changes no pod or plan.` : 'The dots under each yCube say what it is. Read them from full-size stills, then confirm what each code is.'}
-          </span>
+    <section className="flex flex-col gap-2 rounded-[12px] border border-line p-3.5" aria-label="Pod codes">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <span className="mr-auto flex items-center gap-1.5 text-sm font-medium">
+          <ScanLine size={14} className="self-center text-fg-3" />
+          Pod codes
         </span>
-        {data.pairs.length > 0 && <Button size="sm" icon={Share2} aria-expanded={sharing} onClick={() => setSharing(v => !v)}>Share pod codes</Button>}
-        {data.available && <Button size="sm" icon={ScanLine} disabled={read.isPending} onClick={() => read.mutate()}>{read.isPending ? 'Reading…' : 'Read codes'}</Button>}
+        <span className="font-mono text-[11px] text-fg-3">{[waiting > 0 && `${waiting} to confirm`, newest && `read ${fmtStamp(newest)}`].filter(Boolean).join(' · ')}</span>
       </div>
+      <span className="text-xs text-fg-3">
+        {newest ? 'Confirm or fix what each code is: that teaches the unit, and changes no pod or plan.' : 'The dots under each yCube say what it is. Read them from full-size stills, then confirm what each code is.'}
+      </span>
+      {(data.available || data.pairs.length > 0) && (
+        <div className="flex flex-wrap gap-1.5">
+          {data.available && <Button size="sm" icon={ScanLine} disabled={read.isPending} onClick={() => read.mutate()}>{read.isPending ? 'Reading…' : 'Read codes'}</Button>}
+          {data.pairs.length > 0 && <Button size="sm" icon={Share2} aria-expanded={sharing} onClick={() => setSharing(v => !v)}>Share pod codes</Button>}
+        </div>
+      )}
       {sharing && data.pairs.length > 0 && <SharePodCodes />}
       {data.pods.length > 0
         ? (

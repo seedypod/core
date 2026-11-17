@@ -19,6 +19,7 @@ import { LabelPods } from './LabelPods'
 import { LeafCover } from './LeafCover'
 import { PodBounds } from './PodBounds'
 import { PodCard, PodHits, stateGuess, type Pod, type Reading, type Trend } from './PodCard'
+import { teachSummary, useTeachQueue } from './TeachQueue'
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
 const key = (a: { analyzer: string, version: number }) => `${a.analyzer}@${a.version}`
@@ -85,6 +86,8 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
   const [slot, setSlot] = useState(0)
   const latest = [useLatest('upper'), useLatest('lower')]
   const calibration = useCalibration()
+  const queue = useTeachQueue({ upper: latest[0]?.frame, lower: latest[1]?.frame }, calibration.boxes)
+  const labelStats = trpc.vision.labelStats.useQuery()
   // A link to another tab while the page is open switches to it.
   const [lastAsked, setLastAsked] = useState(asked)
   if (asked !== lastAsked) {
@@ -135,9 +138,16 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
         <div className="flex min-w-[200px] flex-1 flex-col gap-2.5">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h1 className="text-2xl font-semibold">Analysis</h1>
-            <p className="text-[13px] text-fg-2">How leaf cover is measured from camera frames</p>
+            {tab === 'teach' && labelStats.data
+              ? (
+                  // How the labels were saved stays a hover away; the subtitle is how often the suggestions were right.
+                  <p className="text-[13px] text-fg-2" title={`${labelStats.data.sources.picked} picked · ${labelStats.data.sources.accepted} accepted · ${labelStats.data.sources.corrected} corrected`} data-testid="teach-summary">
+                    {teachSummary(labelStats.data)}
+                  </p>
+                )
+              : <p className="text-[13px] text-fg-2">How leaf cover is measured from camera frames</p>}
           </div>
-          <Tabs value={tab} onChange={setTab} />
+          <Tabs value={tab} onChange={setTab} waiting={queue.total} />
         </div>
         {tab === 'teach' && <Button icon={Download} className="px-3 py-[7px]" onClick={() => setExporting(true)}>Export dataset</Button>}
       </div>
@@ -169,7 +179,11 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
         <div role="tabpanel" id="analysis-teach" aria-labelledby="analysis-tab-teach" className="flex flex-col gap-6">
           <LabelPods
             boxes={calibration.boxes}
-            onEditBoxes={() => document.getElementById('pod-bounds')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+            boxesOff={queue.boxes}
+            onEditBoxes={() => {
+              if (!calibration.draft) calibration.edit()
+              document.getElementById('pod-bounds')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+            }}
           />
           <Panel id="pod-bounds">
             <div className="flex flex-wrap items-center gap-2.5">
@@ -206,8 +220,8 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
   )
 }
 
-/** Pods, Teach and Methods, as underlined tabs over the page. */
-function Tabs({ value, onChange }: { value: AnalysisTab, onChange: (t: AnalysisTab) => void }) {
+/** Pods, Teach and Methods, as underlined tabs over the page; Teach counts what waits on the grower. */
+function Tabs({ value, onChange, waiting }: { value: AnalysisTab, onChange: (t: AnalysisTab) => void, waiting: number }) {
   return (
     <div role="tablist" aria-label="Analysis sections" className="flex gap-[22px] text-sm">
       {TABS.map(t => (
@@ -222,6 +236,12 @@ function Tabs({ value, onChange }: { value: AnalysisTab, onChange: (t: AnalysisT
           onClick={() => onChange(t.value)}
         >
           {t.label}
+          {t.value === 'teach' && waiting > 0 && (
+            <>
+              <span aria-hidden data-testid="teach-count" className={cn('ml-1 rounded-lg px-1.5 py-px font-mono text-[10px] font-medium', value === t.value ? 'bg-fg text-inverse' : 'bg-active text-fg')}>{waiting}</span>
+              <span className="sr-only">{`, ${waiting} waiting`}</span>
+            </>
+          )}
         </button>
       ))}
     </div>

@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight, Eraser, Tag } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button, GhostIcon, InlineError } from '@/src/components/ds/core'
 import { Pill, SegmentedControl } from '@/src/components/ds/forms'
@@ -11,6 +11,7 @@ import { apiBase, trpc } from '@/src/utils/trpc'
 import type { PodRegions } from '@/src/vision/regions'
 import { PodCodes } from './PodCodes'
 import { PodOrder } from './PodOrder'
+import { BoundsCard, SuggestionsCard, type BoxOff } from './TeachQueue'
 
 type Camera = 'upper' | 'lower'
 type Shown = Camera | 'both'
@@ -103,7 +104,7 @@ function LabelChips({ value, onPick, clear, counts, ariaLabel }: { value: Brush 
 }
 
 /** What a suggestion's tooltip says to do when the pod can't be seen, or the box isn't on one. */
-export const NOT_VISIBLE = 'Not visible here? Pick Clear and tap to dismiss the suggestion on this photo. A box that doesn\'t sit on a pod should be moved in Analysis → Latest photos → Pod bounds → Edit boxes.'
+export const NOT_VISIBLE = 'Not visible here? Pick Clear and tap to dismiss the suggestion on this photo. A box that doesn\'t sit on a pod should be moved in Analysis → Teach → Pod bounds → Adjust boxes.'
 
 /** One camera's still with a tappable box per pod: solid when labelled, dashed with `?` when only suggested. */
 function Photo({ camera, frame, regions, labelOf, suggestionOf, dismissedOf, onTap, compact, empty }: {
@@ -181,9 +182,12 @@ function Photo({ camera, frame, regions, labelOf, suggestionOf, dismissedOf, onT
 
 /**
  * Tag what each pod shows in a capture (#184), the ground truth a pod
- * classifier is trained on (ADR-0019). Each pod may carry a suggestion (#261),
- * dashed with a `?`: with no label picked, a tap accepts it, and Accept the
- * rest accepts every remaining one on a photo. Pick a label, then tap pods:
+ * classifier is trained on (ADR-0019), as Teach's queue: one photo with the
+ * label chips over it, and beside it the cards of what waits on the grower
+ * (the photo's suggestions, pod codes, pods out of order, and the boxes).
+ * Each pod may carry a suggestion (#261), dashed with a `?`: with no label
+ * picked, a tap accepts it, and Accept all accepts every one shown on the
+ * photo. Pick a label, then tap pods:
  * one tap sets it (correcting any suggestion), tapping a pod that already has
  * it (or tapping with Clear) clears it, and a pod can be retagged at any time.
  * Clear on a pod with only a suggestion dismisses it on that photo (the pod
@@ -193,12 +197,15 @@ function Photo({ camera, frame, regions, labelOf, suggestionOf, dismissedOf, onT
  * crop, to check, change or remove. Labels go into the dataset export with
  * each pod's crop.
  */
-export function LabelPods({ boxes, onEditBoxes }: {
+export function LabelPods({ boxes, onEditBoxes, boxesOff = [] }: {
   boxes: (camera: Camera) => PodRegions
   /** Show the pod boxes to edit, for a box that isn't on a pod. */
   onEditBoxes?: () => void
+  /** The boxes that look off their pod, for the Pod bounds card. */
+  boxesOff?: BoxOff[]
 }) {
   const utils = trpc.useUtils()
+  const figure = useRef<HTMLElement>(null)
   const [tab, setTab] = useState<Tab>('tag')
   const [shown, setShown] = useState<Shown>('upper')
   const [index, setIndex] = useState(0)
@@ -309,7 +316,13 @@ export function LabelPods({ boxes, onEditBoxes }: {
   const acceptRest = (camera: Camera, frame: Frame) => {
     const slots = rest(camera)
     setLocal(m => ({ ...m, ...Object.fromEntries(slots.map(s => [`${frame.id}#${s}`, (suggestionOf(camera, s) as Hint).label])) }))
-    accept.mutate({ captureId: frame.id })
+    // Only the pods shown: a removed box's pod has a suggestion but nothing to see.
+    accept.mutate({ captureId: frame.id, slots })
+  }
+  /** Review one by one: no label picked, so a tap accepts, starting at the first dashed pod. */
+  const review = () => {
+    setBrush(null)
+    figure.current?.querySelector<HTMLElement>('[data-suggested]')?.focus()
   }
   const go = (i: number) => {
     setIndex(i)
@@ -331,7 +344,7 @@ export function LabelPods({ boxes, onEditBoxes }: {
   const done = slots.filter(([c, s]) => labelOf(c, s) !== null).length
   const counts = stats.data?.counts
   const total = stats.data?.pods ?? 0
-  const tally = stats.data
+  const shownHints = pictured.flatMap(c => rest(c).map(s => suggestionOf(c, s) as Hint))
   // A capture opened from All labels that is gone: say so rather than show another one silently.
   const missed = beyond && !!fetched.error
 
@@ -363,32 +376,10 @@ export function LabelPods({ boxes, onEditBoxes }: {
       {tab === 'all'
         ? <AllLabels boxes={boxes} counts={counts} total={total} onOpen={open} />
         : (
-            <>
-              <div className="flex flex-col gap-1.5">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+              <figure ref={figure} className="m-0 flex min-w-0 flex-col gap-2.5">
                 <LabelChips ariaLabel="Label to apply" value={brush} onPick={b => setBrush(brush === b ? null : b)} clear counts={counts ?? EMPTY_COUNTS} />
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-3">
-                  <span className="flex-1">
-                    {'Tap a dashed pod with no label picked to accept its suggestion. Pick a label and tap pods to set it; tap again with the same label, or use Clear, to remove it. Clear also removes a suggestion from a pod that can\'t be seen, on that photo only; tap again with Clear to bring it back.'}
-                    {onEditBoxes && (
-                      <>
-                        {' '}
-                        <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-fg-2 underline hover:text-fg" onClick={onEditBoxes}>Box not on a pod? Move it in Pod bounds</button>
-                      </>
-                    )}
-                  </span>
-                  <span className="font-mono text-[11px]">{`${total} pod${total === 1 ? '' : 's'} labelled`}</span>
-                </div>
-                {tally?.sources && (
-                  // How the labels were saved, and how often each suggester was right on the reviewed ones.
-                  <span className="font-mono text-[11px] text-fg-3" data-testid="label-sources">
-                    {`${tally.sources.picked} picked · ${tally.sources.accepted} accepted · ${tally.sources.corrected} corrected`}
-                    {tally.suggesters.map(s => ` · ${s.by} ${Math.round(s.right * 100)}% right`).join('')}
-                  </span>
-                )}
-              </div>
-
-              <figure className="m-0 flex min-w-0 flex-col gap-1.5">
-                <div className={cn('grid grid-cols-1 gap-3', cameras.length > 1 && 'md:grid-cols-2')}>
+                <div className={cn('grid grid-cols-1 gap-3', cameras.length > 1 && 'sm:grid-cols-2')}>
                   {cameras.map(c => (
                     <div key={c} className="flex min-w-0 flex-col gap-1">
                       {shown === 'both' && (
@@ -408,35 +399,38 @@ export function LabelPods({ boxes, onEditBoxes }: {
                         compact={!single}
                         empty={single || !moment ? 'No photos from this camera yet.' : `No ${c} still this round.`}
                       />
-                      {frames[c] && rest(c).length > 0 && (
-                        <Button size="sm" variant="ghost" className="self-start px-2 py-1" aria-label={`Accept the rest on the ${c} photo`} disabled={accept.isPending} onClick={() => acceptRest(c, frames[c] as Frame)}>
-                          {`Accept the rest (${rest(c).length})`}
-                        </Button>
-                      )}
                     </div>
                   ))}
                 </div>
-                <figcaption className="flex items-center gap-2 text-xs text-fg-3">
+                <figcaption className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-3">
                   <GhostIcon icon={ChevronLeft} label="Older photo" disabled={!moment || !!pinned || step >= steps.length - 1} onClick={() => go(step + 1)} />
-                  <span className="min-w-0 flex-1 text-center">
-                    {moment && pictured.length
-                      ? (
-                          <>
-                            <span className="font-mono text-[11px]">{fmtStamp(moment)}</span>
-                            <span>{` · ${done} of ${slots.length} pods labelled`}</span>
-                          </>
-                        )
-                      : '—'}
+                  <span className="font-mono text-[11px]">
+                    {moment && pictured.length ? `${fmtStamp(moment)} · ${single ?? 'both'} · ${done} of ${slots.length} labelled` : '—'}
                   </span>
                   {/* From a capture older than the history, newer is the history's oldest. */}
                   <GhostIcon icon={ChevronRight} label="Newer photo" disabled={!pinned && step === 0} onClick={() => go(pinned ? steps.length - 1 : step - 1)} />
+                  <span className="ml-auto">
+                    {brush === null ? 'Tap a dashed pod to accept it' : brush === 'clear' ? 'Tap a pod to take its label off, or dismiss its suggestion on this photo' : `Tap a pod to set ${name(brush)}`}
+                    {' · dashed = suggestion'}
+                  </span>
                 </figcaption>
-                {pinned && <span className="text-center text-xs text-fg-3">{`Older than the last ${HISTORY} photos: the arrows go back to them.`}</span>}
-                {missed && <span className="text-center text-xs text-fg-3">That photo is no longer kept, so the newest is shown.</span>}
+                {pinned && <span className="text-xs text-fg-3">{`Older than the last ${HISTORY} photos: the arrows go back to them.`}</span>}
+                {missed && <span className="text-xs text-fg-3">That photo is no longer kept, so the newest is shown.</span>}
               </figure>
-              <PodOrder />
-              <PodCodes />
-            </>
+              <div className="flex min-w-0 flex-col gap-2.5">
+                <SuggestionsCard
+                  hints={shownHints}
+                  suggesters={stats.data?.suggesters}
+                  photos={pictured.length}
+                  pending={accept.isPending}
+                  onAccept={() => pictured.forEach(c => rest(c).length > 0 && acceptRest(c, frames[c] as Frame))}
+                  onReview={review}
+                />
+                <PodCodes />
+                <PodOrder />
+                {onEditBoxes && <BoundsCard off={boxesOff} onAdjust={onEditBoxes} />}
+              </div>
+            </div>
           )}
       {set.error && <InlineError>{set.error.message}</InlineError>}
       {accept.error && <InlineError>{accept.error.message}</InlineError>}
