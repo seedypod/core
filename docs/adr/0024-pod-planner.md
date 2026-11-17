@@ -38,10 +38,25 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
 - **One grid.** The planner reads pod zones from `lightZones.ts`; it has no
   grid of its own. The nursery (10 pods, no zones) is the only planner-only
   model.
-- **Layout** (`src/plants/planner.ts`) follows Gardyn's rules literally: ideal
-  zone, else step down one zone, never up; never substitute another plant; on
-  a Home, cucumbers take the bottom of the middle column; large plants avoid
-  neighbouring large plants. What does not fit is reported, not dropped.
+- **Layout** (`src/plants/planner.ts`) follows Gardyn's rules: ideal zone
+  first, else a zone the plant tolerates (below); never substitute another
+  plant; on a Home, cucumbers take the bottom of the middle column; large
+  plants avoid neighbouring large plants. What does not fit is reported, not
+  dropped.
+- **Zone tolerance** (2026-11-17): owners find plants less strict than one
+  fixed fallback, and pods move easily. Each plant carries `tolerates`, the
+  zones beyond its ideal where it does acceptably, each with a cost
+  (`src/plants/tolerance.ts`, knowledge/plants/zone-tolerance.md): one zone
+  lower for every plant (cost 1, Gardyn's rule) except below medium for
+  fruiting plants, and one zone higher (cost 2, 3 for large plants) for
+  herbs, flowers and legumes, never for lettuces, leafy greens or
+  vegetables. Custom plants take their category's default or name their own.
+  Every plant still gets its ideal zone before any falls back; a plant that
+  falls back takes the slot with the lowest zone cost × 25 plus shade
+  penalty × 10, so one lower still comes first and crowding can tip it.
+  Such a placement has `fit: 'ok'` and reads "ok here"; only a pin outside
+  the plant's tolerated and allowed zones is `outside` and outlined on the
+  Plan screen. A pin's reason reads "you placed it here", with the zone.
 - **Sowing**: the next yCube of a plant starts at the previous one's
   first-harvest month plus its succession group's gap (10, 21, 31 or 56
   days); flowers and "all now" mode sow together.
@@ -52,21 +67,22 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   (`plant_catalog`, `planner_zones`, `plan_layout`, `best_spot`, `save_plan`,
   `apply_plan`), on the Plan screen, and as a Home Assistant reminder.
 - **Explaining what did not fit** (#127): every plant gets its ideal zone
-  before any plant falls back, and a fallback is exactly one zone lower. Each
+  before any plant falls back (to a zone it tolerates, since 2026-11-17). Each
   assignment's `shift` says whether it sits lower or higher than its ideal
-  zone (higher only by the caller's allowed zones), and the Plan screen
-  outlines and captions the two apart. A
+  zone, and the Plan screen outlines and captions the two apart for pods
+  outside the zones their plant tolerates. A
   layout carries a per-zone summary (rows, slots, planted, planned, free); each
   unplaced plant carries a code, the zones it could use and the pods in them;
   and suggestions name a pod to relocate to a slot its plant tolerates, or
-  offer to allow one zone further down, or (for herbs, flowers and legumes,
-  never lettuces, leafy greens or vegetables, which bolt) the nearest brighter
-  zone with free pods. Callers can pin pods to slots or set a
+  offer to allow one zone further down than it tolerates, or (for herbs,
+  flowers and legumes, never lettuces, leafy greens or vegetables, which
+  bolt) the nearest brighter zone beyond its tolerance with free pods. Callers can pin pods to slots or set a
   plant's allowed zones; each suggestion carries the overrides that carry it
   out, and a saved plan keeps the overrides it was computed with.
 - **Custom plants** (#130): crops missing from Gardyn's list can be added on
   the unit (name, category, light zone, first-harvest window, care level,
-  size; the succession group defaults from the category). They live in the
+  size, zones it also does ok in; the succession group and those zones
+  default from the category). They live in the
   `custom_plants` table, so they travel in the database backup (ADR 0021),
   and are merged after the built-in plants for the catalog, layouts, best
   spots and sowing. Built-in plants stay read-only. Exposed as

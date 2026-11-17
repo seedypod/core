@@ -82,7 +82,7 @@ describe('planner router', () => {
     await client.connect(b)
     const body = async (name: string, args: Record<string, unknown> = {}) => JSON.parse((((await client.callTool({ name, arguments: args })).content) as Array<{ text: string }>)[0]?.text ?? 'null') as Record<string, unknown>
     const tools = (await client.listTools()).tools
-    expect(tools.find(t => t.name === 'plan_layout')?.description).toMatch(/one zone lower \(never two, never up\)/)
+    expect(tools.find(t => t.name === 'plan_layout')?.description).toMatch(/zone it tolerates .*one zone lower for most plants, as Gardyn advises/)
     const zones = await body('planner_zones', { model: 'studio' })
     expect(zones).toMatchObject({ model: 'studio', counts: { high: 5, medium: 9, low: 2 }, rules: expect.stringMatching(/centre-most/) })
 
@@ -93,7 +93,8 @@ describe('planner router', () => {
     const again = await body('plan_layout', { model: 'home', plants, overrides: allow?.overrides }) as unknown as PlanResult
     expect(again.unplaced).toEqual([])
     const saved = await body('save_plan', { id: 'm1', name: 'Hot', model: 'home', plants, overrides: { pins: [{ slot: 1, plantId: 'jalapeno' }] } }) as unknown as { layout: PlanResult }
-    expect(saved.layout.assignments.find(x => x.slot === 1)).toMatchObject({ plantId: 'jalapeno', reason: 'pinned to pod 1 by the caller (low light; ideal high)' })
+    expect(saved.layout.assignments.find(x => x.slot === 1)).toMatchObject({ plantId: 'jalapeno', fit: 'outside', reason: 'you placed it here — low light, outside the zones it does well in (ideal high)' })
+
     await client.close()
   })
 })

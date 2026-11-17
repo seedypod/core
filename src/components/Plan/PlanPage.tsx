@@ -48,30 +48,35 @@ function savedView(): View {
 }
 
 interface Slot { slot: number, zone: string | null }
-interface Assignment { slot: number, plantId: string, plantName: string, reason: string, fallback: number, shift?: 'lower' | 'higher' | null }
+interface Assignment { slot: number, plantId: string, plantName: string, reason: string, fallback: number, shift?: 'lower' | 'higher' | null, fit?: 'ideal' | 'ok' | 'outside' }
 interface Planted { slot: number, status: PodStatus, plant: string | null, seenEmpty?: boolean }
 
-/** Outlines a pod placed away from its ideal zone: solid amber below it (less light), dashed above it (more light). */
+/** Outlines a pod placed outside the zones its plant does well in: solid amber below them (less light), dashed above them (more light). */
 const SHIFT_OUTLINE = { lower: 'outline outline-1 outline-[var(--status-warn)]', higher: 'outline-dashed outline-1 outline-[var(--accent-light)]' }
 
+/** Which way a pod sits outside the zones its plant does well in; null when it is in its ideal zone or ok where it is. */
+function offZone(a: Assignment | undefined): 'lower' | 'higher' | null {
+  return a?.fit === 'outside' ? a.shift ?? null : null
+}
+
 /**
- * What the caption says about pods away from their ideal zone, lower and
- * higher apart: "one zone lower" is Gardyn's own fallback; anything further,
- * or higher, is a zone the plan allowed for that plant.
+ * What the caption says about pods outside the zones their plant does well
+ * in, lower and higher apart. Pods in a zone their plant tolerates are ok
+ * there and go unmentioned.
  */
 export function shiftNotes(assignments: Assignment[], view: '2d' | '3d'): string {
-  const lower = assignments.filter(a => a.shift === 'lower')
-  const higher = assignments.some(a => a.shift === 'higher')
-  const lowerText = lower.every(a => a.fallback === 1) ? 'one zone lower than ideal — Gardyn’s rule when the ideal zone is full' : 'lower than ideal — Gardyn’s rule when the ideal zone is full, or zones allowed for them'
-  const higherText = 'higher than ideal, in more light, in a zone allowed for them'
+  const lower = assignments.some(a => offZone(a) === 'lower')
+  const higher = assignments.some(a => offZone(a) === 'higher')
+  const lowerText = 'lower than the zones their plant does well in, so expect slower growth'
+  const higherText = 'higher than the zones their plant does well in, in more light than it likes'
   if (view === '2d') {
     return [
-      lower.length ? ` Outlined pods sit ${lowerText}.` : '',
+      lower ? ` Outlined pods sit ${lowerText}.` : '',
       higher ? ` Dashed outlines sit ${higherText}.` : '',
     ].join('')
   }
   return [
-    lower.length ? ` Some sit ${lowerText}.` : '',
+    lower ? ` Some sit ${lowerText}.` : '',
     higher ? ` Some sit ${higherText}.` : '',
   ].join('')
 }
@@ -91,7 +96,7 @@ function placePins(assignments: readonly Assignment[], slot: number, plantId: st
 }
 
 /**
- * The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), pods away from their ideal zone outlined.
+ * The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), pods outside the zones their plant does well in outlined.
  * A tap opens the pod (`onOpen`); while a swap is being picked (`swapping`), it picks the other pod instead. A plant also drags onto another pod to swap them (`onSwap`).
  */
 function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwapping, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, open: number | null, swapping: number | null, onOpen: (slot: number) => void, onSwapping: (slot: number | null) => void, onSwap: (from: number, to: number) => void }) {
@@ -109,6 +114,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwap
         const ex = planted.get(s.slot)
         const z = (s.zone ?? 'medium') as Zone
         const plant = a?.plantName ?? ex?.plant ?? null
+        const off = offZone(a)
         return (
           <div
             key={s.slot}
@@ -140,7 +146,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwap
                 e.currentTarget.click()
               }
             }}
-            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', a?.shift ? SHIFT_OUTLINE[a.shift] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3')}
+            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3')}
             style={zoneStyle(z)}
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >

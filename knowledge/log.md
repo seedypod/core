@@ -1,5 +1,9 @@
 # Knowledge update log
 
+## 2026-11-17
+
+- **Creation**: [Zone tolerance](plants/zone-tolerance.md), the zones beyond its ideal one a plant does acceptably in, by category, and their costs to the pod planner: Gardyn's one-zone-lower rule first, one higher too for herbs, flowers and legumes, never below medium for fruiting plants.
+
 ## 2026-11-16
 
 - **Creation**: [Pump dry and air-lock trace](operations/pump-dry-trace-2026-11-16.md), the supervised dry run (#220): 0.55–0.71 A dry vs 0.93 A wet, a ~70 s air lock after re-submerging that cleared by itself, pointing to a 0.80 A cutoff and a grace of at least 3000 ms.

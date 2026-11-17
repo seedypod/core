@@ -168,8 +168,11 @@ for (const [name, make] of impls) {
 
     it('custom plants upsert by id keeping createdAt, list oldest first, and remove', () => {
       store = make()
-      const shiso = { id: 'purple-shiso', name: 'Purple Shiso', category: 'herb' as const, zone: 'medium' as const, harvestMonths: [2, 3] as [number, number], careLevel: null, size: 'normal' as const, succession: 'long-greens-herbs' as const, source: 'user' as const }
+      const shiso = { id: 'purple-shiso', name: 'Purple Shiso', category: 'herb' as const, zone: 'medium' as const, harvestMonths: [2, 3] as [number, number], careLevel: null, size: 'normal' as const, succession: 'long-greens-herbs' as const, tolerates: null, source: 'user' as const }
       expect(store.customPlants.upsert(shiso, 't1')).toEqual({ ...shiso, createdAt: 't1', updatedAt: 't1' })
+      expect(store.customPlants.upsert({ ...shiso, id: 'lovage', name: 'Lovage', tolerates: ['low', 'high'] }, 't1').tolerates).toEqual(['low', 'high'])
+      expect(store.customPlants.remove('lovage')).toBe(true)
+
       store.customPlants.upsert({ ...shiso, id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', size: 'large', succession: 'fast-fruiting', careLevel: 'expert' }, 't2')
       const again = store.customPlants.upsert({ ...shiso, name: 'Shiso', harvestMonths: [1, 2], source: 'agent' }, 't3')
       expect(again).toMatchObject({ id: 'purple-shiso', name: 'Shiso', harvestMonths: [1, 2], source: 'agent', createdAt: 't1', updatedAt: 't3' })

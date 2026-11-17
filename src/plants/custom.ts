@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import type { CustomPlant, Store } from '../store/types'
 import { type Catalog, Category, makeCatalog, type Plant, Succession, Zone } from './catalog'
+import { defaultTolerance, toleranceIn } from './tolerance'
 
 const Months = z.number().int().min(0).max(24)
 
@@ -19,10 +20,12 @@ const fields = {
   /** 'large' plants shade neighbours, so the planner spaces them apart. */
   size: z.enum(['large', 'normal']),
   succession: Succession,
+  /** Zones beyond its ideal where it still does acceptably; null takes its category's default (src/plants/tolerance.ts). */
+  tolerates: z.array(Zone).max(3).nullable(),
 }
 
-/** The fields a new custom plant is written with; `succession` defaults from its category. */
-export const CustomPlantFields = z.object({ ...fields, careLevel: fields.careLevel.default(null), size: fields.size.default('normal'), succession: fields.succession.optional() })
+/** The fields a new custom plant is written with; `succession` defaults from its category, `tolerates` from its category and zone. */
+export const CustomPlantFields = z.object({ ...fields, careLevel: fields.careLevel.default(null), size: fields.size.default('normal'), succession: fields.succession.optional(), tolerates: fields.tolerates.default(null) })
 
 /** An edit: only the fields given change. */
 export const CustomPlantPatch = z.object(fields).partial()
@@ -60,6 +63,7 @@ export function customToPlant(c: CustomPlant): Plant {
     gardynHandle: null,
     inStore: false,
     custom: true,
+    tolerates: c.tolerates ? toleranceIn(c.tolerates, c) : defaultTolerance(c),
   }
 }
 

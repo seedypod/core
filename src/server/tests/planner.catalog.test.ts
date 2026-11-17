@@ -57,7 +57,8 @@ describe('custom catalog plants', () => {
 
   it('serves custom plants to the catalog, layout, best spots, sowing and saved plans', async () => {
     const { c } = setup()
-    await c.planner.addPlant({ ...okra, name: 'Lovage', zone: 'low', category: 'herb', size: 'normal' })
+    // Herbs take one zone brighter by default; this lovage is kept to low.
+    await c.planner.addPlant({ ...okra, name: 'Lovage', zone: 'low', category: 'herb', size: 'normal', tolerates: [] })
     expect((await c.planner.catalog({ custom: true })).plants.map(p => p.id)).toEqual(['lovage'])
     expect((await c.planner.catalog({ q: 'basil' })).plants.every(p => !p.custom)).toBe(true)
     expect(await c.planner.plant({ id: 'lovage' })).toMatchObject({ name: 'Lovage', custom: true })
@@ -72,6 +73,10 @@ describe('custom catalog plants', () => {
     const plan = await c.planner.savePlan({ id: 'p', name: 'Lovage', model: 'home', mode: 'batch', plants: [{ plantId: 'lovage', count: 2 }] })
     expect(plan.layout.assignments.map(a => a.plantName)).toEqual(['Lovage', 'Lovage'])
     expect(plan.sowing).toHaveLength(2)
+
+    // Back to its category's default, it takes the medium zone too.
+    expect(await c.planner.updatePlant({ id: 'lovage', tolerates: null })).toMatchObject({ tolerates: [{ zone: 'medium', cost: 2 }] })
+    expect((await c.planner.layout({ model: 'home', plants: [{ plantId: 'lovage', count: 6 }], respectExisting: true })).assignments).toHaveLength(6)
   })
 
   it('lets an agent add, edit and remove plants over MCP and plan with them', async () => {
@@ -86,13 +91,16 @@ describe('custom catalog plants', () => {
       const body = ((r.content as Array<{ text: string }>)[0]?.text ?? '')
       return { error: !!r.isError, body: r.isError ? body : JSON.parse(body) as unknown }
     }
-    expect((await call('add_plant', { name: 'Okra', category: 'fruiting', zone: 'high', harvest_months: [2, 3], size: 'large', care_level: 'intermediate' })).body).toMatchObject({ id: 'okra', custom: true, careLevel: 'intermediate' })
-    expect((await call('add_plant', { name: 'Lovage', category: 'herb', zone: 'medium', harvest_months: [1, 2], succession: 'fast-greens' })).body).toMatchObject({ size: 'normal', careLevel: null, succession: 'fast-greens' })
+    expect((await call('add_plant', { name: 'Okra', category: 'fruiting', zone: 'high', harvest_months: [2, 3], size: 'large', care_level: 'intermediate' })).body).toMatchObject({ id: 'okra', custom: true, careLevel: 'intermediate', tolerates: [{ zone: 'medium', cost: 1 }] })
+    expect((await call('add_plant', { name: 'Lovage', category: 'herb', zone: 'medium', harvest_months: [1, 2], succession: 'fast-greens', tolerates: ['low'] })).body).toMatchObject({ size: 'normal', careLevel: null, succession: 'fast-greens', tolerates: [{ zone: 'low', cost: 1 }] })
+    expect(store.customPlants.get('lovage')?.tolerates).toEqual(['low'])
     expect(store.customPlants.get('okra')?.source).toBe('agent')
     expect((await call('plant_catalog', { custom: true })).body).toEqual([
       expect.objectContaining({ id: 'okra', custom: true, size: 'large', succession: 'long-fruiting' }),
-      expect.objectContaining({ id: 'lovage', custom: true }),
+      expect.objectContaining({ id: 'lovage', custom: true, tolerates: [{ zone: 'low', cost: 1 }] }),
     ])
+    expect((await call('update_plant', { id: 'lovage', tolerates: null })).body).toMatchObject({ tolerates: [{ zone: 'low', cost: 1 }, { zone: 'high', cost: 2 }] })
+
     expect((await call('update_plant', { id: 'okra', harvest_months: [2, 4], care_level: null })).body).toMatchObject({ harvestMonths: [2, 4], careLevel: null, size: 'large' })
     const layout = (await call('plan_layout', { model: 'home', plants: [{ plantId: 'okra', count: 2 }] })).body as { assignments: { slotZone: string }[] }
     expect(layout.assignments.map(x => x.slotZone)).toEqual(['high', 'high'])

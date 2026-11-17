@@ -195,6 +195,8 @@ export interface CustomPlant {
   /** 'large' plants shade neighbours; the planner spaces them apart. */
   size: 'large' | 'normal'
   succession: Succession
+  /** Zones beyond its ideal where it still does acceptably; null takes its category's default. */
+  tolerates?: Zone[] | null
   source: 'user' | 'agent'
   createdAt: string
   updatedAt: string

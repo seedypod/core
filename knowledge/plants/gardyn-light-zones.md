@@ -51,4 +51,4 @@ The side columns alternate high and medium because pods sit on alternating sides
 - Leave space between larger plants so they do not shade smaller ones, and move plants as they grow.
 - 14–16 hours of light daily.
 
-The grid in code is `src/components/Grow/lightZones.ts` (read off the same diagrams for the 3D tower's zone overlay); this measurement reproduces it pod for pod. The pod planner (`src/plants/planner.ts`, ADR 0024) builds on that grid and applies the rules above. Gardyn's cucumber note names the middle column, which only the Home has; on a Studio the cucumber goes by its zone.
+The grid in code is `src/components/Grow/lightZones.ts` (read off the same diagrams for the 3D tower's zone overlay); this measurement reproduces it pod for pod. The pod planner (`src/plants/planner.ts`, ADR 0024) builds on that grid and applies the rules above, with the one-zone-lower fallback widened per plant by its [zone tolerance](zone-tolerance.md). Gardyn's cucumber note names the middle column, which only the Home has; on a Studio the cucumber goes by its zone.

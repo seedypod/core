@@ -1,0 +1,1 @@
+ALTER TABLE `custom_plants` ADD `tolerates` text;

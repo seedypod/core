@@ -11,8 +11,8 @@ import { publicProcedure, router } from '../trpc'
 
 const Model = z.enum(['home', 'studio', 'nursery'])
 const Request = z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })).max(60)
-const Assignment = z.object({ slot: z.number(), row: z.number(), col: z.number(), slotZone: Zone.nullable(), plantId: z.string(), plantName: z.string(), wantZone: Zone, fallback: z.number(), shift: z.enum(['lower', 'higher']).nullable().optional(), reason: z.string() })
-/** Caller overrides: pin pods to slots, or let a plant use other zones than its ideal-or-one-lower. */
+const Assignment = z.object({ slot: z.number(), row: z.number(), col: z.number(), slotZone: Zone.nullable(), plantId: z.string(), plantName: z.string(), wantZone: Zone, fallback: z.number(), shift: z.enum(['lower', 'higher']).nullable().optional(), fit: z.enum(['ideal', 'ok', 'outside']).optional(), reason: z.string() })
+/** Caller overrides: pin pods to slots, or let a plant use other zones than its ideal one and those it tolerates. */
 export const Overrides = z.object({
   pins: z.array(z.object({ slot: z.number().int().min(1).max(60), plantId: z.string() })).max(60).optional(),
   allowedZones: z.record(z.string(), z.array(Zone).min(1).max(3)).optional(),
@@ -209,7 +209,7 @@ export const plannerRouter = router({
           seeded.push(a.slot)
         }
         else if (sowOn <= today) {
-          ctx.store.pods.update(a.slot, { plant: a.plantName, plantedAt: today, status: 'seeded', notes: `${a.reason}${a.fallback ? ' (zone fallback)' : ''}` }, now.toISOString())
+          ctx.store.pods.update(a.slot, { plant: a.plantName, plantedAt: today, status: 'seeded', notes: a.reason }, now.toISOString())
           seeded.push(a.slot)
         }
         else {

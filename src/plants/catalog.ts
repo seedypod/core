@@ -6,6 +6,7 @@
  */
 import { z } from 'zod'
 import raw from './catalog.json'
+import { defaultTolerance } from './tolerance'
 
 export const Zone = z.enum(['high', 'medium', 'low'])
 export type Zone = z.infer<typeof Zone>
@@ -38,18 +39,21 @@ export const Plant = z.object({
   inStore: z.boolean(),
   /** Added on this unit by a person or an agent (#130); built-in Gardyn plants are read-only. */
   custom: z.boolean().default(false),
+  /** Zones beyond its ideal where it still does acceptably, cheapest first, each with its cost to the planner (src/plants/tolerance.ts). */
+  tolerates: z.array(z.object({ zone: Zone, cost: z.number().int().min(1) })),
 })
 export type Plant = z.infer<typeof Plant>
 
 const Catalog = z.object({
   version: z.literal(1),
   sources: z.record(z.string(), z.string()),
-  plants: z.array(Plant),
+  plants: z.array(Plant.omit({ tolerates: true })),
 })
 
 const catalog = Catalog.parse(raw)
 
-export const PLANTS: readonly Plant[] = catalog.plants
+/** Gardyn's plants, each with the zone tolerance its category earns. */
+export const PLANTS: readonly Plant[] = catalog.plants.map(p => ({ ...p, tolerates: defaultTolerance(p) }))
 export const CATALOG_SOURCES = catalog.sources
 
 export interface PlantFilter {
