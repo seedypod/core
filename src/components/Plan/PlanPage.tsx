@@ -3,6 +3,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
+import { SwapBanner } from '@/src/components/Grow/SwapBanner'
 import { PLANNED_FORM, type PodStatus } from '@/src/components/Grow/towerLayout'
 import type { PodState } from '@/src/components/Grow/towerScene'
 import { TowerView } from '@/src/components/Grow/TowerView'
@@ -11,6 +12,7 @@ import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
 import { trpc } from '@/src/utils/trpc'
 import { CustomPlantDialog, type EditablePlant } from '@/src/components/Plan/CustomPlantDialog'
+import { PodPanel } from '@/src/components/Plan/PodPanel'
 import { SavedPlans } from '@/src/components/Plan/SavedPlans'
 import { SeenEmpty } from '@/src/components/Plan/SeenEmpty'
 import { Unplaced } from '@/src/components/Plan/Unplaced'
@@ -83,21 +85,25 @@ export function swapPins(assignments: readonly Assignment[], from: number, to: n
   return assignments.map(a => ({ slot: a.slot === from ? to : a.slot === to ? from : a.slot, plantId: a.plantId }))
 }
 
+/** Pins for every planned pod where it sits, with `slot` given `plantId` instead (or left empty), so the rest of the layout holds still. */
+function placePins(assignments: readonly Assignment[], slot: number, plantId: string | null): { slot: number, plantId: string }[] {
+  return [...assignments.filter(a => a.slot !== slot).map(a => ({ slot: a.slot, plantId: a.plantId })), ...(plantId ? [{ slot, plantId }] : [])]
+}
+
 /**
  * The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), pods away from their ideal zone outlined.
- * A plant drags onto another pod, or is tapped and then the other pod, to swap them (`onSwap`).
+ * A tap opens the pod (`onOpen`); while a swap is being picked (`swapping`), it picks the other pod instead. A plant also drags onto another pod to swap them (`onSwap`).
  */
-function PlanGrid({ cols, slots, bySlot, planted, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, onSwap: (from: number, to: number) => void }) {
-  const [picked, setPicked] = useState<number | null>(null)
+function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwapping, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, open: number | null, swapping: number | null, onOpen: (slot: number) => void, onSwapping: (slot: number | null) => void, onSwap: (from: number, to: number) => void }) {
   // The pod a drag is over, ringed so it's clear where the drop lands.
   const [over, setOver] = useState<number | null>(null)
   const swap = (from: number, to: number) => {
-    setPicked(null)
+    onSwapping(null)
     setOver(null)
     onSwap(from, to)
   }
   return (
-    <div data-testid="plan-grid" className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+    <div data-testid="plan-grid" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
       {slots.map((s) => {
         const a = bySlot.get(s.slot)
         const ex = planted.get(s.slot)
@@ -108,8 +114,8 @@ function PlanGrid({ cols, slots, bySlot, planted, onSwap }: { cols: number, slot
             key={s.slot}
             data-slot={s.slot}
             role="button"
-            tabIndex={a || ex || picked !== null ? 0 : -1}
-            aria-pressed={picked === s.slot}
+            tabIndex={0}
+            aria-pressed={open === s.slot}
             aria-label={`Pod ${s.slot}${plant ? `, ${plant}` : ''}${ex?.seenEmpty ? ', cameras see it empty' : ''}`}
             draggable={!!(a || ex)}
             onDragStart={e => e.dataTransfer.setData('text/plain', String(s.slot))}
@@ -123,14 +129,18 @@ function PlanGrid({ cols, slots, bySlot, planted, onSwap }: { cols: number, slot
               e.preventDefault()
               swap(Number(e.dataTransfer.getData('text/plain')), s.slot)
             }}
-            onClick={() => (picked === null ? (a || ex) && setPicked(s.slot) : swap(picked, s.slot))}
+            onClick={() => {
+              // A swap's plant lands here, so the panel follows it.
+              if (swapping !== null) swap(swapping, s.slot)
+              onOpen(s.slot)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
                 e.currentTarget.click()
               }
             }}
-            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', a?.shift ? SHIFT_OUTLINE[a.shift] : '', (a || ex) && 'cursor-grab', picked === s.slot && 'ring-2 ring-fg', over === s.slot && picked !== s.slot && 'ring-2 ring-fg-3')}
+            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', a?.shift ? SHIFT_OUTLINE[a.shift] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3')}
             style={zoneStyle(z)}
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >
@@ -181,6 +191,9 @@ export function PlanPage() {
   const [view, setView] = useState<View>(savedView)
   const [noWebGL, setNoWebGL] = useState(false)
   const [selected, setSelected] = useState<number | null>(null)
+  // The pod open beside the 2D grid, and the one whose swap is being picked.
+  const [open, setOpen] = useState<number | null>(null)
+  const [swapping, setSwapping] = useState<number | null>(null)
   const chooseView = (v: View) => {
     setView(v)
     try {
@@ -214,6 +227,7 @@ export function PlanPage() {
   })
   const remove = trpc.planner.removePlan.useMutation({ onSuccess: () => utils.planner.plans.invalidate() })
   const swapPods = trpc.grow.swapPods.useMutation({ onSuccess: () => utils.grow.invalidate() })
+  const updatePod = trpc.grow.updatePod.useMutation({ onSuccess: () => utils.grow.invalidate() })
 
   const total = request.reduce((s, r) => s + r.count, 0)
   // Pods the plan leaves empty: neither planted now nor planned.
@@ -240,7 +254,21 @@ export function PlanPage() {
       setEdited({ ...overrides, pins: overrides.pins.filter(p => p.plantId !== id || kept++ < count) })
     }
   }
+  // A pod in the tower takes the plant in its own record; any other is planned with it, counted in the picks, the rest of the layout pinned where it sits.
+  const plantAt = (slot: number, plantId: string | null) => {
+    if (planted.has(slot)) {
+      const plant = everything.data?.plants.find(p => p.id === plantId)
+      updatePod.mutate(plant ? { slot, plant: plant.name } : { slot, plant: null, plantedAt: null, status: 'empty', notes: '' })
+      return
+    }
+    const was = bySlot.get(slot)?.plantId ?? null
+    if (was === plantId) return
+    if (was) bump(was, -1)
+    if (plantId) bump(plantId, 1)
+    setEdited({ ...overrides, pins: placePins([...bySlot.values()], slot, plantId) })
+  }
   const shown: View = noWebGL ? '2d' : view
+  const openSlot = open === null ? undefined : zones.data?.slots.find(s => s.slot === open)
 
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-4">
@@ -255,6 +283,8 @@ export function PlanPage() {
               onChange={(m) => {
                 setModel(m)
                 setSelected(null)
+                setOpen(null)
+                setSwapping(null)
                 setEdited(undefined)
               }}
               options={[{ value: 'home', label: 'Home · 30' }, { value: 'studio', label: 'Studio · 16' }]}
@@ -282,7 +312,32 @@ export function PlanPage() {
             )}
           />
           <SeenEmpty slots={[...planted.values()].filter(p => p.seenEmpty && p.slot <= (zones.data?.slots.length ?? 0)).map(p => p.slot)} />
-          {zones.data && shown === '2d' && <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} onSwap={exchange} />}
+          {zones.data && shown === '2d' && (
+            <div className="mt-3 flex flex-col gap-3 min-[640px]:flex-row min-[640px]:items-start">
+              <div className="min-w-0 flex-1">
+                {swapping !== null && <SwapBanner slot={swapping} plant={bySlot.get(swapping)?.plantName ?? planted.get(swapping)?.plant} onCancel={() => setSwapping(null)} />}
+                <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} open={open} swapping={swapping} onOpen={setOpen} onSwapping={setSwapping} onSwap={exchange} />
+              </div>
+              {openSlot && (
+                <PodPanel
+                  key={openSlot.slot}
+                  slot={openSlot.slot}
+                  zone={(openSlot.zone ?? 'medium') as Zone}
+                  plant={bySlot.get(openSlot.slot)?.plantName ?? planted.get(openSlot.slot)?.plant ?? null}
+                  plantId={bySlot.get(openSlot.slot)?.plantId ?? everything.data?.plants.find(p => p.name === planted.get(openSlot.slot)?.plant)?.id ?? null}
+                  reason={bySlot.get(openSlot.slot)?.reason}
+                  planted={planted.has(openSlot.slot)}
+                  plants={everything.data?.plants ?? []}
+                  onPlant={id => plantAt(openSlot.slot, id || null)}
+                  onSwap={() => setSwapping(openSlot.slot)}
+                  onClose={() => {
+                    setOpen(null)
+                    setSwapping(null)
+                  }}
+                />
+              )}
+            </div>
+          )}
           {zones.data && shown === '3d' && (
             <div className="mt-3">
               <TowerView
@@ -300,11 +355,12 @@ export function PlanPage() {
             </div>
           )}
           {swapPods.error && <InlineError>{swapPods.error.message}</InlineError>}
+          {updatePod.error && <InlineError>{updatePod.error.message}</InlineError>}
           {noWebGL && <p className="mt-2 text-xs text-fg-3">The 3D tower needs WebGL, which this browser doesn&apos;t offer, so the plan is shown as a grid.</p>}
           <Unplaced unplaced={layout.data?.unplaced ?? []} suggestions={layout.data?.suggestions ?? []} />
           <p className="mt-2 text-[12px] text-fg-3">
             {shown === '2d'
-              ? `Drag a plant onto another pod, or tap one then the other, to swap them. Italic = in the tower now.${shiftNotes(layout.data?.assignments ?? [], '2d')}`
+              ? `Tap a pod to change its plant or swap it, or drag a plant onto another pod to swap them. Italic = in the tower now.${shiftNotes(layout.data?.assignments ?? [], '2d')}`
               : `Planned pods show their plant grown, ringed by light zone; click one for why it sits there, or drag one onto another pod to swap them.${shiftNotes(layout.data?.assignments ?? [], '3d')}`}
           </p>
         </Card>
@@ -382,6 +438,8 @@ export function PlanPage() {
           setOpened({ id: p.id, start: p.start, overrides: p.layout.overrides })
           setEdited(undefined)
           setSelected(null)
+          setOpen(null)
+          setSwapping(null)
           document.getElementById('plan-layout')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
         }}
         onApply={id => apply.mutate({ id })}

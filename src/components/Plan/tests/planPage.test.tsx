@@ -30,6 +30,10 @@ const { state, calls, invalidate } = vi.hoisted(() => ({
     seen: [] as number[],
     /** grow.updatePod refuses with this. */
     updateFails: null as string | null,
+    /** The catalog has not answered yet. */
+    catalogPending: false,
+    /** Every mutation reports this error. */
+    failure: null as null | string,
   },
   calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn(), swapPods: vi.fn(), updatePod: vi.fn() },
   invalidate: vi.fn(),
@@ -45,6 +49,7 @@ vi.mock('@/src/utils/trpc', async () => {
     useMutation: (o?: { onSuccess?: () => void }) => ({
       isPending: false,
       data: data?.(),
+      error: state.failure === null ? null : { message: state.failure },
       mutate: (input: unknown, m?: { onSuccess?: () => void }) => {
         fn(input)
         o?.onSuccess?.()
@@ -59,6 +64,7 @@ vi.mock('@/src/utils/trpc', async () => {
         zones: { useQuery: ({ model }: { model: Model }) => ({ data: state.loading ? undefined : { ...MODELS[model], slots: slots(model), counts: zoneCounts(model) } }) },
         catalog: { useQuery: (i: { q?: string, category?: string }) => {
           calls.catalog(i)
+          if (state.catalogPending) return { data: undefined }
           return { data: { plants: [...searchPlants(i as Parameters<typeof searchPlants>[0]).slice(0, 12), ...state.custom] } }
         } },
         layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[], overrides?: PlanOverrides }) => {
@@ -86,7 +92,15 @@ vi.mock('@/src/utils/trpc', async () => {
           const [pa, pb] = [at(a), at(b)]
           state.pods = [...state.pods.filter(p => p.slot !== a && p.slot !== b), { ...pb, slot: a }, { ...pa, slot: b }]
         }),
-        updatePod: { useMutation: () => ({
+        updatePod: { useMutation: (o?: { onSuccess?: () => void }) => ({
+          isPending: false,
+          error: state.failure === null ? null : { message: state.failure },
+          mutate: (i: { slot: number, plant?: string | null, status?: string }) => {
+            calls.updatePod(i)
+            const { slot, plant, status } = i
+            state.pods = state.pods.map(p => (p.slot === slot ? { ...p, ...(plant !== undefined && { plant }), ...(status && { status }) } : p))
+            o?.onSuccess?.()
+          },
           mutateAsync: async (i: { slot: number, plant: string | null, status: string }) => {
             calls.updatePod(i)
             if (state.updateFails) throw new Error(state.updateFails)
@@ -111,6 +125,8 @@ beforeEach(() => {
   state.podsPending = false
   state.seen = []
   state.updateFails = null
+  state.catalogPending = false
+  state.failure = null
   for (const f of [...Object.values(calls), invalidate]) f.mockReset()
   tower.props = null
   tower.unavailable = false
@@ -125,6 +141,12 @@ const add = (name: string) => fireEvent.click(screen.getByRole('button', { name:
 const search = (q: string) => fireEvent.change(screen.getByLabelText('Search plants'), { target: { value: q } })
 const flat = () => fireEvent.click(screen.getByRole('tab', { name: '2D' }))
 const towerPods = () => tower.props?.pods as PodState[]
+const panel = () => within(screen.getByRole('complementary'))
+// Taps a pod open, then Swap in its panel, so the next tap picks the pod to swap it with.
+const startSwap = (cell: HTMLElement) => {
+  fireEvent.click(cell)
+  fireEvent.click(panel().getByRole('button', { name: 'Swap' }))
+}
 
 describe('PlanPage', () => {
   it('shows the tower’s zones, the catalog, and how to start', () => {
@@ -264,7 +286,7 @@ describe('PlanPage', () => {
     expect(calls.removePlant).toHaveBeenCalledWith({ id: 'okra' })
   })
 
-  it('swaps two planned pods by tapping one then the other, or by dragging, without touching the pods', () => {
+  it('swaps two planned pods from one’s panel then a tap on the other, or by dragging, without touching the pods', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
     render(<PlanPage />)
     flat()
@@ -281,8 +303,13 @@ describe('PlanPage', () => {
 
     fireEvent.click(cell(basil))
     expect(cell(basil).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(panel().getByRole('button', { name: 'Swap' }))
+    expect(screen.getByTestId('swap-banner').textContent).toContain(`Pick the pod to swap pod ${basil} (Basil) with.`)
     fireEvent.click(cell(chives))
+    expect(screen.queryByTestId('swap-banner')).toBeNull()
     expect([slotOf('Basil'), slotOf('Chives')]).toEqual([chives, basil])
+    // The panel follows the plant to where it landed.
+    expect(screen.getByRole('complementary', { name: `Pod ${chives}` })).toBeTruthy()
     expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual(expect.arrayContaining([{ slot: chives, plantId: 'basil' }, { slot: basil, plantId: 'chives' }]))
 
     // Dragged back, the pod it's over ringed until the drop.
@@ -291,6 +318,15 @@ describe('PlanPage', () => {
     fireEvent.dragStart(cell(chives), { dataTransfer })
     fireEvent.dragOver(cell(basil), { dataTransfer })
     expect(cell(basil).className).toContain('ring-fg-3')
+    // Leaving another pod, or a drag let go of, clears the ring; leaving the ringed one does too.
+    fireEvent.dragLeave(cell(chives), { dataTransfer })
+    expect(cell(basil).className).toContain('ring-fg-3')
+    fireEvent.dragEnd(cell(chives), { dataTransfer })
+    expect(cell(basil).className).not.toContain('ring-fg-3')
+    fireEvent.dragOver(cell(basil), { dataTransfer })
+    fireEvent.dragLeave(cell(basil), { dataTransfer })
+    expect(cell(basil).className).not.toContain('ring-fg-3')
+    fireEvent.dragOver(cell(basil), { dataTransfer })
     fireEvent.drop(cell(basil), { dataTransfer })
     expect(cell(basil).className).not.toContain('ring-fg-3')
     expect([slotOf('Basil'), slotOf('Chives')]).toEqual([basil, chives])
@@ -316,8 +352,8 @@ describe('PlanPage', () => {
     rerender(<PlanPage />)
     expect([slotOf('Oregano'), slotOf('Italian Parsley')]).toEqual([5, 4])
 
-    // Tapped back onto an empty pod: the record moves there.
-    fireEvent.click(cell(5))
+    // Swapped from its panel onto an empty pod: the record moves there.
+    startSwap(cell(5))
     fireEvent.click(cell(30))
     expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 5, b: 30 })
     rerender(<PlanPage />)
@@ -335,7 +371,7 @@ describe('PlanPage', () => {
     expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual([{ slot: 30, plantId: 'basil' }])
   })
 
-  it('swaps from the keyboard, moves a plant to a free pod, and lets go of a pod tapped twice', () => {
+  it('opens a pod from the keyboard, moves a plant to a free pod, and lets go of a swap tapped back on its own pod', () => {
     render(<PlanPage />)
     flat()
     search('basil')
@@ -346,18 +382,142 @@ describe('PlanPage', () => {
     const basil = slotOf('Basil')
     const free = basil === 30 ? 29 : 30
 
+    startSwap(cell(basil))
     fireEvent.click(cell(basil))
-    fireEvent.click(cell(basil))
-    expect(cell(basil).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.queryByTestId('swap-banner')).toBeNull()
+    expect(slotOf('Basil')).toBe(basil)
 
-    fireEvent.keyDown(cell(basil), { key: 'Enter' })
+    fireEvent.keyDown(cell(free), { key: 'Enter' })
+    expect(cell(free).getAttribute('aria-pressed')).toBe('true')
+    expect(panel().getByText('Nothing planned here.')).toBeTruthy()
+    fireEvent.keyDown(cell(basil), { key: ' ' })
     expect(cell(basil).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(panel().getByRole('button', { name: 'Swap' }))
     fireEvent.keyDown(cell(free), { key: ' ' })
     expect(slotOf('Basil')).toBe(free)
     expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual([{ slot: free, plantId: 'basil' }])
     // Another key does nothing.
-    fireEvent.keyDown(cell(free), { key: 'a' })
-    expect(cell(free).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.keyDown(cell(basil), { key: 'a' })
+    expect(cell(basil).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('opens a planned pod with why it sits there, changes its plant or takes it out of the plan, holding the rest still', () => {
+    render(<PlanPage />)
+    flat()
+    search('basil')
+    add('Basil')
+    add('Basil')
+    const grid = within(screen.getByTestId('plan-grid'))
+    const cells = grid.getAllByText('Basil').map(n => Number(n.closest('[data-slot]')?.getAttribute('data-slot')))
+    const [one, two] = cells as [number, number]
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    fireEvent.click(cell(one))
+    const pod = within(screen.getByRole('complementary', { name: `Pod ${one}` }))
+    expect(pod.getByText('Basil', { selector: 'div' })).toBeTruthy()
+    expect(pod.getByText(/^Planned: .+\.$/)).toBeTruthy()
+    expect((pod.getByLabelText('Plant') as HTMLSelectElement).value).toBe('basil')
+    // Plants suited to the pod's light come first.
+    expect(pod.getByRole('group', { name: /^Suits (high|medium|low) light$/ })).toBeTruthy()
+
+    fireEvent.change(pod.getByLabelText('Plant'), { target: { value: 'arugula' } })
+    expect(calls.layout.mock.lastCall?.[0].plants).toEqual(expect.arrayContaining([{ plantId: 'basil', count: 1 }, { plantId: 'arugula', count: 1 }]))
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual(expect.arrayContaining([{ slot: one, plantId: 'arugula' }, { slot: two, plantId: 'basil' }]))
+    expect(within(cell(one)).getByText('Arugula')).toBeTruthy()
+    expect(within(cell(two)).getByText('Basil')).toBeTruthy()
+
+    fireEvent.click(panel().getByRole('button', { name: 'Remove' }))
+    expect(calls.layout.mock.lastCall?.[0].plants).toEqual([{ plantId: 'basil', count: 1 }])
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual([{ slot: two, plantId: 'basil' }])
+    expect(panel().getByText('Empty')).toBeTruthy()
+    expect(panel().queryByRole('button', { name: 'Remove' })).toBeNull()
+    expect(calls.updatePod).not.toHaveBeenCalled()
+
+    fireEvent.click(panel().getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(cell(one).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('plans a plant in an empty pod from its panel, and swaps one in from another', () => {
+    render(<PlanPage />)
+    flat()
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    fireEvent.click(cell(30))
+    expect((panel().getByLabelText('Plant') as HTMLSelectElement).value).toBe('')
+    fireEvent.change(panel().getByLabelText('Plant'), { target: { value: 'borage' } })
+    expect(calls.layout.mock.lastCall?.[0].plants).toEqual([{ plantId: 'borage', count: 1 }])
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual([{ slot: 30, plantId: 'borage' }])
+    expect(within(cell(30)).getByText('Borage')).toBeTruthy()
+    expect(screen.getByText(/^1 planned/)).toBeTruthy()
+    // Picking the same plant again changes nothing.
+    const asked = calls.layout.mock.calls.length
+    fireEvent.change(panel().getByLabelText('Plant'), { target: { value: 'borage' } })
+    expect(calls.layout.mock.calls.length).toBe(asked)
+
+    // An empty pod's swap takes the other pod's plant.
+    startSwap(cell(29))
+    expect(screen.getByTestId('swap-banner').textContent).toContain('Pick the pod to swap pod 29 with.')
+    fireEvent.click(cell(30))
+    expect(within(cell(29)).getByText('Borage')).toBeTruthy()
+    expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual([{ slot: 29, plantId: 'borage' }])
+  })
+
+  it('edits a pod in the tower the same way: its plant, Remove and Swap change its record', () => {
+    state.pods = [{ slot: 4, plant: 'Arugula', status: 'growing' }]
+    const { rerender } = render(<PlanPage />)
+    flat()
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    fireEvent.click(cell(4))
+    expect(panel().getByText('In the tower now.')).toBeTruthy()
+    expect((panel().getByLabelText('Plant') as HTMLSelectElement).value).toBe('arugula')
+
+    fireEvent.change(panel().getByLabelText('Plant'), { target: { value: 'basil' } })
+    expect(calls.updatePod).toHaveBeenLastCalledWith({ slot: 4, plant: 'Basil' })
+    expect(invalidate).toHaveBeenCalled()
+    rerender(<PlanPage />)
+    expect(within(cell(4)).getByText('Basil')).toBeTruthy()
+    // The plan itself is untouched.
+    expect(calls.layout.mock.lastCall?.[0].plants).toEqual([])
+
+    // Swap, then Cancel, leaves it where it is.
+    fireEvent.click(panel().getByRole('button', { name: 'Swap' }))
+    fireEvent.click(within(screen.getByTestId('swap-banner')).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByTestId('swap-banner')).toBeNull()
+    fireEvent.click(cell(9))
+    expect(calls.swapPods).not.toHaveBeenCalled()
+
+    // A planned plant swapped onto it moves its record the other way.
+    fireEvent.click(cell(30))
+    fireEvent.change(panel().getByLabelText('Plant'), { target: { value: 'borage' } })
+    startSwap(cell(30))
+    fireEvent.click(cell(4))
+    expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 30, b: 4 })
+    rerender(<PlanPage />)
+
+    fireEvent.click(cell(30))
+    fireEvent.click(panel().getByRole('button', { name: 'Remove' }))
+    expect(calls.updatePod).toHaveBeenLastCalledWith({ slot: 30, plant: null, plantedAt: null, status: 'empty', notes: '' })
+  })
+
+  it('says why a pod edit failed, and opens a pod before the catalog answers', () => {
+    state.failure = 'the unit is offline'
+    state.catalogPending = true
+    render(<PlanPage />)
+    flat()
+    expect(screen.getAllByText('the unit is offline')).toHaveLength(2)
+    fireEvent.click(screen.getByTestId('plan-grid').querySelector('[data-slot="3"]') as HTMLElement)
+    expect(panel().queryAllByRole('option', { name: /./ }).filter(o => !(o as HTMLOptionElement).disabled)).toHaveLength(0)
+  })
+
+  it('names a planted plant the catalog doesn’t know, and closes the panel on another model', () => {
+    state.pods = [{ slot: 2, plant: 'Mystery herb', status: 'growing' }]
+    render(<PlanPage />)
+    flat()
+    fireEvent.click(screen.getByTestId('plan-grid').querySelector('[data-slot="2"]') as HTMLElement)
+    const plant = panel().getByLabelText('Plant') as HTMLSelectElement
+    expect(plant.value).toBe('')
+    expect(plant.selectedOptions[0]?.textContent).toBe('Mystery herb')
+    fireEvent.click(screen.getByRole('tab', { name: 'Studio · 16' }))
+    expect(screen.queryByRole('complementary')).toBeNull()
   })
 
   it('drops pins past a lower count, and forgets swaps on another model', () => {
@@ -369,7 +529,7 @@ describe('PlanPage', () => {
     const grid = within(screen.getByTestId('plan-grid'))
     const cells = grid.getAllByText('Basil').map(n => Number(n.closest('[data-slot]')?.getAttribute('data-slot')))
     const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
-    fireEvent.click(cell(cells[0] as number))
+    startSwap(cell(cells[0] as number))
     fireEvent.click(cell(cells[1] as number))
     expect(calls.layout.mock.lastCall?.[0].overrides.pins).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'Remove Basil' }))
@@ -395,7 +555,7 @@ describe('PlanPage', () => {
     expect(screen.getByText(/^0 planned · 29 empty ·/)).toBeTruthy()
     expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there, or drag one onto another pod to swap them.')).toBeTruthy()
     flat()
-    expect(screen.getByText('Drag a plant onto another pod, or tap one then the other, to swap them. Italic = in the tower now.')).toBeTruthy()
+    expect(screen.getByText('Tap a pod to change its plant or swap it, or drag a plant onto another pod to swap them. Italic = in the tower now.')).toBeTruthy()
     cleanup()
 
     // Nothing has answered: no count to give yet.
