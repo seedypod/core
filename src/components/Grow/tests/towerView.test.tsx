@@ -212,6 +212,50 @@ describe('TowerView', () => {
     expect(onPart).toHaveBeenCalledWith('tank')
   })
 
+  it('carries a pod onto another when it can swap, ringing and naming the pod under it, and turns otherwise', async () => {
+    const onSwap = vi.fn()
+    const { rerender } = render(<TowerView pods={pods} waterPct={null} lightLevel={0} selected={1} onSelect={vi.fn()} onSwap={onSwap} podAction={<a href="/grow">Edit on Grow</a>} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    expect(mounted.opts?.carryPods?.()).toBe(true)
+    expect(screen.getByText('Click a pod · drag one onto another to swap · drag around it to turn · ⌘-scroll to zoom')).toBeTruthy()
+    mounted.at = { x: 200, y: 300 }
+    act(() => mounted.opts?.onRender?.())
+    expect(screen.getByRole('group', { name: 'Pod 1' }).dataset.state).toBe('pinned')
+
+    // Lifted over nothing: no callout, the picked pod's included.
+    act(() => mounted.opts?.onCarry?.({ from: 1, over: null }))
+    expect(mounted.updates.at(-1)?.hovered).toBeNull()
+    expect(screen.queryByTestId('pod-callout')).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('Moving pod 1 · BasilDrop on another pod to swap')
+    expect(screen.getByRole('status').querySelector('[data-testid="plant-thumb"]')).toBeTruthy()
+
+    act(() => mounted.opts?.onCarry?.({ from: 1, over: 2 }))
+    act(() => mounted.opts?.onRender?.())
+    expect(mounted.updates.at(-1)?.hovered).toBe(2)
+    expect(screen.getByRole('group').getAttribute('aria-label')).toBe('Pod 2')
+    expect(screen.getByRole('group').textContent).toContain('Drop to swap with pod 1')
+    expect(screen.getByRole('status').textContent).toBe('Moving pod 1 · BasilDrop to swap with pod 2')
+
+    // Over the picked pod, its callout shows as a drop target, without its link.
+    act(() => mounted.opts?.onCarry?.({ from: 2, over: 1 }))
+    expect(screen.getByRole('group', { name: 'Pod 1' }).dataset.state).toBe('hover')
+    expect(screen.queryByText('Edit on Grow')).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('Moving pod 2Drop to swap with pod 1')
+    expect(screen.getByRole('status').querySelector('[data-testid="plant-thumb"]')).toBeNull()
+
+    act(() => mounted.opts?.onDrop?.(2, 1))
+    act(() => mounted.opts?.onCarry?.(null))
+    expect(onSwap).toHaveBeenCalledWith(2, 1)
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole('group', { name: 'Pod 1' }).dataset.state).toBe('pinned')
+
+    rerender(<TowerView pods={pods} waterPct={null} lightLevel={0} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    expect(mounted.opts?.carryPods?.()).toBe(false)
+    act(() => mounted.opts?.onDrop?.(1, 2))
+    expect(onSwap).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Click a pod · drag to turn · ⌘-scroll to zoom')).toBeTruthy()
+  })
+
   describe('near the viewport', () => {
     const io: { report: (near: boolean) => void, margin: string, disconnects: number } = { report: () => {}, margin: '', disconnects: 0 }
     beforeEach(() => {
