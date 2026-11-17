@@ -49,7 +49,7 @@ vi.mock('@/src/utils/trpc', () => {
     apiBase: () => '',
     trpc: {
       useUtils: () => ({ vision: { invalidate } }),
-      vision: { analyzers: query('analyzers'), status: query('status'), podTrends: query('podTrends'), allPodSeries: query('allPodSeries'), compare: query('compare'), capture: query('capture'), regions: query('regions'), suggestions: query('suggestions'), labels: query('labels'), labelStats: query('labelStats'), podCodes: query('podCodes'), boxesOff: query('boxesOff'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
+      vision: { analyzers: query('analyzers'), status: query('status'), podTrends: query('podTrends'), allPodSeries: query('allPodSeries'), compare: query('compare'), capture: query('capture'), regions: query('regions'), suggestions: query('suggestions'), labels: query('labels'), labelStats: query('labelStats'), podCodes: query('podCodes'), boxesOff: query('boxesOff'), agreement: query('agreement'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
       camera: { list: query('frames'), get: query('still') },
       grow: { pods: query('pods') },
       datasets: { summary: query('summary') },
@@ -207,6 +207,31 @@ describe('AnalysisPage', () => {
     open('Methods')
     fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
     expect(screen.getByText('exg-otsu@1 up to 16% on this seeded pod; exg-otsu@2 holds under 2%, as it should.')).toBeTruthy()
+  })
+
+  it('scores each method against the labels', () => {
+    data.set('agreement', { pods: 171, analyzers: [
+      { analyzer: 'green-threshold', version: 1, metric: 'green_fraction', agree: 99, total: 171 },
+      { analyzer: 'exg-otsu', version: 1, metric: 'green_fraction', agree: 161, total: 171 },
+    ] })
+    render(<AnalysisPage />)
+    open('Methods')
+    expect(screen.getByText('171 labelled pods')).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'green-threshold@1 agrees with labels on 58% of 171 pods' })).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'exg-otsu@1 agrees with labels on 94% of 171 pods' })).toBeTruthy()
+    expect(screen.getByText('94%')).toBeTruthy()
+    // A version with nothing scored on a labelled pod gets a dash, not 0 %.
+    expect(screen.getByRole('img', { name: 'leaf-unet@2 has no readings on labelled pods' })).toBeTruthy()
+    expect(screen.getByText(/empty or seeded pod reads under 2% and a sprouted, growing or ready pod reads 2% or more/)).toBeTruthy()
+  })
+
+  it('says how to start scoring methods with no labels yet', () => {
+    data.set('agreement', { pods: 0, analyzers: [] })
+    render(<AnalysisPage />)
+    open('Methods')
+    expect(screen.getByText('0 labelled pods')).toBeTruthy()
+    expect(screen.getByText(/No labelled pods yet/)).toBeTruthy()
+    expect(screen.queryByRole('img', { name: /agrees with labels/ })).toBeNull()
   })
 
   it('shows everything known about a pod on hover, and pins it on a click for Methods to chart', () => {

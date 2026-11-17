@@ -7,6 +7,7 @@ import { podCodeViews } from '../../vision/podCodes'
 import { podOrder, swapPodRecords } from '../../vision/podOrder'
 import { shareablePairs, shareUrl, unitFingerprint } from '../../vision/shareCodes'
 import { CATALOG } from '../../components/Grow/plants/catalog'
+import { agreement } from '../../vision/agreement'
 import { podTrends } from '../../vision/analyze'
 import { POD_STATE_ID } from '../../vision/podState'
 import { boxesOff } from '../../vision/boxesOff'
@@ -325,6 +326,15 @@ export const visionRouter = router({
         suggesters: [...by.values()].map(s => ({ ...s, right: Math.round((s.accepted / (s.accepted + s.corrected)) * 1000) / 1000 })),
         captures: ctx.store.podLabels.captures(input?.limit ?? 50),
       }
+    }),
+  agreement: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/vision/agreement', tags: ['vision'], summary: 'How often each analyser@version agrees with the grower\'s labels on the same photo and pod: green area under 2 % on an empty or seeded pod and 2 % or more on a sprouted, growing or ready one (unhealthy pods are left out); a pod-state class that matches the label, seeded counting as empty' } })
+    .output(z.object({ pods: z.number(), analyzers: z.array(z.object({ analyzer: z.string(), version: z.number(), metric: z.string(), agree: z.number(), total: z.number() })) }))
+    .query(({ ctx }) => {
+      const labels = ctx.store.podLabels.range('', '9999')
+      // Only the labelled photos' results: one read per photo, not the whole table.
+      const rows = [...new Set(labels.map(l => l.captureId))].flatMap(id => ctx.store.analyses.forCapture(id))
+      return { pods: labels.length, analyzers: agreement(labels, rows) }
     }),
   labelList: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/vision/labels/pods', tags: ['vision'], summary: 'Every labelled pod, newest photo first, with its plant and age then; pass next back as cursor for the following page' } })

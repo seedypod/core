@@ -10,6 +10,7 @@ import type { PodStatus } from '@/src/store/types'
 import { apiBase, trpc } from '@/src/utils/trpc'
 import { POD_STATES } from '@/src/vision/podState'
 import { cameraOf, type PodRegions } from '@/src/vision/regions'
+import { Agreement } from './Agreement'
 import { AllPods } from './AllPods'
 import type { Pod, Trend } from './PodCard'
 
@@ -18,7 +19,7 @@ const key = (a: { analyzer: string, version: number }) => `${a.analyzer}@${a.ver
 const listingKey = (a: Listing) => key({ analyzer: a.id, version: a.version })
 const at = (n: number) => `${n * 100}%`
 const srcOf = (path: string, url: string) => (path.startsWith('data:') ? path : `${apiBase()}${url}`)
-/** Under this green area a pod reads as having no plant up. */
+/** Under this green area a pod reads as having no plant up, as in the agreement with labels. */
 const NO_PLANT = 0.02
 /** How many photos the strip under the chart shows: each is a full still on a Pi Zero, so few. */
 const STRIP = 5
@@ -32,7 +33,8 @@ function Panel({ className, children }: { className?: string, children: ReactNod
 
 /**
  * Methods: every analyser version as a row to pick the primary from and
- * re-run, and one pod across the versions with the photos behind the lines.
+ * re-run, one pod across the versions with the photos behind the lines, and
+ * how often each version agrees with the grower's labels.
  */
 export function MethodsTab({ analyzers, colorOf, busy, slot, onSlot, pods, trends, boxes }: {
   analyzers: Listing[]
@@ -47,7 +49,10 @@ export function MethodsTab({ analyzers, colorOf, busy, slot, onSlot, pods, trend
   return (
     <>
       {analyzers.length > 0 && <MethodRows analyzers={analyzers} colorOf={colorOf} busy={busy} />}
-      <PodOverTime colorOf={colorOf} slot={slot} onSlot={onSlot} pods={pods} trends={trends} boxes={boxes} />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <PodOverTime colorOf={colorOf} slot={slot} onSlot={onSlot} pods={pods} trends={trends} boxes={boxes} />
+        <Agreement analyzers={analyzers} colorOf={colorOf} />
+      </div>
     </>
   )
 }
