@@ -15,6 +15,7 @@ import { CustomPlantDialog, type EditablePlant } from '@/src/components/Plan/Cus
 import { PodPanel } from '@/src/components/Plan/PodPanel'
 import { SavedPlans } from '@/src/components/Plan/SavedPlans'
 import { SeenEmpty } from '@/src/components/Plan/SeenEmpty'
+import { SuggestedMoves } from '@/src/components/Plan/SuggestedMoves'
 import { Unplaced } from '@/src/components/Plan/Unplaced'
 
 type Model = 'home' | 'studio'
@@ -219,7 +220,7 @@ export function PlanPage() {
   const [edited, setEdited] = useState<Overrides | undefined>(undefined)
   const overrides = edited ?? opened?.overrides
   const start = opened?.start ?? undefined
-  const layout = trpc.planner.layout.useQuery({ model, plants: request, respectExisting: true, ...(overrides && { overrides }) }, { enabled: true })
+  const layout = trpc.planner.layout.useQuery({ model, plants: request, respectExisting: true, suggestMoves: true, ...(overrides && { overrides }) }, { enabled: true })
   const sowing = trpc.planner.sowing.useQuery({ plants: request, mode, ...(start && { start }) }, { enabled: request.length > 0 })
   const pods = trpc.grow.pods.useQuery()
   const seen = trpc.vision.seenEmpty.useQuery()
@@ -364,6 +365,7 @@ export function PlanPage() {
           {updatePod.error && <InlineError>{updatePod.error.message}</InlineError>}
           {noWebGL && <p className="mt-2 text-xs text-fg-3">The 3D tower needs WebGL, which this browser doesn&apos;t offer, so the plan is shown as a grid.</p>}
           <Unplaced unplaced={layout.data?.unplaced ?? []} suggestions={layout.data?.suggestions ?? []} />
+          <SuggestedMoves moves={layout.data?.moves ?? []} onApply={exchange} />
           <p className="mt-2 text-[12px] text-fg-3">
             {shown === '2d'
               ? `Tap a pod to change its plant or swap it, or drag a plant onto another pod to swap them. Italic = in the tower now.${shiftNotes(layout.data?.assignments ?? [], '2d')}`

@@ -26,7 +26,8 @@ const Suggestion = z.object({
   move: z.object({ plantId: z.string(), plantName: z.string(), from: z.number(), to: z.number(), toZone: Zone, existing: z.boolean() }).nullable(),
   text: z.string(), overrides: Overrides.nullable(),
 })
-const Layout = z.object({ model: Model, assignments: z.array(Assignment), unplaced: z.array(Unplaced), free: z.array(z.number()), zones: z.array(ZoneSummary), suggestions: z.array(Suggestion), overrides: Overrides.optional() })
+const Move = z.object({ from: z.number(), to: z.number(), plantId: z.string(), plantName: z.string(), toZone: Zone, swap: z.object({ plantId: z.string(), plantName: z.string(), existing: z.boolean() }).nullable(), gain: z.number(), text: z.string() })
+const Layout = z.object({ model: Model, assignments: z.array(Assignment), unplaced: z.array(Unplaced), free: z.array(z.number()), zones: z.array(ZoneSummary), suggestions: z.array(Suggestion), moves: z.array(Move).optional(), overrides: Overrides.optional() })
 /** Plans saved before the zone summary and structured reasons existed lack them. */
 const SavedLayout = Layout.extend({ unplaced: z.array(Unplaced.partial({ code: true, wantZone: true, zones: true, blocking: true })), zones: z.array(ZoneSummary).optional(), suggestions: z.array(Suggestion).optional() })
 const Wave = z.object({ plantId: z.string(), plantName: z.string(), wave: z.number(), sowOn: z.string(), firstHarvestFrom: z.string(), firstHarvestTo: z.string(), harvestEstimated: z.boolean() })
@@ -104,11 +105,11 @@ export const plannerRouter = router({
 
   layout: publicProcedure
     .meta({ openapi: { method: 'POST', path: '/planner/layout', tags: ['planner'], summary: 'Auto-place plants by light zone (Gardyn rules), with a zone summary, structured unplaced reasons and suggested moves' } })
-    .input(z.object({ model: Model, plants: Request, respectExisting: z.boolean().default(true), overrides: Overrides.optional() }))
+    .input(z.object({ model: Model, plants: Request, respectExisting: z.boolean().default(true), overrides: Overrides.optional(), suggestMoves: z.boolean().optional() }))
     .output(Layout)
     .query(({ ctx, input }) => {
       const catalog = catalogFor(ctx.store)
-      return planLayout({ model: input.model, plants: input.plants, occupied: input.respectExisting && !input.overrides?.replant ? occupiedFromPods(ctx.store.pods.list(), catalog) : {}, overrides: input.overrides }, catalog)
+      return planLayout({ model: input.model, plants: input.plants, occupied: input.respectExisting && !input.overrides?.replant ? occupiedFromPods(ctx.store.pods.list(), catalog) : {}, overrides: input.overrides, suggestMoves: input.suggestMoves }, catalog)
     }),
 
   bestSpots: publicProcedure

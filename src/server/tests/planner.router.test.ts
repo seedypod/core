@@ -97,4 +97,22 @@ describe('planner router', () => {
 
     await client.close()
   })
+
+  it('suggests optional moves for planted pods only when asked, over tRPC and MCP', async () => {
+    const { c, core } = setup()
+    await c.grow.updatePod({ slot: 8, plant: 'Butterhead', status: 'growing' })
+    expect((await c.planner.layout({ model: 'home', plants: [], respectExisting: true })).moves).toBeUndefined()
+    const move = { from: 8, to: 4, plantId: 'butterhead', toZone: 'medium', swap: null, text: 'Move Butterhead from pod 8 to pod 4 — its ideal medium light.' }
+    expect((await c.planner.layout({ model: 'home', plants: [], respectExisting: true, suggestMoves: true })).moves).toMatchObject([move])
+
+    const server = createMcpServer(core.ctx)
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    await server.connect(a)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(b)
+    const r = await client.callTool({ name: 'plan_layout', arguments: { model: 'home', plants: [], suggest_moves: true } })
+    expect((JSON.parse((r.content as Array<{ text: string }>)[0]?.text ?? 'null') as PlanResult).moves).toMatchObject([move])
+    expect((await client.listTools()).tools.find(t => t.name === 'plan_layout')?.description).toMatch(/swap_pods \{a: from, b: to\}/)
+    await client.close()
+  })
 })
