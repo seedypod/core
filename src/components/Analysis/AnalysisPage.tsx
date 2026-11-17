@@ -18,6 +18,7 @@ import { LeafCover } from './LeafCover'
 import { MethodsTab } from './MethodsTab'
 import { PodBounds } from './PodBounds'
 import { PodCard, PodHits, stateGuess, type Pod, type Reading, type Trend } from './PodCard'
+import { PodsTab, usePodStories } from './PodsTab'
 import { teachSummary, useTeachQueue } from './TeachQueue'
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
@@ -84,6 +85,7 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
   const calibration = useCalibration()
   const queue = useTeachQueue({ upper: latest[0]?.frame, lower: latest[1]?.frame }, calibration.boxes)
   const labelStats = trpc.vision.labelStats.useQuery()
+  const told = usePodStories(latest, pods.data ?? [])
   // A link to another tab while the page is open switches to it.
   const [lastAsked, setLastAsked] = useState(asked)
   if (asked !== lastAsked) {
@@ -139,7 +141,7 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
                     {teachSummary(labelStats.data)}
                   </p>
                 )
-              : <p className="text-[13px] text-fg-2">How leaf cover is measured from camera frames</p>}
+              : <p className="text-[13px] text-fg-2">{tab === 'pods' && pods.data ? told.summary : 'How leaf cover is measured from camera frames'}</p>}
           </div>
           <Tabs value={tab} onChange={setTab} waiting={queue.total} />
         </div>
@@ -163,7 +165,22 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
               {view === 'photo' && cameraPicker}
               <SegmentedControl ariaLabel="View" size="sm" options={VIEWS} value={view} onChange={setView} />
             </div>
-            {view === 'photo' && stills('photo')}
+            {view === 'photo' && (
+              <PodsTab
+                photos={cameras}
+                boxes={calibration.boxes}
+                pods={pods.data ?? []}
+                trends={trends.data ?? []}
+                stories={told.stories}
+                pinned={pinned}
+                onPick={(s) => {
+                  setPinned(p => (p === s ? null : s))
+                  setSlot(s)
+                }}
+                onUnpin={() => setPinned(null)}
+                onRelabel={() => setTab('teach')}
+              />
+            )}
           </Panel>
           {view === 'towers' && <LeafCover capturedAt={latest.map(l => l.frame?.ts).filter((t): t is string => !!t).sort().at(-1) ?? null} />}
         </div>
