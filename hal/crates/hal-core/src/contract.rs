@@ -88,9 +88,10 @@ pub struct ActuatorCommand {
     pub duration_s: Option<u64>,
 }
 
-/// Which dry-run guard stops a running pump. Set in hal.toml (`[limits]
-/// pump_dry_guard`) and nowhere else: pump safety outranks any setting from the
-/// app, so the contract carries it only as a report.
+/// Which dry-run guard stops a running pump. hal.toml (`[limits]
+/// pump_dry_guard`) sets it; the app may pick another with a
+/// [`PumpGuardCommand`] unless hal.toml locks it (`pump_dry_guard_app = false`).
+/// Every one of them guards the pump: there is no "off".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DryGuard {
@@ -120,6 +121,37 @@ pub struct Limits {
     pub pump_dry_grace_min_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pump_dry_grace_max_ms: Option<u64>,
+    /// The mode asked for (hal.toml's, or the one the app set and hald kept),
+    /// and why the one in effect differs from it, present only when it does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pump_dry_guard_asked: Option<DryGuard>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pump_dry_guard_why: Option<String>,
+    /// Whether the app may change the mode (hal.toml `pump_dry_guard_app`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pump_dry_guard_app: Option<bool>,
+    /// The current guard's cutoff (A), hal.toml's or the app's; null when none
+    /// is set. Reported whatever the mode, so it shows before it's in use.
+    #[serde(default)]
+    pub pump_dry_current_a: Option<f64>,
+    /// The bounds a cutoff from the app is clamped into.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pump_dry_current_min_a: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pump_dry_current_max_a: Option<f64>,
+    /// The bounds a `waterLowCm` from the app is clamped into.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water_low_min_cm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water_low_max_cm: Option<f64>,
+    /// How long (ms) a running pump's tank must read past `waterLowCm` before
+    /// the level guard stops it, and the bounds it's clamped into.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water_low_hold_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water_low_hold_min_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water_low_hold_max_ms: Option<u64>,
     /// The brown-out guard, as hal.toml sets it and the unit can run it: the
     /// supply cutoff (V), absent when it's off or there is no pump monitor; how
     /// long a sag must last (ms), present from every hald that has the guard;
@@ -132,15 +164,99 @@ pub struct Limits {
     pub pump_brownout_pi: Option<bool>,
 }
 
-/// `pump/guard/set`: core asks for the current guard's spin-up grace, and hald
-/// clamps it into hal.toml's bounds. It's the one guard setting core may change;
-/// the mode and the cutoff are hal.toml only, so there is no field for them, and
-/// a payload with any other field is refused.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+/// `pump/guard/set`: core asks for dry-run guard settings, each optional, at
+/// least one. hald clamps every number into hal.toml's bounds, keeps it in
+/// `state.json`, and republishes `system`. Nothing here can clear a cutoff or
+/// turn the guard off: `null` is the same as leaving a field out. A payload
+/// with any other field, or with none, is refused.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", try_from = "PumpGuardFields")]
 pub struct PumpGuardCommand {
-    pub dry_grace_ms: u64,
+    /// The current guard's spin-up grace (ms).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dry_grace_ms: Option<u64>,
+    /// The current guard's cutoff (A).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dry_current_a: Option<f64>,
+    /// The mode; refused when hal.toml locks it, or when it would leave no guard.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dry_guard: Option<DryGuard>,
+    /// The level guard's cutoff (cm from the ranger).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water_low_cm: Option<f64>,
+    /// How long (ms) the level must read past the cutoff to stop a running pump.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water_low_hold_ms: Option<u64>,
 }
+
+/// The wire form of [`PumpGuardCommand`], before "at least one setting" is checked.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PumpGuardFields {
+    dry_grace_ms: Option<u64>,
+    dry_current_a: Option<f64>,
+    dry_guard: Option<DryGuard>,
+    water_low_cm: Option<f64>,
+    water_low_hold_ms: Option<u64>,
+}
+
+impl TryFrom<PumpGuardFields> for PumpGuardCommand {
+    type Error = &'static str;
+
+    fn try_from(f: PumpGuardFields) -> Result<Self, Self::Error> {
+        let c = PumpGuardCommand {
+            dry_grace_ms: f.dry_grace_ms,
+            dry_current_a: f.dry_current_a,
+            dry_guard: f.dry_guard,
+            water_low_cm: f.water_low_cm,
+            water_low_hold_ms: f.water_low_hold_ms,
+        };
+        if c == PumpGuardCommand::default() {
+            return Err("a pump guard command needs at least one setting");
+        }
+        Ok(c)
+    }
+}
+
+/// How a pump run ended, in its [`PumpRun`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PumpRunEnd {
+    /// Its bounded duration ran out.
+    Deadline,
+    /// Someone stopped it: the app, the button, a shutdown.
+    Stop,
+    /// A guard stopped it and latched a fault.
+    Fault,
+}
+
+/// `pump/run` (retained): one per pump run, published when it ends. The pump
+/// monitor's reads over the first [`PUMP_RUN_SAMPLES_S`] seconds, and the
+/// median current past the spin-up grace, so a cutoff can be set from real runs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PumpRun {
+    pub started_at: String,
+    pub ended_at: String,
+    /// How often the monitor was read (ms).
+    pub every_ms: u64,
+    /// `[ms since the start, amps, volts]`, `null` where a read failed or there's
+    /// no pump monitor; at most [`PUMP_RUN_MAX_SAMPLES`].
+    pub samples: Vec<(u64, Option<f64>, Option<f64>)>,
+    /// Median current past the grace to the end; `null` when the run ended
+    /// inside the grace or there's no pump monitor.
+    pub wet_a: Option<f64>,
+    pub ended_by: PumpRunEnd,
+    /// The fault latched at the end, if any.
+    pub fault: Option<String>,
+    /// The last tank reading at the end.
+    pub level_pct: Option<f64>,
+    pub level_cm: Option<f64>,
+}
+
+/// How much of a run [`PumpRun::samples`] covers (s), and so how many at most at 100 ms.
+pub const PUMP_RUN_SAMPLES_S: u64 = 12;
+pub const PUMP_RUN_MAX_SAMPLES: usize = 120;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -373,6 +489,9 @@ pub mod topics {
     pub fn pump_guard_set(unit: &str) -> String {
         format!("{}/pump/guard/set", prefix(unit))
     }
+    pub fn pump_run(unit: &str) -> String {
+        format!("{}/pump/run", prefix(unit))
+    }
 }
 
 #[cfg(test)]
@@ -425,19 +544,55 @@ mod tests {
             "seedypod/u1/sensor/ec/calibration"
         );
         assert_eq!(topics::pump_guard_set("u1"), "seedypod/u1/pump/guard/set");
+        assert_eq!(topics::pump_run("u1"), "seedypod/u1/pump/run");
     }
 
-    /// Pump safety outranks the app: core may ask for a grace, never for a mode or a cutoff.
     #[test]
-    fn the_pump_guard_command_carries_the_grace_and_nothing_else() {
+    fn the_pump_guard_command_takes_any_of_its_settings_and_nothing_else() {
         let c: PumpGuardCommand = serde_json::from_str(r#"{"dryGraceMs":1500}"#).unwrap();
-        assert_eq!(c.dry_grace_ms, 1500);
+        assert_eq!(
+            c,
+            PumpGuardCommand {
+                dry_grace_ms: Some(1500),
+                ..Default::default()
+            }
+        );
+        assert_eq!(serde_json::to_string(&c).unwrap(), r#"{"dryGraceMs":1500}"#);
+        let all: PumpGuardCommand = serde_json::from_str(
+            r#"{"dryGraceMs":2000,"dryCurrentA":0.8,"dryGuard":"current","waterLowCm":15.5,"waterLowHoldMs":4000}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            all,
+            PumpGuardCommand {
+                dry_grace_ms: Some(2000),
+                dry_current_a: Some(0.8),
+                dry_guard: Some(DryGuard::Current),
+                water_low_cm: Some(15.5),
+                water_low_hold_ms: Some(4000),
+            }
+        );
+        for one in [
+            r#"{"dryCurrentA":0.8}"#,
+            r#"{"dryGuard":"level"}"#,
+            r#"{"waterLowCm":12}"#,
+            r#"{"waterLowHoldMs":0}"#,
+            r#"{"dryGuard":"both","dryCurrentA":null}"#,
+        ] {
+            assert!(serde_json::from_str::<PumpGuardCommand>(one).is_ok(), "{one}");
+        }
         for bad in [
             r#"{"dryGraceMs":1500,"pumpDryGuard":"current"}"#,
             r#"{"dryGraceMs":1500,"mode":"level"}"#,
             r#"{"dryGraceMs":1500,"pumpDryCurrentA":0.1}"#,
             r#"{"pumpDryGuard":"current"}"#,
             r#"{"dryGraceMs":-1}"#,
+            r#"{"waterLowHoldMs":-5}"#,
+            r#"{"dryGuard":"off"}"#,
+            r#"{"dryGuard":null}"#,
+            r#"{"dryCurrentA":null}"#,
+            r#"{}"#,
+            "",
         ] {
             assert!(serde_json::from_str::<PumpGuardCommand>(bad).is_err(), "{bad}");
         }
@@ -446,6 +601,37 @@ mod tests {
             serde_json::json!("both")
         );
         assert_eq!(DryGuard::default(), DryGuard::Both);
+    }
+
+    #[test]
+    fn a_pump_run_serialises_its_samples_as_triples() {
+        let run = PumpRun {
+            started_at: "2026-11-16T10:00:00Z".into(),
+            ended_at: "2026-11-16T10:00:30Z".into(),
+            every_ms: 100,
+            samples: vec![(100, Some(0.42), Some(12.1)), (200, None, None)],
+            wet_a: Some(0.93),
+            ended_by: PumpRunEnd::Deadline,
+            fault: None,
+            level_pct: Some(80.0),
+            level_cm: Some(8.0),
+        };
+        assert_eq!(
+            serde_json::to_value(&run).unwrap(),
+            serde_json::json!({
+                "startedAt": "2026-11-16T10:00:00Z", "endedAt": "2026-11-16T10:00:30Z", "everyMs": 100,
+                "samples": [[100, 0.42, 12.1], [200, null, null]], "wetA": 0.93, "endedBy": "deadline",
+                "fault": null, "levelPct": 80.0, "levelCm": 8.0
+            })
+        );
+        for (end, s) in [
+            (PumpRunEnd::Deadline, "deadline"),
+            (PumpRunEnd::Stop, "stop"),
+            (PumpRunEnd::Fault, "fault"),
+        ] {
+            assert_eq!(serde_json::to_value(end).unwrap(), serde_json::json!(s));
+        }
+        assert_eq!(PUMP_RUN_MAX_SAMPLES as u64, PUMP_RUN_SAMPLES_S * 10);
     }
 
     #[test]
@@ -483,7 +669,7 @@ mod fixture_tests {
             ),
             (Some(10.8), Some(300), Some(true))
         );
-        assert_eq!(s.limits.pump_dry_guard, Some(DryGuard::Both));
+        assert_eq!(s.limits.pump_dry_guard, Some(DryGuard::Level));
         assert_eq!(
             (
                 s.limits.pump_dry_grace_ms,
@@ -499,25 +685,60 @@ mod fixture_tests {
             "pumpDryGraceMs",
             "pumpDryGraceMinMs",
             "pumpDryGraceMaxMs",
+            "pumpDryGuardAsked",
+            "pumpDryGuardWhy",
+            "pumpDryGuardApp",
+            "pumpDryCurrentA",
+            "pumpDryCurrentMinA",
+            "pumpDryCurrentMaxA",
+            "waterLowMinCm",
+            "waterLowMaxCm",
+            "waterLowHoldMs",
+            "waterLowHoldMinMs",
+            "waterLowHoldMaxMs",
             "pumpBrownoutV",
             "pumpBrownoutMs",
             "pumpBrownoutPi",
         ] {
+            assert!(!golden["limits"][k].is_null(), "{k} is in the fixture");
             assert_eq!(back["limits"][k], golden["limits"][k], "{k} round-trips");
         }
+        let l = &s.limits;
+        assert_eq!(
+            (l.pump_dry_guard_asked, l.pump_dry_guard_app, l.pump_dry_current_a),
+            (Some(DryGuard::Current), Some(true), Some(0.8))
+        );
+        assert!(l.pump_dry_guard_why.as_deref().unwrap().contains("ina219"));
+        assert_eq!(
+            (l.pump_dry_current_min_a, l.pump_dry_current_max_a),
+            (Some(0.3), Some(3.0))
+        );
+        assert_eq!((l.water_low_min_cm, l.water_low_max_cm), (Some(8.0), Some(19.0)));
+        assert_eq!(
+            (
+                l.water_low_hold_ms,
+                l.water_low_hold_min_ms,
+                l.water_low_hold_max_ms
+            ),
+            (Some(0), Some(0), Some(60_000))
+        );
         assert_eq!(s.board.as_deref(), Some("Raspberry Pi Zero 2 W Rev 1.0"));
         let old: SystemInfo = serde_json::from_str(&fixture("system_without_board")).unwrap();
         assert_eq!(old.board, None);
         assert_eq!(old.limits.pump_dry_guard, None);
-        let old_json = serde_json::to_string(&old).unwrap();
+        assert_eq!(old.limits.pump_dry_current_a, None);
+        let old_json = serde_json::to_value(&old).unwrap();
         assert_eq!(old.limits.pump_brownout_ms, None);
-        assert!(
-            !old_json.contains("board")
-                && !old_json.contains("pumpDry")
-                && !old_json.contains("pumpBrownout")
+        // An older hald's limits come back with nothing new but a null cutoff.
+        let mut keys: Vec<&String> = old_json["limits"].as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            ["pumpDryCurrentA", "pumpMaxDuty", "pumpMaxRunS", "waterLowCm"]
         );
+        assert!(old_json.get("board").is_none());
         let pg: PumpGuardCommand = serde_json::from_str(&fixture("pump_guard_command")).unwrap();
-        assert_eq!(pg.dry_grace_ms, 1200);
+        assert_eq!(pg.dry_grace_ms, Some(1200));
         assert_eq!(
             serde_json::to_value(&pg).unwrap(),
             serde_json::from_str::<serde_json::Value>(&fixture("pump_guard_command")).unwrap()

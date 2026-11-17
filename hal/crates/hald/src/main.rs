@@ -226,6 +226,7 @@ async fn main() -> anyhow::Result<()> {
         let (sensors, actuators) = devices::planned_capabilities(&cfg);
         // The guard the engine will run on this config, and why (before probing: an
         // ina219 that doesn't answer at boot falls back further, and says so in the log).
+        // hal.toml's alone: settings the app made, kept in state.json, aren't read here.
         let guard = hal_core::safety::resolve_dry_guard(
             cfg.limits.pump_dry_guard,
             cfg.limits.pump_dry_current_a,
@@ -259,12 +260,18 @@ async fn main() -> anyhow::Result<()> {
                 "cameras": cfg.camera.iter().map(|c| c.name.clone()).collect::<Vec<_>>(),
                 "limits": { "pump_max_run_s": cfg.limits.pump_max_run_s, "pump_max_duty": cfg.limits.pump_max_duty,
                             "water_low_cm": cfg.limits.water_low_cm, "over_temp_c": cfg.limits.over_temp_c,
+                            "water_low_min_cm": cfg.limits.water_low_min_cm, "water_low_max_cm": cfg.limits.water_low_max_cm,
+                            "water_low_hold_ms": cfg.limits.water_low_hold_ms,
+                            "water_low_hold_min_ms": cfg.limits.water_low_hold_min_ms,
+                            "water_low_hold_max_ms": cfg.limits.water_low_hold_max_ms,
                             "pump_dry_current_a": cfg.limits.pump_dry_current_a, "pump_dry_after_ms": cfg.limits.dry_after_ms(),
+                            "pump_dry_current_min_a": cfg.limits.pump_dry_current_min_a,
+                            "pump_dry_current_max_a": cfg.limits.pump_dry_current_max_a,
                             "pump_dry_grace_ms": cfg.limits.dry_grace_ms(),
                             "pump_dry_grace_min_ms": cfg.limits.pump_dry_grace_min_ms,
                             "pump_dry_grace_max_ms": cfg.limits.pump_dry_grace_max_ms,
                             "pump_dry_guard": guard.mode, "pump_dry_guard_asked": cfg.limits.pump_dry_guard,
-                            "pump_dry_guard_why": guard.why,
+                            "pump_dry_guard_why": guard.why, "pump_dry_guard_app": cfg.limits.pump_dry_guard_app,
                             "pump_brownout_v": brownout_v, "pump_brownout_ms": cfg.limits.pump_brownout_ms,
                             "pump_brownout_pi": cfg.limits.pump_brownout_pi, "pump_brownout_pi_readable": pi_flag,
                             "pump_brownout_guard": brownout },
@@ -318,7 +325,7 @@ async fn main() -> anyhow::Result<()> {
             pump_max_run_s: cfg.limits.pump_max_run_s,
             pump_max_duty: cfg.limits.pump_max_duty,
             water_low_cm: cfg.limits.water_low_cm,
-            // The engine fills in the dry-run guard it runs and its grace.
+            // The engine fills in the dry-run guard it runs and its settings.
             ..Limits::default()
         },
     };
@@ -335,6 +342,13 @@ async fn main() -> anyhow::Result<()> {
             button_pump_run_s: cfg.button.pump_run_s,
             ha_prefix: cfg.ha.discovery.then(|| cfg.ha.prefix.clone()),
             dry_grace_bounds: (cfg.limits.pump_dry_grace_min_ms, cfg.limits.pump_dry_grace_max_ms),
+            dry_current_bounds: (
+                cfg.limits.pump_dry_current_min_a,
+                cfg.limits.pump_dry_current_max_a,
+            ),
+            water_low_bounds: (cfg.limits.water_low_min_cm, cfg.limits.water_low_max_cm),
+            water_low_hold_bounds: (cfg.limits.water_low_hold_min_ms, cfg.limits.water_low_hold_max_ms),
+            dry_guard_app: cfg.limits.pump_dry_guard_app,
             pi_throttled: (cfg.limits.pump_brownout_pi && !cli.sim)
                 .then(|| std::path::PathBuf::from(config::PI_THROTTLED)),
         },
@@ -650,6 +664,10 @@ mod tests {
             button_pump_run_s: 300,
             ha_prefix: None,
             dry_grace_bounds: (300, 5000),
+            dry_current_bounds: (0.1, 3.0),
+            water_low_bounds: (8.0, 19.0),
+            water_low_hold_bounds: (0, 60_000),
+            dry_guard_app: true,
             pi_throttled: None,
         };
         Engine::new(system, cfg, Registry::default(), None, None, Arc::default())

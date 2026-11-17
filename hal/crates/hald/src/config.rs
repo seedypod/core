@@ -85,24 +85,41 @@ pub struct Limits {
     /// software PWM, as the stock firmware does. Lower it only for a board that
     /// browns out; pumps differ between units.
     pub pump_max_duty: f64,
+    /// The level guard's cutoff (cm from the ranger). It's the default: the app
+    /// may set it within the two bounds below, but never clear it. Unset, the
+    /// level interlock is off, and the app can't turn it on.
     pub water_low_cm: Option<f64>,
+    pub water_low_min_cm: f64,
+    pub water_low_max_cm: f64,
+    /// How long the level must read past `water_low_cm`, without a good reading
+    /// between, to stop a running pump; under 500 ms, 500 ms. The default: the
+    /// app may set it within the two bounds below.
+    pub water_low_hold_ms: u64,
+    pub water_low_hold_min_ms: u64,
+    pub water_low_hold_max_ms: u64,
     pub over_temp_c: Option<f64>,
     /// Below this pump current (A) the running pump is pulling air. Unset (the
-    /// default until a wet and a dry run are measured) or no INA219: off.
+    /// default until a wet and a dry run are measured) or no INA219: off. It's
+    /// the default: the app may set one within the two bounds below, never clear it.
     pub pump_dry_current_a: Option<f64>,
+    pub pump_dry_current_min_a: f64,
+    pub pump_dry_current_max_a: f64,
     /// How long the current must stay below `pump_dry_current_a` to stop the
     /// pump (at least three reads in a row; hald reads it every 100 ms while the
     /// pump runs). Unset: [`PUMP_DRY_AFTER_MS`].
     pub pump_dry_after_ms: Option<u64>,
     /// How long after a start the current isn't judged, while the pump spins up.
     /// Unset: [`PUMP_DRY_GRACE_MS`]. It's the default: the app may set the grace
-    /// (the one guard setting it may), within the two bounds below.
+    /// within the two bounds below.
     pub pump_dry_grace_ms: Option<u64>,
     pub pump_dry_grace_min_ms: u64,
     pub pump_dry_grace_max_ms: u64,
     /// Which dry-run guard stops a running pump: `level`, `current` or `both`.
-    /// Only here: no app, API or MCP route can change it.
+    /// It's the default: the app may pick another, unless `pump_dry_guard_app`
+    /// is false. Whichever it is, hald falls back to one the unit can run.
     pub pump_dry_guard: DryGuard,
+    /// Whether the app may change `pump_dry_guard`. False locks it to this file's.
+    pub pump_dry_guard_app: bool,
     /// The same two in whole seconds, as hald read them before milliseconds.
     /// Still read so an older `hal.toml` loads; the `_ms` keys are preferred.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -406,15 +423,26 @@ impl Default for Limits {
             // Stock drives the pump plain on/off; ADR-0009's 30 % was never measured on a 3.0.
             pump_max_duty: 100.0,
             water_low_cm: Some(16.0),
+            // The Gardyn tank reads ~5 cm full and ~20 cm empty: a cutoff from the
+            // app stays clear of the full surface and short of the bottom.
+            water_low_min_cm: 8.0,
+            water_low_max_cm: 19.0,
+            water_low_hold_ms: 0,
+            water_low_hold_min_ms: 0,
+            water_low_hold_max_ms: WATER_LOW_HOLD_MAX_MS,
             // The board runs ~47 °C with the lights at 100 %; stock sets the
             // PCT2075 alert at 70 °C.
             over_temp_c: Some(65.0),
             pump_dry_current_a: None,
+            // Low enough for the sim's pump (0.5 A wet, tests/sim/bringup.mjs sets 0.15 A).
+            pump_dry_current_min_a: 0.1,
+            pump_dry_current_max_a: 3.0,
             pump_dry_after_ms: None,
             pump_dry_grace_ms: None,
             pump_dry_grace_min_ms: 300,
             pump_dry_grace_max_ms: 5000,
             pump_dry_guard: DryGuard::Both,
+            pump_dry_guard_app: true,
             pump_dry_after_s: None,
             pump_dry_grace_s: None,
             pump_brownout_v: PUMP_BROWNOUT_V,
@@ -494,6 +522,7 @@ impl From<&Limits> for PumpLimits {
             max_run_s: l.pump_max_run_s,
             max_duty: l.pump_max_duty,
             water_low_cm: l.water_low_cm,
+            water_low_hold_ms: l.water_low_hold_ms,
             over_temp_c: l.over_temp_c,
             dry_current_a: l.pump_dry_current_a,
             dry_after_ms: l.dry_after_ms(),
@@ -513,6 +542,8 @@ pub const PUMP_DRY_AFTER_MS: u64 = 300;
 pub const PUMP_DRY_GRACE_MS: u64 = 3000;
 /// No setting may hold the current guard off longer than this after a start.
 pub const PUMP_DRY_MAX_MS: u64 = 10_000;
+/// No setting may let a running pump's tank read low longer than this before it stops.
+pub const WATER_LOW_HOLD_MAX_MS: u64 = 60_000;
 /// The brown-out cutoff: a 12 V supply 10 % low, the bottom of its usual
 /// tolerance. The supply idles at ~12.6 V, and a healthy one under the pump's
 /// 0.95 A reads ~12 V or more past the shunt, so this is ≥ 1.2 V clear of it.
@@ -711,6 +742,51 @@ impl Config {
                 "limits.pump_dry_grace_max_ms must be ≤ {PUMP_DRY_MAX_MS}"
             ));
         }
+        // The bounds of what the app may set. A cutoff of 0 A, or one past the
+        // tank's bottom, would never trip: the app must not be able to reach either.
+        let (amin, amax) = (l.pump_dry_current_min_a, l.pump_dry_current_max_a);
+        if !(amin > 0.0 && amin <= amax) {
+            errs.push(format!(
+                "limits: 0 < pump_dry_current_min_a ({amin}) ≤ pump_dry_current_max_a ({amax}) must hold"
+            ));
+        }
+        if let Some(a) = l.pump_dry_current_a.filter(|a| !(amin..=amax).contains(a)) {
+            errs.push(format!(
+                "limits: pump_dry_current_a ({a}) must lie within pump_dry_current_min_a ({amin}) and pump_dry_current_max_a ({amax})"
+            ));
+        }
+        let (wmin, wmax) = (l.water_low_min_cm, l.water_low_max_cm);
+        if !(wmin > 0.0 && wmin <= wmax) {
+            errs.push(format!(
+                "limits: 0 < water_low_min_cm ({wmin}) ≤ water_low_max_cm ({wmax}) must hold"
+            ));
+        }
+        if wmax > self.tank.empty_cm {
+            errs.push(format!(
+                "limits.water_low_max_cm ({wmax}) must be ≤ tank.empty_cm ({}): a cutoff past the bottom never trips",
+                self.tank.empty_cm
+            ));
+        }
+        if let Some(cm) = l.water_low_cm.filter(|cm| !(wmin..=wmax).contains(cm)) {
+            errs.push(format!(
+                "limits: water_low_cm ({cm}) must lie within water_low_min_cm ({wmin}) and water_low_max_cm ({wmax})"
+            ));
+        }
+        let (hmin, hold, hmax) = (
+            l.water_low_hold_min_ms,
+            l.water_low_hold_ms,
+            l.water_low_hold_max_ms,
+        );
+        if !(hmin <= hold && hold <= hmax) {
+            errs.push(format!(
+                "limits: water_low_hold_min_ms ({hmin}) ≤ water_low_hold_ms ({hold}) ≤ water_low_hold_max_ms ({hmax}) must hold"
+            ));
+        }
+        if hmax > WATER_LOW_HOLD_MAX_MS {
+            errs.push(format!(
+                "limits.water_low_hold_max_ms must be ≤ {WATER_LOW_HOLD_MAX_MS}"
+            ));
+        }
         let v = l.pump_brownout_v;
         if v != 0.0 && !PUMP_BROWNOUT_RANGE.contains(&v) {
             errs.push(format!(
@@ -839,21 +915,31 @@ pub const DEFAULT_CONFIG_TOML: &str = r##"# seedypod hald configuration. Every p
 # pump_max_duty = 100.0   # stock runs the pump at 100 % (the pin held high, no PWM).
 #                          # Lower it only if your board browns out; pumps differ between
 #                          # units, and below 100 a weak one may not lift to the top.
-# water_low_cm = 16.0     # dry-run interlock; comment out to disable
+# water_low_cm = 16.0     # dry-run interlock; comment out to disable (the app can't turn it on)
+# water_low_min_cm = 8.0  # the app may set water_low_cm within these, never clear it;
+# water_low_max_cm = 19.0 # min ≤ water_low_cm ≤ max ≤ tank.empty_cm
+# water_low_hold_ms = 0   # a running pump stops once the level has read past water_low_cm this
+#                          # long with no good reading between (at least 0.5 s); rides out a noisy
+#                          # ranger. A start is still refused on one low reading.
+# water_low_hold_min_ms = 0      # the app may set the hold within these;
+# water_low_hold_max_ms = 60000  # min ≤ hold ≤ max ≤ 60000
 # over_temp_c = 65.0      # PCB cutoff; comment out to disable
 # pump_dry_current_a = 1.2 # pump current guard: off until set (needs the ina219). Stops a running
 #                          # pump that draws less than this, past the grace, for pump_dry_after_ms.
 #                          # Set it below the wet current at the lowest duty you run.
 #                          # hald reads the current every 100 ms while the pump runs.
+# pump_dry_current_min_a = 0.1 # the app may set the cutoff within these, never clear it;
+# pump_dry_current_max_a = 3.0 # 0 < min ≤ pump_dry_current_a ≤ max
 # pump_dry_after_ms = 300  # at least 3 low reads in a row; 100–10000
 # pump_dry_grace_ms = 1000 # spin-up after a start, not judged. The default: the app may set it
-# pump_dry_grace_min_ms = 300  # within these bounds (it's the one guard setting it may);
+# pump_dry_grace_min_ms = 300  # within these bounds;
 # pump_dry_grace_max_ms = 5000 # min ≤ default ≤ max ≤ 10000
 #                          # (pump_dry_after_s / pump_dry_grace_s, in seconds, still load)
 # pump_dry_guard = "both"  # which dry-run guard stops the pump: "level" (tank), "current"
-#                          # (pump current) or "both". Only here, never from the app.
+#                          # (pump current) or "both". The default: the app may pick another.
 #                          # "current" needs pump_dry_current_a and the ina219, else it falls
 #                          # back to "level"; there, and in "both", a low tank refuses a start.
+# pump_dry_guard_app = true # false: the app can't change pump_dry_guard
 # pump_brownout_v = 10.8   # brown-out guard: a running pump whose supply (ina219 bus voltage)
 # pump_brownout_ms = 300   # stays below this, past the grace, stops and latches. 6–12 V, 0 = off.
 #                          # The supply idles ~12.6 V; 10.8 is a 12 V supply 10 % low.
@@ -1174,6 +1260,70 @@ kind = "pwm_pump"
         ] {
             assert!(joined.contains(needle), "missing {needle:?} in:\n{joined}");
         }
+    }
+
+    #[test]
+    fn the_bounds_of_what_the_app_may_set_are_checked() {
+        let l = Config::default().limits;
+        assert_eq!((l.pump_dry_current_min_a, l.pump_dry_current_max_a), (0.1, 3.0));
+        assert_eq!((l.water_low_min_cm, l.water_low_max_cm), (8.0, 19.0));
+        assert_eq!(
+            (
+                l.water_low_hold_ms,
+                l.water_low_hold_min_ms,
+                l.water_low_hold_max_ms
+            ),
+            (0, 0, 60_000)
+        );
+        assert!(l.pump_dry_guard_app);
+        assert_eq!(PumpLimits::from(&l).water_low_hold_ms, 0);
+        for (toml, needle) in [
+            (
+                "pump_dry_current_min_a = 2\npump_dry_current_max_a = 1\n",
+                "limits: 0 < pump_dry_current_min_a (2) ≤ pump_dry_current_max_a (1) must hold",
+            ),
+            ("pump_dry_current_min_a = 0\n", "0 < pump_dry_current_min_a (0)"),
+            (
+                "pump_dry_current_a = 0.05\n",
+                "limits: pump_dry_current_a (0.05) must lie within pump_dry_current_min_a (0.1) and pump_dry_current_max_a (3)",
+            ),
+            (
+                "water_low_min_cm = 12\nwater_low_max_cm = 10\n",
+                "limits: 0 < water_low_min_cm (12) ≤ water_low_max_cm (10) must hold",
+            ),
+            (
+                "water_low_cm = 19.5\n",
+                "limits: water_low_cm (19.5) must lie within water_low_min_cm (8) and water_low_max_cm (19)",
+            ),
+            (
+                "water_low_max_cm = 25\n",
+                "limits.water_low_max_cm (25) must be ≤ tank.empty_cm (20)",
+            ),
+            (
+                "water_low_hold_ms = 70000\n",
+                "water_low_hold_ms (70000) ≤ water_low_hold_max_ms (60000) must hold",
+            ),
+            (
+                "water_low_hold_max_ms = 90000\nwater_low_hold_ms = 70000\n",
+                "limits.water_low_hold_max_ms must be ≤ 60000",
+            ),
+            (
+                "water_low_hold_min_ms = 1000\n",
+                "water_low_hold_min_ms (1000) ≤ water_low_hold_ms (0)",
+            ),
+        ] {
+            let c: Config = toml::from_str(&format!("[limits]\n{toml}")).unwrap();
+            let errs = c.validate().join("\n");
+            assert!(errs.contains(needle), "{toml}: missing {needle:?} in:\n{errs}");
+        }
+        // On the bounds is fine, and so is locking the mode.
+        let edge: Config = toml::from_str(
+            "[limits]\npump_dry_current_a = 0.3\nwater_low_cm = 19\nwater_low_hold_ms = 60000\npump_dry_guard_app = false\n",
+        )
+        .unwrap();
+        assert!(edge.validate().is_empty(), "{:?}", edge.validate());
+        assert!(!edge.limits.pump_dry_guard_app);
+        assert_eq!(PumpLimits::from(&edge.limits).water_low_hold_ms, 60_000);
     }
 
     #[test]
