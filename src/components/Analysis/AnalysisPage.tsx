@@ -1,11 +1,10 @@
-import { Download, RefreshCw, Star } from 'lucide-react'
+import { Download } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
 import { useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { TimeChart } from '@/src/components/charts/TimeChart'
 import { Button, InlineError } from '@/src/components/ds/core'
 import { Modal } from '@/src/components/ds/feedback'
-import { SegmentedControl, SelectValue, Toggle } from '@/src/components/ds/forms'
+import { SegmentedControl, Toggle } from '@/src/components/ds/forms'
 import { SettingRow } from '@/src/components/ds/layout'
 import { isDemo } from '@/src/demo/mode'
 import { fmtStamp } from '@/src/lib/timeAgo'
@@ -14,9 +13,9 @@ import { apiBase, trpc } from '@/src/utils/trpc'
 import type { Rect } from '@/src/vision/greenArea'
 import { POD_STATES } from '@/src/vision/podState'
 import { cameraSlots, podRegions, type PodRegions } from '@/src/vision/regions'
-import { AllPods } from './AllPods'
 import { LabelPods } from './LabelPods'
 import { LeafCover } from './LeafCover'
+import { MethodsTab } from './MethodsTab'
 import { PodBounds } from './PodBounds'
 import { PodCard, PodHits, stateGuess, type Pod, type Reading, type Trend } from './PodCard'
 import { teachSummary, useTeachQueue } from './TeachQueue'
@@ -24,8 +23,6 @@ import { teachSummary, useTeachQueue } from './TeachQueue'
 const pct = (v: number) => `${Math.round(v * 100)}%`
 const key = (a: { analyzer: string, version: number }) => `${a.analyzer}@${a.version}`
 const listingKey = (a: Listing) => key({ analyzer: a.id, version: a.version })
-/** `0` is every pod at once. */
-const SLOTS = [{ value: 0, label: 'All pods' }, ...Array.from({ length: 30 }, (_, i) => ({ value: i + 1, label: `Pod ${i + 1}` }))]
 /** Each analyser's mark in the legend, the per-pod bars and the chart, in listing order. */
 const COLORS = ['var(--meter)', 'var(--pod-ok)', 'var(--pod-ready)', 'var(--pod-attention)']
 const colorAt = (i: number) => COLORS[i % COLORS.length] as string
@@ -78,7 +75,6 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
   const trends = trpc.vision.podTrends.useQuery()
   const [tab, setTab] = useState<AnalysisTab>(asked ?? 'pods')
   const [exporting, setExporting] = useState(false)
-  const [picked, setPicked] = useState<string | null>(null)
   const [shown, setShown] = useState<Shown>('both')
   const [view, setView] = useState<'photo' | 'towers'>('photo')
   // The pod picked on a photo: its card stays open and the Methods chart follows it.
@@ -97,8 +93,6 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
   const st = status.data
   const list = analyzers.data ?? []
   const colorOf = (k: string) => colorAt(Math.max(0, list.findIndex(a => listingKey(a) === k)))
-  // The primary analyser until one is picked.
-  const selected = list.find(a => listingKey(a) === picked) ?? list.find(a => a.primary) ?? list[0]
   const primary = list.find(a => a.primary) ?? list[0]
   const cameras = shown === 'both' ? latest : latest.filter(l => l.camera === shown)
   const pod = (slot: number) => pods.data?.find(p => p.slot === slot)
@@ -198,16 +192,7 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
 
       {tab === 'methods' && (
         <div role="tabpanel" id="analysis-methods" aria-labelledby="analysis-tab-methods" className="flex flex-col gap-6">
-          <Panel>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="mr-auto text-[15px] font-medium">Methods</span>
-              {list.length > 0 && selected && (
-                <SelectValue label="Analyser" value={listingKey(selected)} options={list.map(a => ({ value: listingKey(a), label: listingKey(a) }))} onChange={setPicked} />
-              )}
-            </div>
-            {selected && <AnalyzerDetail a={selected} color={colorOf(listingKey(selected))} busy={!!st?.backfill} />}
-          </Panel>
-          <ComparePod colorOf={colorOf} slot={slot} onSlot={setSlot} pods={pods.data ?? []} trends={trends.data ?? []} />
+          <MethodsTab analyzers={list} colorOf={colorOf} busy={!!st?.backfill} slot={slot} onSlot={setSlot} pods={pods.data ?? []} trends={trends.data ?? []} boxes={calibration.boxes} />
         </div>
       )}
 
@@ -323,48 +308,6 @@ function Still({ latest, view, analyzer, empty, pod, trend, analyzers, colorOf, 
   )
 }
 
-/** The chosen analyser: what it does, how much it has scored, and making it primary or re-running it. */
-function AnalyzerDetail({ a, color, busy }: { a: Listing, color: string, busy: boolean }) {
-  const utils = trpc.useUtils()
-  const primary = trpc.vision.setPrimary.useMutation({ onSuccess: () => utils.vision.invalidate() })
-  const rerun = trpc.vision.rerun.useMutation({ onSuccess: () => utils.vision.invalidate() })
-  const current = a.source === 'device' && a.runsOn.includes('device') && !a.disabled
-  const canBePrimary = a.metrics.length === 0 || a.metrics.some(m => m.name === 'green_fraction')
-  const action = 'flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-xs text-fg-2 hover:text-fg disabled:cursor-default disabled:opacity-45'
-  return (
-    <div className="flex min-w-0 flex-col gap-2.5 border-t border-line pt-4">
-      <div className="flex items-start gap-2">
-        <span className="mt-[9px] h-[3px] w-2.5 shrink-0 rounded-[2px]" style={{ background: color }} />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-[15px] font-medium">{a.label}</span>
-          <span className="font-mono text-[11px] text-fg-3">{`${a.id}@${a.version} · ${a.source === 'device' ? 'on device' : 'remote'}`}</span>
-        </div>
-        {a.primary && <span className="rounded-[10px] bg-pod-ok/15 px-2 py-0.5 font-mono text-[10px] font-medium text-pod-ok">PRIMARY</span>}
-      </div>
-      <p className="text-[13px] leading-[1.55] text-fg-2 text-pretty">{a.description}</p>
-      {a.disabled && <p className="rounded-[10px] bg-pod-attention/10 px-3 py-2 text-[13px] text-fg-2">{`Off. ${a.disabled}`}</p>}
-      <div className="flex flex-wrap items-center gap-2.5">
-        <span className="flex-1 font-mono text-[11px] text-fg-3" title={a.lastTs ? `last ${new Date(a.lastTs).toLocaleString()}` : undefined}>
-          {a.captures > 0 ? `${a.captures} captures · ${a.rows} results` : 'No results yet'}
-        </span>
-        {!a.primary && canBePrimary && (
-          <button type="button" className={action} disabled={primary.isPending} onClick={() => primary.mutate({ analyzer: a.id })}>
-            <Star size={16} />
-            Make primary
-          </button>
-        )}
-        {current && (
-          <button type="button" className={action} disabled={busy || rerun.isPending} onClick={() => rerun.mutate({ analyzer: a.id, limit: 2000 })}>
-            <RefreshCw size={16} />
-            Re-run
-          </button>
-        )}
-      </div>
-      {(primary.error ?? rerun.error) && <InlineError>{(primary.error ?? rerun.error)?.message}</InlineError>}
-    </div>
-  )
-}
-
 type Calibration = ReturnType<typeof useCalibration>
 
 /**
@@ -446,52 +389,6 @@ function Calibrate({ c, cameras }: { c: Calibration, cameras: Camera[] }) {
       </div>
       {c.error && <InlineError>{c.error}</InlineError>}
     </div>
-  )
-}
-
-/** One pod's series from every analyser, or every planted pod side by side. */
-function ComparePod({ colorOf, slot, onSlot, pods, trends }: { colorOf: (k: string) => string, slot: number, onSlot: (slot: number) => void, pods: Pod[], trends: Trend[] }) {
-  const one = slot > 0
-  const cmp = trpc.vision.compare.useQuery({ slot: Math.max(1, slot), metric: 'green_fraction', limit: 200 }, { enabled: one })
-  const states = trpc.vision.compare.useQuery({ slot: Math.max(1, slot), metric: 'pod_state', limit: 1 }, { enabled: one })
-  const series = (cmp.data ?? []).map(s => ({ name: key(s), color: colorOf(key(s)), points: s.points.map(p => ({ x: Date.parse(p.ts), y: p.value })) }))
-  const head = (
-    <div className="flex flex-wrap items-center gap-3">
-      <span className="flex-1 text-[15px] font-medium">{one ? 'One pod over time' : 'All pods over time'}</span>
-      <SelectValue label="Pod" value={slot} options={SLOTS} onChange={onSlot} />
-    </div>
-  )
-  if (!one) return (
-    <Panel>
-      {head}
-      <AllPods pods={pods} trends={trends} onPick={onSlot} />
-    </Panel>
-  )
-  return (
-    <Panel>
-      {head}
-      <TimeChart series={series} height={180} yMin={0} yMax={1} formatY={pct} formatX={x => new Date(x).toLocaleDateString()} />
-      {series.length > 0 && (
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          {cmp.data?.map(s => (
-            <span key={key(s)} className="text-fg-2">
-              {`${key(s)} `}
-              <span className="font-mono text-fg">{pct(s.points.at(-1)?.value ?? 0)}</span>
-            </span>
-          ))}
-        </div>
-      )}
-      {(states.data ?? []).map((s) => {
-        const p = s.points.at(-1)
-        return p && (
-          <span key={key(s)} className="text-sm text-fg-2">
-            {`${key(s)} `}
-            <span className="font-mono text-fg">{POD_STATES[p.value] ?? `class ${p.value}`}</span>
-            <span className="text-xs text-fg-3">{` · ${fmtStamp(p.ts)}`}</span>
-          </span>
-        )
-      })}
-    </Panel>
   )
 }
 

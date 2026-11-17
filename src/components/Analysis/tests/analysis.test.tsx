@@ -28,7 +28,7 @@ vi.mock('@/src/utils/trpc', () => {
     if (name === 'capture') calls.capture(input, opts)
     if (name === 'summary') calls.summary(input)
     // Per camera or per capture when a test sets it so, else one answer for every input.
-    const by = name === 'frames' ? (input as { camera: string }).camera : ['capture', 'suggestions', 'labels'].includes(name) ? (input as { captureId: string }).captureId : name === 'compare' ? (input as { metric: string }).metric : null
+    const by = name === 'frames' ? (input as { camera: string }).camera : ['capture', 'suggestions', 'labels'].includes(name) ? (input as { captureId: string }).captureId : name === 'compare' ? (input as { metric: string }).metric : name === 'still' ? (input as { id: string }).id : null
     const answer = by !== null && data.has(`${name}:${by}`) ? data.get(`${name}:${by}`) : data.get(name)
     return { data: opts?.enabled === false ? undefined : answer }
   } })
@@ -50,7 +50,7 @@ vi.mock('@/src/utils/trpc', () => {
     trpc: {
       useUtils: () => ({ vision: { invalidate } }),
       vision: { analyzers: query('analyzers'), status: query('status'), podTrends: query('podTrends'), allPodSeries: query('allPodSeries'), compare: query('compare'), capture: query('capture'), regions: query('regions'), suggestions: query('suggestions'), labels: query('labels'), labelStats: query('labelStats'), podCodes: query('podCodes'), boxesOff: query('boxesOff'), setPrimary: mutation('setPrimary'), rerun: mutation('rerun'), setRegions: mutation('setRegions') },
-      camera: { list: query('frames') },
+      camera: { list: query('frames'), get: query('still') },
       grow: { pods: query('pods') },
       datasets: { summary: query('summary') },
     },
@@ -92,58 +92,121 @@ const openExport = () => {
 afterEach(cleanup)
 
 describe('AnalysisPage', () => {
-  it('shows the primary analyser in one card and the others on request', () => {
+  it('lists every method version as a row, the primary picked by its radio', () => {
     render(<AnalysisPage />)
     open('Methods')
-    const picker = screen.getByLabelText('Analyser') as HTMLSelectElement
-    expect([...picker.options].map(o => o.value)).toEqual(['green-threshold@1', 'exg-otsu@1', 'leaf-unet@2'])
-    expect(picker.value).toBe('green-threshold@1')
-    expect(screen.getByText('Fixed green threshold')).toBeTruthy()
-    expect(screen.getAllByText('PRIMARY')).toHaveLength(1)
-    expect(screen.getByText('green-threshold@1 · on device')).toBeTruthy()
-    expect(screen.getByText('2 captures · 30 results')).toBeTruthy()
-    expect(screen.queryByText('Make primary')).toBeNull()
-    expect(screen.getByText('Re-run')).toBeTruthy()
-    fireEvent.change(picker, { target: { value: 'leaf-unet@2' } })
-    expect(screen.getByText('leaf-unet@2 · remote')).toBeTruthy()
-    expect(screen.getByText('No results yet')).toBeTruthy()
-    expect(screen.queryByText('PRIMARY')).toBeNull()
+    const group = screen.getByRole('group', { name: 'Primary method' })
+    const radios = screen.getAllByRole('radio') as HTMLInputElement[]
+    expect(radios.map(r => r.closest('fieldset'))).toEqual([group, group, group])
+    expect(radios.map(r => r.checked)).toEqual([true, false, false])
+    expect(screen.getByRole('radio', { name: 'green-threshold@1 Fixed green threshold', description: 'Fixed cut-off.' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'leaf-unet@2 leaf-unet' })).toBeTruthy()
+    expect(screen.getAllByText('2 captures')).toHaveLength(2)
+    expect(screen.getByText('No results yet · remote')).toBeTruthy()
     // Re-run is offered only for analysers that run here.
-    expect(screen.queryByText('Re-run')).toBeNull()
+    expect(screen.getAllByRole('button', { name: /^Re-run/ }).map(b => b.getAttribute('aria-label'))).toEqual(['Re-run green-threshold@1', 'Re-run exg-otsu@1'])
   })
 
-  it('makes an analyser primary and starts a re-run', () => {
+  it('makes an analyser primary by its radio and starts a re-run', () => {
     render(<AnalysisPage />)
     open('Methods')
-    fireEvent.change(screen.getByLabelText('Analyser'), { target: { value: 'exg-otsu@1' } })
-    fireEvent.click(screen.getByText('Make primary'))
+    fireEvent.click(screen.getByRole('radio', { name: 'exg-otsu@1 Excess green + Otsu' }))
     expect(calls.setPrimary).toHaveBeenCalledWith({ analyzer: 'exg-otsu' })
-    fireEvent.click(screen.getByText('Re-run'))
+    fireEvent.click(screen.getByRole('button', { name: 'Re-run exg-otsu@1' }))
     expect(calls.rerun).toHaveBeenCalledWith({ analyzer: 'exg-otsu', limit: 2000 })
     expect(invalidate).toHaveBeenCalled()
   })
 
-  it('compares the chosen pod across analysers', () => {
+  it('holds re-runs while one is running', () => {
+    data.set('status', { running: null, waiting: [], dropped: 0, failed: 0, backfill: { analyzer: 'exg-otsu', done: 3, total: 10 } })
     render(<AnalysisPage />)
     open('Methods')
-    fireEvent.change(screen.getByLabelText('Pod'), { target: { value: '1' } })
-    expect(screen.getByText('One pod over time')).toBeTruthy()
-    expect(screen.getByRole('img', { name: 'green-threshold@1, exg-otsu@1' })).toBeTruthy()
-    expect(screen.getByText('52%')).toBeTruthy()
-    fireEvent.change(screen.getByLabelText('Pod'), { target: { value: '7' } })
-    expect(calls.compare).toHaveBeenCalledWith({ slot: 7, metric: 'green_fraction', limit: 200 })
-    expect(calls.compare).toHaveBeenLastCalledWith({ slot: 7, metric: 'pod_state', limit: 1 })
+    expect(screen.getAllByRole('button', { name: /^Re-run/ }).every(b => (b as HTMLButtonElement).disabled)).toBe(true)
   })
 
-  it('shows a learned analyser\'s latest pod state for the chosen pod', () => {
+  it('compares the picked pod across analysers, and goes back to all pods', () => {
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    expect(screen.getByText('One pod over time')).toBeTruthy()
+    expect(screen.getByText('Pod 1 · Swiss Chard')).toBeTruthy()
+    expect(screen.queryByLabelText('Pod')).toBeNull()
+    expect(screen.getByRole('img', { name: 'green-threshold@1, exg-otsu@1' })).toBeTruthy()
+    expect(screen.getByText('52%')).toBeTruthy()
+    expect(calls.compare).toHaveBeenCalledWith({ slot: 1, metric: 'green_fraction', limit: 200 })
+    expect(calls.compare).toHaveBeenLastCalledWith({ slot: 1, metric: 'pod_state', limit: 1 })
+    fireEvent.click(screen.getByRole('button', { name: 'All pods' }))
+    expect(screen.getByText('All pods over time')).toBeTruthy()
+  })
+
+  it('shows a learned analyser\'s latest pod state for the chosen pod, and can\'t make it primary', () => {
     data.set('analyzers', [...(data.get('analyzers') as object[]), { ...base, id: 'pod-state', version: 1, label: 'Pod state (learned)', description: 'A small CNN.', primary: false, metrics: [{ name: 'pod_state', label: 'Pod state', description: '' }] }])
     data.set('compare:pod_state', [{ analyzer: 'pod-state', version: 1, source: 'device', points: [{ ts: '2026-01-02T00:00:00Z', value: 1, captureId: 'b' }] }])
     render(<AnalysisPage />)
     open('Methods')
-    fireEvent.change(screen.getByLabelText('Pod'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
     expect(screen.getByText('sprouted')).toBeTruthy()
-    fireEvent.change(screen.getByLabelText('Analyser'), { target: { value: 'pod-state@1' } })
-    expect(screen.queryByText('Make primary')).toBeNull()
+    expect((screen.getByRole('radio', { name: 'pod-state@1 Pod state (learned)' }) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByRole('radio', { name: 'exg-otsu@1 Excess green + Otsu' }) as HTMLInputElement).disabled).toBe(false)
+  })
+
+  it('shows the pod itself: its crop from the newest photo, and photos across the chart', () => {
+    data.set('compare:green_fraction', [
+      { analyzer: 'green-threshold', version: 1, source: 'device', points: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((captureId, i) => ({ ts: `2026-01-0${i + 1}T00:00:00Z`, value: 0.1, captureId })) },
+      { analyzer: 'exg-otsu', version: 1, source: 'device', points: [{ ts: '2026-01-04T00:00:00Z', value: 0.1, captureId: 'd' }] },
+    ])
+    for (const id of ['a', 'd', 'g']) data.set(`still:${id}`, { id, camera: 'upper', ts: '', path: `${id}.jpg`, bytes: 1, url: `/api/captures/${id}.jpg` })
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    // The upper camera's newest still, scaled so pod 1's box fills the tile.
+    const latest = screen.getAllByAltText('Pod 1 at 2026-01-02T00:00:00Z')[0] as HTMLImageElement
+    expect(latest.getAttribute('src')).toBe('/api/captures/upper-1.jpg')
+    expect(latest.style.width).not.toBe('')
+    // Five of the seven photos, evenly from the first to the last; a pruned one says so.
+    const strip = screen.getByTestId('pod-strip')
+    expect([...strip.querySelectorAll('img')].map(i => i.getAttribute('src'))).toEqual(['/api/captures/a.jpg', '/api/captures/d.jpg', '/api/captures/g.jpg'])
+    expect(strip.querySelectorAll('figure')).toHaveLength(5)
+    expect(strip.textContent).toContain('Pruned')
+  })
+
+  it('fits the pod\'s tile to its still once it loads, and says when there is no photo or no box', () => {
+    data.set('frames:upper', [{ ...frame('upper'), path: 'data:image/jpeg;base64,AA' }])
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    const img = screen.getAllByAltText('Pod 1 at 2026-01-02T00:00:00Z')[0] as HTMLImageElement
+    expect(img.getAttribute('src')).toBe('data:image/jpeg;base64,AA')
+    const tile = img.parentElement as HTMLElement
+    const before = tile.style.aspectRatio
+    Object.defineProperty(img, 'naturalWidth', { value: 1280 })
+    Object.defineProperty(img, 'naturalHeight', { value: 720 })
+    fireEvent.load(img)
+    expect(tile.style.aspectRatio).not.toBe(before)
+    cleanup()
+    data.set('regions', [{ camera: 'upper', calibrated: true, removed: [1], regions: [] }])
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    expect(screen.getAllByText('No box').length).toBeGreaterThan(0)
+    cleanup()
+    data.set('frames:upper', [])
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    expect(screen.getAllByText('No photo').length).toBeGreaterThan(0)
+  })
+
+  it('reads the chart against the pod\'s record in one line', () => {
+    data.set('pods', [{ slot: 1, plant: 'Swiss Chard', status: 'seeded', plantedAt: '2026-01-01', notes: '' }])
+    data.set('compare:green_fraction', [
+      { analyzer: 'exg-otsu', version: 1, source: 'device', points: [{ ts: '2026-01-01T00:00:00Z', value: 0.16, captureId: 'a' }, { ts: '2026-01-02T00:00:00Z', value: 0, captureId: 'b' }] },
+      { analyzer: 'exg-otsu', version: 2, source: 'device', points: [{ ts: '2026-01-01T00:00:00Z', value: 0, captureId: 'a' }, { ts: '2026-01-02T00:00:00Z', value: 0.004, captureId: 'b' }] },
+    ])
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    expect(screen.getByText('exg-otsu@1 up to 16% on this seeded pod; exg-otsu@2 holds under 2%, as it should.')).toBeTruthy()
   })
 
   it('shows everything known about a pod on hover, and pins it on a click for Methods to chart', () => {
@@ -182,6 +245,7 @@ describe('AnalysisPage', () => {
     // Methods charts the pod picked last.
     open('Methods')
     expect(screen.getByText('One pod over time')).toBeTruthy()
+    expect(screen.getByText('Pod 1 · Cilantro')).toBeTruthy()
     expect(calls.compare).toHaveBeenLastCalledWith({ slot: 1, metric: 'pod_state', limit: 1 })
   })
 
@@ -464,7 +528,7 @@ describe('AnalysisPage', () => {
     expect(screen.getByText('Scoring upper-9')).toBeTruthy()
     expect(screen.getAllByText('No photos from this camera yet.')).toHaveLength(2)
     open('Methods')
-    expect(screen.queryByLabelText('Analyser')).toBeNull()
+    expect(screen.queryByRole('radio')).toBeNull()
     expect(calls.capture).toHaveBeenLastCalledWith({ captureId: '' }, { enabled: false })
   })
 
