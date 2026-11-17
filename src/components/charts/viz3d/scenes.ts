@@ -528,7 +528,9 @@ export const PODS_SPEC: BaseSpec = { need: 10.5, camera: { position: [0, 0.5, 13
  * loading), "Tower 1…" under each. Each pod is a stub off its column, turned
  * a little further round each row, holding a wireframe leaf sized by its leaf
  * cover; an empty pod is the grey stub alone. While loading the leaves pulse
- * small in turn, then grow to their cover and turn green in a sweep.
+ * small in turn, then grow to their cover and turn green in a sweep. Each pod
+ * with a slot can be picked, by an unseen ball around its leaf (or its stub's
+ * end); a column hides the pods behind it.
  */
 export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> {
   const TOP_Y = 1.8
@@ -543,13 +545,18 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
   const stubGeo = new T.CylinderGeometry(0.09, 0.09, 0.3, 12)
   const ico = new T.IcosahedronGeometry(1, 1)
   const wire = new T.WireframeGeometry(ico)
-  interface Pod { holder: THREE.Group, leaf: THREE.Group, line: THREE.LineBasicMaterial, fill: THREE.MeshBasicMaterial }
+  const ball = new T.SphereGeometry(1, 8, 6)
+  // Drawn by nobody, hit by the pointer's ray all the same.
+  const unseen = new T.MeshBasicMaterial({ visible: false })
+  interface Pod { holder: THREE.Group, leaf: THREE.Group, hit: THREE.Mesh, line: THREE.LineBasicMaterial, fill: THREE.MeshBasicMaterial }
   const towers: Array<{ group: THREE.Group, label: Label, pods: Pod[] }> = []
 
   function tower(k: number) {
     const group = new T.Group()
     base.root.add(group)
-    group.add(new T.Mesh(column, base.tint(new T.MeshBasicMaterial(), 'grid')), new T.LineSegments(edges, base.tint(new T.LineBasicMaterial(), 'edge')))
+    const post = new T.Mesh(column, base.tint(new T.MeshBasicMaterial(), 'grid'))
+    base.pickable(post)
+    group.add(post, new T.LineSegments(edges, base.tint(new T.LineBasicMaterial(), 'edge')))
     const label = base.label(`Tower ${k + 1}`, { ink: 'fg3', size: 0.22, align: 'center', valign: 'middle', priority: 3 })
     base.root.add(label.sprite)
     return { group, label, pods: [] as Pod[] }
@@ -566,9 +573,11 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
     const fill = new T.MeshBasicMaterial({ transparent: true, opacity: 0.22, depthWrite: false })
     const leaf = new T.Group()
     leaf.add(new T.Mesh(ico, fill), new T.LineSegments(wire, line))
-    holder.add(stub, leaf)
+    const hit = new T.Mesh(ball, unseen)
+    base.pickable(hit)
+    holder.add(stub, leaf, hit)
     group.add(holder)
-    return { holder, leaf, line, fill }
+    return { holder, leaf, hit, line, fill }
   }
   /** `n` columns of `rows` pods, spread across the scene; the rest of the pool hidden. */
   function layout(n: number, rows: number) {
@@ -616,6 +625,8 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
         p.leaf.visible = scale > 0.002
         p.leaf.scale.setScalar(Math.max(0.001, scale))
         p.leaf.position.x = 0.52 + scale
+        p.hit.position.x = p.leaf.position.x
+        p.hit.scale.setScalar(Math.max(0.2, scale))
         c.copy(inks.edge).lerp(inks.green, typeof v === 'number' ? e : 0)
         p.line.color.copy(c)
         p.fill.color.copy(c)
@@ -626,10 +637,17 @@ export function createPodsViz(container: HTMLElement, env?: Env): Viz<PodsData> 
     return false
   }
 
-  return viz(base, (d: PodsData) => {
-    data = d
-    layout(Math.max(1, d.towers.length), Math.max(1, ...d.towers.map(t => t.pods.length)))
-  })
+  return {
+    ...viz(base, (d: PodsData) => {
+      data = d
+      layout(Math.max(1, d.towers.length), Math.max(1, ...d.towers.map(t => t.pods.length)))
+      towers.forEach((tw, k) => tw.pods.forEach((p, i) => {
+        p.hit.userData.slot = d.towers[k]?.slots[i]
+      }))
+    }),
+    listen: base.listen,
+    spot: base.spot,
+  }
 }
 
 // ── Sensors ──────────────────────────────────────────────────────────────

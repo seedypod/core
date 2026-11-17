@@ -98,6 +98,11 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
   const primary = list.find(a => a.primary) ?? list[0]
   const cameras = shown === 'both' ? latest : latest.filter(l => l.camera === shown)
   const pod = (slot: number) => pods.data?.find(p => p.slot === slot)
+  // A pod picked on a photo, in the list or on the towers pins it (again unpins it) and points the Methods chart at it.
+  const pick = (s: number) => {
+    setPinned(p => (p === s ? null : s))
+    setSlot(s)
+  }
   const still = (l: Latest, v: 'photo' | 'bounds') => (
     <Still
       key={l.camera}
@@ -173,16 +178,22 @@ export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
                 trends={trends.data ?? []}
                 stories={told.stories}
                 pinned={pinned}
-                onPick={(s) => {
-                  setPinned(p => (p === s ? null : s))
-                  setSlot(s)
-                }}
+                onPick={pick}
                 onUnpin={() => setPinned(null)}
                 onRelabel={() => setTab('teach')}
               />
             )}
           </Panel>
-          {view === 'towers' && <LeafCover capturedAt={latest.map(l => l.frame?.ts).filter((t): t is string => !!t).sort().at(-1) ?? null} />}
+          {view === 'towers' && (
+            <LeafCover
+              capturedAt={latest.map(l => l.frame?.ts).filter((t): t is string => !!t).sort().at(-1) ?? null}
+              stories={told.stories}
+              pinned={pinned}
+              onPick={pick}
+              onUnpin={() => setPinned(null)}
+              onRelabel={() => setTab('teach')}
+            />
+          )}
         </div>
       )}
 

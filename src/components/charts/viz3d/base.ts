@@ -2,12 +2,14 @@
  * The shared base under every 3D chart: a transparent renderer filling its
  * card, a fixed perspective camera, the scene fitted to the card's width, a
  * loop that runs only while something on screen moves, a drag that spins the
- * chart (and a double click that puts it back), theme colours from the app's tokens, canvas-texture labels kept
+ * chart (and a double click that puts it back), picking what's under the pointer for a chart that has things to
+ * pick, theme colours from the app's tokens, canvas-texture labels kept
  * at least 11 px tall, and the building blocks (ribbon, line, floor grid,
  * ring, dot) the five charts are made of. Unlit materials only: no lights, no
  * shadows. Loaded with `import()` so three.js stays in its own chunk.
  */
 import * as THREE from 'three'
+import { pointerHit, TAP_SLOP } from './pick'
 import { clamp01, dragSpin, initialPhase, lerp, nextPhase, progressAt, releaseSpin, restingSpin, spinMoving, stepSpin, tweenAt, visibleSize, waveY, fitScale, labelHeight, pointEase, type Phase, type Spin, type VizState } from './motion'
 import { resampleArray, type Tone } from './shape'
 
@@ -18,6 +20,22 @@ export interface Viz<D> {
   setData: (data: D) => void
   /** Cancels the loop, disconnects observers and frees the GL context. */
   dispose: () => void
+  /** For a chart with things to pick (the pods): what to tell as the pointer finds them; null stops. */
+  listen?: (hooks: PickHooks | null) => void
+  /** Where a thing stands on the chart now; null if there's no such thing on screen. */
+  spot?: (id: number) => VizSpot | null
+}
+
+/** A point on the chart in px from its top left, with the chart's size. */
+export interface VizSpot { x: number, y: number, width: number, height: number }
+
+export interface PickHooks {
+  /** The thing under the pointer, or null once it's off them all. */
+  hover: (id: number | null) => void
+  /** A click or tap on a thing; a drag that turns the chart isn't one. */
+  pick: (id: number) => void
+  /** After each frame drawn, as things may have moved on screen. */
+  moved: () => void
 }
 
 export type Ink = Tone | 'skeleton' | 'grid' | 'fg1' | 'fg2' | 'fg3' | 'tank' | 'reserve' | 'edge' | 'stub'
@@ -411,6 +429,7 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     for (const l of labels) scaleLabel(l)
     declutter()
     renderer.render(scene, camera)
+    hooks?.moved()
     lastP = p
     if (animating(time)) schedule()
   }
@@ -456,17 +475,49 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
       })
   intersection?.observe(container)
 
+  // ── Picking ────────────────────────────────────────────────────────────
+  // Each pickable carries its id in `userData.slot` (as the Grow tower's do); one without blocks what's behind it.
+  const pickables: THREE.Object3D[] = []
+  const ray = new THREE.Raycaster()
+  let hooks: PickHooks | null = null
+  let hovered: number | null = null
+  const shown = (o: THREE.Object3D) => {
+    for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false
+    return true
+  }
+  const idAt = (e: { clientX: number, clientY: number }): number | null => {
+    const id = pointerHit(ray, camera, canvas, e, pickables.filter(shown))?.userData.slot
+    return typeof id === 'number' ? id : null
+  }
+  const hover = (id: number | null) => {
+    if (id === hovered) return
+    hovered = id
+    canvas.style.cursor = id === null ? 'grab' : 'pointer'
+    hooks?.hover(id)
+  }
+  const spotOf = (id: number): VizSpot | null => {
+    const o = pickables.find(p => p.userData.slot === id && shown(p))
+    if (!o || !size.height) return null
+    o.getWorldPosition(at).project(camera)
+    if (at.z > 1 || Math.abs(at.x) > 1 || Math.abs(at.y) > 1) return null
+    return { x: ((at.x + 1) / 2) * size.width, y: ((1 - at.y) / 2) * size.height, width: size.width, height: size.height }
+  }
+
   // Drag to spin. A touch that turns into a vertical scroll is cancelled by the browser (pan-y), which ends the drag.
-  let grab: { id: number, x: number, y: number, tip: boolean } | null = null
+  let grab: { id: number, x: number, y: number, tip: boolean, from: { x: number, y: number } } | null = null
   const onDown = (e: PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
-    grab = { id: e.pointerId, x: e.clientX, y: e.clientY, tip: e.pointerType === 'mouse' }
+    grab = { id: e.pointerId, x: e.clientX, y: e.clientY, tip: e.pointerType === 'mouse', from: { x: e.clientX, y: e.clientY } }
     spin = { ...spin, vy: 0, homing: false }
     canvas.setPointerCapture?.(e.pointerId)
     canvas.style.cursor = 'grabbing'
   }
   const onMove = (e: PointerEvent) => {
-    if (!grab || e.pointerId !== grab.id) return
+    if (!grab) {
+      if (hooks) hover(idAt(e))
+      return
+    }
+    if (e.pointerId !== grab.id) return
     spin = dragSpin(spin, e.clientX - grab.x, e.clientY - grab.y, grab.tip)
     grab.x = e.clientX
     grab.y = e.clientY
@@ -474,10 +525,16 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
   }
   const onUp = (e: PointerEvent) => {
     if (!grab || e.pointerId !== grab.id) return
+    const tap = e.type === 'pointerup' && Math.abs(e.clientX - grab.from.x) + Math.abs(e.clientY - grab.from.y) <= TAP_SLOP
     grab = null
     spin = releaseSpin(spin, reduced)
-    canvas.style.cursor = 'grab'
+    canvas.style.cursor = hovered === null ? 'grab' : 'pointer'
     schedule()
+    const id = tap && hooks ? idAt(e) : null
+    if (id !== null) hooks?.pick(id)
+  }
+  const onLeave = () => {
+    if (!grab) hover(null)
   }
   const onHome = () => {
     spin = { ...spin, vy: 0, homing: true }
@@ -487,6 +544,7 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
   canvas.addEventListener('pointermove', onMove)
   canvas.addEventListener('pointerup', onUp)
   canvas.addEventListener('pointercancel', onUp)
+  canvas.addEventListener('pointerleave', onLeave)
   canvas.addEventListener('dblclick', onHome)
 
   const recolor = () => {
@@ -518,6 +576,15 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
     ring,
     dot,
     plane,
+    /** Makes `object` pickable, as `userData.slot` says, or a blocker in front of others without one. */
+    pickable: (object: THREE.Object3D) => {
+      pickables.push(object)
+    },
+    listen: (next: PickHooks | null) => {
+      hooks = next
+      if (!next) hover(null)
+    },
+    spot: spotOf,
     invalidate: refit,
     /** For tests: run one frame now. */
     step: frame,
@@ -543,6 +610,7 @@ export function createBase(container: HTMLElement, spec: BaseSpec, draw: (frame:
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerup', onUp)
       canvas.removeEventListener('pointercancel', onUp)
+      canvas.removeEventListener('pointerleave', onLeave)
       canvas.removeEventListener('dblclick', onHome)
       scene.traverse((o) => {
         const m = o as THREE.Mesh

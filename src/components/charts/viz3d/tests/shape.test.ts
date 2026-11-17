@@ -164,6 +164,9 @@ describe('podsData', () => {
     expect(d.towers[1]?.pods[1]).toBeNull()
     expect(d.towers[2]?.pods[1]).toBe(1)
     expect(d.towers[2]?.pods[9]).toBe(0.3)
+    // Each pod keeps its slot, for picking it on the chart.
+    expect(d.towers[0]?.slots).toEqual([1, 4, 7, 10, 13, 16, 19, 22, 25, 28])
+    expect(d.towers[2]?.slots.at(-1)).toBe(30)
   })
 
   it('makes a Studio\'s 16 pods two columns of 8, and holes for missing slots', () => {

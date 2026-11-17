@@ -1,8 +1,13 @@
+import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import type { VizSpot } from '@/src/components/charts/viz3d/base'
 import { Chart3D, ChartNote, LoadingLine, staleSince, vizStatus } from '@/src/components/charts/viz3d/Chart3D'
 import { podsData, type PodsData } from '@/src/components/charts/viz3d/shape'
 import { fmtStamp } from '@/src/lib/timeAgo'
 import { trpc } from '@/src/utils/trpc'
+import { PodCard } from './PodCard'
+import { podLabel } from './PodsTab'
+import type { PodStory } from './pods'
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
 
@@ -28,8 +33,44 @@ function CoverBars({ data }: { data: PodsData | null }) {
   )
 }
 
-/** Leaf cover per pod from the primary analyser, tower by tower, with the latest frame's time at the right; empty pods are bare grey stubs. */
-export function LeafCover({ capturedAt }: { capturedAt: string | null }) {
+/** The card's width with its margins (PodCard is 230 px, m-1), and its gap from the pod. */
+const CARD_W = 238
+const GAP = 12
+
+/** Where a pod's card starts across the chart: right of the pod in the chart's left half, left of it in the right half, kept inside. */
+export function spotLeft(at: VizSpot): number {
+  const left = at.x < at.width / 2 ? at.x + GAP : at.x - GAP - CARD_W
+  return Math.max(0, Math.min(at.width - CARD_W, left))
+}
+
+/**
+ * A pod's card beside its spot on the towers. Up and down, the space above
+ * and below give way in proportion as the card grows, so it always spans the
+ * pod's height and stays inside the chart while it fits.
+ */
+function SpotCard({ at, children }: { at: VizSpot, children: ReactNode }) {
+  return (
+    <div className="pointer-events-none absolute inset-y-0 z-10 flex flex-col" style={{ left: spotLeft(at), width: CARD_W }} data-testid="spot-card">
+      <div style={{ flex: `0 1 ${at.y}px` }} />
+      {children}
+      <div style={{ flex: `0 1 ${at.height - at.y}px` }} />
+    </div>
+  )
+}
+
+/**
+ * Leaf cover per pod from the primary analyser, tower by tower, with the
+ * latest frame's time at the right; empty pods are bare grey stubs. Hovering,
+ * focusing or tapping a pod shows its card as the photo does; a click pins it.
+ */
+export function LeafCover({ capturedAt, stories, pinned, onPick, onUnpin, onRelabel }: {
+  capturedAt: string | null
+  stories: Map<number, PodStory>
+  pinned: number | null
+  onPick: (slot: number) => void
+  onUnpin: () => void
+  onRelabel: () => void
+}) {
   const pods = trpc.grow.pods.useQuery()
   const trends = trpc.vision.podTrends.useQuery()
   const queries = [pods, trends]
@@ -39,6 +80,8 @@ export function LeafCover({ capturedAt }: { capturedAt: string | null }) {
   const measured = rows.filter(r => !r.empty && r.cover !== null).length
   const status = vizStatus(queries, all.length === 0)
   const scene = all.length ? podsData(rows) : null
+  const pod = (slot: number) => all.find(p => p.slot === slot)
+  const trend = (slot: number) => trends.data?.find(t => t.slot === slot)
   return (
     <section aria-label="Leaf cover per pod" className="flex min-w-0 flex-col gap-4 rounded-[14px] border border-line bg-surface p-4 sm:p-5">
       <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
@@ -58,6 +101,16 @@ export function LeafCover({ capturedAt }: { capturedAt: string | null }) {
         label={`Leaf cover per pod: ${measured} of ${all.length} measured`}
         message={status === 'error' ? 'Couldn\'t load the pods.' : 'No pods yet.'}
         fallback={<CoverBars data={scene} />}
+        pick={{
+          points: all.map(p => ({ id: p.slot, label: podLabel(p.slot, p, stories.get(p.slot), green.get(p.slot) ?? null) })),
+          pinned,
+          onPick,
+          card: (slot, at) => (
+            <SpotCard at={at}>
+              <PodCard slot={slot} pod={pod(slot)} trend={trend(slot)} readings={[]} pinned={slot === pinned} onClose={onUnpin} story={stories.get(slot)} onRelabel={onRelabel} />
+            </SpotCard>
+          ),
+        }}
       />
     </section>
   )
