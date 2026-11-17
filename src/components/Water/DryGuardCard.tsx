@@ -100,7 +100,9 @@ export function DryGuardCard({ limits, run, pumpA, pumpOn, levelPct, distanceCm,
         <div role="radiogroup" aria-label="Dry-run guard" className="grid grid-cols-1 gap-2.5 @min-[620px]:grid-cols-3">
           {CHOICES.map((c) => {
             const picked = mode === c.value
-            const locked = !choosable || (limits.pumpDryGuardApp === false && c.value !== asked)
+            // hald refuses a guard that would leave none: tank level alone with the tank interlock off in hal.toml.
+            const nothing = c.value === 'level' && limits.waterLowCm === null && c.value !== asked
+            const locked = !choosable || nothing || (limits.pumpDryGuardApp === false && c.value !== asked)
             return (
               <button
                 key={c.value}

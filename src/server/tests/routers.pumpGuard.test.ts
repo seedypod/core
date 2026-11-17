@@ -28,7 +28,7 @@ describe('the pump dry-run guard from core', () => {
     expect(set).toMatchObject({ pumpDryGuard: 'both', pumpDryCurrentA: 0.8 })
     expect(set.pumpDryGuardWhy).toBeUndefined()
     expect((await c.pump.setGuard({ currentA: 9 })).pumpDryCurrentA).toBe(3)
-    expect((await c.pump.setGuard({ currentA: 0.01 })).pumpDryCurrentA).toBe(0.3)
+    expect((await c.pump.setGuard({ currentA: 0.01 })).pumpDryCurrentA).toBe(0.1)
     expect((await c.pump.setGuard({ guard: 'current', graceMs: 10_000 })).pumpDryGraceMs).toBe(5000)
     expect((await c.system.info()).system?.limits).toMatchObject({ pumpDryGuard: 'current', pumpDryGuardAsked: 'current' })
     expect(await c.pump.setGuard({ waterLowCm: 40, waterLowHoldMs: 99_999 }).catch(e => e.code)).toBe('BAD_REQUEST')

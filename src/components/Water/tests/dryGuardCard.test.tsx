@@ -101,6 +101,12 @@ describe('DryGuardCard', () => {
     expect(screen.getByText(/at or under dry: it won't trip/)).toBeTruthy()
   })
 
+  it('won\'t offer tank level alone when hal.toml has the tank interlock off', () => {
+    render(<DryGuardCard {...props} limits={{ ...limits, waterLowCm: null }} />)
+    expect((screen.getByRole('radio', { name: /Tank level/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('radio', { name: /Pump current/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('holds the guard when hal.toml locks it, and shows nothing for a hald with no guard', () => {
     render(<DryGuardCard {...props} limits={{ ...limits, pumpDryGuardApp: false }} />)
     expect(screen.getByTestId('guard-locked')).toBeTruthy()

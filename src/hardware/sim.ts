@@ -26,7 +26,7 @@ export interface SimHalOptions {
 }
 
 /** A stock hal.toml: both guards asked, but no current cutoff yet, so hald guards on the tank level alone. */
-const DEFAULT_LIMITS: SystemInfo['limits'] = { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'level', pumpDryGuardAsked: 'both', pumpDryGuardWhy: 'tank level only: no pump current cutoff yet', pumpDryGuardApp: true, pumpDryCurrentA: null, pumpDryCurrentMinA: 0.3, pumpDryCurrentMaxA: 3, pumpDryGraceMs: 3000, pumpDryGraceMinMs: 300, pumpDryGraceMaxMs: 5000, waterLowMinCm: 8, waterLowMaxCm: 19, waterLowHoldMs: 0, waterLowHoldMinMs: 0, waterLowHoldMaxMs: 60_000, pumpBrownoutV: 10.8, pumpBrownoutMs: 300, pumpBrownoutPi: false }
+const DEFAULT_LIMITS: SystemInfo['limits'] = { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'level', pumpDryGuardAsked: 'both', pumpDryGuardWhy: 'tank level only: no pump current cutoff yet', pumpDryGuardApp: true, pumpDryCurrentA: null, pumpDryCurrentMinA: 0.1, pumpDryCurrentMaxA: 3, pumpDryGraceMs: 3000, pumpDryGraceMinMs: 300, pumpDryGraceMaxMs: 5000, waterLowMinCm: 8, waterLowMaxCm: 19, waterLowHoldMs: 0, waterLowHoldMinMs: 0, waterLowHoldMaxMs: 60_000, pumpBrownoutV: 10.8, pumpBrownoutMs: 300, pumpBrownoutPi: false }
 
 /**
  * hald's `resolve_dry_guard`: the guard asked for, unless the current half of it
