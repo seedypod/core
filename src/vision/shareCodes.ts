@@ -9,7 +9,6 @@
 import { encode } from 'jpeg-js'
 import { POD_CODE, profileKey, type PodCodePair } from '../store/types'
 import { decodeJpeg } from './analyze'
-import type { Rect } from './greenArea'
 import { cameraOf, cropPixels, podRegions, type Camera, type RegionCalibration } from './regions'
 
 export const POD_CODES_REPO = 'seedypod/core'
@@ -108,11 +107,11 @@ export interface CropSource {
 /** One pod's crop as a JPEG, to drag into the form; null without a readable still. */
 export async function podCrop(captures: CropSource, slot: number, calibration: RegionCalibration | null): Promise<Uint8Array | null> {
   const camera = cameraOf(slot)
-  if (!camera) return null
+  const box = camera ? podRegions(camera, calibration)[slot] : undefined
+  if (!camera || !box) return null
   const got = (await captures.podId(camera)) ?? (await captures.latest(camera))
   const img = got ? decodeJpeg(got.bytes) : null
   if (!img) return null
-  const box = podRegions(camera, calibration)[slot] as Rect
   const r = cropPixels(box, img.width, img.height)
   const data = new Uint8Array(r.w * r.h * 4)
   for (let y = 0; y < r.h; y++) data.set(img.data.subarray(((r.y + y) * img.width + r.x) * 4, ((r.y + y) * img.width + r.x + r.w) * 4), y * r.w * 4)

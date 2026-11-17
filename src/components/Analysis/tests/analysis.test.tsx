@@ -375,6 +375,25 @@ describe('AnalysisPage', () => {
     expect(calls.setRegions).not.toHaveBeenCalled()
   })
 
+  it('removes a box the camera can\'t see its pod in, puts it back, and saves the removal', async () => {
+    data.set('regions', [{ camera: 'lower', calibrated: true, removed: [30], regions: Array.from({ length: 14 }, (_, i) => ({ slot: 16 + i, x: 0, y: 0, w: 0.1, h: 0.1, moved: false })) }])
+    render(<AnalysisPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Pod bounds' }))
+    expect(screen.getByText('No box, not scored: 30')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Remove pod 28 box' })).toBeNull()
+    fireEvent.click(screen.getByText('Edit boxes'))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove pod 28 box' }))
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Pod 27 box' }), { key: 'Delete' })
+    expect(screen.queryByRole('button', { name: 'Pod 28 box' })).toBeNull()
+    expect(screen.getByText('No box, not scored: 27, 28, 30')).toBeTruthy()
+    fireEvent.click(screen.getByText('Put back 27'))
+    expect(screen.getByRole('button', { name: 'Pod 27 box' })).toBeTruthy()
+    await act(async () => fireEvent.click(screen.getByText('Save boxes')))
+    const lower = calls.setRegions.mock.calls.map(c => c[0] as { camera: string, regions: Array<{ slot: number }>, removed: number[] }).find(c => c.camera === 'lower')
+    expect(lower?.removed).toEqual([28, 30])
+    expect(lower?.regions.map(r => r.slot)).toContain(27)
+  })
+
   it('shows why the boxes could not be saved', async () => {
     data.set('setRegionsError', new Error('pod 16 is not on the upper camera'))
     render(<AnalysisPage />)

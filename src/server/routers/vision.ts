@@ -11,7 +11,7 @@ import { podTrends } from '../../vision/analyze'
 import { POD_STATE_ID } from '../../vision/podState'
 import { seenEmpty } from '../../vision/seenEmpty'
 import { suggestLabel, type Suggestion } from '../../vision/suggestLabel'
-import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions } from '../../vision/regions'
+import { CAMERAS, cameraOf, cameraSlots, clampRegion, DEFAULT_REGIONS, podRegions, type Camera, type PodRegions, type RegionCalibration } from '../../vision/regions'
 import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
 
@@ -91,12 +91,19 @@ const Result = z.object({
 })
 const CameraName = z.enum(['upper', 'lower'])
 const Region = z.object({ slot: z.number().int(), x: z.number().min(0).max(1), y: z.number().min(0).max(1), w: z.number().gt(0).max(1), h: z.number().gt(0).max(1) })
-const CameraRegions = z.object({ camera: CameraName, calibrated: z.boolean(), regions: z.array(Region.extend({ moved: z.boolean() })) })
+const CameraRegions = z.object({ camera: CameraName, calibrated: z.boolean(), regions: z.array(Region.extend({ moved: z.boolean() })), removed: z.array(z.number().int()) })
+type OwnRegions = NonNullable<RegionCalibration[Camera]>
 
-/** One camera's boxes as rows, each marked moved when it isn't the measured default. */
-function regionRows(camera: Camera, own: PodRegions | undefined) {
+/** One camera's boxes as rows, each marked moved when it isn't the measured default; removed boxes are listed apart. */
+function regionRows(camera: Camera, own: OwnRegions | undefined) {
   const boxes = podRegions(camera, { [camera]: own })
-  return { camera, calibrated: !!own && Object.keys(own).length > 0, regions: cameraSlots(camera).map(slot => ({ slot, ...(boxes[slot] as PodRegions[number]), moved: !!own?.[slot] })) }
+  const slots = cameraSlots(camera)
+  return {
+    camera,
+    calibrated: !!own && Object.keys(own).length > 0,
+    regions: slots.filter(slot => boxes[slot]).map(slot => ({ slot, ...(boxes[slot] as PodRegions[number]), moved: !!own?.[slot] })),
+    removed: slots.filter(slot => !boxes[slot]),
+  }
 }
 
 const LabelValue = z.enum(POD_LABELS)
@@ -455,15 +462,18 @@ export const visionRouter = router({
       return CAMERAS.map(c => regionRows(c, own?.[c]))
     }),
   setRegions: publicProcedure
-    .meta({ openapi: { method: 'PUT', path: '/vision/regions/{camera}', tags: ['vision'], summary: 'Calibrate one camera\'s pod boxes; boxes left out keep their defaults, and null resets the camera' } })
-    .input(z.object({ camera: CameraName, regions: z.array(Region).max(15).nullable() }))
+    .meta({ openapi: { method: 'PUT', path: '/vision/regions/{camera}', tags: ['vision'], summary: 'Calibrate one camera\'s pod boxes; boxes left out keep their defaults, removed ones aren\'t scored, and null resets the camera' } })
+    .input(z.object({ camera: CameraName, regions: z.array(Region).max(15).nullable(), removed: z.array(z.number().int()).max(15).optional() }))
     .output(CameraRegions)
     .mutation(({ ctx, input }) => {
       const slots = cameraSlots(input.camera)
-      const stray = input.regions?.find(r => !slots.includes(r.slot))
-      if (stray) throw new TRPCError({ code: 'BAD_REQUEST', message: `pod ${stray.slot} is not on the ${input.camera} camera` })
-      const own: PodRegions = {}
+      const stray = [...(input.regions ?? []).map(r => r.slot), ...(input.removed ?? [])].find(s => !slots.includes(s))
+      if (stray !== undefined) throw new TRPCError({ code: 'BAD_REQUEST', message: `pod ${stray} is not on the ${input.camera} camera` })
+      const own: OwnRegions = {}
+      // A camera that can't see a pod (its cup out of frame, or hidden) has no box to score it on.
+      for (const slot of input.removed ?? []) own[slot] = null
       for (const { slot, ...box } of input.regions ?? []) {
+        if (own[slot] === null) continue
         const r = clampRegion(box)
         const d = DEFAULT_REGIONS[input.camera][slot] as PodRegions[number]
         // A box put back where it started is a default again, not a calibration.

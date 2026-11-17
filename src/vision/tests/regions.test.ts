@@ -42,6 +42,12 @@ describe('pod regions (#143)', () => {
     expect(podRegions('lower', null)).toEqual(DEFAULT_REGIONS.lower)
   })
 
+  it('leaves out the boxes the owner removed', () => {
+    const lower = podRegions('lower', { lower: { 28: null } })
+    expect(Object.keys(lower).map(Number)).toEqual(cameraSlots('lower').filter(s => s !== 28))
+    expect(lower[27]).toEqual(DEFAULT_REGIONS.lower[27])
+  })
+
   it('keeps boxes inside the frame and scales them to pixels', () => {
     expect(clampRegion({ x: -0.2, y: 0.95, w: 0.3, h: 0.1 })).toEqual({ x: 0, y: 0.9, w: 0.3, h: 0.1 })
     expect(clampRegion({ x: 0.5, y: 0.5, w: 0, h: 2 })).toEqual({ x: 0.5, y: 0, w: 0.01, h: 1 })
