@@ -1,6 +1,9 @@
 import { ArrowLeftRight, ChevronDown, X } from 'lucide-react'
-import { ZONE_COLOR, ZONE_LABEL, type LightZone } from '@/src/components/Grow/lightZones'
+import { cn } from '@/lib/utils'
+import { ZONE_COLOR, ZONE_LABEL, ZONES, type LightZone } from '@/src/components/Grow/lightZones'
 import { Button } from '@/src/components/ds/core'
+
+const SHORT: Record<LightZone, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 
 interface Props {
   slot: number
@@ -12,6 +15,10 @@ interface Props {
   reason?: string
   planted: boolean
   plants: { id: string, name: string, zone: LightZone }[]
+  /** The zones this plan may put the pod's plant in, and whether they are the plan's own rather than the plant's usual ones; none when the catalog doesn't know it. */
+  zones?: { allowed: LightZone[], own: boolean }
+  /** Set the plan's zones for the pod's plant, or null to go back to its usual ones. */
+  onZones: (zones: LightZone[] | null) => void
   /** Put this plant in the pod, or none. */
   onPlant: (plantId: string | null) => void
   /** Start picking the pod to swap this one with. */
@@ -21,10 +28,10 @@ interface Props {
 
 /**
  * The tapped pod on the plan grid: what's in it and why, a plant to put there
- * instead (those suited to its light first), and Swap. Planned, planted and
- * empty pods all edit the same way.
+ * instead (those suited to its light first), the zones the plan may use for
+ * that plant, and Swap. Planned, planted and empty pods all edit the same way.
  */
-export function PodPanel({ slot, zone, plant, plantId, reason, planted, plants, onPlant, onSwap, onClose }: Props) {
+export function PodPanel({ slot, zone, plant, plantId, reason, planted, plants, zones, onZones, onPlant, onSwap, onClose }: Props) {
   const suited = plants.filter(p => p.zone === zone)
   const others = plants.filter(p => p.zone !== zone)
   const about = reason ? `Planned: ${reason}.` : planted ? 'In the tower now.' : 'Nothing planned here.'
@@ -61,6 +68,41 @@ export function PodPanel({ slot, zone, plant, plantId, reason, planted, plants, 
           <ChevronDown size={16} className="pointer-events-none shrink-0 text-fg-2" />
         </span>
       </label>
+      {zones && (
+        <div className="flex flex-col gap-1.5 text-[13px]">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-fg-2">Does ok in</span>
+            <span role="group" aria-label="Zones for this plan" className="flex gap-1">
+              {ZONES.map((z) => {
+                const on = zones.allowed.includes(z)
+                return (
+                  <button
+                    key={z}
+                    type="button"
+                    aria-pressed={on}
+                    // A plant needs one zone at least.
+                    disabled={on && zones.allowed.length === 1}
+                    onClick={() => onZones(on ? zones.allowed.filter(x => x !== z) : [...zones.allowed, z])}
+                    className={cn('rounded-full border px-2 py-0.5 text-[11px] disabled:cursor-not-allowed', on ? 'border-fg-2 text-fg' : 'border-line text-fg-3')}
+                  >
+                    {SHORT[z]}
+                  </button>
+                )
+              })}
+            </span>
+          </div>
+          <span className="text-[11px] text-fg-3">
+            {zones.own
+              ? (
+                  <>
+                    {'Your zones for this plan. '}
+                    <button type="button" onClick={() => onZones(null)} className="cursor-pointer underline">Usual zones</button>
+                  </>
+                )
+              : 'Its usual zones; change them for this plan.'}
+          </span>
+        </div>
+      )}
       <div className="flex gap-2">
         <Button icon={ArrowLeftRight} full onClick={onSwap}>Swap</Button>
         {plant && <Button onClick={() => onPlant(null)}>Remove</Button>}

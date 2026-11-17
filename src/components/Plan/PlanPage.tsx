@@ -274,8 +274,20 @@ export function PlanPage() {
     if (plantId) bump(plantId, 1)
     setEdited({ ...overrides, pins: placePins([...bySlot.values()], slot, plantId) })
   }
+  // The zones this plan may put a plant in: the plan's own, else its ideal and the ones it tolerates.
+  const zonesFor = (plantId: string | null) => {
+    const p = everything.data?.plants.find(x => x.id === plantId)
+    if (!p) return undefined
+    const own = overrides?.allowedZones?.[p.id]
+    return { allowed: own ?? [p.zone, ...p.tolerates.map(t => t.zone)], own: !!own }
+  }
+  const setZones = (plantId: string, allowed: Zone[] | null) => {
+    const rest = Object.entries(overrides?.allowedZones ?? {}).filter(([id]) => id !== plantId)
+    setEdited({ ...overrides, allowedZones: Object.fromEntries(allowed ? [...rest, [plantId, allowed]] : rest) })
+  }
   const shown: View = noWebGL ? '2d' : view
   const openSlot = open === null ? undefined : zones.data?.slots.find(s => s.slot === open)
+  const openPlantId = openSlot ? bySlot.get(openSlot.slot)?.plantId ?? everything.data?.plants.find(p => p.name === planted.get(openSlot.slot)?.plant)?.id ?? null : null
 
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-4">
@@ -331,10 +343,12 @@ export function PlanPage() {
                   slot={openSlot.slot}
                   zone={(openSlot.zone ?? 'medium') as Zone}
                   plant={bySlot.get(openSlot.slot)?.plantName ?? planted.get(openSlot.slot)?.plant ?? null}
-                  plantId={bySlot.get(openSlot.slot)?.plantId ?? everything.data?.plants.find(p => p.name === planted.get(openSlot.slot)?.plant)?.id ?? null}
+                  plantId={openPlantId}
                   reason={bySlot.get(openSlot.slot)?.reason}
                   planted={planted.has(openSlot.slot)}
                   plants={everything.data?.plants ?? []}
+                  zones={zonesFor(openPlantId)}
+                  onZones={z => setZones(openPlantId as string, z)}
                   onPlant={id => plantAt(openSlot.slot, id || null)}
                   onSwap={() => setSwapping(openSlot.slot)}
                   onClose={() => {

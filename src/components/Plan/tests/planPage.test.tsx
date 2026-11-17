@@ -454,6 +454,41 @@ describe('PlanPage', () => {
     expect(cell(one).getAttribute('aria-pressed')).toBe('false')
   })
 
+  it('lets a pod’s plant use other zones for this plan, and go back to its usual ones', () => {
+    state.pods = [{ slot: 1, plant: 'Arugula', status: 'growing' }]
+    render(<PlanPage />)
+    flat()
+    search('basil')
+    add('Basil')
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const slot = Number(within(screen.getByTestId('plan-grid')).getByText('Basil').closest('[data-slot]')?.getAttribute('data-slot'))
+    fireEvent.click(cell(slot))
+    const group = () => within(panel().getByRole('group', { name: 'Zones for this plan' }))
+    const pressed = () => group().getAllByRole('button').map(b => [b.textContent, b.getAttribute('aria-pressed')])
+    // Basil tolerates one zone either way.
+    expect(pressed()).toEqual([['High', 'true'], ['Medium', 'true'], ['Low', 'true']])
+    expect(panel().getByText('Its usual zones; change them for this plan.')).toBeTruthy()
+
+    fireEvent.click(group().getByRole('button', { name: 'High' }))
+    expect(calls.layout.mock.lastCall?.[0].overrides.allowedZones).toEqual({ basil: ['medium', 'low'] })
+    expect(panel().getByText(/^Your zones for this plan\./)).toBeTruthy()
+    fireEvent.click(group().getByRole('button', { name: 'Low' }))
+    expect(calls.layout.mock.lastCall?.[0].overrides.allowedZones).toEqual({ basil: ['medium'] })
+    // One zone at least.
+    expect((group().getByRole('button', { name: 'Medium' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(group().getByRole('button', { name: 'Low' }))
+    expect(calls.layout.mock.lastCall?.[0].overrides.allowedZones).toEqual({ basil: ['medium', 'low'] })
+    fireEvent.click(panel().getByRole('button', { name: 'Usual zones' }))
+    expect(calls.layout.mock.lastCall?.[0].overrides.allowedZones).toEqual({})
+    expect(pressed()).toEqual([['High', 'true'], ['Medium', 'true'], ['Low', 'true']])
+
+    // A planted pod's plant too; an empty pod has none to set.
+    fireEvent.click(cell(1))
+    expect(pressed()).toEqual([['High', 'false'], ['Medium', 'false'], ['Low', 'true']])
+    fireEvent.click(cell(2))
+    expect(panel().queryByRole('group', { name: 'Zones for this plan' })).toBeNull()
+  })
+
   it('plans a plant in an empty pod from its panel, and swaps one in from another', () => {
     render(<PlanPage />)
     flat()
