@@ -71,7 +71,7 @@ export function TowerHome({ onUnavailable }: { onUnavailable: () => void }) {
         <div className="text-[13px] text-fg-2">
           {cycle
             ? `${cycle.stage[0]?.toUpperCase()}${cycle.stage.slice(1)}${cycle.notes ? ` · ${cycle.notes}` : ''}`
-            : <Link to="/grow" className="hover:text-fg">Start one on Grow for thinning, root-check, harvest and nutrient reminders.</Link>}
+            : <Link to="/grow" className="hover:text-fg">Start one on Grow for thinning, root-check and harvest reminders.</Link>}
         </div>
       </div>
       <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 font-mono text-[11px] text-fg-2" data-testid="home-counts">

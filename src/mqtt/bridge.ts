@@ -13,6 +13,7 @@ import type { Capture } from '../store/types'
 import type { CoreEvent, EventBus } from '../lib/eventBus'
 import type { HalClient } from '../hardware/types'
 import type { Store } from '../store/types'
+import { CHORE_ALERTS, choreDoneKind } from '../care/engine'
 import { cycleDay } from '../grow/grow'
 import { LIGHT_HOURS_KEY } from '../telemetry/recorder'
 
@@ -38,6 +39,10 @@ const REMINDERS = [
   ['reminder_nutrients', 'Add nutrients', 'mdi:flask'],
   ['reminder_sow', 'Start new yCubes', 'mdi:seed'],
 ] as const
+
+/** Entities that keep their reminder's name, so automations still work, but follow a chore's alert: nutrients is the Feed chore now (ADR-0029). */
+const FOLLOWS: Record<string, string> = { reminder_nutrients: CHORE_ALERTS.feed }
+const alertOf = (kind: string): string => FOLLOWS[kind] ?? kind
 
 /** The bridge as System › Status shows it: off with no broker set, else whether it holds a connection and since when. */
 export interface BridgeStatus {
@@ -166,7 +171,7 @@ export class HaBridge {
     const active = new Set(this.o.store.alerts.list({ activeOnly: true }).map(a => a.kind))
     const state = {
       grow: { day: cycle ? cycleDay(cycle, this.now()) : null, stage: cycle?.stage ?? null },
-      reminders: Object.fromEntries(REMINDERS.map(([k]) => [k, active.has(k)])),
+      reminders: Object.fromEntries(REMINDERS.map(([k]) => [k, active.has(alertOf(k))])),
       backupStale: active.has('backup_stale'),
       lightHours: Math.round(this.o.store.counters.get(LIGHT_HOURS_KEY) * 10) / 10,
       ts: this.now().toISOString(),
@@ -188,12 +193,18 @@ export class HaBridge {
       return
     }
     if (topic.startsWith(`${this.p}/done/`)) {
-      const kind = topic.slice(`${this.p}/done/`.length)
+      const kind = alertOf(topic.slice(`${this.p}/done/`.length))
       const now = this.now().toISOString()
       const a = this.o.store.alerts.list({ activeOnly: true }).find(x => x.kind === kind)
       if (a) {
         this.o.store.alerts.acknowledge(a.id, now)
         this.o.store.alerts.clear(kind, now)
+        // As Alerts does: a chore's alert is done by logging the chore, so it counts from now.
+        const done = choreDoneKind(kind)
+        if (done) {
+          this.o.store.tankActions.add({ ts: now, kind: done, amount: null, unit: null, product: null, note: 'Marked done in Home Assistant', source: 'user' }, now)
+          this.o.events.emit({ kind: 'mutation', path: 'tank' })
+        }
         this.o.events.emit({ kind: 'mutation', path: `alerts.${kind}` })
       }
     }

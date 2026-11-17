@@ -175,7 +175,9 @@ function feed(store: Store, snap: HalSnapshot, now: Date, planted: Pod[]): Chore
   const { group } = cropGroup(store, planted)
   const { reading, why } = trusted(snap, 'ec', now)
   if (!reading) {
-    const every = done ? store.settings.get().nutrientReminderDays || TOP_OFF_DAYS : SPROUT_DOSE_DAYS
+    const weekly = store.settings.get().nutrientReminderDays
+    if (weekly <= 0) return { ...c, citations: [CITE.plantFood, CITE.dosesByProduct], state: 'ok', basis: 'timeline', dueAt: null, readings: [], reason: `Feed reminders are off in Settings → Grow reminders (${why}).` }
+    const every = done ? weekly : SPROUT_DOSE_DAYS
     const rule = done
       ? `Gardyn adds plant food with the weekly top-off: 1/2 tsp per gallon of Gardyn Plant Food in early growth, 1 tsp once mature. Other products dose differently.`
       : `The first feed, Gardyn's sprout dose of 1/4 tsp Gardyn Plant Food per gallon, goes in once most yCubes have sprouted, usually within ${SPROUT_DOSE_DAYS} d.`

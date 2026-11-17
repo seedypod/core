@@ -10,6 +10,7 @@
         title: Gardyn needs water
         message: Tank is low; the pump will refuse to run until refilled.
 
+# Add nutrients follows the Feed chore: on when a feed is due, and its done button logs one.
 - alias: Gardyn — nutrients reminder
   trigger:
     - platform: state

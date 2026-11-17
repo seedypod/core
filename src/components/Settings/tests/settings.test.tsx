@@ -395,8 +395,8 @@ describe('Settings: grow reminders', () => {
     expect(screen.getByText('Sent · day 14')).toBeTruthy()
     expect(screen.getByText('In 1 day')).toBeTruthy()
     expect(screen.getByText('In 15 days')).toBeTruthy()
-    // Next nutrient period is day 21: 13 Oct + 21 days.
-    expect(screen.getByText(`Recurring · next ${new Date('2026-11-03T12:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`)).toBeTruthy()
+    // Feed counts from the last logged feed, not the cycle.
+    expect(screen.getByText('After the last logged feed')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Decrease Root check' }))
     expect(screen.getByText('Due now')).toBeTruthy()
   })
@@ -409,9 +409,11 @@ describe('Settings: grow reminders', () => {
     expect(screen.getAllByText('Off')).toHaveLength(2)
   })
 
-  it('calls nutrients recurring before a cycle starts', () => {
+  it('sets how often to feed, counted from the last logged feed before a cycle starts too', () => {
+    data.set('grow', { cycle: null, day: null })
     render(<SettingsPage />)
-    expect(screen.getByText('Recurring')).toBeTruthy()
+    expect(screen.getByText('After the last logged feed')).toBeTruthy()
+    expect(screen.getByText('every 7 d')).toBeTruthy()
   })
 })
 
@@ -439,7 +441,7 @@ describe('Settings: every field saves', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Increase Empty' }))
     fireEvent.click(screen.getByRole('button', { name: 'Decrease Capacity' }))
     fireEvent.click(screen.getByRole('button', { name: 'Increase Harvest' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Increase Nutrients' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Feed' }))
     fireEvent.click(screen.getByRole('button', { name: 'Increase Capture interval' }))
     fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'k1' } })
     fireEvent.change(screen.getByLabelText('Result ingest token'), { target: { value: 't1' } })

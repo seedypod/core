@@ -251,6 +251,14 @@ describe('DueChores', () => {
     expect(button('top_off', 'Skip')).toBeTruthy()
   })
 
+  it('keeps a skipped Feed off on its calendar too, as it raises the feed reminder there', () => {
+    data.chores = [chore('feed', 'due'), chore('clean', 'due')]
+    data.last.set('chore_feed', [alert(8, 'chore_feed', { active: false, dismissedAt: '2026-11-11T09:00:00Z' })])
+    render(<DueChores />)
+    expect(calls.history.mock.calls.map(c => c[0])).toEqual([{ activeOnly: false, kind: 'chore_feed', limit: 1 }])
+    expect(rows()).toEqual(['needs-chore-clean'])
+  })
+
   it('holds the rows until a maybe-skipped chore\'s last alert is in', () => {
     data.chores = [chore('top_off', 'due', { basis: 'reading' }), chore('clean', 'due')]
     render(<DueChores />)

@@ -84,8 +84,17 @@ refresh, feed and clean. Each says whether it comes **from a reading** or the
   never used to ask for a top-off.
 
 Every dose and target links the knowledge note it comes from. **Done** logs the
-chore in the tank log, and the chore counts from there. An agent reads the same
-list over MCP (`list_chores`).
+chore in the tank log, and the chore counts from there. A chore that isn't due
+yet has **Log** instead, so a feed done early still counts. For Feed, both open
+the tank log's form on a feed, so the amount and product go in with it. An agent
+reads the same list over MCP (`list_chores`).
+
+**Feed** is also the one feed reminder. Without an EC probe it comes due on the
+calendar: the sprout dose about 14 days after planting, then every 7 days after
+the last feed in the tank log. **Settings → Grow reminders → Feed** sets the
+days (0 turns the calendar off). Due, it raises the **Feed** alert, also the
+**Add nutrients** sensor in Home Assistant, and logging a feed anywhere (Care,
+the tank log, Alerts, Home Assistant, MCP) clears it and starts the count again.
 
 ## Keep a tank log
 

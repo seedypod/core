@@ -25,8 +25,6 @@ export function seedDemo(store: Store, hal: HalClient, now = new Date()): void {
   const cycle = store.grow.start(started.toISOString(), 'Autumn greens + herbs')
   store.grow.setStage('vegetative', now.toISOString())
   store.grow.markIssued('reminder_thinning')
-  store.grow.markIssued('reminder_nutrients:1')
-  store.grow.markIssued('reminder_nutrients:2')
   void cycle
 
   for (let slot = 1; slot <= 30; slot++) {
@@ -66,7 +64,9 @@ export function seedDemo(store: Store, hal: HalClient, now = new Date()): void {
   store.telemetry.add(pts)
   store.counters.add('light_hours', 19 * 14 + 2130, now.toISOString())
 
-  store.alerts.raise('reminder_nutrients', 'Add nutrients (every 7 days)', new Date(now.getTime() - 2 * 3_600_000).toISOString())
+  // Last fed 8 days ago, so the Feed chore is due and raises its reminder.
+  const fed = new Date(now.getTime() - 8 * day).toISOString()
+  store.tankActions.add({ ts: fed, kind: 'feed', amount: 0.5, unit: 'tsp', product: 'Gardyn Plant Food', note: '', source: 'user' }, fed)
 
   // Camera frames: generated SVG "stills" so the gallery has something to show.
   for (const cam of ['upper', 'lower'] as const) {

@@ -57,15 +57,31 @@ describe('HaBridge', () => {
   it('state reflects reminders and grow day; done button clears a reminder', async () => {
     const { mqtt, store, bridge } = setup()
     store.grow.start('2026-10-20T00:00:00Z')
-    store.alerts.raise('reminder_nutrients', 'feed', '2026-10-31T00:00:00Z')
+    store.alerts.raise('reminder_thinning', 'thin', '2026-10-31T00:00:00Z')
     bridge.publishState()
     const state = JSON.parse(mqtt.published.at(-1)?.payload ?? '{}') as { grow: { day: number }, reminders: Record<string, boolean> }
     expect(state.grow.day).toBe(11)
-    expect(state.reminders.reminder_nutrients).toBe(true)
-    await bridge.onMessage('seedypod/u1/core/done/reminder_nutrients', '{}')
+    expect(state.reminders.reminder_thinning).toBe(true)
+    await bridge.onMessage('seedypod/u1/core/done/reminder_thinning', '{}')
     expect(store.alerts.list({ activeOnly: true })).toHaveLength(0)
+    expect(store.tankActions.list()).toEqual([])
     const after = JSON.parse(mqtt.published.at(-1)?.payload ?? '{}') as { reminders: Record<string, boolean> }
-    expect(after.reminders.reminder_nutrients).toBe(false)
+    expect(after.reminders.reminder_thinning).toBe(false)
+  })
+
+  it('keeps the nutrients entities on the Feed chore: on with its alert, and done logs a feed', async () => {
+    const { mqtt, store, bridge, events } = setup()
+    const paths: string[] = []
+    events.subscribe((e) => {
+      if (e.kind === 'mutation') paths.push(e.path)
+    })
+    store.alerts.raise('chore_feed', 'Calendar guess, no EC probe: 8 d since the last feed.', '2026-10-31T00:00:00Z')
+    bridge.publishState()
+    expect((JSON.parse(mqtt.published.at(-1)?.payload ?? '{}') as { reminders: Record<string, boolean> }).reminders.reminder_nutrients).toBe(true)
+    await bridge.onMessage('seedypod/u1/core/done/reminder_nutrients', '{}')
+    expect(store.alerts.list({ activeOnly: true })).toEqual([])
+    expect(store.tankActions.list()).toMatchObject([{ kind: 'feed', note: 'Marked done in Home Assistant', source: 'user' }])
+    expect(paths).toEqual(['tank', 'alerts.chore_feed'])
   })
 
   it('backup_stale is a problem sensor that follows the alert', () => {

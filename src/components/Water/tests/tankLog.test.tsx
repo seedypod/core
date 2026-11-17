@@ -5,7 +5,7 @@ import { describeAction, TankLog } from '../TankLog'
 
 const { data, calls, state } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
-  calls: { logAction: vi.fn(), removeAction: vi.fn(), invalidate: vi.fn() },
+  calls: { logAction: vi.fn(), removeAction: vi.fn(), invalidate: vi.fn(), invalidateCare: vi.fn(), invalidateAlerts: vi.fn() },
   state: { error: null as null | { message: string } },
 }))
 
@@ -21,7 +21,7 @@ vi.mock('@/src/utils/trpc', () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ tank: { invalidate: calls.invalidate } }),
+      useUtils: () => ({ tank: { invalidate: calls.invalidate }, care: { invalidate: calls.invalidateCare }, alerts: { invalidate: calls.invalidateAlerts } }),
       tank: { actions: { useQuery: () => ({ data: data.get('actions') }) }, logAction: mutation('logAction'), removeAction: mutation('removeAction') },
     },
   }
@@ -86,6 +86,9 @@ describe('TankLog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(calls.logAction).toHaveBeenCalledWith({ kind: 'feed', amount: 1.5, unit: 'tsp', product: 'MaxiGro', note: 'pre-dissolved' })
     expect(screen.queryByText('Log a tank action')).toBeNull()
+    // The chores count from the log, so they and their alerts refetch too.
+    expect(calls.invalidateCare).toHaveBeenCalled()
+    expect(calls.invalidateAlerts).toHaveBeenCalled()
   })
 
   it('switches the unit with the kind, and logs one without an amount as just the action', () => {
