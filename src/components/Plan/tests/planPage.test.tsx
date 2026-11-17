@@ -379,7 +379,7 @@ describe('PlanPage', () => {
     expect(screen.getByText(/^0 planned · 29 empty ·/)).toBeTruthy()
     expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there.')).toBeTruthy()
     flat()
-    expect(screen.getByText('Drag a plant onto another pod, or tap one then the other, to swap them. Italic = already planted: swapping one moves its record, for after you\'ve moved its yCube.')).toBeTruthy()
+    expect(screen.getByText('Drag a plant onto another pod, or tap one then the other, to swap them. Italic = in the tower now.')).toBeTruthy()
     cleanup()
 
     // Nothing has answered: no count to give yet.
@@ -412,7 +412,7 @@ describe('PlanPage', () => {
     expect(screen.queryByText(/lower than ideal/)).toBeNull()
     expect(towerPods().filter(p => p.harvest?.reason === 'Planned: medium zone, allowed by the caller (ideal low).')).toHaveLength(1)
     flat()
-    expect(screen.getByText(/for after you've moved its yCube\. Dashed outlines sit higher than ideal/)).toBeTruthy()
+    expect(screen.getByText(/Italic = in the tower now\. Dashed outlines sit higher than ideal/)).toBeTruthy()
     expect(screen.queryByText(/lower than ideal/)).toBeNull()
     const higher = screen.getByTitle('medium zone, allowed by the caller (ideal low)')
     expect(higher.className).toContain('outline-dashed')
@@ -556,6 +556,6 @@ describe('PlanPage', () => {
     expect(await screen.findByText(/needs WebGL/)).toBeTruthy()
     expect(screen.getByTestId('plan-grid')).toBeTruthy()
     expect(screen.queryByRole('tablist', { name: 'Plan view' })).toBeNull()
-    expect(screen.getByText(/swap them\. Italic = already planted: swapping one moves its record/)).toBeTruthy()
+    expect(screen.getByText(/swap them\. Italic = in the tower now\./)).toBeTruthy()
   })
 })

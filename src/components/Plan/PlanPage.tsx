@@ -85,7 +85,7 @@ export function swapPins(assignments: readonly Assignment[], from: number, to: n
 /**
  * The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), pods away from their ideal zone outlined.
  * A plant drags onto another pod, or is tapped and then the other pod, to swap them: planned plants swap in the plan
- * (`onSwap`), and a swap with a planted pod on either side swaps the pods' records (`onMove`), after moving their yCubes.
+ * (`onSwap`), and a swap with a planted pod on either side swaps the pods' records (`onMove`), since pods move freely.
  */
 function PlanGrid({ cols, slots, bySlot, planted, onSwap, onMove }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, onSwap: (from: number, to: number) => void, onMove: (from: number, to: number) => void }) {
   const [picked, setPicked] = useState<number | null>(null)
@@ -293,7 +293,7 @@ export function PlanPage() {
           <Unplaced unplaced={layout.data?.unplaced ?? []} suggestions={layout.data?.suggestions ?? []} />
           <p className="mt-2 text-[12px] text-fg-3">
             {shown === '2d'
-              ? `Drag a plant onto another pod, or tap one then the other, to swap them. Italic = already planted: swapping one moves its record, for after you've moved its yCube.${shiftNotes(layout.data?.assignments ?? [], '2d')}`
+              ? `Drag a plant onto another pod, or tap one then the other, to swap them. Italic = in the tower now.${shiftNotes(layout.data?.assignments ?? [], '2d')}`
               : `Planned pods show their plant grown, ringed by light zone; click one for why it sits there.${shiftNotes(layout.data?.assignments ?? [], '3d')}`}
           </p>
         </Card>
