@@ -108,7 +108,7 @@ function NeedsYou() {
         <NeedRow color="var(--pod-ready)" title={`${ready.length} ready to harvest`} sub={names.length > 2 ? `${names.slice(0, 2).join(', ')}, +${names.length - 2}` : names.join(', ')} />
       )}
       {order && (
-        <Link to="/analysis" hash="pod-order" data-testid="needs-pod-order" className="flex gap-2.5 rounded-lg px-2.5 py-2 hover:bg-active/60">
+        <Link to="/analysis" search={{ tab: 'teach' }} hash="pod-order" data-testid="needs-pod-order" className="flex gap-2.5 rounded-lg px-2.5 py-2 hover:bg-active/60">
           <span className="mt-1.5 size-[7px] shrink-0 rounded-full" style={{ background: 'var(--pod-attention)' }} />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="truncate text-[13px] text-fg">Pods out of order</span>
