@@ -93,6 +93,37 @@ describe('DryGuardCard', () => {
     expect(calls.setGuard).toHaveBeenCalledWith(expect.objectContaining({ guard: 'level' }))
   })
 
+  it('before any run: no trace, a note to run the pump first, and a level readout that waits', () => {
+    render(<DryGuardCard {...props} run={null} levelPct={undefined} distanceCm={undefined} fullCm={undefined} emptyCm={undefined} limits={{ ...limits, pumpDryCurrentA: null, pumpDryGuardAsked: 'current', pumpDryGuard: 'current' }} />)
+    expect(screen.getByText('no run yet')).toBeTruthy()
+    expect(screen.getByText('Run the pump once to see its current here.')).toBeTruthy()
+    expect(screen.getByText('Run the pump once, then set it from that run')).toBeTruthy()
+    expect(screen.getByTestId('needs-cutoff')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Set from last run' })).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: /Both/ }))
+    expect(screen.getByTestId('level-readout').textContent).toBe('now —')
+    expect(screen.getByText('Calibrate the tank in Settings to set it here')).toBeTruthy()
+  })
+
+  it('saves a new grace, reads the sensor\'s jitter, and dates an older run', () => {
+    const distances = Array.from({ length: 40 }, (_, i) => 10 + (i % 2 ? 0.3 : -0.3))
+    render(<DryGuardCard {...props} distances={distances} run={{ ...run, startedAt: '2026-11-02T16:00:00Z', wetA: null }} />)
+    expect(screen.getByTestId('level-readout').textContent).toMatch(/jitter ±0\.3 cm/)
+    expect(screen.getByText(/^last run · Nov 2 /)).toBeTruthy()
+    expect(screen.getByText('Between the wet and the dry draw')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Grace before the pump-current check' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.setGuard).toHaveBeenCalledWith({ guard: undefined, currentA: undefined, graceMs: 3100, waterLowCm: undefined, waterLowHoldMs: undefined })
+  })
+
+  it('with the current guard off, shows the live draw while the pump runs', () => {
+    render(<DryGuardCard {...props} pumpOn pumpA={0.93} limits={{ ...limits, pumpDryGuardAsked: 'level', pumpDryGuard: 'level' }} />)
+    expect(screen.getByText('now 0.93 A')).toBeTruthy()
+    cleanup()
+    render(<DryGuardCard {...props} run={null} limits={{ ...limits, pumpDryGuardAsked: 'level', pumpDryGuard: 'level' }} />)
+    expect(screen.getByText('—')).toBeTruthy()
+  })
+
   it('warns when the cutoff would stop a healthy pump or never trip', () => {
     render(<DryGuardCard {...props} limits={{ ...limits, pumpDryCurrentA: 0.6 }} />)
     expect(screen.getByText(/At or above the wet draw/)).toBeTruthy()

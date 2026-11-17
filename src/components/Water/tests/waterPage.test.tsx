@@ -287,6 +287,34 @@ describe('WaterPage: tank and pump', () => {
     await waitFor(() => expect(calls.runOnce).toHaveBeenCalledWith({ durationS: 300 }))
   })
 
+  it('says why clearing a dry-run trip failed', () => {
+    data.set('pump', { ...idle, fault: 'dry-run' })
+    data.set('alerts', [{ id: 175, kind: 'pump_fault', active: true, detail: 'pump: dry-run' }])
+    state.ackError = { message: 'the daemon is offline' }
+    render(<WaterPage />)
+    expect(screen.getAllByText('the daemon is offline')).toHaveLength(1)
+    state.ackError = null
+  })
+
+  it('while the pump runs, shows its current against the cutoff, amber once it nears it', () => {
+    data.set('pump', { ...idle, on: true, level: 100, remainingS: 300 })
+    data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'both', pumpDryCurrentA: 0.8 } } })
+    data.set('sensors', { water_level_pct: { value: 71, unit: '%' }, water_distance: { value: 9.4, unit: 'cm' }, pump_a: { value: 0.93, unit: 'A' }, pump_v: { value: 12.1, unit: 'V' } })
+    render(<WaterPage />)
+    const meter = screen.getByRole('meter', { name: 'Pump current against its cutoff' })
+    expect(meter.textContent).toBe('0.93 Acutoff 0.8')
+    expect(within(meter).getByText('0.93 A').className).not.toMatch(/text-warn/)
+    cleanup()
+    data.set('sensors', { water_level_pct: { value: 71, unit: '%' }, water_distance: { value: 9.4, unit: 'cm' }, pump_a: { value: 0.84, unit: 'A' }, pump_v: { value: 12.1, unit: 'V' } })
+    render(<WaterPage />)
+    expect(within(screen.getByRole('meter', { name: 'Pump current against its cutoff' })).getByText('0.84 A').className).toMatch(/text-warn/)
+    cleanup()
+    // The level guard alone has no current to compare.
+    data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'level', pumpDryCurrentA: 0.8 } } })
+    render(<WaterPage />)
+    expect(screen.queryByRole('meter', { name: 'Pump current against its cutoff' })).toBeNull()
+  })
+
   it('waits for readings without guessing', () => {
     data.delete('sensors')
     data.delete('settings')
@@ -500,6 +528,16 @@ describe('WaterPage with WebGL: the tank hero', () => {
   })
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('with the current guard alone, the tank cutoff is only a warning: no reserve, no low', () => {
+    data.set('system', { system: { limits: { pumpMaxRunS: 900, pumpMaxDuty: 100, waterLowCm: 16, pumpDryGuard: 'current', pumpDryCurrentA: 0.8 } } })
+    data.set('sensors', { water_level_pct: { value: 20, unit: '%' }, water_distance: { value: 17, unit: 'cm' }, pump_a: { value: 0, unit: 'A' }, pump_v: { value: 12.3, unit: 'V' } })
+    render(<WaterPage />)
+    expect(screen.getByTestId('tank-3d').dataset.low).toBe('false')
+    expect(screen.getByTestId('tank-3d').textContent).toMatch(/· warn 27% · 16 cm ·/)
+    expect(screen.getAllByText('warns below 27% · the tank level doesn\'t stop the pump').length).toBeGreaterThan(0)
+    expect(within(screen.getByTestId('pump-strip')).getByTestId('guard-chip').textContent).toBe('guard · current')
   })
 
   it('puts the level once in big type over one line, the range as plain tabs, and the history and glass on one scale', () => {

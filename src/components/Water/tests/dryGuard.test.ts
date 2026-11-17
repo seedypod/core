@@ -35,6 +35,9 @@ describe('dry-run guard helpers', () => {
     expect([guardChip('both'), guardChip('level'), guardChip('current')]).toEqual(['current + level', 'level', 'current'])
     expect(brownoutLine({ pumpBrownoutV: 10.8, pumpBrownoutMs: 300, pumpBrownoutPi: false })).toBe('Brown-out guard: stops below 10.8 V for 0.3 s (set on the unit)')
     expect(brownoutLine({})).toBeNull()
+    expect(brownoutLine({ pumpBrownoutV: 10.8, pumpBrownoutMs: 300, pumpBrownoutPi: true })).toBe('Brown-out guard: stops below 10.8 V for 0.3 s or on the Pi\'s under-voltage flag (set on the unit)')
+    expect(brownoutLine({ pumpBrownoutMs: 300, pumpBrownoutPi: true })).toBe('Brown-out guard: stops on the Pi\'s under-voltage flag for 0.3 s (set on the unit)')
+    expect(brownoutLine({ pumpBrownoutMs: 300 })).toBe('Brown-out guard: off (set on the unit)')
   })
 
   it('says which guard fired and what the other signal read', () => {
@@ -46,6 +49,10 @@ describe('dry-run guard helpers', () => {
     // The tank was past the level cutoff too: no claim the level guard would have missed it.
     expect(tripWords('dry-run: pump drew 0.29 A', { ...run, levelCm: 17 }, limits, at)).toMatch(/after 42 s\. The tank read 31%\.$/)
     expect(tripWords('dry-run: tank level read 16.2 cm, past 16 cm for 10 s', run, limits, at)).toBe('20:00 · Tank level read 16.2 cm, past 16 cm for 10 s after 42 s. The pump was still drawing 0.53 A.')
+    // Without the run or the cutoff, it says only what it knows.
+    expect(tripWords('dry-run: pump drew 0.29 A', null, undefined, at)).toBe('current fell to 0.29 A.')
+    expect(tripWords('dry-run: pump drew 0.29 A', { ...run, levelPct: null, levelCm: null }, { ...limits, pumpDryCurrentA: null }, at)).toBe('20:00 · current fell to 0.29 A after 42 s.')
+    expect(tripWords('dry-run', { ...run, wetA: null }, limits, at)).toMatch(/^20:00 · .* after 42 s\.$/)
     expect(tripWords('over-temp', run, limits, at)).toBeNull()
     expect(tripWords('brown-out: supply fell to 10.2 V for 0.3 s', run, limits, at)).toBeNull()
   })

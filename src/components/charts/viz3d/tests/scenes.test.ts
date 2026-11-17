@@ -407,6 +407,37 @@ describe('the tank\'s reserve under the pump cutoff', () => {
     expect(chart.visible || glass.visible).toBe(false)
     viz.dispose()
   })
+
+  it('when the tank level only warns, swaps the amber cutoff and its reserve for a grey dashed mark, and back', () => {
+    const el = sized(600, 2)
+    const viz = createTankViz(el, env)
+    viz.setData({ ...TANK, pumping: false })
+    advance(16)
+    advance(200, 10)
+    const [chart, glass] = reserve()
+    const amber = amberLines()
+    const dashed = () => {
+      const found: THREE.Line[] = []
+      sceneOf().scene.traverse((o) => {
+        if (o instanceof THREE.Line && (o.material as THREE.Material).type === 'LineDashedMaterial') found.push(o)
+      })
+      return found
+    }
+    const cutLine = dashed().filter(l => l.visible)
+    viz.setData({ ...TANK, pumping: false, warnOnly: true })
+    advance(200, 10)
+    expect(chart.visible || glass.visible).toBe(false)
+    expect(amberLines()).toBeLessThan(amber)
+    const warn = dashed().filter(l => l.visible)
+    expect(warn).toHaveLength(2)
+    expect(warn.some(l => cutLine.includes(l))).toBe(false)
+    expect(warn.every(l => l.position.y === 0.3 * 2.6)).toBe(true)
+    viz.setData({ ...TANK, pumping: false })
+    advance(200, 10)
+    expect(chart.visible && glass.visible).toBe(true)
+    expect(amberLines()).toBe(amber)
+    viz.dispose()
+  })
 })
 
 describe('the shared base', () => {
