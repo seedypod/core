@@ -84,19 +84,16 @@ export function swapPins(assignments: readonly Assignment[], from: number, to: n
 
 /**
  * The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), pods away from their ideal zone outlined.
- * A plant drags onto another pod, or is tapped and then the other pod, to swap them: planned plants swap in the plan
- * (`onSwap`), and a swap with a planted pod on either side swaps the pods' records (`onMove`), since pods move freely.
+ * A plant drags onto another pod, or is tapped and then the other pod, to swap them (`onSwap`).
  */
-function PlanGrid({ cols, slots, bySlot, planted, onSwap, onMove }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, onSwap: (from: number, to: number) => void, onMove: (from: number, to: number) => void }) {
+function PlanGrid({ cols, slots, bySlot, planted, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, onSwap: (from: number, to: number) => void }) {
   const [picked, setPicked] = useState<number | null>(null)
   // The pod a drag is over, ringed so it's clear where the drop lands.
   const [over, setOver] = useState<number | null>(null)
   const swap = (from: number, to: number) => {
     setPicked(null)
     setOver(null)
-    if (from === to) return
-    if (planted.has(from) || planted.has(to)) onMove(from, to)
-    else if (bySlot.has(from)) onSwap(from, to)
+    onSwap(from, to)
   }
   return (
     <div data-testid="plan-grid" className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
@@ -222,6 +219,12 @@ export function PlanPage() {
   const swap = (from: number, to: number) => setEdited({ ...overrides, pins: swapPins(layout.data?.assignments ?? [], from, to) })
   // A planted pod's record moves with its yCube; a plant planned on either side moves the other way, once the records have.
   const move = (from: number, to: number) => swapPods.mutate({ a: from, b: to }, { onSuccess: () => (bySlot.has(from) || bySlot.has(to)) && swap(from, to) })
+  // Any pod onto any other, on the grid or the tower: pods with a plant in either swap their records, plans alone their pins.
+  const exchange = (from: number, to: number) => {
+    if (from === to) return
+    if (planted.has(from) || planted.has(to)) move(from, to)
+    else if (bySlot.has(from) || bySlot.has(to)) swap(from, to)
+  }
   const bump = (id: string, d: number) => {
     const count = Math.max(0, (picks[id] ?? 0) + d)
     setPicks(p => ({ ...p, [id]: count }))
@@ -272,7 +275,7 @@ export function PlanPage() {
               </div>
             )}
           />
-          {zones.data && shown === '2d' && <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} onSwap={swap} onMove={move} />}
+          {zones.data && shown === '2d' && <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} onSwap={exchange} />}
           {zones.data && shown === '3d' && (
             <div className="mt-3">
               <TowerView
@@ -283,6 +286,7 @@ export function PlanPage() {
                 zones
                 selected={selected}
                 onSelect={setSelected}
+                onSwap={exchange}
                 onClose={() => setSelected(null)}
                 onUnavailable={() => setNoWebGL(true)}
               />
@@ -294,7 +298,7 @@ export function PlanPage() {
           <p className="mt-2 text-[12px] text-fg-3">
             {shown === '2d'
               ? `Drag a plant onto another pod, or tap one then the other, to swap them. Italic = in the tower now.${shiftNotes(layout.data?.assignments ?? [], '2d')}`
-              : `Planned pods show their plant grown, ringed by light zone; click one for why it sits there.${shiftNotes(layout.data?.assignments ?? [], '3d')}`}
+              : `Planned pods show their plant grown, ringed by light zone; click one for why it sits there, or drag one onto another pod to swap them.${shiftNotes(layout.data?.assignments ?? [], '3d')}`}
           </p>
         </Card>
 

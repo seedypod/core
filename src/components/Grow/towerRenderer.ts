@@ -18,7 +18,15 @@ export interface TowerMountOptions {
   onRender?: () => void
   /** Pixels on the right that a panel covers at this width; the tower centres in what's left. */
   reserveRight?: (width: number) => number
+  /** Whether a drag that starts on a pod carries it onto another rather than turning the tower. */
+  carryPods?: () => boolean
+  /** While a pod is carried: it, and the pod under the pointer if any; null once it's let go. */
+  onCarry?: (carry: Carry | null) => void
+  /** A carried pod let go over another. */
+  onDrop?: (from: number, to: number) => void
 }
+
+export interface Carry { from: number, over: number | null }
 
 const deg = Math.PI / 180
 export const VIEW = {
@@ -32,6 +40,9 @@ export const VIEW = {
   minDistance: 1.6,
   maxDistance: 5,
 }
+
+/** How far a pod moves before it lifts, so a shaky tap still picks it. */
+const CARRY_SLOP = 8
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 const isLight = () => document.documentElement.dataset.theme === 'light'
@@ -130,7 +141,7 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   const observer = new ResizeObserver(resize)
   observer.observe(host)
 
-  // Picking: hover highlights a pod, a click that didn't drag selects it.
+  // Picking: hover highlights a pod, a click that didn't drag selects it; a drag from a pod may carry it.
   const ray = new THREE.Raycaster()
   const pointer = new THREE.Vector2()
   const pick = (e: PointerEvent | MouseEvent): TowerTarget | null => {
@@ -140,16 +151,36 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
     return tower.targetOf(ray.intersectObjects(tower.pickables, false)[0]?.object)
   }
   const same = (a: TowerTarget | null, b: TowerTarget | null) => JSON.stringify(a) === JSON.stringify(b)
-  let drag: { x: number, y: number, moved: boolean } | null = null
+  let drag: { x: number, y: number, moved: boolean, pod: number | null, over: number | null } | null = null
   let hovered: TowerTarget | null = null
+  const hover = (target: TowerTarget | null) => {
+    if (same(target, hovered)) return
+    hovered = target
+    canvas.style.cursor = target === null ? 'grab' : 'pointer'
+    o.onHover(target)
+  }
   const onDown = (e: PointerEvent) => {
-    drag = { x: e.clientX, y: e.clientY, moved: false }
+    const at = o.carryPods?.() ? pick(e) : null
+    drag = { x: e.clientX, y: e.clientY, moved: false, pod: at?.kind === 'pod' ? at.slot : null, over: null }
     canvas.setPointerCapture?.(e.pointerId)
   }
   const onMove = (e: PointerEvent) => {
     if (drag && (e.buttons & 1 || e.pointerType === 'touch')) {
       const dx = e.clientX - drag.x
       const dy = e.clientY - drag.y
+      if (drag.pod !== null) {
+        if (!drag.moved && Math.abs(dx) + Math.abs(dy) <= CARRY_SLOP) return
+        const lifted = !drag.moved
+        drag.moved = true
+        canvas.style.cursor = 'grabbing'
+        const t = pick(e)
+        const over = t?.kind === 'pod' && t.slot !== drag.pod ? t.slot : null
+        if (lifted || over !== drag.over) {
+          drag.over = over
+          o.onCarry?.({ from: drag.pod, over })
+        }
+        return
+      }
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true
       if (drag.moved) {
         view.azimuth = clamp(view.azimuth - dx * 0.008, -VIEW.maxAzimuth, VIEW.maxAzimuth)
@@ -161,19 +192,31 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
       }
       return
     }
-    const target = pick(e)
-    if (!same(target, hovered)) {
-      hovered = target
-      canvas.style.cursor = target === null ? 'grab' : 'pointer'
-      o.onHover(target)
-    }
+    hover(pick(e))
   }
   const onUp = (e: PointerEvent) => {
+    if (drag?.pod != null && drag.moved) {
+      const { pod, over } = drag
+      drag = null
+      o.onCarry?.(null)
+      if (over !== null) o.onDrop?.(pod, over)
+      hover(pick(e))
+      canvas.style.cursor = hovered === null ? 'grab' : 'pointer'
+      return
+    }
     if (drag && !drag.moved) {
       const target = pick(e)
       if (target) o.onSelect(target)
     }
     drag = null
+  }
+  const onCancel = () => {
+    if (drag?.pod != null && drag.moved) o.onCarry?.(null)
+    drag = null
+  }
+  // A carried pod holds the page still on touch, where a vertical drag would otherwise scroll it.
+  const onTouch = (e: TouchEvent) => {
+    if (drag?.pod != null) e.preventDefault()
   }
   const onLeave = () => {
     if (hovered !== null) {
@@ -204,6 +247,9 @@ export function mountTower(host: HTMLElement, o: TowerMountOptions) {
   canvas.addEventListener('pointerdown', onDown)
   canvas.addEventListener('pointermove', onMove)
   canvas.addEventListener('pointerup', onUp)
+  canvas.addEventListener('pointercancel', onCancel)
+  canvas.addEventListener('touchstart', onTouch, { passive: false })
+  canvas.addEventListener('touchmove', onTouch, { passive: false })
   canvas.addEventListener('pointerleave', onLeave)
   canvas.addEventListener('wheel', onWheel, { passive: false })
   canvas.addEventListener('dblclick', onDouble)

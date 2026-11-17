@@ -6,6 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as ThreeModule from 'three'
+import type { Carry } from '../towerRenderer'
 import type { TowerTarget } from '../towerScene'
 
 const { renders } = vi.hoisted(() => ({ renders: { count: 0 } }))
@@ -66,9 +67,10 @@ const pointer = (type: string, x: number, y: number, buttons = 0) => {
   return e
 }
 
-function mount(reserveRight?: (w: number) => number) {
-  const calls = { hover: [] as (TowerTarget | null)[], select: [] as TowerTarget[], ready: 0, fail: 0, rendered: 0 }
+function mount(reserveRight?: (w: number) => number, carry?: boolean) {
+  const calls = { hover: [] as (TowerTarget | null)[], select: [] as TowerTarget[], ready: 0, fail: 0, rendered: 0, carry: [] as (Carry | null)[], drop: [] as [number, number][] }
   const m = mountTower(host, {
+    ...(carry !== undefined && { carryPods: () => carry, onCarry: (c: Carry | null) => calls.carry.push(c), onDrop: (a: number, b: number) => calls.drop.push([a, b]) }),
     podCount: 30,
     onHover: t => calls.hover.push(t),
     onSelect: t => calls.select.push(t),
@@ -210,6 +212,95 @@ describe('mountTower', () => {
     canvas.dispatchEvent(new MouseEvent('dblclick'))
     expect(m.camera.position.distanceTo(start)).toBeLessThan(1e-6)
     expect(VIEW.minDistance).toBeLessThan(VIEW.distance)
+    m.dispose()
+  })
+
+  it('carries a pod dragged from it onto another, naming the pod under it, and drops it there', async () => {
+    const { m, calls, canvas } = mount(undefined, true)
+    m.update({ pods: allPods, waterPct: 50, lightLevel: 80, hovered: null, selected: null })
+    await tick()
+    const cup = (slot: number) => aim(m, o => o.userData.slot === slot && o.geometry.type === 'CylinderGeometry')
+    const [from, to] = [cup(7), cup(8)]
+    const start = m.camera.position.clone()
+    canvas.dispatchEvent(pointer('pointerdown', from.x, from.y, 1))
+    // Within the slop it's still a tap.
+    canvas.dispatchEvent(pointer('pointermove', from.x + 3, from.y, 1))
+    expect(calls.carry).toEqual([])
+    canvas.dispatchEvent(pointer('pointermove', from.x + 3, from.y + 9, 1))
+    expect(calls.carry).toEqual([{ from: 7, over: null }])
+    expect(canvas.style.cursor).toBe('grabbing')
+    canvas.dispatchEvent(pointer('pointermove', to.x, to.y, 1))
+    canvas.dispatchEvent(pointer('pointermove', to.x + 1, to.y, 1))
+    expect(calls.carry.at(-1)).toEqual({ from: 7, over: 8 })
+    expect(calls.carry).toHaveLength(2)
+    canvas.dispatchEvent(pointer('pointerup', to.x + 1, to.y))
+    expect(calls.carry.at(-1)).toBeNull()
+    expect(calls.drop).toEqual([[7, 8]])
+    expect(calls.select).toEqual([])
+    expect(calls.hover.at(-1)).toEqual({ kind: 'pod', slot: 8 })
+    expect(canvas.style.cursor).toBe('pointer')
+    expect(m.camera.position.distanceTo(start)).toBeLessThan(1e-6)
+
+    // Let go over nothing: no drop, and the cursor goes back to turning.
+    canvas.dispatchEvent(pointer('pointerdown', to.x, to.y, 1))
+    canvas.dispatchEvent(pointer('pointermove', 5, 5, 1))
+    canvas.dispatchEvent(pointer('pointerup', 5, 5))
+    expect(calls.carry.slice(-2)).toEqual([{ from: 8, over: null }, null])
+    expect(calls.drop).toHaveLength(1)
+    expect(canvas.style.cursor).toBe('grab')
+
+    // A tap still picks; a drag from empty space still turns.
+    canvas.dispatchEvent(pointer('pointerdown', from.x, from.y, 1))
+    canvas.dispatchEvent(pointer('pointerup', from.x, from.y))
+    expect(calls.select).toEqual([{ kind: 'pod', slot: 7 }])
+    canvas.dispatchEvent(pointer('pointerdown', 5, 5, 1))
+    canvas.dispatchEvent(pointer('pointermove', 60, 25, 1))
+    canvas.dispatchEvent(pointer('pointerup', 60, 25))
+    expect(m.camera.position.distanceTo(start)).toBeGreaterThan(0.1)
+    m.dispose()
+  })
+
+  it('holds the page still while a pod is carried on touch, and ends the carry when the browser cancels it', async () => {
+    const { m, calls, canvas } = mount(undefined, true)
+    m.update({ pods: allPods, waterPct: 50, lightLevel: 80, hovered: null, selected: null })
+    await tick()
+    const from = aim(m, o => o.userData.slot === 7 && o.geometry.type === 'CylinderGeometry')
+    const touch = (type: string) => {
+      const e = new Event(type, { cancelable: true })
+      canvas.dispatchEvent(e)
+      return e.defaultPrevented
+    }
+    expect(touch('touchstart')).toBe(false)
+    canvas.dispatchEvent(pointer('pointerdown', from.x, from.y))
+    expect(touch('touchstart')).toBe(true)
+    canvas.dispatchEvent(pointer('pointercancel', from.x, from.y))
+    expect(calls.carry).toEqual([])
+    const down = pointer('pointerdown', from.x, from.y)
+    canvas.dispatchEvent(down)
+    const move = pointer('pointermove', from.x, from.y + 40)
+    Object.assign(move, { pointerType: 'touch' })
+    canvas.dispatchEvent(move)
+    expect(touch('touchmove')).toBe(true)
+    canvas.dispatchEvent(pointer('pointercancel', from.x, from.y + 40))
+    expect(calls.carry).toEqual([{ from: 7, over: null }, null])
+    expect(touch('touchmove')).toBe(false)
+    canvas.dispatchEvent(pointer('pointerup', from.x, from.y))
+    expect(calls.drop).toEqual([])
+    expect(calls.select).toEqual([])
+    m.dispose()
+  })
+
+  it('turns on a drag from a pod when carrying is off', async () => {
+    const { m, calls, canvas } = mount(undefined, false)
+    m.update({ pods: allPods, waterPct: 50, lightLevel: 80, hovered: null, selected: null })
+    await tick()
+    const from = aim(m, o => o.userData.slot === 7 && o.geometry.type === 'CylinderGeometry')
+    const start = m.camera.position.clone()
+    canvas.dispatchEvent(pointer('pointerdown', from.x, from.y, 1))
+    canvas.dispatchEvent(pointer('pointermove', from.x + 40, from.y, 1))
+    canvas.dispatchEvent(pointer('pointerup', from.x + 40, from.y))
+    expect(m.camera.position.distanceTo(start)).toBeGreaterThan(0.1)
+    expect(calls.carry).toEqual([])
     m.dispose()
   })
 

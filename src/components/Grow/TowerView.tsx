@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type * as RendererModule from './towerRenderer'
-import type { TowerMount } from './towerRenderer'
+import type { Carry, TowerMount } from './towerRenderer'
 import type { PodHarvest, PodState, TowerPart, TowerTarget } from './towerScene'
 import { TowerWireframe } from './TowerWireframe'
 import { PlantThumb, podForm } from './PlantThumb'
@@ -105,9 +105,10 @@ const pct = (v: number) => `${Math.round(v * 100)}%`
  * pod), it adds where the pod sits in its grow, the state's reason as one
  * sentence, and `action`; `onClose` unpins it. The plant name is neutral and
  * the state carries the colour. It sits outward from the tower, on whichever
- * side has room, clear of the `reserve` pixels a panel covers.
+ * side has room, clear of the `reserve` pixels a panel covers. `hint` replaces
+ * the hovered card's offer of a click.
  */
-export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned = true, onClose, action, now, light }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, pinned?: boolean, onClose?: () => void, action?: ReactNode, now?: Date, light?: PodLight | null }) {
+export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned = true, onClose, action, now, light, hint = 'Click to pin' }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, pinned?: boolean, onClose?: () => void, action?: ReactNode, now?: Date, light?: PodLight | null, hint?: string }) {
   const shown = podShown(pod)
   const color = SHOWN_TOKEN[shown]
   const flagged = isFlagged(pod)
@@ -183,7 +184,7 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
             {action && <div className="flex gap-2">{action}</div>}
           </div>
         )}
-        {!pinned && <div className="font-mono text-[10px] text-fg-3">Click to pin</div>}
+        {!pinned && <div className="font-mono text-[10px] text-fg-3">{hint}</div>}
       </div>
     </>
   )
@@ -201,8 +202,11 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
  * to centre in the rest. The light-zone toggle by the legend colours the pods
  * by how much light they get, for placing plants; `zones` fixes that on or
  * off and drops the toggle. Calls `onUnavailable` without WebGL.
+ * With `onSwap`, a drag that starts on a pod carries it instead of turning the
+ * tower, the pod under it ringed with its callout, and letting go over another
+ * pod swaps them.
  */
-export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onClose, onPart, partLabels, controls, status, podAction, aside, legend = true, zones: fixedZones, onUnavailable }: {
+export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onClose, onPart, onSwap, partLabels, controls, status, podAction, aside, legend = true, zones: fixedZones, onUnavailable }: {
   pods: PodState[]
   waterPct: number | null
   lightLevel: number
@@ -212,6 +216,8 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   /** Unpins the picked pod's callout; without it the callout has no close button. */
   onClose?: () => void
   onPart?: (part: TowerPart) => void
+  /** A pod carried onto another; without it a drag from a pod turns the tower. */
+  onSwap?: (from: number, to: number) => void
   /** What hovering a part says, e.g. "Grow light · 77%". */
   partLabels?: Partial<Record<TowerPart, string>>
   controls?: ReactNode
@@ -231,14 +237,16 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   // The pods with something pinned to them: the picked one, and any to harvest or seeing to.
   const pinned = useRef<number[]>([])
   const anchorKey = useRef('')
-  const latest = useRef({ onSelect, onPart, onUnavailable, hasAside: aside != null })
+  const latest = useRef({ onSelect, onPart, onSwap, onUnavailable, hasAside: aside != null })
   useEffect(() => {
-    latest.current = { onSelect, onPart, onUnavailable, hasAside: aside != null }
-  }, [onSelect, onPart, onUnavailable, aside])
+    latest.current = { onSelect, onPart, onSwap, onUnavailable, hasAside: aside != null }
+  }, [onSelect, onPart, onSwap, onUnavailable, aside])
   // A Home's 30 until the pods arrive, so the download and the data load at the same time.
   const podCount = pods.length || 30
   const [preloaded, setPreloaded] = useState<Promise<typeof RendererModule | null> | null>(null)
-  const hovered = hover?.kind === 'pod' ? hover.slot : null
+  const [carry, setCarry] = useState<Carry | null>(null)
+  // While a pod is carried, the pod it would land on stands in for the hovered one.
+  const hovered = carry ? carry.over : hover?.kind === 'pod' ? hover.slot : null
   const [chosenZones, setZones] = useState(savedZones)
   const zones = fixedZones ?? chosenZones
   const toggleZones = () => {
@@ -287,6 +295,9 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
           if (t.kind === 'pod') latest.current.onSelect(t.slot)
           else latest.current.onPart?.(t.part)
         },
+        carryPods: () => latest.current.onSwap != null,
+        onCarry: setCarry,
+        onDrop: (from, to) => latest.current.onSwap?.(from, to),
         onReady: () => setReady(true),
         onFail: () => latest.current.onUnavailable(),
         reserveRight: w => (latest.current.hasAside && w >= ASIDE_MIN ? ASIDE_RESERVE : 0),
@@ -318,8 +329,9 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
 
   // The picked pod has its callout, so hovering it adds nothing.
   // Hovering a pod previews its callout, in place of the picked one's until the pointer moves off.
-  const shown = hovered ?? selected
+  const shown = carry ? hovered : hovered ?? selected
   const shownPod = shown === null ? null : pods.find(p => p.slot === shown)
+  const carried = carry ? pods.find(p => p.slot === carry.from) : undefined
   const shownAt = shownPod ? anchors?.at.get(shownPod.slot) : undefined
   const partLabel = hover?.kind === 'part' && onPart ? partLabels?.[hover.part] : undefined
   return (
@@ -331,10 +343,19 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         const at = anchors.at.get(p.slot)
         return at && <PodFlag key={p.slot} pod={p} at={at} picked={p.slot === selected} onSelect={onSelect} />
       })}
-      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} pinned={shownPod.slot === selected} onClose={onClose} action={shownPod.slot === selected ? podAction : undefined} light={zones ? podLight(pods, shownPod.slot) : null} />}
+      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} pinned={!carry && shownPod.slot === selected} onClose={onClose} action={shownPod.slot === selected ? podAction : undefined} light={zones ? podLight(pods, shownPod.slot) : null} hint={carry ? `Drop to swap with pod ${carry.from}` : undefined} />}
       {aside != null && <div className="absolute bottom-10 right-3 top-16 z-10 hidden flex-col @min-[900px]:flex" style={{ width: ASIDE_W }}>{aside}</div>}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
         {status && <div className="pointer-events-auto flex flex-wrap items-start justify-end gap-2">{status}</div>}
+        {carry && (
+          <div className="flex items-center gap-2 rounded-ctl border border-line-2 bg-surface/95 px-3 py-2 text-sm shadow-[var(--shadow-dialog)]" role="status">
+            {carried?.plant && <PlantThumb plant={carried.plant} stage={podForm(carried)} size={24} />}
+            <div>
+              <div>{`Moving pod ${carry.from}${carried?.plant ? ` · ${carried.plant}` : ''}`}</div>
+              <div className="text-xs text-fg-2">{carry.over === null ? 'Drop on another pod to swap' : `Drop to swap with pod ${carry.over}`}</div>
+            </div>
+          </div>
+        )}
         {partLabel && (
           <div className="rounded-ctl border border-line-2 bg-surface/95 px-3 py-2 text-sm shadow-[var(--shadow-dialog)]" role="status">
             <div>{partLabel}</div>
@@ -371,7 +392,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
             {STATUS_LABEL[l.status]}
           </span>
         ))}
-        <span className="ml-auto font-mono text-fg-3 max-[600px]:hidden">Click a pod · drag to turn · ⌘-scroll to zoom</span>
+        <span className="ml-auto font-mono text-fg-3 max-[600px]:hidden">{onSwap ? 'Click a pod · drag one onto another to swap · drag around it to turn · ⌘-scroll to zoom' : 'Click a pod · drag to turn · ⌘-scroll to zoom'}</span>
       </div>
     </div>
   )

@@ -377,7 +377,7 @@ describe('PlanPage', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }, { slot: 2, plant: null, status: 'empty' }]
     render(<PlanPage />)
     expect(screen.getByText(/^0 planned · 29 empty ·/)).toBeTruthy()
-    expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there.')).toBeTruthy()
+    expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there, or drag one onto another pod to swap them.')).toBeTruthy()
     flat()
     expect(screen.getByText('Drag a plant onto another pod, or tap one then the other, to swap them. Italic = in the tower now.')).toBeTruthy()
     cleanup()
@@ -408,7 +408,7 @@ describe('PlanPage', () => {
     state.plans = [{ id: 'mcp-2', name: 'Herbs', model: 'home', mode: 'staggered', appliedAt: null, start: null, layout: { model: 'home', assignments: [], unplaced: [], free: [], overrides }, request: [{ plantId: 'oregano', count: 7 }] }]
     render(<PlanPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Open in planner' }))
-    expect(screen.getByText(/click one for why it sits there\. Some sit higher than ideal, in more light, in a zone allowed for them\.$/)).toBeTruthy()
+    expect(screen.getByText(/drag one onto another pod to swap them\. Some sit higher than ideal, in more light, in a zone allowed for them\.$/)).toBeTruthy()
     expect(screen.queryByText(/lower than ideal/)).toBeNull()
     expect(towerPods().filter(p => p.harvest?.reason === 'Planned: medium zone, allowed by the caller (ideal low).')).toHaveLength(1)
     flat()
@@ -473,7 +473,7 @@ describe('PlanPage', () => {
     expect(planned.every(p => p.planned && p.harvest?.state === 'unknown' && /^Planned: .+\.$/.test(p.harvest.reason))).toBe(true)
     expect(planned.some(p => p.harvest?.reason.includes('one zone lower'))).toBe(true)
     expect(screen.getByText(/^Didn’t fit: Mint/)).toBeTruthy()
-    expect(screen.getByText(/click one for why it sits there\. Some sit one zone lower than ideal/)).toBeTruthy()
+    expect(screen.getByText(/drag one onto another pod to swap them\. Some sit one zone lower than ideal/)).toBeTruthy()
     flat()
     expect(screen.getByText(/Didn’t fit: Mint/)).toBeTruthy()
     expect(screen.getByText(/Outlined pods sit one zone lower than ideal/)).toBeTruthy()
@@ -508,7 +508,42 @@ describe('PlanPage', () => {
   it('leaves unplanned pods empty on the tower', () => {
     render(<PlanPage />)
     expect(towerPods().every(p => p.status === 'empty' && p.plant === null)).toBe(true)
-    expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there.')).toBeTruthy()
+    expect(screen.getByText('Planned pods show their plant grown, ringed by light zone; click one for why it sits there, or drag one onto another pod to swap them.')).toBeTruthy()
+  })
+
+  it('swaps any pod onto any other on the tower, as the grid does', () => {
+    state.pods = [{ slot: 4, plant: 'Oregano', status: 'growing' }]
+    const { rerender } = render(<PlanPage />)
+    const onSwap = (from: number, to: number) => act(() => (tower.props?.onSwap as (from: number, to: number) => void)(from, to))
+    const at = (slot: number) => towerPods().find(p => p.slot === slot)
+    search('basil')
+    add('Basil')
+    search('chives')
+    add('Chives')
+    const slotOf = (name: string) => towerPods().find(p => p.planned && p.plant === name)?.slot as number
+    const [basil, chives] = [slotOf('Basil'), slotOf('Chives')]
+    const free = [30, 29, 28].find(s => s !== basil && s !== chives) as number
+
+    // Planned onto planned, then an empty pod onto a planned one: the plan's pins move.
+    onSwap(basil, chives)
+    expect([slotOf('Basil'), slotOf('Chives')]).toEqual([chives, basil])
+    onSwap(free, chives)
+    expect(slotOf('Basil')).toBe(free)
+    expect(calls.swapPods).not.toHaveBeenCalled()
+
+    // A pod with a plant in it swaps records, and a plan on the other side follows.
+    onSwap(4, free)
+    expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 4, b: free })
+    rerender(<PlanPage />)
+    expect(at(free)).toMatchObject({ plant: 'Oregano', status: 'growing' })
+    expect(slotOf('Basil')).toBe(4)
+
+    // Onto itself, or empty onto empty: nothing to do.
+    const layouts = calls.layout.mock.calls.length
+    onSwap(free, free)
+    onSwap(1, 2)
+    expect(calls.swapPods).toHaveBeenCalledTimes(1)
+    expect(calls.layout.mock.calls.length).toBe(layouts)
   })
 
   it('pins a pod’s callout and unpins it, and forgets it on another model', () => {
