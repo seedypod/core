@@ -57,6 +57,8 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   Such a placement has `fit: 'ok'` and reads "ok here"; only a pin outside
   the plant's tolerated and allowed zones is `outside` and outlined on the
   Plan screen. A pin's reason reads "you placed it here", with the zone.
+  The Plan screen's pod panel sets the zones a plan may use for the pod's
+  plant ("Does ok in"), as `overrides.allowedZones`, saved with the plan.
 - **Suggested moves** (2026-11-17): planted pods move easily, so with
   `suggestMoves` the planner also weighs moving them: to a free pod, or
   swapped with a planted or unpinned planned one. It scores every pod's
