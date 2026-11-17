@@ -1,44 +1,45 @@
 /**
  * Pod planner — clean-room implementation of Gardyn's published placement
- * rules (help.mygardyn.com/en/articles/11567361):
+ * rules (help.mygardyn.com/en/articles/11567361), scored rather than strict:
  *
- *  1. Each plant goes in its light zone (catalog `zone`).
+ *  1. Each plant goes in its light zone (catalog `zone`). Every plant gets
+ *     its ideal zone before any plant falls back.
  *  2. "If the ideal spot is unavailable, place your plants one light zone
- *     lower." Every plant gets its ideal zone before any plant falls back;
- *     a fallback is one zone lower, never two and never up, and is flagged.
- *     We never substitute a different plant (My Pod Planner does — see
- *     knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
+ *     lower." A plant that falls back goes to a zone it tolerates (catalog
+ *     `tolerates`: one lower for most plants, one higher too for herbs,
+ *     flowers and legumes), picked by zone cost weighed against shade, so
+ *     one lower still comes first. Those placements are "ok here", not
+ *     flagged. We never substitute a different plant (My Pod Planner does —
+ *     see knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
  *  3. Cucumbers start in the bottom of the middle column so the vine grows
  *     into higher light (Gardyn's explicit exception).
  *  4. "Leave space between larger plants so they do not block light from
  *     smaller plants nearby": large plants are spread apart by an adjacency
- *     penalty when choosing among equally good slots.
+ *     penalty, scored with the zone cost.
  *
  * The caller can override 1–2 per plant (pin a pod to a slot, or allow other
- * zones). What does not fit comes back with the zones it could use, the pods
- * in them, and moves that would make room.
+ * zones). Only a pin outside the zones a plant tolerates or is allowed is
+ * flagged. What does not fit comes back with the zones it could use, the
+ * pods in them, and moves that would make room.
  *
  * Pure and deterministic; no clock, no I/O.
  */
 import { BUILTIN, type Catalog, type Plant, SUCCESSION_GAP_DAYS, type Zone } from './catalog'
+import { TAKES_MORE_LIGHT, zoneCost } from './tolerance'
 import { type Model, MODELS, type Slot, slots } from './zones'
 
 const LOWER: Record<Zone, Zone | null> = { high: 'medium', medium: 'low', low: null }
 const HIGHER: Record<Zone, Zone | null> = { high: null, medium: 'high', low: 'medium' }
 const ZONE_RANK: Record<Zone, number> = { high: 0, medium: 1, low: 2 }
 const ZONES: Zone[] = ['high', 'medium', 'low']
-/**
- * Categories that take more light than their zone without harm, so a planner
- * may offer a higher zone when theirs is full. Not lettuces or leafy greens:
- * Gardyn warns too much light can hasten bolting; nor vegetables (brassicas bolt too).
- */
-const TAKES_MORE_LIGHT: ReadonlySet<Plant['category']> = new Set(['herb', 'flower', 'legume'])
+/** Score per point of zone cost; a point of shade penalty scores 10, so a slot under heavy shade can lose to a tolerated zone. */
+const ZONE_WEIGHT = 25
 
 /** Caller overrides, honoured before the automatic rules. */
 export interface PlanOverrides {
   /** Put one pod of `plantId` in this exact slot. Pins count toward that plant's requested count; extra pins add pods. */
   pins?: { slot: number, plantId: string }[]
-  /** Zones a plant may use instead of Gardyn's ideal-or-one-lower: one zone only, or two zones lower. */
+  /** Zones a plant may use instead of its ideal zone and the ones it tolerates: one zone only, or two zones lower. Placements there are ok, not flagged. */
   allowedZones?: Record<string, Zone[]>
   /** Lay out the whole tower afresh, as if nothing were planted; applying it moves the planted pods. */
   replant?: boolean
@@ -63,10 +64,14 @@ export interface Assignment {
   wantZone: Zone
   /** Zones away from the ideal (0 = ideal). */
   fallback: number
-  /** Which way it sits from its ideal zone: lower (less light), higher (more, only ever by the caller's say-so), or null in its ideal zone. */
+  /** Which way it sits from its ideal zone: lower (less light), higher (more), or null in its ideal zone. */
   shift: 'lower' | 'higher' | null
+  /** ideal: its own zone (or Gardyn's cucumber start); ok: a zone it tolerates or the plan allows; outside: pinned anywhere else. */
+  fit: Fit
   reason: string
 }
+
+export type Fit = 'ideal' | 'ok' | 'outside'
 
 /** How one light zone of the tower is used once the plan is laid out. */
 export interface ZoneSummary {
@@ -131,15 +136,30 @@ export interface PlanResult {
   overrides?: PlanOverrides
 }
 
-/** Zones a plant may use, best first: its ideal zone, else one lower — or the caller's allowed zones. */
+/** What placing a plant in `zone` costs: 0 in its ideal zone, its tolerance's cost, or the same price for a zone the caller allows. */
+function costIn(plant: Plant, zone: Zone): number {
+  return zone === plant.zone ? 0 : plant.tolerates.find(t => t.zone === zone)?.cost ?? zoneCost(plant.zone, zone, plant.size)
+}
+
+/** Zones a plant may use, cheapest first: its ideal zone and the zones it tolerates — or the caller's allowed zones. */
 export function toleratedZones(plant: Plant, overrides?: PlanOverrides): Zone[] {
   const custom = overrides?.allowedZones?.[plant.id]
-  if (custom?.length) {
-    const d = (z: Zone) => Math.abs(ZONE_RANK[z] - ZONE_RANK[plant.zone])
-    return [...new Set(custom)].sort((a, b) => d(a) - d(b) || ZONE_RANK[b] - ZONE_RANK[a])
-  }
-  const lower = LOWER[plant.zone]
-  return lower ? [plant.zone, lower] : [plant.zone]
+  const zones = custom?.length ? [...new Set(custom)] : [plant.zone, ...plant.tolerates.map(t => t.zone)]
+  return zones.sort((a, b) => costIn(plant, a) - costIn(plant, b))
+}
+
+/** How a plant sits in a slot's zone: its own, one it tolerates or the plan allows, or outside both. */
+function fitIn(plant: Plant, zone: Zone | null, allowed: Zone[] = []): Fit {
+  if (!zone || zone === plant.zone) return 'ideal'
+  return plant.tolerates.some(t => t.zone === zone) || allowed.includes(zone) ? 'ok' : 'outside'
+}
+
+/** Why a plant the planner placed sits outside its ideal zone. */
+function okReason(plant: Plant, zone: Zone): string {
+  if (!plant.tolerates.some(t => t.zone === zone)) return `${zone} zone, allowed for this plan (ideal ${plant.zone})`
+  return ZONE_RANK[zone] - ZONE_RANK[plant.zone] === 1
+    ? `ok here — ${zone} light, one zone lower than its ideal ${plant.zone}, as Gardyn advises`
+    : `ok here — ${zone} light suits it too (ideal ${plant.zone})`
 }
 
 function neighbours(model: Model, s: Slot): Slot[] {
@@ -170,35 +190,37 @@ export interface RankedSlot {
   fallback: number
   /** Index of the slot's zone in the plant's tolerated zones (0 = first choice). */
   pref: number
+  /** What the zone costs the plant (0 in its ideal zone). */
+  cost: number
+  fit: Fit
   reason: string
 }
 
-/** Candidate slots for one plant, best first, with how far each is from the ideal zone. */
+/** Candidate slots for one plant, best first by zone cost and shade, with how far each is from the ideal zone. */
 export function rankSlots(model: Model, plant: Plant, taken: Set<number>, placed: Map<number, Plant> = new Map(), overrides?: PlanOverrides): RankedSlot[] {
   const m = MODELS[model]
   const free = slots(model).filter(s => !taken.has(s.slot))
   if (model === 'nursery') {
     // Nursery: no light zones, fill top-left first.
-    return free.map(slot => ({ slot, fallback: 0, pref: 0, reason: 'nursery staging' }))
+    return free.map(slot => ({ slot, fallback: 0, pref: 0, cost: 0, fit: 'ideal' as const, reason: 'nursery staging' }))
   }
   const custom = !!overrides?.allowedZones?.[plant.id]?.length
   const out: (RankedSlot & { score: number })[] = []
   if (plant.placement === 'bottomCenter' && m.cols >= 3 && !custom) {
     // Bottom of the middle column, lowest first (as lightZones.ts advises). A Studio has no middle column, so there it goes by its zone.
     const centre = free.filter(s => s.col === Math.floor(m.cols / 2) && s.row >= m.rows - 2)
-    for (const s of centre) out.push({ slot: s, fallback: 0, pref: 0, reason: 'bottom of the middle column — the vine climbs into the high-light centre', score: -10 - s.row })
+    for (const s of centre) out.push({ slot: s, fallback: 0, pref: 0, cost: 0, fit: 'ideal', reason: 'bottom of the middle column — the vine climbs into the high-light centre', score: -10 - s.row })
   }
   toleratedZones(plant, overrides).forEach((zone, pref) => {
     const fallback = Math.abs(ZONE_RANK[zone] - ZONE_RANK[plant.zone])
-    const reason = custom
-      ? (fallback === 0 ? `${zone} light zone` : `${zone} zone, allowed by the caller (ideal ${plant.zone})`)
-      : (fallback === 0 ? `${zone} light zone` : `${plant.zone} zone full — one zone lower per Gardyn's guidance (${zone})`)
+    const cost = costIn(plant, zone)
+    const reason = fallback === 0 ? `${zone} light zone` : okReason(plant, zone)
     for (const s of free.filter(x => x.zone === zone)) {
       if (out.some(o => o.slot.slot === s.slot)) continue
-      out.push({ slot: s, fallback, pref, reason, score: pref * 100 + shadePenalty(model, s, plant, placed) * 10 + (plant.zone === 'high' ? centreBias(model, s) : 0) + s.slot / 1000 })
+      out.push({ slot: s, fallback, pref, cost, fit: fallback === 0 ? 'ideal' : 'ok', reason, score: cost * ZONE_WEIGHT + shadePenalty(model, s, plant, placed) * 10 + (plant.zone === 'high' ? centreBias(model, s) : 0) + s.slot / 1000 })
     }
   })
-  return out.sort((a, b) => a.score - b.score).map(({ slot, fallback, pref, reason }) => ({ slot, fallback, pref, reason }))
+  return out.sort((a, b) => a.score - b.score).map(({ slot, fallback, pref, cost, fit, reason }) => ({ slot, fallback, pref, cost, fit, reason }))
 }
 
 /** `catalog` defaults to Gardyn's built-in plants; pass `catalogFor(store)` to include the unit's custom ones. */
@@ -217,15 +239,16 @@ export function planLayout(req: PlanRequest, catalog: Catalog = BUILTIN): PlanRe
   const unplaced: Unplaced[] = []
   const pinned = new Set<number>()
   const missing = (plantId: string): Unplaced => ({ plantId, plantName: plantId, reason: 'not in the catalog', code: 'not_in_catalog', wantZone: null, zones: [], blocking: [] })
-  const assign = (s: Slot, plant: Plant, fallback: number, reason: string) => {
+  const assign = (s: Slot, plant: Plant, fallback: number, fit: Fit, reason: string) => {
     taken.add(s.slot)
     placed.set(s.slot, plant)
     const shift = !s.zone || s.zone === plant.zone ? null : ZONE_RANK[s.zone] > ZONE_RANK[plant.zone] ? 'lower' : 'higher'
-    assignments.push({ slot: s.slot, row: s.row, col: s.col, slotZone: s.zone, plantId: plant.id, plantName: plant.name, wantZone: plant.zone, fallback, shift, reason })
+    assignments.push({ slot: s.slot, row: s.row, col: s.col, slotZone: s.zone, plantId: plant.id, plantName: plant.name, wantZone: plant.zone, fallback, shift, fit, reason })
   }
 
   // 1. Pins: the caller's explicit slots, whatever the zone.
   const pinsLeft = new Map<string, number>()
+  const allowed = overrides?.allowedZones ?? {}
   for (const pin of overrides?.pins ?? []) {
     const plant = catalog.get(pin.plantId)
     if (!plant) {
@@ -244,7 +267,9 @@ export function planLayout(req: PlanRequest, catalog: Catalog = BUILTIN): PlanRe
     }
     pinned.add(s.slot)
     const fallback = s.zone ? Math.abs(ZONE_RANK[s.zone] - ZONE_RANK[plant.zone]) : 0
-    assign(s, plant, fallback, `pinned to pod ${s.slot} by the caller${fallback ? ` (${s.zone} light; ideal ${plant.zone})` : ''}`)
+    const fit = fitIn(plant, s.zone, allowed[plant.id])
+    const note = fit === 'ok' ? ` — ${s.zone} light, ok for it (ideal ${plant.zone})` : fit === 'outside' ? ` — ${s.zone} light, outside the zones it does well in (ideal ${plant.zone})` : ''
+    assign(s, plant, fallback, fit, `you placed it here${note}`)
   }
 
   const queue: Plant[] = []
@@ -261,17 +286,17 @@ export function planLayout(req: PlanRequest, catalog: Catalog = BUILTIN): PlanRe
   // Constrained and demanding plants first: fixed placements, then high → low, large before normal.
   queue.sort((a, b) => (a.placement ? 0 : 1) - (b.placement ? 0 : 1) || ZONE_RANK[a.zone] - ZONE_RANK[b.zone] || (a.size === 'large' ? 0 : 1) - (b.size === 'large' ? 0 : 1))
 
-  // 2. Every plant into its first-choice zone; 3. then the rest fall back.
+  // 2. Every plant into its first-choice zone; 3. then the rest to the best-scoring zone they tolerate.
   const deferred: Plant[] = []
   for (const plant of queue) {
-    const best = rankSlots(model, plant, taken, placed, overrides)[0]
-    if (best && best.pref === 0) assign(best.slot, plant, best.fallback, best.reason)
+    const best = rankSlots(model, plant, taken, placed, overrides).find(r => r.pref === 0)
+    if (best) assign(best.slot, plant, best.fallback, best.fit, best.reason)
     else deferred.push(plant)
   }
   const noSpace: Plant[] = []
   for (const plant of deferred) {
     const best = rankSlots(model, plant, taken, placed, overrides)[0]
-    if (best) assign(best.slot, plant, best.fallback, best.reason)
+    if (best) assign(best.slot, plant, best.fallback, best.fit, best.reason)
     else noSpace.push(plant)
   }
   assignments.sort((a, b) => a.slot - b.slot)
@@ -337,7 +362,7 @@ interface LayoutState {
 /**
  * Moves that make room for plants that did not fit: relocate a pod whose
  * plant tolerates a free slot elsewhere (planned pods before planted ones),
- * let the plant go one zone further down than Gardyn's rule, or, for a plant
+ * let the plant go one zone further down than it tolerates, or, for a plant
  * that takes more light, up into the nearest brighter zone with free pods.
  */
 function suggest(model: Model, noSpace: Plant[], st: LayoutState): Suggestion[] {
@@ -389,7 +414,7 @@ function suggest(model: Model, noSpace: Plant[], st: LayoutState): Suggestion[] 
           slot: freeBelow[0].slot,
           zone: below,
           move: null,
-          text: `Allow ${plant.name} in the ${below} zone too (${freeBelow.length} free) — lower than Gardyn advises, so expect slower growth.`,
+          text: `Allow ${plant.name} in the ${below} zone too (${freeBelow.length} free) — lower than it does well in, so expect slower growth.`,
           overrides: { ...st.overrides, allowedZones: { ...st.overrides?.allowedZones, [plant.id]: [...tol, below] } },
         },
       })
@@ -407,7 +432,8 @@ function suggest(model: Model, noSpace: Plant[], st: LayoutState): Suggestion[] 
           slot: free[0].slot,
           zone: up,
           move: null,
-          text: `Allow ${plant.name} in the ${up} zone too (${free.length} free) — more light than its ideal ${plant.zone} zone, which ${plant.category}s tolerate.`,
+          text: `Allow ${plant.name} in the ${up} zone too (${free.length} free) — more light than its ideal ${plant.zone} zone; ${plant.category}s take more light without harm.`,
+
           overrides: { ...st.overrides, allowedZones: { ...st.overrides?.allowedZones, [plant.id]: [...tol, up] } },
         },
       })

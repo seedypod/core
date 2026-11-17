@@ -200,7 +200,7 @@ describe('PlanPage', () => {
     expect(screen.queryByText('Sowing schedule')).toBeNull()
   })
 
-  it('keeps planted pods, outlines fallbacks and reports what does not fit', () => {
+  it('keeps planted pods, leaves pods in a zone their plant tolerates unflagged, and reports what does not fit', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }, { slot: 2, plant: null, status: 'empty' }]
     render(<PlanPage />)
     flat()
@@ -208,14 +208,16 @@ describe('PlanPage', () => {
     expect(screen.getByText('Mint')).toBeTruthy()
     search('jalapeño')
     for (let i = 0; i < 14; i++) add('Jalapeño')
-    expect(screen.getByText(/Outlined pods sit one zone lower than ideal/)).toBeTruthy()
-    search('mint')
-    for (let i = 0; i < 6; i++) add('Mint')
-    expect(screen.getByText('Didn’t fit: Mint — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
-    // Medium still has room, and a herb takes the extra light.
-    expect(screen.getByRole('list', { name: 'Suggested moves' }).textContent).toBe('Allow Mint in the medium zone too (10 free) — more light than its ideal low zone, which herbs tolerate.')
-    add('Mint')
-    expect(screen.getByText('Didn’t fit: Mint ×2 — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
+    // Two sit one zone lower, in medium: ok there, so nothing is outlined.
+    const ok = screen.getAllByTitle('ok here — medium light, one zone lower than its ideal high, as Gardyn advises')
+    expect(ok).toHaveLength(2)
+    expect(ok.every(e => !e.className.includes('outline'))).toBe(true)
+    expect(screen.queryByText(/Outlined pods/)).toBeNull()
+    search('arugula')
+    for (let i = 0; i < 6; i++) add('Arugula')
+    expect(screen.getByText('Didn’t fit: Arugula — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
+    add('Arugula')
+    expect(screen.getByText('Didn’t fit: Arugula ×2 — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
   })
 
   it('suggests moves that would make room', () => {
@@ -276,7 +278,8 @@ describe('PlanPage', () => {
     fireEvent.change(add.getByLabelText('Name'), { target: { value: 'Lovage' } })
     fireEvent.click(add.getByRole('tab', { name: 'Low' }))
     fireEvent.click(add.getByRole('button', { name: 'Add' }))
-    expect(calls.addPlant).toHaveBeenCalledWith({ name: 'Lovage', category: 'herb', zone: 'low', harvestMonths: [2, 3], careLevel: null, size: 'normal' })
+    expect(calls.addPlant).toHaveBeenCalledWith({ name: 'Lovage', category: 'herb', zone: 'low', harvestMonths: [2, 3], careLevel: null, size: 'normal', tolerates: null })
+
     expect(screen.queryByRole('dialog')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Okra' }))
@@ -542,10 +545,10 @@ describe('PlanPage', () => {
     state.pods = [{ slot: 1, plant: 'Mint', status: 'growing' }]
     render(<PlanPage />)
     search('basil')
-    for (let i = 0; i < 20; i++) add('Basil')
-    // 17 basil fit (medium 12, then the 5 low pods mint leaves); the 12 high pods stay empty, not the 29 unplanted today.
-    expect(towerPods().filter(p => p.planned)).toHaveLength(17)
-    expect(screen.getByText(/^20 planned · 12 empty ·/)).toBeTruthy()
+    for (let i = 0; i < 21; i++) add('Basil')
+    // Medium 12, the 5 low pods mint leaves, then 4 high; 8 high pods stay empty, not the 29 unplanted today.
+    expect(towerPods().filter(p => p.planned)).toHaveLength(21)
+    expect(screen.getByText(/^21 planned · 8 empty ·/)).toBeTruthy()
   })
 
   it('counts the pods unplanted today until the layout answers, with nothing to say about zones', () => {
@@ -571,29 +574,28 @@ describe('PlanPage', () => {
     expect(screen.getByText(/^0 planned · 30 empty ·/)).toBeTruthy()
   })
 
-  it('says “lower than ideal”, not “one zone lower”, once a pod sits two zones down', () => {
-    const at = (fallback: number, shift: 'lower' | 'higher' | null) => ({ slot: 1, plantId: 'jalapeno', plantName: 'Jalapeño', reason: '', fallback, shift })
-    expect(shiftNotes([at(1, 'lower'), at(2, 'lower')], '2d')).toBe(' Outlined pods sit lower than ideal — Gardyn’s rule when the ideal zone is full, or zones allowed for them.')
-    expect(shiftNotes([at(2, 'lower'), at(1, 'higher')], '3d')).toBe(' Some sit lower than ideal — Gardyn’s rule when the ideal zone is full, or zones allowed for them. Some sit higher than ideal, in more light, in a zone allowed for them.')
-    expect(shiftNotes([at(0, null)], '3d')).toBe('')
+  it('flags only pods outside the zones their plant does well in, lower and higher apart', () => {
+    const at = (fit: 'ideal' | 'ok' | 'outside' | undefined, shift: 'lower' | 'higher' | null) => ({ slot: 1, plantId: 'jalapeno', plantName: 'Jalapeño', reason: '', fallback: 1, shift, fit })
+    expect(shiftNotes([at('ok', 'lower'), at('ok', 'higher'), at('ideal', null), at('outside', null)], '2d')).toBe('')
+    // A layout saved before fit existed flags nothing.
+    expect(shiftNotes([at(undefined, 'lower')], '2d')).toBe('')
+    expect(shiftNotes([at('outside', 'lower')], '2d')).toBe(' Outlined pods sit lower than the zones their plant does well in, so expect slower growth.')
+    expect(shiftNotes([at('outside', 'lower'), at('outside', 'higher')], '3d')).toBe(' Some sit lower than the zones their plant does well in, so expect slower growth. Some sit higher than the zones their plant does well in, in more light than it likes.')
   })
 
-  it('tells pods placed in a higher zone apart from ones placed lower', () => {
-    // An agent's plan: seven oregano with the medium zone allowed, so one sits higher than its ideal low.
-    const overrides = { allowedZones: { oregano: ['low', 'medium'] as ('low' | 'medium')[] } }
-    state.plans = [{ id: 'mcp-2', name: 'Herbs', model: 'home', mode: 'staggered', appliedAt: null, start: null, layout: { model: 'home', assignments: [], unplaced: [], free: [], overrides }, request: [{ plantId: 'oregano', count: 7 }] }]
+  it('tells pods you placed above the zones their plant does well in apart from ones below them', () => {
+    // A saved plan with a lettuce pinned in high light and a pepper in low.
+    const overrides = { pins: [{ slot: 8, plantId: 'butterhead' }, { slot: 1, plantId: 'jalapeno' }] }
+    state.plans = [{ id: 'mcp-2', name: 'Mixed', model: 'home', mode: 'staggered', appliedAt: null, start: null, layout: { model: 'home', assignments: [], unplaced: [], free: [], overrides }, request: [{ plantId: 'butterhead', count: 1 }, { plantId: 'jalapeno', count: 1 }] }]
     render(<PlanPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Open in planner' }))
-    expect(screen.getByText(/drag one onto another pod to swap them\. Some sit higher than ideal, in more light, in a zone allowed for them\.$/)).toBeTruthy()
-    expect(screen.queryByText(/lower than ideal/)).toBeNull()
-    expect(towerPods().filter(p => p.harvest?.reason === 'Planned: medium zone, allowed by the caller (ideal low).')).toHaveLength(1)
+    expect(screen.getByText(/drag one onto another pod to swap them\. Some sit lower than the zones their plant does well in, so expect slower growth\. Some sit higher than the zones their plant does well in, in more light than it likes\.$/)).toBeTruthy()
+    expect(towerPods().filter(p => p.harvest?.reason === 'Planned: you placed it here — high light, outside the zones it does well in (ideal medium).')).toHaveLength(1)
     flat()
-    expect(screen.getByText(/Italic = in the tower now\. Dashed outlines sit higher than ideal/)).toBeTruthy()
-    expect(screen.queryByText(/lower than ideal/)).toBeNull()
-    const higher = screen.getByTitle('medium zone, allowed by the caller (ideal low)')
+    const higher = screen.getByTitle('you placed it here — high light, outside the zones it does well in (ideal medium)')
     expect(higher.className).toContain('outline-dashed')
     expect(higher.className).not.toContain('outline-[var(--status-warn)]')
-    expect(screen.getAllByTitle('low light zone').every(e => !e.className.includes('outline'))).toBe(true)
+    expect(screen.getByTitle('you placed it here — low light, outside the zones it does well in (ideal high)').className).toContain('outline-[var(--status-warn)]')
   })
 
   it('opens a saved plan (e.g. one an agent saved) with its layout, overrides and schedule, and updates it in place', () => {
@@ -607,7 +609,7 @@ describe('PlanPage', () => {
     expect(screen.getByText('High 5')).toBeTruthy()
     expect((screen.getByLabelText('Plan name') as HTMLInputElement).value).toBe('Gardyn order')
     expect(screen.getAllByText(/sow 2026-10-01 → harvest/)).toHaveLength(1)
-    expect(screen.getByTitle(/^pinned to pod 4 by the caller/)).toBeTruthy()
+    expect(screen.getByTitle('you placed it here')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Update plan' }))
     expect(calls.save).toHaveBeenCalledWith({ id: 'mcp-1', name: 'Gardyn order', model: 'studio', mode: 'staggered', plants: [{ plantId: 'basil', count: 2 }], start: '2026-10-01', overrides })
@@ -636,23 +638,22 @@ describe('PlanPage', () => {
     render(<PlanPage />)
     search('jalapeño')
     for (let i = 0; i < 14; i++) add('Jalapeño')
-    search('mint')
-    for (let i = 0; i < 6; i++) add('Mint')
+    search('arugula')
+    for (let i = 0; i < 6; i++) add('Arugula')
     const pods = towerPods()
     expect(pods.find(p => p.slot === 1)).toEqual({ slot: 1, status: 'growing', plant: 'Mint' })
     const planned = pods.filter(p => p.status === 'seeded')
     expect(planned.filter(p => p.plant === 'Jalapeño')).toHaveLength(14)
-    // Some of the six Mint fit and the rest are reported below.
-    expect(planned.filter(p => p.plant === 'Mint').length).toBeGreaterThan(0)
-    expect(planned.length).toBeLessThan(20)
+    // Five of the six arugula fit and the rest are reported below.
+    expect(planned.filter(p => p.plant === 'Arugula')).toHaveLength(5)
     expect(pods.filter(p => p.status === 'empty')).toHaveLength(30 - 1 - planned.length)
     expect(planned.every(p => p.planned && p.harvest?.state === 'unknown' && /^Planned: .+\.$/.test(p.harvest.reason))).toBe(true)
-    expect(planned.some(p => p.harvest?.reason.includes('one zone lower'))).toBe(true)
-    expect(screen.getByText(/^Didn’t fit: Mint/)).toBeTruthy()
-    expect(screen.getByText(/drag one onto another pod to swap them\. Some sit one zone lower than ideal/)).toBeTruthy()
+    expect(planned.some(p => p.harvest?.reason.includes('ok here — medium light, one zone lower'))).toBe(true)
+    expect(screen.getByText(/^Didn’t fit: Arugula/)).toBeTruthy()
+    expect(screen.queryByText(/Some sit/)).toBeNull()
     flat()
-    expect(screen.getByText(/Didn’t fit: Mint/)).toBeTruthy()
-    expect(screen.getByText(/Outlined pods sit one zone lower than ideal/)).toBeTruthy()
+    expect(screen.getByText(/Didn’t fit: Arugula/)).toBeTruthy()
+    expect(screen.queryByText(/Outlined pods/)).toBeNull()
   })
 
   it('hands the tower each planned plant by name, to draw grown in its slot, beside the planted ones', () => {

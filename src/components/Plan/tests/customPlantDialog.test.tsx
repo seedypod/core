@@ -59,7 +59,7 @@ describe('CustomPlantDialog', () => {
     fireEvent.change(screen.getByLabelText('to (months)'), { target: { value: '5' } })
     expect(add.disabled).toBe(false)
     fireEvent.click(add)
-    expect(calls.add).toHaveBeenCalledWith({ name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [4, 5], careLevel: 'beginner', size: 'large' })
+    expect(calls.add).toHaveBeenCalledWith({ name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [4, 5], careLevel: 'beginner', size: 'large', tolerates: null })
     expect(invalidate).toHaveBeenCalled()
     expect(onClose).toHaveBeenCalled()
   })
@@ -71,9 +71,54 @@ describe('CustomPlantDialog', () => {
     fireEvent.change(screen.getByLabelText('Care level'), { target: { value: 'none' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Normal' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(calls.update).toHaveBeenCalledWith({ id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [2, 3], careLevel: null, size: 'normal' })
+    expect(calls.update).toHaveBeenCalledWith({ id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [2, 3], careLevel: null, size: 'normal', tolerates: null })
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     expect(calls.remove).toHaveBeenCalledWith({ id: 'okra' })
+  })
+
+  it('shows the zones a plant also does ok in, its category’s until you pick your own', () => {
+    render(<CustomPlantDialog open plant={null} onClose={() => undefined} />)
+    const zone = (name: string) => screen.getByRole('button', { name })
+    // A medium herb: one zone either way.
+    expect([zone('High').getAttribute('aria-pressed'), zone('Low').getAttribute('aria-pressed')]).toEqual(['true', 'true'])
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'lettuce' } })
+    expect([zone('High').getAttribute('aria-pressed'), zone('Low').getAttribute('aria-pressed')]).toEqual(['false', 'true'])
+    expect(screen.queryByRole('button', { name: 'Category default' })).toBeNull()
+
+    fireEvent.click(zone('High'))
+    fireEvent.click(zone('Low'))
+    expect([zone('High').getAttribute('aria-pressed'), zone('Low').getAttribute('aria-pressed')]).toEqual(['true', 'false'])
+    // Moving its own zone to high drops high from the rest.
+    fireEvent.click(screen.getByRole('tab', { name: 'High' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Tall lettuce' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(calls.add).toHaveBeenLastCalledWith(expect.objectContaining({ zone: 'high', tolerates: [] }))
+
+    fireEvent.click(zone('Category default'))
+    expect(screen.queryByRole('button', { name: 'Category default' })).toBeNull()
+  })
+
+  it('keeps a plant’s own zones when editing, and goes back to the default on request', () => {
+    const own: EditablePlant = { ...okra, tolerates: [{ zone: 'low' }] }
+    render(<CustomPlantDialog open plant={own} onClose={() => undefined} />)
+    expect(screen.getByRole('button', { name: 'Low' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Medium' }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.update).toHaveBeenLastCalledWith(expect.objectContaining({ tolerates: ['low'] }))
+    fireEvent.click(screen.getByRole('button', { name: 'Category default' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.update).toHaveBeenLastCalledWith(expect.objectContaining({ tolerates: null }))
+    cleanup()
+
+    // Saved with its category's own zones: they keep following its category.
+    render(<CustomPlantDialog open plant={{ ...okra, tolerates: [{ zone: 'medium' }] }} onClose={() => undefined} />)
+    expect(screen.queryByRole('button', { name: 'Category default' })).toBeNull()
+    cleanup()
+
+    // Saved with none: kept to its own zone.
+    render(<CustomPlantDialog open plant={{ ...okra, tolerates: [] }} onClose={() => undefined} />)
+    expect(screen.getByRole('button', { name: 'Medium' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByRole('button', { name: 'Category default' })).toBeTruthy()
   })
 
   it('shows why the unit refused, and cancels', () => {

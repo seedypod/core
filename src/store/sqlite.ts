@@ -205,7 +205,7 @@ export class SqliteStore implements Store {
       return r ? rowToCustomPlant(r) : null
     },
     upsert: (p: Omit<CustomPlant, 'createdAt' | 'updatedAt'>, ts: string): CustomPlant => {
-      const cols = { name: p.name, category: p.category, zone: p.zone, harvestMinMonths: p.harvestMonths[0], harvestMaxMonths: p.harvestMonths[1], careLevel: p.careLevel, size: p.size, succession: p.succession, source: p.source, updatedAt: ts }
+      const cols = { name: p.name, category: p.category, zone: p.zone, harvestMinMonths: p.harvestMonths[0], harvestMaxMonths: p.harvestMonths[1], careLevel: p.careLevel, size: p.size, succession: p.succession, tolerates: p.tolerates ? JSON.stringify(p.tolerates) : null, source: p.source, updatedAt: ts }
       this.db.insert(t.customPlants).values({ ...cols, id: p.id, createdAt: ts }).onConflictDoUpdate({ target: t.customPlants.id, set: cols }).run()
       return this.customPlants.get(p.id) as CustomPlant
     },
@@ -537,8 +537,8 @@ function rowToSchedule(r: typeof t.schedules.$inferSelect): Schedule {
   return { ...r, spec: JSON.parse(r.spec) as LightSpec | PumpSpec }
 }
 
-function rowToCustomPlant({ harvestMinMonths, harvestMaxMonths, ...r }: typeof t.customPlants.$inferSelect): CustomPlant {
-  return { ...r, harvestMonths: [harvestMinMonths, harvestMaxMonths] }
+function rowToCustomPlant({ harvestMinMonths, harvestMaxMonths, tolerates, ...r }: typeof t.customPlants.$inferSelect): CustomPlant {
+  return { ...r, harvestMonths: [harvestMinMonths, harvestMaxMonths], tolerates: tolerates ? JSON.parse(tolerates) as CustomPlant['tolerates'] : null }
 }
 
 function rowToPlan(r: typeof t.plans.$inferSelect): PlanRow {

@@ -58,11 +58,11 @@ describe('planLayout', () => {
     expect(r.assignments.filter(a => a.fallback === 1)).toHaveLength(2)
   })
 
-  it('reports plants that cannot fit in their zone or one lower', () => {
-    const r = planLayout({ model: 'home', plants: [{ plantId: 'mint', count: 7 }] })
-    expect(r.assignments).toHaveLength(6)
+  it('reports plants that cannot fit in any zone they tolerate', () => {
+    const r = planLayout({ model: 'home', plants: [{ plantId: 'butterhead', count: 19 }] })
+    expect(r.assignments).toHaveLength(18)
     expect(r.unplaced).toHaveLength(1)
-    expect(r.unplaced[0]).toMatchObject({ code: 'no_space', zones: ['low'], reason: 'no free slot in the low zone (low 6/6 taken)' })
+    expect(r.unplaced[0]).toMatchObject({ code: 'no_space', zones: ['medium', 'low'], reason: 'no free slot in the medium or low zones (medium 12/12, low 6/6 taken)' })
   })
 
   it('places cucumbers bottom-centre (Gardyn’s exception)', () => {
@@ -101,7 +101,8 @@ describe('bestSpots / rankSlots', () => {
     expect(bestSpots('home', 'missing')).toEqual([])
     const plant = getPlant('mint')
     if (!plant) throw new Error('mint missing')
-    expect(rankSlots('home', plant, new Set()).every(r => r.slot.zone === 'low')).toBe(true)
+    // Mint tolerates medium, after every low slot.
+    expect(rankSlots('home', plant, new Set()).map(r => r.slot.zone)).toEqual([...Array(6).fill('low'), ...Array(12).fill('medium')])
   })
 })
 

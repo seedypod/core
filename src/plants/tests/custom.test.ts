@@ -6,7 +6,8 @@ import { catalogFor, customToPlant, plantSlug, SUCCESSION_BY_CATEGORY } from '..
 import { bestSpots, planLayout, sowingPlan } from '../planner'
 
 const okra: CustomPlant = { id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [2, 3], careLevel: 'intermediate', size: 'large', succession: 'fast-fruiting', source: 'user', createdAt: 't', updatedAt: 't' }
-const shiso: CustomPlant = { ...okra, id: 'purple-shiso', name: 'Purple Shiso', category: 'herb', zone: 'low', harvestMonths: [1, 2], careLevel: null, size: 'normal', succession: 'long-greens-herbs' }
+// Shiso is set to tolerate no other zone, though herbs take one brighter by default.
+const shiso: CustomPlant = { ...okra, id: 'purple-shiso', name: 'Purple Shiso', category: 'herb', zone: 'low', harvestMonths: [1, 2], careLevel: null, size: 'normal', succession: 'long-greens-herbs', tolerates: [] }
 
 describe('custom plants', () => {
   it('slugs names the way the built-in ids are', () => {
@@ -20,6 +21,14 @@ describe('custom plants', () => {
     expect(PLANTS.every(p => !p.custom)).toBe(true)
     expect(getPlant('basil')?.custom).toBe(false)
     expect(SUCCESSION_BY_CATEGORY.flower).toBe('flowers')
+  })
+
+  it('tolerate their category’s zones unless they name their own', () => {
+    expect(customToPlant(okra).tolerates).toEqual([{ zone: 'medium', cost: 1 }])
+    expect(customToPlant({ ...okra, tolerates: null }).tolerates).toEqual([{ zone: 'medium', cost: 1 }])
+    expect(customToPlant(shiso).tolerates).toEqual([])
+    // The ideal zone is dropped; a large plant pays more to go up.
+    expect(customToPlant({ ...okra, zone: 'medium', tolerates: ['high', 'medium', 'low'] }).tolerates).toEqual([{ zone: 'low', cost: 1 }, { zone: 'high', cost: 3 }])
   })
 
   it('merge after the built-in plants for get, find and search', () => {

@@ -19,6 +19,7 @@ sources: [{"resource": "https://help.mygardyn.com/en/articles/11547329", "title"
 | `inStore`, `gardynHandle` | yCube collection | 73 sold today |
 | `succession` | Gardyn's succession table groups | exact when named there, else by category with `successionInferred` |
 | `category`, `size`, `placement` | rules in the build script | `size: large` = fruiting/vining or sunflower; `placement` = cucumber exception |
+| `tolerates` | rules in `src/plants/tolerance.ts`, applied when the catalog loads | by category and zone ([zone tolerance](zone-tolerance.md)); not in `catalog.json` |
 
 No prose is copied: care notes are not in the catalog. Microgreens are excluded (Gardyn grows them in trays, not pods).
 

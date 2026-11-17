@@ -24,8 +24,8 @@ import { fetchLanModel } from '../vision/modelFetch'
 const createCaller = createCallerFactory(appRouter)
 
 /** How the planner reads the tower, for the planner tools' descriptions. */
-const ZONE_RULES = 'Light zones follow Gardyn\'s map: high light is the centre-most cluster of pods, medium encircles it, low is the top and bottom rows on a Home (lower-left and upper-right on a Studio); planner_zones lists every slot by row. Each plant goes in its ideal zone; only when that zone is full does it drop one zone lower (never two, never up); overrides.allowedZones can widen that. Cucumbers start at the bottom of the middle column; large plants are spaced apart.'
-const OVERRIDES_HELP = 'Optional. pins: [{slot, plantId}] puts one pod of that plant in that exact slot (counts toward its count). allowedZones: {plantId: ["high","medium","low"]} replaces its ideal-or-one-lower zones, e.g. to allow two zones lower or keep it in one zone. replant: true lays out the whole tower as if nothing were planted (pins may then name planted pods); apply_plan then moves the planted pods, each plant keeping its sow date and status, and empties pods the plan leaves out.'
+const ZONE_RULES = 'Light zones follow Gardyn\'s map: high light is the centre-most cluster of pods, medium encircles it, low is the top and bottom rows on a Home (lower-left and upper-right on a Studio); planner_zones lists every slot by row. Every plant gets its ideal zone before any falls back; one that does not fit goes to a zone it tolerates (plant_catalog tolerates, each with a cost: one zone lower for most plants, as Gardyn advises, but never below medium for fruiting plants; one zone higher too for herbs, flowers and legumes, never for lettuces, leafy greens or vegetables, which bolt), picked by cost weighed against shading, so one lower comes before one higher. Those placements are fit "ok", not fallbacks to fix; overrides.allowedZones can widen or narrow a plant\'s zones. Cucumbers start at the bottom of the middle column; large plants are spaced apart.'
+const OVERRIDES_HELP = 'Optional. pins: [{slot, plantId}] puts one pod of that plant in that exact slot (counts toward its count). allowedZones: {plantId: ["high","medium","low"]} replaces its ideal zone and the zones it tolerates, e.g. to allow two zones lower or keep it in one zone; placements there are fit "ok". replant: true lays out the whole tower as if nothing were planted (pins may then name planted pods); apply_plan then moves the planted pods, each plant keeping its sow date and status, and empties pods the plan leaves out.'
 
 function text(data: unknown) {
   return { content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] }
@@ -208,12 +208,12 @@ export function createMcpServer(ctx: Context): McpServer {
   })
 
   server.registerTool('plant_catalog', {
-    description: 'Search the plant catalog: Gardyn\'s built-in plants plus custom ones added on this unit (custom: true). Each has its light zone high/medium/low, first-harvest window in months, care level, size (large plants are spaced apart) and succession group. Filter by q (name), category (fruiting, vegetable, legume, flower, herb, green, lettuce), zone or custom. A crop missing from it can be added with add_plant.',
+    description: 'Search the plant catalog: Gardyn\'s built-in plants plus custom ones added on this unit (custom: true). Each has its light zone high/medium/low, the zones beyond it where it still does acceptably (tolerates, each with its cost to the planner: 1 for one zone lower, 2 for one higher), first-harvest window in months, care level, size (large plants are spaced apart) and succession group. Filter by q (name), category (fruiting, vegetable, legume, flower, herb, green, lettuce), zone or custom. A crop missing from it can be added with add_plant.',
     inputSchema: { q: z.string().optional(), category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']).optional(), zone: z.enum(['high', 'medium', 'low']).optional(), custom: z.boolean().optional() },
-  }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, harvestMonths: p.harvestMonths, careLevel: p.careLevel, size: p.size, succession: p.succession, inStore: p.inStore, custom: p.custom }))))
+  }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, tolerates: p.tolerates, harvestMonths: p.harvestMonths, careLevel: p.careLevel, size: p.size, succession: p.succession, inStore: p.inStore, custom: p.custom }))))
 
   server.registerTool('add_plant', {
-    description: 'Add a plant that is not in the catalog (check plant_catalog first), so plan_layout, best_spot and save_plan can use it. Its id is the name as a slug ("Purple Shiso" → purple-shiso). zone: the light it needs (high for fruiting crops, medium for most greens and herbs, low for shade-tolerant herbs like mint). harvest_months: [from, to] months from starting the yCube to first harvest. size large for plants that shade their neighbours. succession defaults from category. Fails if the name or id is already in the catalog.',
+    description: 'Add a plant that is not in the catalog (check plant_catalog first), so plan_layout, best_spot and save_plan can use it. Its id is the name as a slug ("Purple Shiso" → purple-shiso). zone: the light it needs (high for fruiting crops, medium for most greens and herbs, low for shade-tolerant herbs like mint). harvest_months: [from, to] months from starting the yCube to first harvest. size large for plants that shade their neighbours. succession defaults from category. tolerates: the zones beyond its own where it still does acceptably; leave it out for its category\'s default (one zone lower, never below medium for fruiting plants; one higher too for herbs, flowers and legumes). Fails if the name or id is already in the catalog.',
     inputSchema: {
       name: z.string().min(1).max(60),
       category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']),
@@ -222,11 +222,12 @@ export function createMcpServer(ctx: Context): McpServer {
       care_level: z.enum(['beginner', 'intermediate', 'expert']).nullable().optional(),
       size: z.enum(['large', 'normal']).optional(),
       succession: z.enum(['fast-greens', 'long-greens-herbs', 'fast-fruiting', 'long-fruiting', 'flowers']).optional(),
+      tolerates: z.array(z.enum(['high', 'medium', 'low'])).max(3).optional(),
     },
-  }, async i => text(await caller.planner.addPlant({ name: i.name, category: i.category, zone: i.zone, harvestMonths: i.harvest_months, careLevel: i.care_level ?? null, size: i.size ?? 'normal', succession: i.succession, source: 'agent' })))
+  }, async i => text(await caller.planner.addPlant({ name: i.name, category: i.category, zone: i.zone, harvestMonths: i.harvest_months, careLevel: i.care_level ?? null, size: i.size ?? 'normal', succession: i.succession, tolerates: i.tolerates ?? null, source: 'agent' })))
 
   server.registerTool('update_plant', {
-    description: 'Edit a custom plant by id (only the fields given change; the id stays). Built-in Gardyn plants are read-only.',
+    description: 'Edit a custom plant by id (only the fields given change; the id stays). tolerates: null goes back to its category\'s default zones. Built-in Gardyn plants are read-only.',
     inputSchema: {
       id: z.string(),
       name: z.string().min(1).max(60).optional(),
@@ -236,8 +237,9 @@ export function createMcpServer(ctx: Context): McpServer {
       care_level: z.enum(['beginner', 'intermediate', 'expert']).nullable().optional(),
       size: z.enum(['large', 'normal']).optional(),
       succession: z.enum(['fast-greens', 'long-greens-herbs', 'fast-fruiting', 'long-fruiting', 'flowers']).optional(),
+      tolerates: z.array(z.enum(['high', 'medium', 'low'])).max(3).nullable().optional(),
     },
-  }, async i => text(await caller.planner.updatePlant({ id: i.id, name: i.name, category: i.category, zone: i.zone, harvestMonths: i.harvest_months, careLevel: i.care_level, size: i.size, succession: i.succession, source: 'agent' })))
+  }, async i => text(await caller.planner.updatePlant({ id: i.id, name: i.name, category: i.category, zone: i.zone, harvestMonths: i.harvest_months, careLevel: i.care_level, size: i.size, succession: i.succession, tolerates: i.tolerates, source: 'agent' })))
 
   server.registerTool('remove_plant', {
     description: 'Remove a custom plant by id. Built-in Gardyn plants are read-only. Saved plans keep their layout.',
@@ -250,7 +252,7 @@ export function createMcpServer(ctx: Context): McpServer {
   }, async i => text({ ...(await caller.planner.zones({ model: i.model })), rules: ZONE_RULES }))
 
   server.registerTool('plan_layout', {
-    description: `Lay out plants on a Gardyn by light zone around pods already planted. model: home (30) or studio (16). ${ZONE_RULES} Returns slot assignments with reasons; zones (per zone: rows, slots, total, existing, planned, free); unplaced (code no_space | not_in_catalog | bad_pin, the zones it could use, and the pods blocking them); and suggestions, each with an overrides object to pass back as-is to carry it out: relocate (move another pod to a slot it tolerates), allow_lower (let it go one zone further down), or allow_higher (a herb, flower or legume whose zones are full may use the nearest brighter zone with free pods; e.g. oregano with low full gets overrides.allowedZones {"oregano": ["low", "medium"]}). Lettuces, leafy greens and vegetables never get allow_higher: more light makes them bolt. Read-only; use save_plan to keep it.`,
+    description: `Lay out plants on a Gardyn by light zone around pods already planted. model: home (30) or studio (16). ${ZONE_RULES} Returns slot assignments with reasons, shift (lower, higher or null) and fit (ideal; ok: a zone it tolerates or is allowed; outside: a pin anywhere else, the only placements worth flagging to the person); zones (per zone: rows, slots, total, existing, planned, free); unplaced (code no_space | not_in_catalog | bad_pin, the zones it could use, and the pods blocking them); and suggestions, each with an overrides object to pass back as-is to carry it out: relocate (move another pod to a slot it tolerates), allow_lower (let it go one zone further down than it tolerates), or allow_higher (a herb, flower or legume whose zones are full may use the nearest brighter zone beyond them with free pods; e.g. mint with low and medium full gets overrides.allowedZones {"mint": ["low", "medium", "high"]}). Lettuces, leafy greens and vegetables never get allow_higher: more light makes them bolt. Read-only; use save_plan to keep it.`,
     inputSchema: { model: z.enum(['home', 'studio']), plants: z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })), overrides: Overrides.optional().describe(OVERRIDES_HELP) },
   }, async i => text(await caller.planner.layout({ model: i.model, plants: i.plants, respectExisting: true, overrides: i.overrides })))
 

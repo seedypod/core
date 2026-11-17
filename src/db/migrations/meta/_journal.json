@@ -169,6 +169,13 @@
       "when": 1794694263140,
       "tag": "0023_suggestion_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1794908060588,
+      "tag": "0024_custom_plant_tolerance",
+      "breakpoints": true
     }
   ]
 }

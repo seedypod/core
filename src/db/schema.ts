@@ -311,6 +311,8 @@ export const customPlants = sqliteTable('custom_plants', {
   careLevel: text({ enum: ['beginner', 'intermediate', 'expert'] }),
   size: text({ enum: ['large', 'normal'] }).notNull().default('normal'),
   succession: text({ enum: ['fast-greens', 'long-greens-herbs', 'fast-fruiting', 'long-fruiting', 'flowers'] }).notNull(),
+  /** JSON array of zones beyond its ideal where it still does acceptably; null takes its category's default. */
+  tolerates: text(),
   source: text({ enum: ['user', 'agent'] }).notNull().default('user'),
   createdAt: text().notNull(),
   updatedAt: text().notNull(),
