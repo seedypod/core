@@ -52,6 +52,8 @@ export interface PlanRequest {
   /** Slots already taken (existing pods): slot → plant id (or any truthy marker). */
   occupied?: Record<number, string>
   overrides?: PlanOverrides
+  /** Also weigh moving the planted pods, and return the moves that clearly help (`moves`); none is ever needed. */
+  suggestMoves?: boolean
 }
 
 export interface Assignment {
@@ -132,8 +134,25 @@ export interface PlanResult {
   free: number[]
   zones: ZoneSummary[]
   suggestions: Suggestion[]
+  /** Optional moves for planted pods, best first, when asked for with `suggestMoves`. */
+  moves?: Move[]
   /** The overrides this layout was computed with, kept so a saved plan can be recomputed. */
   overrides?: PlanOverrides
+}
+
+/** An optional move for a planted pod: to a free pod, or swapped with the pod there. */
+export interface Move {
+  /** The planted pod. */
+  from: number
+  to: number
+  plantId: string
+  plantName: string
+  toZone: Zone
+  /** The pod in `to` that goes to `from` in exchange; null when `to` is free. */
+  swap: { plantId: string, plantName: string, existing: boolean } | null
+  /** How much better the tower scores after it (zone cost × 25 plus shade × 10, summed over every pod). */
+  gain: number
+  text: string
 }
 
 /** What placing a plant in `zone` costs: 0 in its ideal zone, its tolerance's cost, or the same price for a zone the caller allows. */
@@ -162,9 +181,17 @@ function okReason(plant: Plant, zone: Zone): string {
     : `ok here — ${zone} light suits it too (ideal ${plant.zone})`
 }
 
+/** Each model's slots by number with the slots beside, above and below them; built once, since move suggestions ask thousands of times. */
+const NEIGHBOURS = new Map<Model, Map<number, Slot[]>>()
+
 function neighbours(model: Model, s: Slot): Slot[] {
-  const all = slots(model)
-  return all.filter(o => (o.col === s.col && Math.abs(o.row - s.row) === 1) || (o.row === s.row && Math.abs(o.col - s.col) === 1))
+  let byModel = NEIGHBOURS.get(model)
+  if (!byModel) {
+    const all = slots(model)
+    byModel = new Map(all.map(x => [x.slot, all.filter(o => (o.col === x.col && Math.abs(o.row - x.row) === 1) || (o.row === x.row && Math.abs(o.col - x.col) === 1))]))
+    NEIGHBOURS.set(model, byModel)
+  }
+  return byModel.get(s.slot) as Slot[]
 }
 
 /** Lower is better. Penalises large plants next to large plants, and any plant directly below a large one. */
@@ -325,6 +352,7 @@ export function planLayout(req: PlanRequest, catalog: Catalog = BUILTIN): PlanRe
 
   const suggestions = model === 'nursery' ? [] : suggest(model, noSpace, { taken, placed, occupied, pinned, overrides })
   const out: PlanResult = { model, assignments, unplaced, free: all.filter(s => !taken.has(s.slot)).map(s => s.slot), zones, suggestions }
+  if (req.suggestMoves && model !== 'nursery') out.moves = suggestMoves(model, { taken, placed, occupied, pinned, overrides })
   if (overrides && (overrides.pins?.length || Object.keys(overrides.allowedZones ?? {}).length)) out.overrides = overrides
   return out
 }
@@ -440,6 +468,89 @@ function suggest(model: Model, noSpace: Plant[], st: LayoutState): Suggestion[] 
       break
     }
     out.push(...[...found.values()].sort((a, b) => a.cost - b.cost).slice(0, 3).map(f => f.s))
+  }
+  return out
+}
+
+/**
+ * Score a suggested move must beat: two points of zone cost, so a pod that is
+ * ok where it is (one zone off, or in a zone the plan allows) is left alone,
+ * while one outside its plant's zones, or boxed in by large plants, is not.
+ */
+const MOVE_GAIN = 50
+
+/** What a plant costs the tower in a slot: its zone (2 more outside the zones it tolerates or is allowed) and the shade it takes. */
+function podScore(model: Model, s: Slot, plant: Plant, placed: Map<number, Plant>, allowed?: Zone[]): number {
+  const zone = s.zone as Zone
+  const outside = fitIn(plant, zone, allowed) === 'outside' ? 2 : 0
+  return (costIn(plant, zone) + outside) * ZONE_WEIGHT + shadePenalty(model, s, plant, placed) * 10
+}
+
+/** What the plants in `pods` cost the tower. */
+function scoreOf(model: Model, pods: Slot[], placed: Map<number, Plant>, allowed: Record<string, Zone[]>): number {
+  let n = 0
+  for (const s of pods) {
+    const p = placed.get(s.slot)
+    if (p) n += podScore(model, s, p, placed, allowed[p.id])
+  }
+  return n
+}
+
+/** Why a move helps its plant, as the end of a sentence. */
+function moveReason(plant: Plant, from: Slot, to: Slot): string {
+  if (costIn(plant, to.zone as Zone) >= costIn(plant, from.zone as Zone)) return 'more room from the large plants around it'
+  return to.zone === plant.zone ? `its ideal ${to.zone} light` : `${to.zone} light, which suits it better`
+}
+
+/**
+ * Optional moves for planted pods: to a free pod, or swapped with another
+ * (planted, or planned and not pinned), when the whole tower scores more
+ * than MOVE_GAIN better. Each is chosen on the tower as the ones before it
+ * leave it; a pod takes part in one move at most, and there are three at most.
+ */
+function suggestMoves(model: Model, st: LayoutState): Move[] {
+  const all = slots(model)
+  const allowed = st.overrides?.allowedZones ?? {}
+  const board = new Map(st.placed)
+  const used = new Set<number>()
+  const out: Move[] = []
+  while (out.length < 3) {
+    let best: { from: Slot, to: Slot, gain: number } | null = null
+    for (const from of all) {
+      const plant = board.get(from.slot)
+      if (!plant || st.occupied[from.slot] === undefined || used.has(from.slot)) continue
+      for (const to of all) {
+        const other = board.get(to.slot)
+        // Not itself, a pod already moved, a pin, or a pod held by a plant the catalog doesn't know.
+        if (to === from || used.has(to.slot) || st.pinned.has(to.slot) || (!other && st.taken.has(to.slot))) continue
+        const next = new Map(board)
+        next.set(to.slot, plant)
+        if (other) next.set(from.slot, other)
+        else next.delete(from.slot)
+        // Only the two pods and their neighbours change score.
+        const near = [...new Map([from, to, ...neighbours(model, from), ...neighbours(model, to)].map(s => [s.slot, s])).values()]
+        const gain = scoreOf(model, near, board, allowed) - scoreOf(model, near, next, allowed)
+        if (gain > Math.max(MOVE_GAIN, best?.gain ?? 0)) best = { from, to, gain }
+      }
+    }
+    if (!best) break
+    const { from, to, gain } = best
+    const plant = board.get(from.slot) as Plant
+    const other = board.get(to.slot)
+    const existing = st.occupied[to.slot] !== undefined
+    // A swap is told from the side whose light improves more.
+    const better = (p: Plant, a: Slot, b: Slot) => costIn(p, a.zone as Zone) - costIn(p, b.zone as Zone)
+    const why = other && better(other, to, from) > better(plant, from, to) ? `${other.name} gets ${moveReason(other, to, from)}` : `${plant.name} gets ${moveReason(plant, from, to)}`
+    const text = !other
+      ? `Move ${plant.name} from pod ${from.slot} to pod ${to.slot} — ${moveReason(plant, from, to)}.`
+      : existing
+        ? `Swap ${plant.name} in pod ${from.slot} with ${other.name} in pod ${to.slot} — ${why}.`
+        : `Move ${plant.name} from pod ${from.slot} to pod ${to.slot} and plan ${other.name} in pod ${from.slot} instead — ${why}.`
+    out.push({ from: from.slot, to: to.slot, plantId: plant.id, plantName: plant.name, toZone: to.zone as Zone, swap: other ? { plantId: other.id, plantName: other.name, existing } : null, gain, text })
+    board.set(to.slot, plant)
+    if (other) board.set(from.slot, other)
+    else board.delete(from.slot)
+    used.add(from.slot).add(to.slot)
   }
   return out
 }

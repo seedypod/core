@@ -57,6 +57,14 @@ places (knowledge/evaluation/mypodplanner-crosscheck-2026-11-02.md).
   Such a placement has `fit: 'ok'` and reads "ok here"; only a pin outside
   the plant's tolerated and allowed zones is `outside` and outlined on the
   Plan screen. A pin's reason reads "you placed it here", with the zone.
+- **Suggested moves** (2026-11-17): planted pods move easily, so with
+  `suggestMoves` the planner also weighs moving them: to a free pod, or
+  swapped with a planted or unpinned planned one. It scores every pod's
+  zone cost (2 more outside the zones it tolerates or is allowed) and shade,
+  and returns up to three moves that each gain more than 50, best first, one
+  per pod. A pod that is ok where it is stays put. The Plan screen lists them
+  as optional "Suggested moves"; "Moved" swaps the pod records as a drag
+  would (`grow.swapPods`), and `plan_layout` takes `suggest_moves`.
 - **Sowing**: the next yCube of a plant starts at the previous one's
   first-harvest month plus its succession group's gap (10, 21, 31 or 56
   days); flowers and "all now" mode sow together.

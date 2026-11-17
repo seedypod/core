@@ -40,7 +40,7 @@ const { state, calls, invalidate } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/src/utils/trpc', async () => {
-  const { searchPlants } = await import('@/src/plants/catalog')
+  const { findPlant, searchPlants } = await import('@/src/plants/catalog')
   const { planLayout, sowingPlan } = await import('@/src/plants/planner')
   const { MODELS, slots, zoneCounts } = await import('@/src/plants/zones')
   type Model = 'home' | 'studio'
@@ -67,11 +67,12 @@ vi.mock('@/src/utils/trpc', async () => {
           if (state.catalogPending) return { data: undefined }
           return { data: { plants: [...searchPlants(i as Parameters<typeof searchPlants>[0]).slice(0, 12), ...state.custom] } }
         } },
-        layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[], overrides?: PlanOverrides }) => {
+        layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[], overrides?: PlanOverrides, suggestMoves?: boolean }) => {
           calls.layout(i)
           if (state.layoutPending || state.loading) return { data: undefined }
-          const occupied = Object.fromEntries(state.pods.filter(p => p.status !== 'empty').map(p => [p.slot, 'planted']))
-          return { data: planLayout({ model: i.model, plants: i.plants, occupied, overrides: i.overrides }) }
+          // Planted pods count as their catalog plant, as the router reads them.
+          const occupied = Object.fromEntries(state.pods.filter(p => p.status !== 'empty').map(p => [p.slot, findPlant(p.plant ?? '')?.id ?? 'planted']))
+          return { data: planLayout({ model: i.model, plants: i.plants, occupied, overrides: i.overrides, suggestMoves: i.suggestMoves }) }
         } },
         sowing: { useQuery: (i: { plants: { plantId: string, count: number }[], mode: 'staggered' | 'batch', start?: string }) => ({ data: sowingPlan(i.plants, new Date(i.start ?? '2026-11-02T00:00:00Z'), i.mode) }) },
         plans: { useQuery: () => ({ data: state.plans }) },
@@ -182,7 +183,7 @@ describe('PlanPage', () => {
     add('Basil')
     add('Basil')
     expect(screen.getByText(/^2 planned/)).toBeTruthy()
-    expect(calls.layout).toHaveBeenLastCalledWith({ model: 'home', plants: [{ plantId: 'basil', count: 2 }], respectExisting: true })
+    expect(calls.layout).toHaveBeenLastCalledWith({ model: 'home', plants: [{ plantId: 'basil', count: 2 }], respectExisting: true, suggestMoves: true })
     // Two waves of basil: the second one notes its wave.
     expect(screen.getByText('wave 2')).toBeTruthy()
     expect(screen.getAllByText(/sow 2026-11-02 → harvest/)).toHaveLength(1)
@@ -220,6 +221,19 @@ describe('PlanPage', () => {
     expect(screen.getByText('Didn’t fit: Arugula ×2 — no free slot in the low zone (low 6/6 taken)')).toBeTruthy()
   })
 
+  it('suggests optional moves for planted pods, carried out by swapping the pods once the yCubes are moved', () => {
+    // A lettuce in high light and a pepper in medium: swapping them suits both.
+    state.pods = [{ slot: 8, plant: 'Butterhead', status: 'growing' }, { slot: 4, plant: 'Jalapeño', status: 'growing' }]
+    const { rerender } = render(<PlanPage />)
+    const list = within(screen.getByRole('list', { name: 'Suggested moves' }))
+    expect(list.getByRole('listitem').textContent).toBe('Swap Jalapeño in pod 4 with Butterhead in pod 8 — Butterhead gets its ideal medium light.Moved')
+    fireEvent.click(list.getByRole('button', { name: 'Moved pod 4 to pod 8' }))
+    expect(calls.swapPods).toHaveBeenCalledWith({ a: 4, b: 8 })
+    // Swapped, nothing is left to suggest.
+    rerender(<PlanPage />)
+    expect(screen.queryByRole('list', { name: 'Suggested moves' })).toBeNull()
+  })
+
   it('suggests moves that would make room', () => {
     render(<PlanPage />)
     search('jalapeño')
@@ -227,7 +241,7 @@ describe('PlanPage', () => {
     search('basil')
     for (let i = 0; i < 12; i++) add('Basil')
     expect(screen.getByText(/^Didn’t fit: Jalapeño — no free slot in the high or medium zones/)).toBeTruthy()
-    const moves = within(screen.getByRole('list', { name: 'Suggested moves' })).getAllByRole('listitem').map(li => li.textContent)
+    const moves = within(screen.getByRole('list', { name: 'Ways to make room' })).getAllByRole('listitem').map(li => li.textContent)
     expect(moves[0]).toMatch(/^Move Basil from pod \d+ to pod \d+ \(low light, which it tolerates\) so Jalapeño can take pod \d+ \(medium\)\.$/)
     expect(moves[1]).toMatch(/^Allow Jalapeño in the low zone too/)
   })
@@ -605,7 +619,7 @@ describe('PlanPage', () => {
     flat()
     fireEvent.click(screen.getByRole('button', { name: 'Open in planner' }))
     expect(screen.getByText('editing')).toBeTruthy()
-    expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 2 }], respectExisting: true, overrides })
+    expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 2 }], respectExisting: true, suggestMoves: true, overrides })
     expect(screen.getByText('High 5')).toBeTruthy()
     expect((screen.getByLabelText('Plan name') as HTMLInputElement).value).toBe('Gardyn order')
     expect(screen.getAllByText(/sow 2026-10-01 → harvest/)).toHaveLength(1)
@@ -615,7 +629,7 @@ describe('PlanPage', () => {
     expect(calls.save).toHaveBeenCalledWith({ id: 'mcp-1', name: 'Gardyn order', model: 'studio', mode: 'staggered', plants: [{ plantId: 'basil', count: 2 }], start: '2026-10-01', overrides })
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
     add('Basil')
-    expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 1 }], respectExisting: true })
+    expect(calls.layout).toHaveBeenLastCalledWith({ model: 'studio', plants: [{ plantId: 'basil', count: 1 }], respectExisting: true, suggestMoves: true })
     expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy()
   })
 

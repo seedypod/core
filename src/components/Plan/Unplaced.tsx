@@ -5,7 +5,7 @@ interface Props {
   suggestions: { plantId: string, text: string }[]
 }
 
-/** What did not fit and why (the zones it could use and how full they are), with the planner's suggested moves. */
+/** What did not fit and why (the zones it could use and how full they are), with the planner's ways to make room. */
 export function Unplaced({ unplaced, suggestions }: Props) {
   if (unplaced.length === 0) return null
   const groups = new Map<string, { plantName: string, reason: string, n: number }>()
@@ -21,7 +21,7 @@ export function Unplaced({ unplaced, suggestions }: Props) {
         <InlineError key={key}>{`Didn’t fit: ${g.plantName}${g.n > 1 ? ` ×${g.n}` : ''} — ${g.reason}`}</InlineError>
       ))}
       {suggestions.length > 0 && (
-        <ul aria-label="Suggested moves" className="list-disc pl-5 text-[12px] text-fg-2">
+        <ul aria-label="Ways to make room" className="list-disc pl-5 text-[12px] text-fg-2">
           {suggestions.map(s => <li key={s.text}>{s.text}</li>)}
         </ul>
       )}
