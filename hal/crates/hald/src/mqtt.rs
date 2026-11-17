@@ -114,7 +114,7 @@ pub fn parse_inbound(unit: &str, topic: &str, payload: &[u8]) -> Result<Inbound,
         ["devices", "set"] => serde_json::from_str::<DeviceCommand>(text)
             .map(Inbound::Devices)
             .map_err(|e| format!("bad DeviceCommand {text:?}: {e}")),
-        // The grace and nothing else: the guard's mode and cutoff are hal.toml only.
+        // The guard settings the app may make, at least one, and nothing else.
         ["pump", "guard", "set"] => serde_json::from_str::<PumpGuardCommand>(text)
             .map(Inbound::PumpGuard)
             .map_err(|e| format!("bad PumpGuardCommand {text:?}: {e}")),
@@ -299,18 +299,40 @@ mod tests {
     }
 
     #[test]
-    fn the_pump_guard_topic_takes_a_grace_and_refuses_a_mode_or_a_cutoff() {
+    fn the_pump_guard_topic_takes_any_guard_setting_and_refuses_the_rest() {
         let t = "seedypod/u1/pump/guard/set";
         assert_eq!(
             parse_inbound("u1", t, br#"{"dryGraceMs":1500}"#).unwrap(),
-            Inbound::PumpGuard(PumpGuardCommand { dry_grace_ms: 1500 })
+            Inbound::PumpGuard(PumpGuardCommand {
+                dry_grace_ms: Some(1500),
+                ..Default::default()
+            })
+        );
+        assert_eq!(
+            parse_inbound(
+                "u1",
+                t,
+                br#"{"dryCurrentA":0.8,"dryGuard":"current","waterLowCm":15,"waterLowHoldMs":3000}"#
+            )
+            .unwrap(),
+            Inbound::PumpGuard(PumpGuardCommand {
+                dry_grace_ms: None,
+                dry_current_a: Some(0.8),
+                dry_guard: Some(hal_core::DryGuard::Current),
+                water_low_cm: Some(15.0),
+                water_low_hold_ms: Some(3000),
+            })
         );
         for bad in [
             &br#"{"pumpDryGuard":"current"}"#[..],
             br#"{"dryGraceMs":1500,"pumpDryCurrentA":0.1}"#,
+            br#"{"dryGuard":"off"}"#,
+            br#"{"dryCurrentA":null}"#,
+            br#"{}"#,
             b"",
         ] {
-            assert!(parse_inbound("u1", t, bad).is_err());
+            let e = parse_inbound("u1", t, bad).unwrap_err();
+            assert!(e.starts_with("bad PumpGuardCommand"), "{e}");
         }
     }
 

@@ -84,6 +84,16 @@ fn check_validates_and_reports_unknown_kinds() {
     assert_eq!(v["limits"]["pump_dry_grace_ms"], 3000);
     assert_eq!(v["limits"]["pump_dry_grace_min_ms"], 300);
     assert_eq!(v["limits"]["pump_dry_grace_max_ms"], 5000);
+    // The bounds the app's settings are held to, and the mode open to it.
+    assert_eq!(v["limits"]["pump_dry_current_min_a"], 0.1);
+    assert_eq!(v["limits"]["pump_dry_current_max_a"], 3.0);
+    assert_eq!(v["limits"]["water_low_cm"], 16.0);
+    assert_eq!(v["limits"]["water_low_min_cm"], 8.0);
+    assert_eq!(v["limits"]["water_low_max_cm"], 19.0);
+    assert_eq!(v["limits"]["water_low_hold_ms"], 0);
+    assert_eq!(v["limits"]["water_low_hold_min_ms"], 0);
+    assert_eq!(v["limits"]["water_low_hold_max_ms"], 60_000);
+    assert_eq!(v["limits"]["pump_dry_guard_app"], true);
     // Both asked, no cutoff yet: the tank level alone, and a warning that says so.
     assert_eq!(v["limits"]["pump_dry_guard_asked"], "both");
     assert_eq!(v["limits"]["pump_dry_guard"], "level");
@@ -154,6 +164,40 @@ fn check_prints_the_dry_run_guard_in_effect_and_why() {
         .as_str()
         .unwrap()
         .contains("pump_dry_grace_max_ms (5000)"));
+    // So are bounds the other app settings can't sit in, and a hal.toml value outside them.
+    let v = check("[limits]\npump_dry_current_min_a = 2\npump_dry_current_max_a = 1\n");
+    assert_eq!(v["ok"], false);
+    assert!(v["errors"][0]
+        .as_str()
+        .unwrap()
+        .contains("pump_dry_current_min_a (2) ≤ pump_dry_current_max_a (1)"));
+    let v = check("[limits]\npump_dry_current_a = 3.1\n");
+    assert_eq!(v["ok"], false);
+    assert!(v["errors"][0]
+        .as_str()
+        .unwrap()
+        .contains("pump_dry_current_a (3.1) must lie within"));
+    let v = check("[limits]\nwater_low_cm = 4\n");
+    assert_eq!(v["ok"], false);
+    assert!(v["errors"][0]
+        .as_str()
+        .unwrap()
+        .contains("water_low_cm (4) must lie within water_low_min_cm (8)"));
+    let v = check("[limits]\nwater_low_hold_ms = 61000\nwater_low_hold_max_ms = 61000\n");
+    assert_eq!(v["ok"], false);
+    assert!(v["errors"][0]
+        .as_str()
+        .unwrap()
+        .contains("water_low_hold_max_ms must be ≤ 60000"));
+    // Set, they're printed as set.
+    let v = check(
+        "[limits]\npump_dry_guard_app = false\npump_dry_current_a = 0.8\nwater_low_hold_ms = 2000\nwater_low_min_cm = 10\n",
+    );
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["limits"]["pump_dry_guard_app"], false);
+    assert_eq!(v["limits"]["pump_dry_current_a"], 0.8);
+    assert_eq!(v["limits"]["water_low_hold_ms"], 2000);
+    assert_eq!(v["limits"]["water_low_min_cm"], 10.0);
     let _ = std::fs::remove_dir_all(dir);
 }
 

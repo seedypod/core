@@ -11,8 +11,9 @@
 //!    no unbounded "on".
 //! 3. **Dry-run interlock** — a start is refused when the water distance (median
 //!    of N samples, supplied by the caller) exceeds `water_low_cm`. A running
-//!    pump stops when trusted readings stay low for [`LEVEL_CONFIRM`], or when
-//!    no trusted reading comes for [`DRY_CONFIRM`] (the ranger is gone).
+//!    pump stops when trusted readings stay low for [`LEVEL_CONFIRM`] or
+//!    `water_low_hold_ms`, whichever is longer, or when no trusted reading
+//!    comes for [`DRY_CONFIRM`] (the ranger is gone).
 //!    It also stops when its current says it is pulling air: past a spin-up
 //!    grace of `dry_grace_ms`, at least [`DRY_MIN_READS`] reads of the pump
 //!    monitor in a row, covering `dry_after_ms`, came back below
@@ -43,6 +44,10 @@ pub struct PumpLimits {
     pub max_run_s: u64,
     pub max_duty: f64,
     pub water_low_cm: Option<f64>,
+    /// How long trusted readings must stay at or past `water_low_cm` to stop a
+    /// running pump, if longer than [`LEVEL_CONFIRM`]: it rides out a noisy
+    /// ranger. A start is refused on one low reading whatever it is.
+    pub water_low_hold_ms: u64,
     pub over_temp_c: Option<f64>,
     /// Below this pump current (A), past the spin-up grace, the pump is pulling
     /// air. `None` turns the current guard off.
@@ -70,6 +75,7 @@ impl Default for PumpLimits {
             max_run_s: 900,
             max_duty: 100.0,
             water_low_cm: Some(16.0),
+            water_low_hold_ms: 0,
             over_temp_c: Some(36.0),
             dry_current_a: None,
             dry_after_ms: 300,
@@ -86,13 +92,16 @@ impl Default for PumpLimits {
 pub struct ResolvedGuard {
     pub mode: DryGuard,
     pub why: String,
-    /// It isn't what hal.toml asked for, or it leaves the pump less guarded: worth a warning.
+    /// It isn't what was asked for, or it leaves the pump less guarded: worth a warning.
     pub warn: bool,
+    /// No dry-run guard is on at all (`level` with `water_low_cm` unset). Only
+    /// hal.toml can leave a unit so; hald refuses a mode from the app that would.
+    pub off: bool,
 }
 
-/// From what hal.toml asks for and what the unit has, the dry-run guard to run.
-/// It never leaves the pump with none it was asked for: `current` without a
-/// cutoff or a pump monitor falls back to `level`, as does `both`.
+/// From the mode asked for (hal.toml's, or the app's) and what the unit has, the
+/// dry-run guard to run. It never leaves the pump with none it was asked for:
+/// `current` without a cutoff or a pump monitor falls back to `level`, as does `both`.
 pub fn resolve_dry_guard(
     asked: DryGuard,
     cutoff: Option<f64>,
@@ -106,10 +115,10 @@ pub fn resolve_dry_guard(
         (false, false) => Some("pump_dry_current_a and a pump monitor (ina219)"),
     };
     let (mode, why, warn) = match (asked, missing) {
-        (DryGuard::Level, _) => (DryGuard::Level, "tank level, as hal.toml sets".to_owned(), false),
+        (DryGuard::Level, _) => (DryGuard::Level, "tank level, as asked".to_owned(), false),
         (DryGuard::Current, None) => (
             DryGuard::Current,
-            "pump current only, as hal.toml sets; a low tank doesn't refuse a start".to_owned(),
+            "pump current only, as asked; a low tank doesn't refuse a start".to_owned(),
             false,
         ),
         (DryGuard::Both, None) => (DryGuard::Both, "tank level + pump current".to_owned(), false),
@@ -126,9 +135,15 @@ pub fn resolve_dry_guard(
             mode,
             why,
             warn: true,
+            off: true,
         };
     }
-    ResolvedGuard { mode, why, warn }
+    ResolvedGuard {
+        mode,
+        why,
+        warn,
+        off: false,
+    }
 }
 
 /// What the brown-out guard watches, in words, for `hald --check` and the log:
@@ -213,8 +228,11 @@ pub const CURRENT_LOST: Duration = Duration::from_secs(2);
 /// The fault a silent pump monitor latches in `current` mode. It waits for a person.
 pub const MONITOR_LOST: &str = "monitor-lost";
 
-/// The fault a dry pump latches, from either guard. The current guard adds why.
+/// The fault a dry pump latches, from either guard; each adds why after a colon.
 pub const DRY_RUN: &str = "dry-run";
+
+/// How a dry-run from the level guard begins, so it can be told from the current guard's.
+pub const LEVEL_DRY_RUN: &str = "dry-run: tank level";
 
 /// The fault a sagging supply latches. It waits for a person.
 pub const BROWN_OUT: &str = "brown-out";
@@ -223,6 +241,12 @@ pub const BROWN_OUT: &str = "brown-out";
 /// clears itself once the water reads good, unlike the others.
 pub fn is_dry_run(fault: &str) -> bool {
     fault == DRY_RUN || fault.starts_with("dry-run:")
+}
+
+/// Whether a latched dry-run came from the level guard (the bare `dry-run` is
+/// an older hald's), rather than from the pump current.
+pub fn is_level_dry_run(fault: &str) -> bool {
+    fault == DRY_RUN || fault.starts_with(LEVEL_DRY_RUN)
 }
 
 /// Amps (or seconds) for a fault message: `0.4`, `1.25`, `0`.
@@ -290,6 +314,28 @@ impl PumpGuard {
     /// A run under way is judged by the new one from its next read.
     pub fn set_dry_grace_ms(&mut self, ms: u64) {
         self.limits.dry_grace_ms = ms;
+    }
+
+    /// The mode in effect and the current cutoff it runs on, already resolved
+    /// by the caller ([`resolve_dry_guard`]). A run under way is judged by them
+    /// from its next read, its count of low current reads started afresh.
+    pub fn set_dry_guard(&mut self, mode: DryGuard, cutoff: Option<f64>) {
+        if (mode, cutoff) != (self.limits.dry_guard, self.limits.dry_current_a) {
+            self.reset_starved();
+        }
+        self.limits.dry_guard = mode;
+        self.limits.dry_current_a = cutoff;
+    }
+
+    /// The level guard's cutoff, already clamped by the caller. There's no
+    /// clearing it here: only hal.toml leaves the level guard without one.
+    pub fn set_water_low_cm(&mut self, cm: f64) {
+        self.limits.water_low_cm = Some(cm);
+    }
+
+    /// How long the level must read low to stop a running pump, already clamped by the caller.
+    pub fn set_water_low_hold_ms(&mut self, ms: u64) {
+        self.limits.water_low_hold_ms = ms;
     }
 
     fn level_on(&self) -> bool {
@@ -384,8 +430,10 @@ impl PumpGuard {
             }
             return None;
         }
-        if self.level_on() && env.water_fresh && self.tank_ran_dry(env, now) {
-            return Some(self.trip(DRY_RUN));
+        if self.level_on() && env.water_fresh {
+            if let Some(why) = self.tank_ran_dry(env, now) {
+                return Some(self.trip(&why));
+            }
         }
         if let Some(why) = self.monitor_lost(env, now) {
             return Some(self.trip(&why));
@@ -404,28 +452,41 @@ impl PumpGuard {
     }
 
     /// The level guard, on a fresh reading: trusted readings at or past the limit
-    /// for [`LEVEL_CONFIRM`], or no trusted reading at all for [`DRY_CONFIRM`].
-    /// A suspect reading proves nothing either way: it neither confirms the
-    /// water low nor says it is back.
-    fn tank_ran_dry(&mut self, env: Env, now: Instant) -> bool {
-        let Some(low) = self.limits.water_low_cm else {
-            return false;
-        };
+    /// for [`LEVEL_CONFIRM`] or `water_low_hold_ms`, whichever is longer, or no
+    /// trusted reading at all for [`DRY_CONFIRM`]. A good reading starts the count
+    /// again. A suspect reading proves nothing either way: it neither confirms
+    /// the water low nor says it is back. Returns the fault, saying why.
+    fn tank_ran_dry(&mut self, env: Env, now: Instant) -> Option<String> {
+        let low = self.limits.water_low_cm?;
         match env.water_distance_cm.filter(|_| !env.water_suspect) {
             Some(d) if d < low => {
                 self.dry_since = None;
                 self.low_since = None;
-                false
+                None
             }
-            Some(_) => {
+            Some(d) => {
                 self.dry_since.get_or_insert(now);
                 let since = *self.low_since.get_or_insert(now);
-                now.duration_since(since) >= LEVEL_CONFIRM
+                let held = now.duration_since(since);
+                let hold = LEVEL_CONFIRM.max(Duration::from_millis(self.limits.water_low_hold_ms));
+                (held >= hold).then(|| {
+                    format!(
+                        "{LEVEL_DRY_RUN} read {} cm, past {} cm for {} s",
+                        amps(d),
+                        amps(low),
+                        amps(held.as_secs_f64())
+                    )
+                })
             }
             None => {
                 self.low_since = None;
                 let since = *self.dry_since.get_or_insert(now);
-                now.duration_since(since) >= DRY_CONFIRM
+                (now.duration_since(since) >= DRY_CONFIRM).then(|| {
+                    format!(
+                        "{LEVEL_DRY_RUN} unknown: no trusted reading for {} s",
+                        DRY_CONFIRM.as_secs()
+                    )
+                })
             }
         }
     }
@@ -748,7 +809,10 @@ mod tests {
         assert_eq!(g.fault(), None);
         // Still missing past the confirm time: the sensor is gone, so fail safe.
         assert_eq!(g.tick(lost, t0 + Duration::from_secs(13)), Some(Decision::Stop));
-        assert_eq!(g.fault(), Some("dry-run"));
+        assert_eq!(
+            g.fault(),
+            Some("dry-run: tank level unknown: no trusted reading for 3 s")
+        );
     }
 
     #[test]
@@ -761,7 +825,10 @@ mod tests {
         assert_eq!(g.tick(dry, t1), None);
         assert_eq!(g.tick(dry, t1 + Duration::from_millis(400)), None);
         assert_eq!(g.tick(dry, t1 + LEVEL_CONFIRM), Some(Decision::Stop));
-        assert_eq!(g.fault(), Some("dry-run"));
+        assert_eq!(
+            g.fault(),
+            Some("dry-run: tank level read 16 cm, past 16 cm for 0.5 s")
+        );
         // Even with water back, the latch holds.
         assert!(matches!(
             g.request(&on(None, None), wet(), t0 + Duration::from_secs(61)),
@@ -811,7 +878,10 @@ mod tests {
         assert_eq!(g.fault(), None);
         // No trusted reading for DRY_CONFIRM: the ranger is as good as gone.
         assert_eq!(g.tick(suspect(7.0), s(4)), Some(Decision::Stop));
-        assert_eq!(g.fault(), Some("dry-run"));
+        assert_eq!(
+            g.fault(),
+            Some("dry-run: tank level unknown: no trusted reading for 3 s")
+        );
         // A trusted good reading does clear it.
         g.acknowledge();
         g.request(&on(None, None), wet(), s(10)).unwrap();
@@ -856,6 +926,108 @@ mod tests {
         }
     }
 
+    // ---- the level hold: water_low_hold_ms -------------------------------------
+
+    fn held(ms: u64) -> PumpGuard {
+        PumpGuard::new(PumpLimits {
+            water_low_hold_ms: ms,
+            ..guard().limits().clone()
+        })
+    }
+
+    #[test]
+    fn a_hold_rides_out_noisy_low_reads_and_trips_on_a_steady_one() {
+        let mut g = held(5000);
+        let t0 = Instant::now();
+        let s = |n| t0 + Duration::from_secs(n);
+        g.request(&on(None, None), wet(), t0).unwrap();
+        let low = at(Some(17.0));
+        // A noisy ranger: lows broken up by good reads never add up to the hold.
+        for (n, env) in [(1, low), (2, wet()), (3, low), (4, low), (5, low), (6, wet())] {
+            assert_eq!(g.tick(env, s(n)), None, "{n} s");
+        }
+        for n in 7..=8 {
+            assert_eq!(g.tick(low, s(n)), None);
+            assert_eq!(g.tick(wet(), s(n) + Duration::from_millis(500)), None);
+        }
+        assert_eq!(g.fault(), None);
+        // Low without a break for the whole hold: it trips, and says so.
+        for n in 10..15 {
+            assert_eq!(g.tick(low, s(n)), None, "{n} s");
+        }
+        assert_eq!(g.tick(low, s(15)), Some(Decision::Stop));
+        assert_eq!(
+            g.fault(),
+            Some("dry-run: tank level read 17 cm, past 16 cm for 5 s")
+        );
+        assert!(is_dry_run(g.fault().unwrap()) && is_level_dry_run(g.fault().unwrap()));
+    }
+
+    #[test]
+    fn a_hold_never_delays_a_refused_start_or_a_ranger_that_is_gone() {
+        let mut g = held(60_000);
+        let t0 = Instant::now();
+        let s = |n| t0 + Duration::from_secs(n);
+        assert_eq!(
+            g.request(&on(None, None), at(Some(16.5)), t0),
+            Err(Refusal::WaterLow)
+        );
+        g.request(&on(None, None), wet(), t0).unwrap();
+        assert_eq!(g.tick(at(None), s(1)), None);
+        assert_eq!(g.tick(at(None), s(3)), None);
+        assert_eq!(g.tick(at(None), s(4)), Some(Decision::Stop));
+        assert_eq!(
+            g.fault(),
+            Some("dry-run: tank level unknown: no trusted reading for 3 s")
+        );
+    }
+
+    #[test]
+    fn a_hold_shorter_than_the_confirm_time_changes_nothing() {
+        for ms in [0, 200, 500] {
+            let mut g = held(ms);
+            let t0 = Instant::now();
+            let at_ms = |n| t0 + Duration::from_millis(n);
+            g.request(&on(None, None), wet(), t0).unwrap();
+            assert_eq!(g.tick(at(Some(17.0)), at_ms(1000)), None, "{ms}");
+            assert_eq!(g.tick(at(Some(17.0)), at_ms(1400)), None, "{ms}");
+            assert_eq!(g.tick(at(Some(17.0)), at_ms(1500)), Some(Decision::Stop), "{ms}");
+        }
+    }
+
+    #[test]
+    fn a_new_cutoff_hold_or_mode_judges_the_run_from_its_next_read() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        // A cutoff further out: 17 cm is no longer low.
+        let mut g = guard();
+        g.request(&on(None, None), wet(), t0).unwrap();
+        assert_eq!(g.tick(at(Some(17.0)), ms(1000)), None);
+        g.set_water_low_cm(18.0);
+        assert_eq!(g.limits().water_low_cm, Some(18.0));
+        assert_eq!(g.tick(at(Some(17.0)), ms(1500)), None);
+        assert_eq!(g.tick(at(Some(17.0)), ms(2500)), None);
+        // A hold set mid-count holds it longer.
+        g.set_water_low_hold_ms(3000);
+        assert_eq!(g.tick(at(Some(18.5)), ms(3000)), None);
+        assert_eq!(g.tick(at(Some(18.5)), ms(5000)), None);
+        assert_eq!(g.tick(at(Some(18.5)), ms(6000)), Some(Decision::Stop));
+        // Level to current mid-run: the tank stops counting, the current starts.
+        let mut g = mode(DryGuard::Level);
+        g.request(&on(None, None), wet(), t0).unwrap();
+        for n in [1000, 1100, 1200, 1300] {
+            assert_eq!(g.tick(air(), ms(n)), None);
+        }
+        g.set_dry_guard(DryGuard::Current, Some(1.2));
+        assert_eq!(g.limits().dry_guard, DryGuard::Current);
+        assert_eq!(g.tick(at(Some(40.0)), ms(1400)), None);
+        for n in [1500, 1600, 1700] {
+            assert_eq!(g.tick(air(), ms(n)), None, "{n}");
+        }
+        assert_eq!(g.tick(air(), ms(1800)), Some(Decision::Stop));
+        assert!(g.fault().unwrap().contains("pulling air"));
+    }
+
     // ---- which guard: pump_dry_guard ------------------------------------------
 
     /// The 1 s grace the guard's timing tests were drawn for, before the unit's
@@ -897,7 +1069,10 @@ mod tests {
         }
         assert_eq!(g.tick(at(Some(17.0)), ms(6000)), None);
         assert_eq!(g.tick(at(Some(17.0)), ms(6500)), Some(Decision::Stop));
-        assert_eq!(g.fault(), Some(DRY_RUN));
+        assert_eq!(
+            g.fault(),
+            Some("dry-run: tank level read 17 cm, past 16 cm for 0.5 s")
+        );
     }
 
     #[test]
@@ -1029,10 +1204,15 @@ mod tests {
         let none = r(DryGuard::Level, None, true, false);
         assert!(
             none.warn
+                && none.off
                 && none
                     .why
                     .ends_with("water_low_cm is unset, so no dry-run guard is on")
         );
+        // Off only when it's the tank level with no cutoff: a fallback still guards.
+        assert!(r(DryGuard::Current, None, true, false).off);
+        assert!(!r(DryGuard::Current, Some(1.2), true, false).off);
+        assert!(!today.off && !ok.off && !c.off && !l.off);
     }
 
     // ---- the current guard (#220) -------------------------------------------
@@ -1354,6 +1534,18 @@ mod tests {
         ));
         assert!(!is_dry_run("over-temp"));
         assert!(!is_dry_run("dry-runner"));
+        // Which guard: the level's (or an older hald's bare one), or the current's.
+        assert!(is_level_dry_run("dry-run"));
+        assert!(is_level_dry_run(
+            "dry-run: tank level read 17 cm, past 16 cm for 0.5 s"
+        ));
+        assert!(is_level_dry_run(
+            "dry-run: tank level unknown: no trusted reading for 3 s"
+        ));
+        assert!(!is_level_dry_run(
+            "dry-run: pump drew 0 A, below 1.2 A for 0.3 s: it's pulling air"
+        ));
+        assert!(!is_level_dry_run("over-temp"));
         assert_eq!(amps(0.4), "0.4");
         assert_eq!(amps(1.25), "1.25");
         assert_eq!(amps(0.0), "0");

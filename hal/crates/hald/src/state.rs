@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use hal_core::safety::DoseLedger;
+use hal_core::DryGuard;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -23,6 +24,17 @@ pub struct Persisted {
     /// into hal.toml's bounds; unset, hal.toml's default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pump_dry_grace_ms: Option<u64>,
+    /// The rest of what the app may set on the dry-run guard, each kept the same
+    /// way: re-clamped at boot into hal.toml's bounds as they are then (the mode
+    /// re-resolved, and dropped if hal.toml now locks it); unset, hal.toml's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pump_dry_current_a: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pump_dry_guard: Option<DryGuard>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water_low_cm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water_low_hold_ms: Option<u64>,
 }
 
 pub struct StateFile {
@@ -87,6 +99,10 @@ mod tests {
             light_hours_total: 12.25,
             last_pump_run: None,
             pump_dry_grace_ms: Some(1500),
+            pump_dry_current_a: Some(0.8),
+            pump_dry_guard: Some(DryGuard::Current),
+            water_low_cm: Some(15.5),
+            water_low_hold_ms: Some(4000),
             doses: BTreeMap::new(),
         };
         s.doses.insert(
@@ -100,6 +116,20 @@ mod tests {
         );
         f.save(&s).unwrap();
         assert_eq!(f.load(), s);
+        let text = std::fs::read_to_string(f.path()).unwrap();
+        for k in [
+            r#""pumpDryGraceMs": 1500"#,
+            r#""pumpDryCurrentA": 0.8"#,
+            r#""pumpDryGuard": "current""#,
+            r#""waterLowCm": 15.5"#,
+            r#""waterLowHoldMs": 4000"#,
+        ] {
+            assert!(text.contains(k), "{k} in {text}");
+        }
+        // Nothing set from the app, nothing written for it.
+        f.save(&Persisted::default()).unwrap();
+        let text = std::fs::read_to_string(f.path()).unwrap();
+        assert!(!text.contains("pumpDry") && !text.contains("waterLow"), "{text}");
         assert!(f.path().ends_with("state.json"));
         assert!(!f.path().with_extension("json.tmp").exists());
         let _ = std::fs::remove_dir_all(dir);

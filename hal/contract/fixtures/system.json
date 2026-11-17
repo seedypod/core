@@ -11,7 +11,13 @@
   },
   "limits": {
     "pumpMaxRunS": 900, "pumpMaxDuty": 100, "waterLowCm": 16,
-    "pumpDryGuard": "both", "pumpDryGraceMs": 1200, "pumpDryGraceMinMs": 300, "pumpDryGraceMaxMs": 5000,
+    "pumpDryGuard": "level", "pumpDryGuardAsked": "current",
+    "pumpDryGuardWhy": "pump_dry_guard = \"current\" needs a pump monitor (ina219): falling back to the tank level",
+    "pumpDryGuardApp": true,
+    "pumpDryCurrentA": 0.8, "pumpDryCurrentMinA": 0.3, "pumpDryCurrentMaxA": 3.0,
+    "pumpDryGraceMs": 1200, "pumpDryGraceMinMs": 300, "pumpDryGraceMaxMs": 5000,
+    "waterLowMinCm": 8.0, "waterLowMaxCm": 19.0,
+    "waterLowHoldMs": 0, "waterLowHoldMinMs": 0, "waterLowHoldMaxMs": 60000,
     "pumpBrownoutV": 10.8, "pumpBrownoutMs": 300, "pumpBrownoutPi": true
   }
 }

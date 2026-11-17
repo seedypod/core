@@ -15,14 +15,14 @@ use std::time::{Duration, Instant};
 use hal_core::device::{now_epoch_s, rfc3339_from_epoch};
 use hal_core::registry::Registry;
 use hal_core::safety::{
-    describe_brownout, is_dry_run, resolve_dry_guard, Decision, DoseGuard, DoseLimits, Env, PumpGuard,
-    PumpLimits, DRY_RUN,
+    describe_brownout, is_dry_run, is_level_dry_run, median, resolve_dry_guard, Decision, DoseGuard,
+    DoseLimits, Env, PumpGuard, PumpLimits, ResolvedGuard,
 };
 use hal_core::{
     topics, ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, BinarySensor, ButtonEvent,
     ButtonPress, CalibrationCommand, CalibrationResult, DeviceCommand, DeviceEntry, DeviceInventory,
-    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, DryGuard, PumpGuardCommand, Quality, Reading,
-    SensorId, SystemInfo,
+    DeviceOp, DeviceResult, DeviceSource, DeviceStatus, DryGuard, PumpGuardCommand, PumpRun, PumpRunEnd,
+    Quality, Reading, SensorId, SystemInfo, PUMP_RUN_MAX_SAMPLES, PUMP_RUN_SAMPLES_S,
 };
 use serde::Serialize;
 use tracing::{error, info, warn};
@@ -66,7 +66,7 @@ pub enum Inbound {
     Calibrate(SensorId, CalibrationCommand),
     /// Add or remove a sensor at runtime (`devices/set`).
     Devices(DeviceCommand),
-    /// The app asks for the current guard's spin-up grace (`pump/guard/set`).
+    /// The app asks for dry-run guard settings (`pump/guard/set`).
     PumpGuard(PumpGuardCommand),
     Button(ButtonPress),
     /// Outcome of a camera capture (from the HTTP server) → `camera_missing`.
@@ -139,15 +139,78 @@ pub struct EngineConfig {
     /// The bounds (ms) a grace from the app is clamped into: hal.toml's
     /// `pump_dry_grace_min_ms` and `pump_dry_grace_max_ms`.
     pub dry_grace_bounds: (u64, u64),
+    /// The bounds of the other guard settings from the app, likewise:
+    /// `pump_dry_current_{min,max}_a`, `water_low_{min,max}_cm` and
+    /// `water_low_hold_{min,max}_ms`.
+    pub dry_current_bounds: (f64, f64),
+    pub water_low_bounds: (f64, f64),
+    pub water_low_hold_bounds: (u64, u64),
+    /// Whether the app may change the dry-run guard's mode (`pump_dry_guard_app`).
+    pub dry_guard_app: bool,
     /// Where the Pi's under-voltage flag is read for the brown-out guard
     /// (`config::PI_THROTTLED`); `None` doesn't read it (`--sim`, or
     /// `pump_brownout_pi = false`).
     pub pi_throttled: Option<std::path::PathBuf>,
 }
 
-/// A grace from the app, held to hal.toml's bounds.
+/// A grace (or a hold) from the app, held to hal.toml's bounds.
 fn clamp_grace(ms: u64, (min, max): (u64, u64)) -> u64 {
     ms.clamp(min, max.max(min))
+}
+
+/// A cutoff from the app, held to hal.toml's bounds.
+fn clamp_cutoff(v: f64, (min, max): (f64, f64)) -> f64 {
+    v.clamp(min, max.max(min))
+}
+
+/// To `places` decimals, for the pump run's samples.
+fn round_to(v: f64, places: i32) -> f64 {
+    let k = 10f64.powi(places);
+    (v * k).round() / k
+}
+
+/// The pump run under way, for its `pump/run` message.
+#[derive(Debug)]
+struct RunTrace {
+    started: Instant,
+    started_at: String,
+    /// `(ms since the start, A, V)` over the first [`PUMP_RUN_SAMPLES_S`].
+    samples: Vec<(u64, Option<f64>, Option<f64>)>,
+    /// Every current read this run, for the median past the grace.
+    currents: Vec<(u64, f64)>,
+}
+
+impl RunTrace {
+    fn new(now: Now) -> Self {
+        Self {
+            started: now.instant,
+            started_at: now.ts(),
+            samples: Vec::new(),
+            currents: Vec::new(),
+        }
+    }
+
+    fn record(&mut self, at: Instant, amps: Option<f64>, volts: Option<f64>) {
+        let t = at.duration_since(self.started).as_millis() as u64;
+        if t < PUMP_RUN_SAMPLES_S * 1000 && self.samples.len() < PUMP_RUN_MAX_SAMPLES {
+            self.samples
+                .push((t, amps.map(|a| round_to(a, 3)), volts.map(|v| round_to(v, 2))));
+        }
+        if let Some(a) = amps {
+            self.currents.push((t, a));
+        }
+    }
+
+    /// The median current read at or past `grace_ms`; `None` if there was none.
+    fn wet_a(&self, grace_ms: u64) -> Option<f64> {
+        let mut wet: Vec<f64> = self
+            .currents
+            .iter()
+            .filter(|(t, _)| *t >= grace_ms)
+            .map(|(_, a)| *a)
+            .collect();
+        median(&mut wet).map(|a| round_to(a, 3))
+    }
 }
 
 const HOURS_PERSIST_EVERY: Duration = Duration::from_secs(900);
@@ -181,6 +244,16 @@ pub struct Engine {
     registry: Registry,
     over_temp_input: Option<Box<dyn BinarySensor>>,
     pump: PumpGuard,
+    /// The dry-run guard's mode hal.toml asks for, and the one asked for now
+    /// (hal.toml's, or the app's); what runs is resolved from it.
+    dry_guard_toml: DryGuard,
+    dry_guard_asked: DryGuard,
+    /// The current guard's cutoff, hal.toml's or the app's, whatever the mode:
+    /// the guard is only handed it when the mode in effect judges the current.
+    dry_current_a: Option<f64>,
+    /// The pump run under way, and the last one's message, republished on a resync.
+    run: Option<RunTrace>,
+    last_run: Option<PumpRun>,
     pump_since: String,
     pump_was_on: bool,
     /// Until when a current-guard trip holds before it may clear like a dry-run.
@@ -316,34 +389,47 @@ impl Engine {
     ) -> Self {
         let mut cfg = cfg;
         let mut system = system;
-        let guard = resolve_dry_guard(
-            cfg.pump.dry_guard,
-            cfg.pump.dry_current_a,
-            system.caps.sensors.contains(&SensorId::PumpA),
-            cfg.pump.water_low_cm.is_some(),
-        );
-        if guard.warn {
-            warn!(mode = %key(&guard.mode), why = %guard.why, "pump dry-run guard");
-        } else {
-            info!(mode = %key(&guard.mode), why = %guard.why, "pump dry-run guard");
-        }
-        cfg.pump.dry_guard = guard.mode;
-        if guard.mode == DryGuard::Level {
-            cfg.pump.dry_current_a = None;
-        }
         let mut registry = registry;
         let light = registry
             .remove_actuator(ActuatorId::Light)
             .map(|driver| LightFader::new(driver, cfg.light_fade));
-        let persisted = state_file.as_ref().map(StateFile::load).unwrap_or_default();
-        // The app's grace if it set one, held to hal.toml's bounds as they are now.
+        let mut persisted = state_file.as_ref().map(StateFile::load).unwrap_or_default();
+        // What the app set and hald kept, without waiting on core: each held to
+        // hal.toml's bounds as they are now. hal.toml's values stand for the rest.
         if let Some(ms) = persisted.pump_dry_grace_ms {
             cfg.pump.dry_grace_ms = clamp_grace(ms, cfg.dry_grace_bounds);
         }
-        system.limits.pump_dry_guard = Some(guard.mode);
-        system.limits.pump_dry_grace_ms = Some(cfg.pump.dry_grace_ms);
-        system.limits.pump_dry_grace_min_ms = Some(cfg.dry_grace_bounds.0);
-        system.limits.pump_dry_grace_max_ms = Some(cfg.dry_grace_bounds.1);
+        let mut dry_current_a = cfg.pump.dry_current_a;
+        if let Some(a) = persisted.pump_dry_current_a {
+            dry_current_a = Some(clamp_cutoff(a, cfg.dry_current_bounds));
+        }
+        // A level interlock hal.toml turned off stays off.
+        if let (Some(_), Some(cm)) = (cfg.pump.water_low_cm, persisted.water_low_cm) {
+            cfg.pump.water_low_cm = Some(clamp_cutoff(cm, cfg.water_low_bounds));
+        }
+        if let Some(ms) = persisted.water_low_hold_ms {
+            cfg.pump.water_low_hold_ms = clamp_grace(ms, cfg.water_low_hold_bounds);
+        }
+        let dry_guard_toml = cfg.pump.dry_guard;
+        let current_monitor = system.caps.sensors.contains(&SensorId::PumpA);
+        let water_low = cfg.pump.water_low_cm.is_some();
+        let dry_guard_asked = match persisted.pump_dry_guard {
+            Some(m) if m != dry_guard_toml && !cfg.dry_guard_app => {
+                warn!(kept = %key(&m), "the app's dry-run guard mode is dropped: hal.toml locks it (pump_dry_guard_app = false)");
+                persisted.pump_dry_guard = None;
+                dry_guard_toml
+            }
+            Some(m)
+                if m != dry_guard_toml
+                    && resolve_dry_guard(m, dry_current_a, current_monitor, water_low).off =>
+            {
+                warn!(kept = %key(&m), "the app's dry-run guard mode is dropped: it would leave the pump with no dry-run guard");
+                persisted.pump_dry_guard = None;
+                dry_guard_toml
+            }
+            Some(m) => m,
+            None => dry_guard_toml,
+        };
         // The brown-out guard: the supply needs a pump monitor, the Pi's flag a readable file.
         let monitor = system.caps.sensors.contains(&SensorId::PumpV);
         let pi_flag = match cfg.pi_throttled.as_deref() {
@@ -377,9 +463,14 @@ impl Engine {
                 doses.insert(*id, g);
             }
         }
-        Self {
+        let mut engine = Self {
             unit: system.unit_id.clone(),
             pump: PumpGuard::new(cfg.pump.clone()),
+            dry_guard_toml,
+            dry_guard_asked,
+            dry_current_a,
+            run: None,
+            last_run: None,
             pump_since: String::new(),
             pump_was_on: false,
             dry_hold_until: None,
@@ -409,7 +500,14 @@ impl Engine {
             water: WaterAlert::default(),
             snapshot,
             devices: Devices::default(),
+        };
+        let guard = engine.apply_guard();
+        if guard.warn {
+            warn!(mode = %key(&guard.mode), why = %guard.why, "pump dry-run guard");
+        } else {
+            info!(mode = %key(&guard.mode), why = %guard.why, "pump dry-run guard");
         }
+        engine
     }
 
     /// Starts the thread that steps light fades. Without it, light changes are instant.
@@ -486,6 +584,9 @@ impl Engine {
         }
         for id in self.system.caps.actuators.clone() {
             out.extend(self.publish_actuator(id, now));
+        }
+        if let Some(run) = &self.last_run {
+            out.push(Outbound::json(topics::pump_run(&self.unit), run, true));
         }
         self.refresh_alerts(now, true, &mut out);
         out.push(Outbound::json(
@@ -614,7 +715,7 @@ impl Engine {
                 ));
             }
             Inbound::Devices(cmd) => out.extend(self.devices_cmd(cmd, now)),
-            Inbound::PumpGuard(cmd) => out.extend(self.set_dry_grace(cmd.dry_grace_ms, now)),
+            Inbound::PumpGuard(cmd) => out.extend(self.set_guard(cmd, now)),
             Inbound::Resync => out.extend(self.resync(now)),
             Inbound::Shutdown => out.extend(self.shutdown(now)),
         }
@@ -648,13 +749,23 @@ impl Engine {
             ActuatorId::Pump => {
                 let mut out = Vec::new();
                 self.refresh_env(now);
+                let was_running = self.pump.is_running(now.instant);
                 match self.pump.request(cmd, self.start_env(), now.instant) {
                     Ok(Decision::Run { level, deadline_in }) => {
                         info!(level, secs = deadline_in.as_secs(), "pump run accepted");
+                        // A new run, not a longer one: a last run whose deadline passed
+                        // unseen ends here.
+                        if !was_running {
+                            out.extend(self.end_run(PumpRunEnd::Deadline, now));
+                            self.run = Some(RunTrace::new(now));
+                        }
                         self.apply_pump(level, now);
                         self.persisted.last_pump_run = Some(now.ts());
                     }
-                    Ok(Decision::Stop) => self.apply_pump(0.0, now),
+                    Ok(Decision::Stop) => {
+                        self.apply_pump(0.0, now);
+                        out.extend(self.end_run(PumpRunEnd::Stop, now));
+                    }
                     Err(e) => warn!(%e, "pump command refused"),
                 }
                 out.extend(self.publish_actuator(id, now));
@@ -893,6 +1004,11 @@ impl Engine {
 
     fn sample_for_guard(&mut self, now: Now) {
         self.read_pump_current();
+        if self.pump_was_on {
+            if let Some(run) = &mut self.run {
+                run.record(now.instant, self.env.pump_current_a, self.env.supply_v);
+            }
+        }
         let level_due = self.next_level_read.map_or(true, |t| now.instant >= t);
         if self.pump.is_running(now.instant) && level_due {
             self.read_level(now, false);
@@ -928,7 +1044,7 @@ impl Engine {
                 warn!(fault = f, "pump stopped by guard; latched until acknowledged");
                 // A full tank says nothing about a pump pulling air: the window it
                 // clears on starts at the trip, not before it.
-                if is_dry_run(f) && f != DRY_RUN {
+                if is_dry_run(f) && !is_level_dry_run(f) {
                     self.dry_hold_until =
                         Some(now.instant + self.cfg.telemetry_interval * WATER_WINDOW as u32);
                 }
@@ -939,6 +1055,12 @@ impl Engine {
                 false
             }
         };
+        let by = if tripped {
+            PumpRunEnd::Fault
+        } else {
+            PumpRunEnd::Deadline
+        };
+        out.extend(self.end_run(by, now));
         out.extend(self.publish_actuator(ActuatorId::Pump, now));
         tripped
     }
@@ -1216,12 +1338,92 @@ impl Engine {
         self.update_snapshot(now);
     }
 
-    // ---- the one guard setting from the app --------------------------------
+    // ---- the dry-run guard settings from the app ----------------------------
 
-    /// `pump/guard/set`: the current guard's spin-up grace, the one dry-run
-    /// setting the app may change. Held to hal.toml's bounds (logged when it had
-    /// to be, never refused), kept in the state file, and reported in `system`.
-    fn set_dry_grace(&mut self, asked: u64, now: Now) -> Vec<Outbound> {
+    /// `pump/guard/set`: whichever of the dry-run guard's settings the app sent.
+    /// Numbers are held to hal.toml's bounds (logged when they had to be, never
+    /// refused) and a mode is refused (logged) when hal.toml locks it or it would
+    /// leave the pump unguarded. What's taken is kept in the state file and goes
+    /// to the guard at once; `system` is republished whatever was taken.
+    fn set_guard(&mut self, cmd: PumpGuardCommand, now: Now) -> Vec<Outbound> {
+        if let Some(ms) = cmd.dry_grace_ms {
+            self.set_dry_grace(ms);
+        }
+        if let Some(asked) = cmd.dry_current_a {
+            let a = clamp_cutoff(asked, self.cfg.dry_current_bounds);
+            let (min, max) = self.cfg.dry_current_bounds;
+            if a != asked {
+                warn!(
+                    asked,
+                    a, min, max, "pump dry-run cutoff held to hal.toml's bounds"
+                );
+            } else {
+                info!(a, "pump dry-run cutoff set");
+            }
+            self.dry_current_a = Some(a);
+            self.persisted.pump_dry_current_a = Some(a);
+        }
+        if let Some(asked) = cmd.water_low_cm {
+            if self.cfg.pump.water_low_cm.is_none() {
+                warn!(
+                    asked,
+                    "water_low_cm refused: hal.toml turns the level interlock off"
+                );
+            } else {
+                let cm = clamp_cutoff(asked, self.cfg.water_low_bounds);
+                let (min, max) = self.cfg.water_low_bounds;
+                if cm != asked {
+                    warn!(asked, cm, min, max, "water_low_cm held to hal.toml's bounds");
+                } else {
+                    info!(cm, "water_low_cm set");
+                }
+                self.cfg.pump.water_low_cm = Some(cm);
+                self.pump.set_water_low_cm(cm);
+                self.persisted.water_low_cm = Some(cm);
+            }
+        }
+        if let Some(asked) = cmd.water_low_hold_ms {
+            let ms = clamp_grace(asked, self.cfg.water_low_hold_bounds);
+            let (min, max) = self.cfg.water_low_hold_bounds;
+            if ms != asked {
+                warn!(asked, ms, min, max, "water_low_hold_ms held to hal.toml's bounds");
+            } else {
+                info!(ms, "water_low_hold_ms set");
+            }
+            self.cfg.pump.water_low_hold_ms = ms;
+            self.pump.set_water_low_hold_ms(ms);
+            self.persisted.water_low_hold_ms = Some(ms);
+        }
+        if let Some(mode) = cmd.dry_guard {
+            let toml = self.dry_guard_toml;
+            if !self.cfg.dry_guard_app {
+                if mode == toml {
+                    self.dry_guard_asked = toml;
+                    self.persisted.pump_dry_guard = None;
+                } else {
+                    warn!(asked = %key(&mode), hal_toml = %key(&toml), "pump dry-run guard mode refused: hal.toml locks it (pump_dry_guard_app = false)");
+                }
+            } else if mode != toml && self.resolve_guard(mode).off {
+                warn!(asked = %key(&mode), "pump dry-run guard mode refused: it would leave the pump with no dry-run guard");
+            } else {
+                info!(asked = %key(&mode), "pump dry-run guard mode set");
+                self.dry_guard_asked = mode;
+                self.persisted.pump_dry_guard = Some(mode);
+            }
+        }
+        let guard = self.apply_guard();
+        if guard.warn {
+            warn!(mode = %key(&guard.mode), why = %guard.why, "pump dry-run guard");
+        } else {
+            info!(mode = %key(&guard.mode), why = %guard.why, "pump dry-run guard");
+        }
+        self.save_state(now);
+        self.update_snapshot(now);
+        vec![Outbound::json(topics::system(&self.unit), &self.system, true)]
+    }
+
+    /// The current guard's spin-up grace, held to hal.toml's bounds.
+    fn set_dry_grace(&mut self, asked: u64) {
         let ms = clamp_grace(asked, self.cfg.dry_grace_bounds);
         let (min, max) = self.cfg.dry_grace_bounds;
         if ms != asked {
@@ -1234,11 +1436,71 @@ impl Engine {
         }
         self.cfg.pump.dry_grace_ms = ms;
         self.pump.set_dry_grace_ms(ms);
-        self.system.limits.pump_dry_grace_ms = Some(ms);
         self.persisted.pump_dry_grace_ms = Some(ms);
-        self.save_state(now);
-        self.update_snapshot(now);
-        vec![Outbound::json(topics::system(&self.unit), &self.system, true)]
+    }
+
+    /// The guard `asked` would run as on this unit, with the cutoff and tank limit kept now.
+    fn resolve_guard(&self, asked: DryGuard) -> ResolvedGuard {
+        resolve_dry_guard(
+            asked,
+            self.dry_current_a,
+            self.system.caps.sensors.contains(&SensorId::PumpA),
+            self.cfg.pump.water_low_cm.is_some(),
+        )
+    }
+
+    /// Resolve the mode asked for, hand the guard what it runs on, and report
+    /// every setting in `system.limits`.
+    fn apply_guard(&mut self) -> ResolvedGuard {
+        let guard = self.resolve_guard(self.dry_guard_asked);
+        let cutoff = self.dry_current_a.filter(|_| guard.mode != DryGuard::Level);
+        self.cfg.pump.dry_guard = guard.mode;
+        self.cfg.pump.dry_current_a = cutoff;
+        self.pump.set_dry_guard(guard.mode, cutoff);
+        let (cfg, l) = (&self.cfg, &mut self.system.limits);
+        l.water_low_cm = cfg.pump.water_low_cm;
+        l.pump_dry_guard = Some(guard.mode);
+        l.pump_dry_guard_asked = Some(self.dry_guard_asked);
+        l.pump_dry_guard_why = (guard.mode != self.dry_guard_asked).then(|| guard.why.clone());
+        l.pump_dry_guard_app = Some(cfg.dry_guard_app);
+        l.pump_dry_current_a = self.dry_current_a;
+        l.pump_dry_current_min_a = Some(cfg.dry_current_bounds.0);
+        l.pump_dry_current_max_a = Some(cfg.dry_current_bounds.1);
+        l.pump_dry_grace_ms = Some(cfg.pump.dry_grace_ms);
+        l.pump_dry_grace_min_ms = Some(cfg.dry_grace_bounds.0);
+        l.pump_dry_grace_max_ms = Some(cfg.dry_grace_bounds.1);
+        l.water_low_min_cm = Some(cfg.water_low_bounds.0);
+        l.water_low_max_cm = Some(cfg.water_low_bounds.1);
+        l.water_low_hold_ms = Some(cfg.pump.water_low_hold_ms);
+        l.water_low_hold_min_ms = Some(cfg.water_low_hold_bounds.0);
+        l.water_low_hold_max_ms = Some(cfg.water_low_hold_bounds.1);
+        guard
+    }
+
+    // ---- the pump run's trace -------------------------------------------------
+
+    /// Ends the run under way, if there is one: its `pump/run` message.
+    fn end_run(&mut self, by: PumpRunEnd, now: Now) -> Option<Outbound> {
+        let run = self.run.take()?;
+        let level_pct = self
+            .registry
+            .sensor_mut(SensorId::WaterLevelPct)
+            .and_then(|s| s.read().ok())
+            .map(|r| r.value);
+        let msg = PumpRun {
+            started_at: run.started_at.clone(),
+            ended_at: now.ts(),
+            every_ms: PUMP_SAMPLE_EVERY.as_millis() as u64,
+            wet_a: run.wet_a(self.cfg.pump.dry_grace_ms),
+            samples: run.samples,
+            ended_by: by,
+            fault: self.pump.fault().map(str::to_owned),
+            level_pct,
+            level_cm: self.env.water_distance_cm,
+        };
+        let out = Outbound::json(topics::pump_run(&self.unit), &msg, true);
+        self.last_run = Some(msg);
+        Some(out)
     }
 
     // ---- runtime sensors ----------------------------------------------------
@@ -1405,6 +1667,7 @@ impl Engine {
         if self.system.caps.actuators.contains(&ActuatorId::Pump) {
             let _ = self.pump.request(&stop, self.env, now.instant);
             self.apply_pump(0.0, now);
+            out.extend(self.end_run(PumpRunEnd::Stop, now));
             out.extend(self.publish_actuator(ActuatorId::Pump, now));
         }
         for id in self.doses.keys().copied().collect::<Vec<_>>() {
@@ -1467,6 +1730,10 @@ mod tests {
             button_pump_run_s: 300,
             ha_prefix: ha.then(|| "homeassistant".to_owned()),
             dry_grace_bounds: (300, 5000),
+            dry_current_bounds: (0.1, 3.0),
+            water_low_bounds: (8.0, 19.0),
+            water_low_hold_bounds: (0, 60_000),
+            dry_guard_app: true,
             pi_throttled: None,
         }
     }
@@ -1696,7 +1963,7 @@ mod tests {
         let out = r.engine.tick(r.now);
         assert_eq!(r.world.lock().unwrap().pump_level, 0.0);
         let st = payload(&out, "seedypod/u1/actuator/pump/state");
-        assert_eq!(st["fault"], "dry-run");
+        assert_eq!(st["fault"], "dry-run: tank level read 17 cm, past 16 cm for 3 s");
         // The trip raises its alert at once, between telemetry rounds.
         assert_eq!(payload(&out, "seedypod/u1/alert/pump_fault")["active"], true);
         // Refill: still latched, start refused, and the refusal is visible in state.
@@ -1707,7 +1974,7 @@ mod tests {
         assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], false);
         assert_eq!(
             payload(&out, "seedypod/u1/actuator/pump/state")["fault"],
-            "dry-run"
+            "dry-run: tank level read 17 cm, past 16 cm for 3 s"
         );
         assert_eq!(r.world.lock().unwrap().pump_level, 0.0);
         let out = r.engine.handle(Inbound::AlertAck(AlertKind::PumpFault), r.now);
@@ -1746,12 +2013,19 @@ mod tests {
         r.engine.tick(r.now);
         r.now.advance(hal_core::safety::DRY_CONFIRM);
         r.engine.tick(r.now);
-        assert_eq!(r.engine.pump.fault(), Some("dry-run"));
+        assert_eq!(
+            r.engine.pump.fault(),
+            Some("dry-run: tank level read 17 cm, past 16 cm for 3 s")
+        );
         // Topped off: still latched until a whole window has read good, then clear without an ack.
         r.world.lock().unwrap().water_distance_cm = 7.0;
         let mut last = Vec::new();
         for i in 0..WATER_WINDOW {
-            assert_eq!(r.engine.pump.fault(), Some("dry-run"), "round {i}");
+            assert_eq!(
+                r.engine.pump.fault(),
+                Some("dry-run: tank level read 17 cm, past 16 cm for 3 s"),
+                "round {i}"
+            );
             r.now.advance(Duration::from_secs(10));
             last = r.engine.tick(r.now);
         }
@@ -1806,7 +2080,10 @@ mod tests {
     }
 
     fn grace(ms: u64) -> Inbound {
-        Inbound::PumpGuard(PumpGuardCommand { dry_grace_ms: ms })
+        Inbound::PumpGuard(PumpGuardCommand {
+            dry_grace_ms: Some(ms),
+            ..Default::default()
+        })
     }
 
     #[test]
@@ -1860,6 +2137,423 @@ mod tests {
         let held = current_engine(&r, narrow, true);
         assert_eq!(held.pump.limits().dry_grace_ms, 2000);
         assert_eq!(held.system.limits.pump_dry_grace_max_ms, Some(2000));
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A `pump/guard/set` as it comes off the wire.
+    fn guard_cmd(json: &str) -> Inbound {
+        Inbound::PumpGuard(serde_json::from_str(json).unwrap_or_else(|e| panic!("{json}: {e}")))
+    }
+
+    /// The retained `system` limits a guard command republished.
+    fn limits_after(r: &mut Rig, json: &str) -> serde_json::Value {
+        let out = r.engine.handle(guard_cmd(json), r.now);
+        let sys: Vec<&Outbound> = out.iter().filter(|o| o.topic == "seedypod/u1/system").collect();
+        assert_eq!(sys.len(), 1, "{json}: one system publish");
+        assert!(sys[0].retain, "{json}: retained");
+        payload(&out, "seedypod/u1/system")["limits"].clone()
+    }
+
+    #[test]
+    fn the_app_sets_the_cutoff_tank_limit_and_hold_within_hal_toml_bounds_and_they_survive_a_restart() {
+        let mut r = current_rig("guard-set", true);
+        let out = r.engine.boot(r.now);
+        let l = &payload(&out, "seedypod/u1/system")["limits"];
+        // Nothing kept: hal.toml's, and the bounds the app is held to.
+        for (k, v) in [
+            ("pumpDryCurrentA", 0.15),
+            ("pumpDryCurrentMinA", 0.1),
+            ("pumpDryCurrentMaxA", 3.0),
+            ("waterLowCm", 16.0),
+            ("waterLowMinCm", 8.0),
+            ("waterLowMaxCm", 19.0),
+            ("waterLowHoldMs", 0.0),
+            ("waterLowHoldMinMs", 0.0),
+            ("waterLowHoldMaxMs", 60_000.0),
+        ] {
+            assert_eq!(l[k].as_f64(), Some(v), "{k}");
+        }
+        // In bounds, taken as asked; out of them, held to the nearer bound, never refused.
+        for (json, k, got) in [
+            (r#"{"dryCurrentA":0.8}"#, "pumpDryCurrentA", 0.8),
+            (r#"{"dryCurrentA":0.01}"#, "pumpDryCurrentA", 0.1),
+            (r#"{"dryCurrentA":9}"#, "pumpDryCurrentA", 3.0),
+            (r#"{"waterLowCm":12.5}"#, "waterLowCm", 12.5),
+            (r#"{"waterLowCm":2}"#, "waterLowCm", 8.0),
+            (r#"{"waterLowCm":40}"#, "waterLowCm", 19.0),
+            (r#"{"waterLowHoldMs":4000}"#, "waterLowHoldMs", 4000.0),
+            (r#"{"waterLowHoldMs":600000}"#, "waterLowHoldMs", 60_000.0),
+        ] {
+            assert_eq!(limits_after(&mut r, json)[k].as_f64(), Some(got), "{json}");
+        }
+        // Several at once, and the guard goes by them straight away.
+        let l = limits_after(
+            &mut r,
+            r#"{"dryCurrentA":0.4,"waterLowCm":15,"waterLowHoldMs":2500,"dryGraceMs":2000}"#,
+        );
+        assert_eq!(
+            (
+                l["pumpDryCurrentA"].as_f64(),
+                l["waterLowCm"].as_f64(),
+                l["waterLowHoldMs"].as_u64(),
+                l["pumpDryGraceMs"].as_u64()
+            ),
+            (Some(0.4), Some(15.0), Some(2500), Some(2000))
+        );
+        let g = r.engine.pump.limits().clone();
+        assert_eq!(
+            (
+                g.dry_current_a,
+                g.water_low_cm,
+                g.water_low_hold_ms,
+                g.dry_grace_ms
+            ),
+            (Some(0.4), Some(15.0), 2500, 2000)
+        );
+        let snap = r.snapshot.read().unwrap().system.clone().unwrap();
+        assert_eq!(snap.limits.pump_dry_current_a, Some(0.4));
+        let kept = StateFile::new(&r.dir).load();
+        assert_eq!(
+            (
+                kept.pump_dry_current_a,
+                kept.water_low_cm,
+                kept.water_low_hold_ms,
+                kept.pump_dry_grace_ms
+            ),
+            (Some(0.4), Some(15.0), Some(2500), Some(2000))
+        );
+        // Restarted, hald uses what it kept, without waiting on core.
+        let again = current_engine(&r, current_cfg(), true);
+        let g = again.pump.limits();
+        assert_eq!(
+            (g.dry_current_a, g.water_low_cm, g.water_low_hold_ms),
+            (Some(0.4), Some(15.0), 2500)
+        );
+        assert_eq!(again.system.limits.pump_dry_current_a, Some(0.4));
+        assert_eq!(again.system.limits.water_low_cm, Some(15.0));
+        assert_eq!(again.system.limits.water_low_hold_ms, Some(2500));
+        // hal.toml's bounds outrank what was kept: narrowed, each is held to them.
+        let mut narrow = current_cfg();
+        narrow.dry_current_bounds = (0.5, 1.0);
+        narrow.water_low_bounds = (16.0, 18.0);
+        narrow.water_low_hold_bounds = (0, 1000);
+        let held = current_engine(&r, narrow, true);
+        let g = held.pump.limits();
+        assert_eq!(
+            (g.dry_current_a, g.water_low_cm, g.water_low_hold_ms),
+            (Some(0.5), Some(16.0), 1000)
+        );
+        let l = &held.system.limits;
+        assert_eq!(
+            (
+                l.pump_dry_current_min_a,
+                l.water_low_max_cm,
+                l.water_low_hold_max_ms
+            ),
+            (Some(0.5), Some(18.0), Some(1000))
+        );
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn the_app_picks_the_mode_and_system_says_what_was_asked_and_why_it_differs() {
+        let mut r = current_rig("guard-mode", true);
+        r.engine.boot(r.now);
+        let l = limits_after(&mut r, r#"{"dryGuard":"current"}"#);
+        assert_eq!(
+            (&l["pumpDryGuard"], &l["pumpDryGuardAsked"]),
+            (&"current".into(), &"current".into())
+        );
+        assert!(!l.as_object().unwrap().contains_key("pumpDryGuardWhy"));
+        assert_eq!(l["pumpDryGuardApp"], true);
+        assert_eq!(r.engine.pump.limits().dry_guard, DryGuard::Current);
+        assert_eq!(r.engine.pump.limits().dry_current_a, Some(0.15));
+        // Current ignores the tank: a low one neither refuses a start nor stops the
+        // run, and waterLowCm is still reported, for core's warning.
+        r.world.lock().unwrap().water_distance_cm = 17.0;
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(30))), r.now);
+        assert_eq!(payload(&out, "seedypod/u1/actuator/pump/state")["on"], true);
+        // Past a telemetry round, which judges the water alert.
+        for _ in 0..120 {
+            step(&mut r);
+        }
+        assert_eq!(r.world.lock().unwrap().pump_level, 100.0);
+        assert_eq!(r.engine.system.limits.water_low_cm, Some(16.0));
+        assert!(r.engine.water.active, "the water alert still warns");
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, off()), r.now);
+        // Level ignores the current: the guard is handed no cutoff, though it's still reported.
+        let l = limits_after(&mut r, r#"{"dryGuard":"level"}"#);
+        assert_eq!(l["pumpDryGuard"], "level");
+        assert_eq!(l["pumpDryCurrentA"].as_f64(), Some(0.15));
+        assert_eq!(r.engine.pump.limits().dry_current_a, None);
+        // Kept for the next boot.
+        let again = current_engine(&r, current_cfg(), true);
+        assert_eq!(again.system.limits.pump_dry_guard, Some(DryGuard::Level));
+        assert_eq!(again.system.limits.pump_dry_guard_asked, Some(DryGuard::Level));
+        // Asked for current on a unit without a monitor: the tank level, and why.
+        let mut bare = current_engine(&r, current_cfg(), false);
+        let out = bare.handle(guard_cmd(r#"{"dryGuard":"current"}"#), r.now);
+        let l = &payload(&out, "seedypod/u1/system")["limits"];
+        assert_eq!(
+            (&l["pumpDryGuard"], &l["pumpDryGuardAsked"]),
+            (&"level".into(), &"current".into())
+        );
+        assert_eq!(
+            l["pumpDryGuardWhy"],
+            "pump_dry_guard = \"current\" needs a pump monitor (ina219): falling back to the tank level"
+        );
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn with_the_mode_locked_the_app_keeps_hal_tomls_and_a_kept_one_is_dropped() {
+        let mut r = current_rig("guard-lock", true);
+        r.engine.boot(r.now);
+        // Unlocked, the app's mode is kept...
+        limits_after(&mut r, r#"{"dryGuard":"current"}"#);
+        assert_eq!(
+            StateFile::new(&r.dir).load().pump_dry_guard,
+            Some(DryGuard::Current)
+        );
+        // ...until hal.toml locks it: then hal.toml's runs, and the kept one goes.
+        let mut c = current_cfg();
+        c.dry_guard_app = false;
+        r.engine = current_engine(&r, c, true);
+        assert_eq!(r.engine.system.limits.pump_dry_guard, Some(DryGuard::Both));
+        assert_eq!(r.engine.system.limits.pump_dry_guard_app, Some(false));
+        assert_eq!(r.engine.persisted.pump_dry_guard, None);
+        // A mode other than hal.toml's is refused; the rest of the payload is still taken.
+        let l = limits_after(&mut r, r#"{"dryGuard":"current","dryCurrentA":0.5}"#);
+        assert_eq!(
+            (&l["pumpDryGuard"], &l["pumpDryGuardAsked"]),
+            (&"both".into(), &"both".into())
+        );
+        assert_eq!(l["pumpDryGuardApp"], false);
+        assert_eq!(l["pumpDryCurrentA"].as_f64(), Some(0.5));
+        assert_eq!(r.engine.pump.limits().dry_guard, DryGuard::Both);
+        assert_eq!(StateFile::new(&r.dir).load().pump_dry_guard, None);
+        // hal.toml's own is no change.
+        let l = limits_after(&mut r, r#"{"dryGuard":"both"}"#);
+        assert_eq!(l["pumpDryGuard"], "both");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn nothing_from_the_app_leaves_the_pump_without_a_dry_run_guard() {
+        // hal.toml turned the level interlock off: the current guard is all there is.
+        let mut r = current_rig("guard-never-off", true);
+        let mut c = current_cfg();
+        c.pump.water_low_cm = None;
+        r.engine = current_engine(&r, c.clone(), true);
+        r.engine.boot(r.now);
+        assert_eq!(r.engine.system.limits.pump_dry_guard, Some(DryGuard::Both));
+        // Level would guard nothing: refused.
+        let l = limits_after(&mut r, r#"{"dryGuard":"level"}"#);
+        assert_eq!(
+            (&l["pumpDryGuard"], &l["pumpDryGuardAsked"]),
+            (&"both".into(), &"both".into())
+        );
+        assert_eq!(r.engine.pump.limits().dry_current_a, Some(0.15));
+        // And the app can't turn the interlock hal.toml turned off back on.
+        let l = limits_after(&mut r, r#"{"waterLowCm":12}"#);
+        assert!(l["waterLowCm"].is_null());
+        assert_eq!(r.engine.pump.limits().water_low_cm, None);
+        assert_eq!(StateFile::new(&r.dir).load().water_low_cm, None);
+        // Current still guards: taken.
+        assert_eq!(
+            limits_after(&mut r, r#"{"dryGuard":"current"}"#)["pumpDryGuard"],
+            "current"
+        );
+        // A kept mode that would guard nothing on this hal.toml is dropped at boot.
+        StateFile::new(&r.dir)
+            .save(&Persisted {
+                pump_dry_guard: Some(DryGuard::Level),
+                ..Persisted::default()
+            })
+            .unwrap();
+        let e = current_engine(&r, c, true);
+        assert_eq!(e.system.limits.pump_dry_guard, Some(DryGuard::Both));
+        assert_eq!(e.persisted.pump_dry_guard, None);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn a_hold_from_the_app_lets_a_noisy_ranger_read_low_without_stopping_the_pump() {
+        let mut r = rig(vec![ActuatorId::Pump], false, "level-hold");
+        r.engine.boot(r.now);
+        limits_after(&mut r, r#"{"waterLowHoldMs":5000}"#);
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, None)), r.now);
+        for _ in 0..25 {
+            step(&mut r);
+        }
+        // A low reading every other second, a good one between: it runs on.
+        for n in 0..200 {
+            r.world.lock().unwrap().water_distance_cm = if (n / 10) % 2 == 0 { 17.0 } else { 7.0 };
+            step(&mut r);
+        }
+        assert_eq!(r.world.lock().unwrap().pump_level, 100.0);
+        assert_eq!(r.engine.pump.fault(), None);
+        // Low for the whole hold: it stops, five readings on from the first low one.
+        r.world.lock().unwrap().water_distance_cm = 7.0;
+        for _ in 0..20 {
+            step(&mut r);
+        }
+        r.world.lock().unwrap().water_distance_cm = 17.0;
+        let (n, out) = (1..=100)
+            .find_map(|n| {
+                let out = step(&mut r);
+                (r.world.lock().unwrap().pump_level == 0.0).then_some((n, out))
+            })
+            .expect("never tripped");
+        assert!(
+            (50..=60).contains(&n),
+            "tripped {n} steps after the tank went low"
+        );
+        let fault = payload(&out, "seedypod/u1/actuator/pump/state")["fault"].clone();
+        let held: f64 = fault
+            .as_str()
+            .and_then(|f| f.strip_prefix("dry-run: tank level read 17 cm, past 16 cm for "))
+            .and_then(|f| f.strip_suffix(" s"))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| panic!("{fault}"));
+        assert!((5.0..6.0).contains(&held), "{fault}");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    // ---- the pump run's trace (pump/run) -------------------------------------
+
+    /// The `pump/run` publish among `out`, checked retained.
+    fn run_msg(out: &[Outbound]) -> serde_json::Value {
+        let runs: Vec<&Outbound> = out.iter().filter(|o| o.topic == "seedypod/u1/pump/run").collect();
+        assert_eq!(runs.len(), 1, "one pump/run in {:?}", topics_of(out));
+        assert!(runs[0].retain);
+        serde_json::from_str(&runs[0].payload).unwrap()
+    }
+
+    fn no_run_msg(out: &[Outbound]) -> bool {
+        out.iter().all(|o| o.topic != "seedypod/u1/pump/run")
+    }
+
+    #[test]
+    fn a_run_that_ends_on_its_deadline_publishes_its_first_twelve_seconds_and_wet_current() {
+        let mut r = current_rig("run-deadline", true);
+        r.engine.boot(r.now);
+        let start = r.now.ts();
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(15))), r.now);
+        assert!(no_run_msg(&out));
+        let mut stopped = None;
+        for n in 1..=300 {
+            let out = step(&mut r);
+            if n == 30 {
+                // A longer run asked for mid-run is the same run.
+                let more = r
+                    .engine
+                    .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(15))), r.now);
+                assert!(no_run_msg(&more));
+            }
+            if r.world.lock().unwrap().pump_level == 0.0 {
+                stopped = Some((n, out));
+                break;
+            }
+            assert!(no_run_msg(&out), "{n}");
+        }
+        let (n, out) = stopped.expect("the run ends");
+        assert_eq!(n, 180, "3 s, then 15 s more");
+        let run = run_msg(&out);
+        assert_eq!(run["startedAt"], start.as_str());
+        assert_eq!(run["endedAt"], r.now.ts().as_str());
+        assert_ne!(run["startedAt"], run["endedAt"]);
+        assert_eq!(run["everyMs"], 100);
+        assert_eq!(run["endedBy"], "deadline");
+        assert!(run["fault"].is_null());
+        let samples = run["samples"].as_array().unwrap();
+        // Every 100 ms from the first read, short of 12 s.
+        assert_eq!(samples.len(), 119);
+        assert!(samples.len() <= hal_core::PUMP_RUN_MAX_SAMPLES);
+        assert_eq!(samples[0], serde_json::json!([100, 0.5, 12.1]));
+        assert_eq!(samples[118][0], 11_900);
+        assert!(samples.iter().all(|s| s[1] == 0.5 && s[2] == 12.1));
+        assert_eq!(run["wetA"], 0.5);
+        assert_eq!(run["levelCm"], 7.0);
+        assert!(run["levelPct"].as_f64().is_some_and(|p| p > 80.0));
+        // Republished on a resync, as every retained topic is.
+        let again = r.engine.handle(Inbound::Resync, r.now);
+        assert_eq!(run_msg(&again), run);
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn a_run_stopped_by_hand_or_a_fault_or_a_shutdown_says_how_it_ended() {
+        let mut r = current_rig("run-ends", true);
+        r.engine.boot(r.now);
+        // Stopped inside the grace: no wet current to speak of.
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))), r.now);
+        for _ in 0..20 {
+            step(&mut r);
+        }
+        let out = r
+            .engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, off()), r.now);
+        let run = run_msg(&out);
+        assert_eq!(run["endedBy"], "stop");
+        assert!(run["fault"].is_null() && run["wetA"].is_null());
+        assert_eq!(run["samples"].as_array().unwrap().len(), 20);
+        // A stop with nothing running publishes nothing.
+        assert!(no_run_msg(
+            &r.engine
+                .handle(Inbound::ActuatorSet(ActuatorId::Pump, off()), r.now)
+        ));
+        // Wet for 5 s, then pulling air: the current guard ends it.
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))), r.now);
+        for _ in 0..50 {
+            assert!(no_run_msg(&step(&mut r)));
+        }
+        r.world.lock().unwrap().intake_dry = true;
+        let (_, out) = run_until_stopped(&mut r, 20).expect("the current guard trips");
+        let run = run_msg(&out);
+        assert_eq!(run["endedBy"], "fault");
+        assert!(run["fault"].as_str().unwrap().contains("pulling air"));
+        // The median past the grace: 21 wet reads and 4 dry ones, not their mean.
+        let samples = run["samples"].as_array().unwrap();
+        assert_eq!(samples.len(), 54);
+        assert_eq!(samples[53][1], 0.12);
+        assert_eq!(run["wetA"], 0.5);
+        // A refused start traces nothing.
+        assert!(no_run_msg(&r.engine.handle(
+            Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))),
+            r.now
+        )));
+        r.engine.handle(Inbound::AlertAck(AlertKind::PumpFault), r.now);
+        r.world.lock().unwrap().intake_dry = false;
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(60))), r.now);
+        step(&mut r);
+        let out = r.engine.shutdown(r.now);
+        assert_eq!(run_msg(&out)["endedBy"], "stop");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    #[test]
+    fn without_a_pump_monitor_a_run_traces_gaps_and_no_wet_current() {
+        let mut r = current_rig("run-bare", false);
+        r.engine.boot(r.now);
+        r.engine
+            .handle(Inbound::ActuatorSet(ActuatorId::Pump, on(None, Some(5))), r.now);
+        let (_, out) = run_until_stopped(&mut r, 60).expect("the run ends");
+        let run = run_msg(&out);
+        assert_eq!(run["endedBy"], "deadline");
+        assert!(run["wetA"].is_null());
+        let samples = run["samples"].as_array().unwrap();
+        assert!(!samples.is_empty());
+        assert!(samples.iter().all(|s| s[1].is_null() && s[2].is_null()));
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
@@ -2213,7 +2907,7 @@ mod tests {
         assert_eq!(n, 15, "tripped {n} steps after the tank went low");
         assert_eq!(
             payload(&out, "seedypod/u1/actuator/pump/state")["fault"],
-            "dry-run"
+            "dry-run: tank level read 17 cm, past 16 cm for 1 s"
         );
         assert_eq!(payload(&out, "seedypod/u1/alert/pump_fault")["active"], true);
         let _ = std::fs::remove_dir_all(&r.dir);
@@ -2770,7 +3464,10 @@ mod tests {
         f.r.now.advance(hal_core::safety::DRY_CONFIRM);
         f.r.engine.tick(f.r.now);
         assert_eq!(f.r.world.lock().unwrap().pump_level, 0.0, "tripped mid-fade");
-        assert_eq!(f.r.engine.pump.fault(), Some("dry-run"));
+        assert_eq!(
+            f.r.engine.pump.fault(),
+            Some("dry-run: tank level read 17 cm, past 16 cm for 3 s")
+        );
         f.frames(40);
         assert_eq!(f.level(), 100.0);
     }
@@ -2891,7 +3588,10 @@ mod tests {
         r.engine.tick(r.now);
         r.now.advance(hal_core::safety::DRY_CONFIRM);
         r.engine.tick(r.now);
-        assert_eq!(r.engine.pump.fault(), Some("dry-run"));
+        assert_eq!(
+            r.engine.pump.fault(),
+            Some("dry-run: tank level read 18 cm, past 16 cm for 3 s")
+        );
         r.engine.handle(Inbound::Button(ButtonPress::Long), r.now);
         assert_eq!(r.engine.pump.fault(), None);
         // The setup hold is only reported; core opens the Wi-Fi hotspot.
