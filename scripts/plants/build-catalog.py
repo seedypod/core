@@ -4,6 +4,8 @@ Inputs (both in this folder, raw extracts with provenance headers):
   gardyn-zone-guide.txt     name|zone              (Gardyn light-zone placement guide)
   gardyn-store-ycubes.txt   name|handle|yield|care|first harvest  (Gardyn yCube store)
   gardyn-plant-book-sprout.txt  id|days to sprout|page  (Gardyn Plant Book)
+  isu-germination.txt       id|days to germination|row  (Iowa State Extension table,
+                            for plants the Plant Book has no page for)
 
 Everything else is derived by rules in this file and flagged as inferred:
   category      by name (fruiting, vegetable, legume, flower, herb, green, lettuce)
@@ -13,8 +15,9 @@ Everything else is derived by rules in this file and flagged as inferred:
   placement     'bottomCenter' for cucumbers (Gardyn's explicit exception)
   harvestMonths from the store when present; otherwise the median of the same
                 category in the store, flagged estimated
-  sproutDays    per plant id from the Plant Book, kept beside the plants
-                with each category's median for the plants it lacks
+  sproutDays    per plant id from the Plant Book, else the Iowa State table,
+                kept beside the plants with each category's median for the
+                plants both lack
 
 Run:  python3 -I scripts/plants/build-catalog.py
 """
@@ -141,6 +144,11 @@ def main():
     median = {c: [round(statistics.median(h[0] for h in hs)), round(statistics.median(h[1] for h in hs))] for c, hs in by_cat.items()}
 
     sprout = {pid: days(d) for pid, d, _page in rows('gardyn-plant-book-sprout.txt')}
+    isu = {pid: days(d) for pid, d, _row in rows('isu-germination.txt')}
+    both = sorted(set(sprout) & set(isu))
+    if both:
+        raise SystemExit(f'sprout days from both the Plant Book and Iowa State: {both}')
+    sprout.update(isu)
 
     plants = []
     for name in sorted(zones):
@@ -178,13 +186,14 @@ def main():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     doc = {
         'version': 1,
-        'generatedFrom': ['scripts/plants/gardyn-zone-guide.txt', 'scripts/plants/gardyn-store-ycubes.txt', 'scripts/plants/gardyn-plant-book-sprout.txt'],
+        'generatedFrom': ['scripts/plants/gardyn-zone-guide.txt', 'scripts/plants/gardyn-store-ycubes.txt', 'scripts/plants/gardyn-plant-book-sprout.txt', 'scripts/plants/isu-germination.txt'],
         'sources': {
             'zone': 'https://help.mygardyn.com/en/articles/11547329',
             'zoneMap': 'https://help.mygardyn.com/en/articles/11567361',
             'store': 'https://mygardyn.com/collections/ycubes',
             'succession': 'https://help.mygardyn.com/en/articles/1782337',
             'sprout': 'https://mygardyn.com/plant-book',
+            'germination': 'https://yardandgarden.extension.iastate.edu/how-to/germination-requirements-annuals-and-vegetables',
         },
         'categoryHarvestMedians': median,
         'categorySproutMedians': sprout_median,
