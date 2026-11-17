@@ -17,13 +17,15 @@ const NOW = new Date('2026-11-09T12:00:00Z')
 const T = NOW.toISOString()
 const level = (value: number, quality: Reading['quality'] = 'good'): Reading => ({ ts: T, value, unit: '%', quality })
 
-function rig(initial: Partial<HalSnapshot['sensors']> = {}) {
+function rig(initial: Partial<HalSnapshot['sensors']> = {}, fedAt = '2026-11-07T12:00:00Z') {
   const hal = new SimHal({ tickMs: 0, now: () => NOW })
   const base = hal.snapshot.bind(hal)
   let sensors = initial
   hal.snapshot = () => ({ ...base(), sensors: { ...base().sensors, ...sensors } })
   const store = new MemoryStore()
   store.pods.update(1, { plant: 'Arugula', status: 'growing', plantedAt: '2026-10-20T12:00:00Z' }, T)
+  // Fed two days ago by default, so Feed's calendar keeps out of what a reading raises.
+  store.tankActions.add({ ts: fedAt, kind: 'feed', amount: null, unit: null, product: null, note: '', source: 'user' }, T)
   store.schedules.upsert({ id: 'day', kind: 'light', name: 'Day', enabled: true, days: 127, spec: { setpoints: [{ minute: 360, level: 80 }] } })
   store.schedules.upsert({ id: 'cycle', kind: 'pump', name: 'Cycle', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } })
   const events = createEventBus()
@@ -53,7 +55,7 @@ describe('chore alerts (ADR-0029)', () => {
     expect(active(store)).toEqual([])
   })
 
-  it('never raises a top-off from a suspect level, nor for a chore that is due only on the calendar', () => {
+  it('never raises a top-off from a suspect level, nor for a chore other than Feed that is due only on the calendar', () => {
     const { store, care } = rig({ water_level_pct: level(10, 'suspect') })
     store.grow.start('2026-09-01T12:00:00Z')
     care.tick()
@@ -73,6 +75,17 @@ describe('chore alerts (ADR-0029)', () => {
     set({ water_level_pct: level(45) })
     care.tick()
     expect(active(store)).toEqual(['chore_top_off'])
+  })
+
+  it('raises Feed on its calendar too, as the one feed reminder, and clears it once a feed is logged', () => {
+    const { store, care, events } = rig({}, '2026-11-01T12:00:00Z')
+    care.start()
+    expect(active(store)).toEqual(['chore_feed'])
+    expect(store.alerts.list({ activeOnly: true })[0]?.detail).toMatch(/^Calendar guess, no EC probe: 8 d since the last feed\./)
+    store.tankActions.add({ ts: T, kind: 'feed', amount: 1, unit: 'tsp', product: 'MaxiGro', note: '', source: 'user' }, T)
+    events.emit({ kind: 'mutation', path: 'tank' })
+    care.stop()
+    expect(active(store)).toEqual([])
   })
 
   it('maps each chore alert to the tank action that does it', () => {
@@ -113,6 +126,18 @@ describe('chores over the API and MCP', () => {
     const other = ctx.store.alerts.raise('reminder_nutrients', 'Add nutrients', T)
     await caller.alerts.acknowledge({ id: other.id })
     expect(ctx.store.tankActions.list()).toHaveLength(1)
+  })
+
+  it('logs a feed when Feed\'s calendar alert is marked done in Alerts, and the engine keeps it cleared', async () => {
+    const { caller, ctx, care } = core()
+    ctx.store.pods.update(1, { plant: 'Kale', status: 'growing', plantedAt: '2026-10-20T12:00:00Z' }, T)
+    care.tick()
+    const row = ctx.store.alerts.list({ activeOnly: true }).find(a => a.kind === 'chore_feed')
+    expect(row?.detail).toMatch(/sprout dose/)
+    await caller.alerts.acknowledge({ id: row?.id ?? 0 })
+    expect(ctx.store.tankActions.list()).toMatchObject([{ kind: 'feed', ts: T, note: 'Marked done in Alerts' }])
+    care.tick()
+    expect(ctx.store.alerts.list({ activeOnly: true }).map(a => a.kind)).not.toContain('chore_feed')
   })
 
   it('lets an agent read chores with their basis and citations', async () => {

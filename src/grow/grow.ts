@@ -1,12 +1,16 @@
 /**
  * Grow cycle — stage tracking and time-based reminders (thinning, root check,
- * harvest, nutrients). Reminders become persisted alerts so the UI, Home
- * Assistant and MCP all see and acknowledge the same thing.
+ * harvest). Reminders become persisted alerts so the UI, Home Assistant and MCP
+ * all see and acknowledge the same thing. Feeding is the Feed chore's job
+ * (ADR-0029): it counts from the last logged feed, so it resets when one is.
  */
 import type { EventBus } from '../lib/eventBus'
 import type { DeviceSettings, GrowCycle, GrowStage, Store } from '../store/types'
 
-export type ReminderKind = 'reminder_thinning' | 'reminder_root_check' | 'reminder_harvest' | 'reminder_nutrients' | 'reminder_sow'
+export type ReminderKind = 'reminder_thinning' | 'reminder_root_check' | 'reminder_harvest' | 'reminder_sow'
+
+/** The old fixed-timer nutrients reminder, retired for the Feed chore: one still open from before clears on the next tick. */
+export const RETIRED_NUTRIENTS = 'reminder_nutrients'
 
 export interface Reminder {
   kind: ReminderKind
@@ -36,23 +40,13 @@ export function dueReminders(cycle: GrowCycle, settings: DeviceSettings, now: Da
   for (const [kind, days, detail] of oneShot) {
     if (days > 0 && day >= days && !cycle.issued.includes(kind)) out.push({ kind, dueDay: days, detail })
   }
-  if (settings.nutrientReminderDays > 0 && day > 0) {
-    // Recurring: issue once per period; the issued key carries the period index.
-    const period = Math.floor(day / settings.nutrientReminderDays)
-    const key = `reminder_nutrients:${period}`
-    if (period > 0 && !cycle.issued.includes(key)) {
-      out.push({ kind: 'reminder_nutrients', dueDay: period * settings.nutrientReminderDays, detail: `Add nutrients (every ${settings.nutrientReminderDays} days)` })
-    }
-  }
   return out
 }
 
 /** The day of the cycle a reminder key fell due, by the settings that issue it; null for keys it doesn't know. */
 function issuedDueDay(key: string, settings: DeviceSettings): number | null {
   const oneShot: Record<string, number> = { reminder_thinning: settings.thinningReminderDays, reminder_root_check: settings.rootCheckReminderDays, reminder_harvest: settings.harvestReminderDays }
-  if (key in oneShot) return oneShot[key] ?? null
-  const period = /^reminder_nutrients:(\d+)$/.exec(key)?.[1]
-  return period === undefined ? null : Number(period) * settings.nutrientReminderDays
+  return oneShot[key] ?? null
 }
 
 /**
@@ -100,13 +94,13 @@ export class GrowEngine {
     this.sowTick()
     const { store, events } = this.deps
     const now = (this.deps.now ?? (() => new Date()))()
+    if (store.alerts.clear(RETIRED_NUTRIENTS, now.toISOString())) events.emit({ kind: 'mutation', path: `alerts.${RETIRED_NUTRIENTS}` })
     const cycle = store.grow.current()
     if (!cycle) return []
     const due = dueReminders(cycle, store.settings.get(), now)
     for (const r of due) {
       store.alerts.raise(r.kind, r.detail, now.toISOString())
-      const issuedKey = r.kind === 'reminder_nutrients' ? `reminder_nutrients:${Math.floor(r.dueDay / Math.max(1, store.settings.get().nutrientReminderDays))}` : r.kind
-      store.grow.markIssued(issuedKey)
+      store.grow.markIssued(r.kind)
       events.emit({ kind: 'mutation', path: `alerts.${r.kind}` })
     }
     return due

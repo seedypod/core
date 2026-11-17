@@ -5,8 +5,9 @@
  * level turning suspect, a logged tank action, a new capture) and on a slow
  * tick, and keeps one alert per problem. A chore raises an alert only when a
  * reading makes it due: calendar chores are the grow reminders' job, and a
- * reading is news. Event-driven so an agent watching
- * alerts wakes only on a change.
+ * reading is news. Feed is the one exception: it is the feed reminder, on its
+ * calendar too, so it resets when a feed is logged. Event-driven so an agent
+ * watching alerts wakes only on a change.
  */
 import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
@@ -20,6 +21,9 @@ const TICK_MS = 15 * 60_000
 
 /** The chores a reading can make due, and the alert each raises. */
 export const CHORE_ALERTS = { top_off: 'chore_top_off', feed: 'chore_feed', thin: 'chore_thin' } as const satisfies Partial<Record<ChoreId, string>>
+
+/** Whether a chore's alert should be up: due from a reading, or Feed due on its calendar, which stands in for the old nutrients reminder. */
+export const raisesAlert = (c: Pick<Chore, 'id' | 'state' | 'basis'>): boolean => c.state === 'due' && (c.basis === 'reading' || c.id === 'feed')
 
 /** The tank action that marks a chore alert's chore done, for acknowledging it. */
 export function choreDoneKind(alert: string): TankActionKind | null {
@@ -63,7 +67,7 @@ export class CareEngine {
     for (const [id, kind] of Object.entries(CHORE_ALERTS)) {
       const c = list.find(x => x.id === id)
       // A chore's detail carries the reading, so it changes every sample: held in memory, and dismissal goes by kind.
-      this.sync(rows, kind, c?.state === 'due' && c.basis === 'reading' ? c.reason : null, true)
+      this.sync(rows, kind, c && raisesAlert(c) ? c.reason : null, true)
     }
     return { setup, chores: list, followed }
   }

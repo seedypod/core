@@ -192,7 +192,7 @@ export function GrowPage() {
               <>
                 <div className="flex min-w-[240px] flex-1 flex-col gap-1">
                   <div className="text-[15px] font-medium">No active cycle</div>
-                  <div className="text-[13px] text-fg-2">Start a cycle to get thinning, root-check, harvest and nutrient reminders.</div>
+                  <div className="text-[13px] text-fg-2">Start a cycle to get thinning, root-check and harvest reminders.</div>
                 </div>
                 <TextField label="Cycle name" mono={false} value={name} onChange={setName} placeholder="e.g. Autumn greens" className="w-56" />
                 <Button variant="primary" className="self-end" onClick={() => start.mutate({ notes: name.trim() })}>Start cycle</Button>

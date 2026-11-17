@@ -8,7 +8,8 @@ import { CareSummary } from '@/src/components/Care/CareSummary'
 import { Button, Card } from '@/src/components/ds/core'
 import { useToast } from '@/src/components/ds/toast'
 import type { ChoreRow } from '@/src/components/Water/Chores'
-import { CHORE_ALERTS } from '@/src/care/engine'
+import type { TankActionInput } from '@/src/components/Water/TankLog'
+import { CHORE_ALERTS, raisesAlert } from '@/src/care/engine'
 import type { AppRouter } from '@/src/server/routers/app'
 import { trpc } from '@/src/utils/trpc'
 
@@ -28,16 +29,16 @@ export function useChoreAlerts(): { ready: boolean, alertOf: (c: Pick<ChoreRow, 
 /**
  * The chores, less any the person skipped, and the due ones among them, each
  * with its open alert when a reading raised one. A skipped chore stays off
- * until the engine raises it again: a due reading with no open alert may have
- * been skipped, and only for those is the alert's last row asked for. Calendar
- * chores have no alert, so old history never hides one. `ready` once the open
- * alerts and those last rows are in.
+ * until the engine raises it again: a due chore that raises an alert (raisesAlert)
+ * with none open may have been skipped, and only for those is the alert's last
+ * row asked for. Other calendar chores have no alert, so old history never
+ * hides one. `ready` once the open alerts and those last rows are in.
  */
 export function useNeedsChores(): { items: Array<{ chore: ChoreRow, alert: AlertRow | undefined }>, chores: ChoreRow[], ready: boolean } {
   const list = trpc.care.chores.useQuery(undefined, { refetchInterval: 5 * 60_000 })
   const { ready, alertOf } = useChoreAlerts()
   const all = list.data ?? []
-  const unraised = ready ? all.flatMap(c => (c.state === 'due' && c.basis === 'reading' && !alertOf(c) ? [{ chore: c, kind: alertKind(c.id) }] : [])).filter((u): u is { chore: ChoreRow, kind: string } => !!u.kind) : []
+  const unraised = ready ? all.flatMap(c => (raisesAlert(c) && !alertOf(c) ? [{ chore: c, kind: alertKind(c.id) }] : [])).filter((u): u is { chore: ChoreRow, kind: string } => !!u.kind) : []
   const last = trpc.useQueries(t => unraised.map(u => t.alerts.list({ activeOnly: false, kind: u.kind, limit: 1 })))
   const hidden = new Set(unraised.filter((_, i) => {
     const row = last[i]?.data?.[0]
@@ -88,7 +89,8 @@ const completing = (() => {
 /**
  * Done and Skip, as Alerts does them: with an open alert, Done acknowledges it
  * (which logs the chore in the tank log) and Skip dismisses it; without one,
- * Done logs the tank action itself and can be undone. "Marked done" only once
+ * Done logs the tank action itself, as the tank log's form filled it in when
+ * it did, and can be undone. Logged that way, the engine clears an open alert. "Marked done" only once
  * something was logged: an alert already cleared by the time Done lands logs
  * nothing, so the lists just refetch. A chore stays busy everywhere until the
  * refetch is in, so a row that hasn't caught up can't log it again. Undo and
@@ -114,7 +116,7 @@ export function useChoreActions() {
       .then(settle)
       .catch((e: Error) => show({ id: `chore-undo:${c.id}`, kind: 'info', tone: 'danger', icon: TriangleAlert, title: `Couldn't undo: ${c.title}`, detail: e.message, action: { label: 'Retry', onClick: () => undo(c, id) } }))
   }
-  const complete = async (c: Pick<ChoreRow, 'id' | 'title' | 'doneKind'>, alert?: Pick<AlertRow, 'id'>) => {
+  const complete = async (c: Pick<ChoreRow, 'id' | 'title' | 'doneKind'>, alert?: Pick<AlertRow, 'id'>, input?: TankActionInput) => {
     if (!completing.start(c.id)) return
     try {
       if (alert) {
@@ -123,7 +125,7 @@ export function useChoreActions() {
         if (row?.acknowledgedAt && row.clearedAt === row.acknowledgedAt) marked(c)
       }
       else {
-        const row = await log.mutateAsync({ kind: c.doneKind, note: '' })
+        const row = await log.mutateAsync(input ?? { kind: c.doneKind, note: '' })
         marked(c, () => undo(c, row.id))
       }
       await settle()
@@ -136,8 +138,8 @@ export function useChoreActions() {
     }
   }
   return {
-    done: (c: Pick<ChoreRow, 'id' | 'title' | 'doneKind'>, alert?: Pick<AlertRow, 'id'>) => {
-      void complete(c, alert)
+    done: (c: Pick<ChoreRow, 'id' | 'title' | 'doneKind'>, alert?: Pick<AlertRow, 'id'>, input?: TankActionInput) => {
+      void complete(c, alert, input)
     },
     skip: (alert: Pick<AlertRow, 'id'>) => dismiss.mutate({ id: alert.id }),
     /** This chore is being marked done here or in another row, or a Skip is in flight. */

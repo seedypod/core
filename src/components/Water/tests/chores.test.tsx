@@ -91,6 +91,45 @@ describe('Chores', () => {
     expect(calls.logAction).not.toHaveBeenCalled()
   })
 
+  it('logs a chore that isn\'t due yet on the tank log\'s form, opened on its kind', async () => {
+    data.set('chores', [chore('clean', 'ok'), chore('refresh', 'unknown')])
+    render(<Chores />)
+    expect(within(screen.getByTestId('chore-refresh')).getByRole('button', { name: 'Log' })).toBeTruthy()
+    fireEvent.click(within(screen.getByTestId('chore-clean')).getByRole('button', { name: 'Log' }))
+    expect((screen.getByLabelText('What was done') as HTMLSelectElement).value).toBe('clean')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('Log a tank action')).toBeNull()
+    expect(calls.logAction).not.toHaveBeenCalled()
+    fireEvent.click(within(screen.getByTestId('chore-clean')).getByRole('button', { name: 'Log' }))
+    fireEvent.change(screen.getByLabelText('Note (optional)'), { target: { value: 'vinegar rinse' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    })
+    expect(calls.logAction).toHaveBeenCalledWith({ kind: 'clean', amount: null, unit: null, product: null, note: 'vinegar rinse' })
+    expect(calls.invalidateCare).toHaveBeenCalled()
+    expect(screen.queryByText('Log a tank action')).toBeNull()
+  })
+
+  it('feeds on the form whether Feed is ok or due, so the amount and product are kept, even with its alert open', async () => {
+    data.set('chores', [chore('feed', 'ok', { title: 'Feed' })])
+    render(<Chores />)
+    fireEvent.click(within(screen.getByTestId('chore-feed')).getByRole('button', { name: 'Log' }))
+    expect((screen.getByLabelText('Unit') as HTMLSelectElement).value).toBe('tsp')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    cleanup()
+    data.set('chores', [chore('feed', 'due', { title: 'Feed' })])
+    data.set('alerts', [{ id: 9, kind: 'chore_feed', active: true }])
+    render(<Chores />)
+    fireEvent.click(within(screen.getByTestId('chore-feed')).getByRole('button', { name: 'Done' }))
+    fireEvent.change(screen.getByLabelText('Amount (optional)'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Product (optional)'), { target: { value: 'MaxiGro' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    })
+    expect(calls.logAction).toHaveBeenCalledWith({ kind: 'feed', amount: 1, unit: 'tsp', product: 'MaxiGro', note: '' })
+    expect(calls.acknowledge).not.toHaveBeenCalled()
+  })
+
   it('says it is still working out with nothing yet, and shows why a log failed', () => {
     state.error = { message: 'offline' }
     render(<Chores />)

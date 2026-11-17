@@ -145,6 +145,8 @@ describe('feed', () => {
     expect(weekly.reason).toMatch(/^Calendar guess, EC reading suspect: 8 d since the last feed\. Gardyn adds plant food with the weekly top-off: 1\/2 tsp per gallon/)
     store.settings.update({ nutrientReminderDays: 10 })
     expect(one(store, snap({}), 'feed').state).toBe('soon')
+    store.settings.update({ nutrientReminderDays: 0 })
+    expect(one(store, snap({}, { caps: ['water_level_pct'] }), 'feed')).toMatchObject({ state: 'ok', basis: 'timeline', dueAt: null, reason: 'Feed reminders are off in Settings → Grow reminders (no EC probe).' })
   })
 })
 

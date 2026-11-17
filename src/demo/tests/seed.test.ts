@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { describeRule } from '../../autopilot/describe'
 import { RuleInput } from '../../autopilot/schema'
 import { catalog } from '../../autopilot/signals'
+import { chores } from '../../care/chores'
 import { matchProfile } from '../../grow/harvest'
 import { SimHal } from '../../hardware/sim'
 import { BUILTIN } from '../../plants/catalog'
@@ -12,8 +13,13 @@ import { seedDemo, seedIfFresh } from '../seed'
 describe('demo seed', () => {
   it('tells a mid-cycle story, including valid Autopilot rules', () => {
     const store = new MemoryStore()
-    seedDemo(store, new SimHal({ tickMs: 0 }), new Date('2026-10-31T12:00:00Z'))
+    const hal = new SimHal({ tickMs: 0 })
+    const now = new Date('2026-10-31T12:00:00Z')
+    seedDemo(store, hal, now)
     expect(store.grow.current()).not.toBeNull()
+    // Feeding is the Feed chore's: due a week after the logged feed, with no old nutrients reminder.
+    expect(chores(store, hal.snapshot(), now).find(c => c.id === 'feed')).toMatchObject({ state: 'due', lastDoneAt: '2026-10-23T12:00:00.000Z' })
+    expect(store.alerts.list().map(a => a.kind)).not.toContain('reminder_nutrients')
     expect(store.captures.list().length).toBe(12)
     // The saved plan fills exactly the six free pods, each in its light zone.
     const plan = store.plans.get('demo-refill')

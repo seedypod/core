@@ -1,8 +1,10 @@
-import { Check } from 'lucide-react'
+import { Check, Plus } from 'lucide-react'
 import type { inferRouterOutputs } from '@trpc/server'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useChoreActions, useChoreAlerts } from '@/src/components/Care/ChoreItem'
 import { Button, Card, InlineError } from '@/src/components/ds/core'
+import { TankActionForm } from '@/src/components/Water/TankLog'
 import type { AppRouter } from '@/src/server/routers/app'
 import { trpc } from '@/src/utils/trpc'
 
@@ -24,11 +26,14 @@ export const byUrgency = (rows: readonly ChoreRow[]): ChoreRow[] => [...rows].so
  * Chores (ADR-0029), each from a reading the unit trusts or a stated calendar
  * guess, with the knowledge notes behind its numbers. Done logs it in the tank
  * log, which is what the chore counts from, as Needs you does (useChoreActions).
+ * Log records one ahead of time on the tank log's form, so a feed can go in
+ * before Feed falls due; Feed's Done opens the same form for amount and product.
  */
 export function Chores() {
   const list = trpc.care.chores.useQuery(undefined, { refetchInterval: 5 * 60_000 })
   const actions = useChoreActions()
   const { ready, alertOf } = useChoreAlerts()
+  const [logging, setLogging] = useState<ChoreRow | null>(null)
   const rows = byUrgency(list.data ?? [])
   return (
     <div className="flex flex-col gap-2.5" id="chores">
@@ -52,13 +57,14 @@ export function Chores() {
                 </span>
               )}
             </div>
-            {(c.state === 'due' || c.state === 'soon') && (
-              <Button icon={Check} className="px-3 py-[7px]" disabled={!ready || actions.busy(c.id)} onClick={() => actions.done(c, alertOf(c))}>Done</Button>
-            )}
+            {c.state === 'due' || c.state === 'soon'
+              ? <Button icon={Check} className="px-3 py-[7px]" disabled={!ready || actions.busy(c.id)} onClick={() => (c.id === 'feed' ? setLogging(c) : actions.done(c, alertOf(c)))}>Done</Button>
+              : <Button icon={Plus} className="px-3 py-[7px]" title="Log it in the tank log now" disabled={actions.busy(c.id)} onClick={() => setLogging(c)}>Log</Button>}
           </div>
         ))}
       </Card>
       {actions.error && <InlineError>{actions.error.message}</InlineError>}
+      {logging && <TankActionForm kind={logging.doneKind} onClose={() => setLogging(null)} onSave={a => actions.done(logging, undefined, a)} />}
     </div>
   )
 }
