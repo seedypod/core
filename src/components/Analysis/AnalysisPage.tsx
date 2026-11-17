@@ -35,9 +35,12 @@ type Frame = inferRouterOutputs<AppRouter>['camera']['list'][number]
 type Camera = 'upper' | 'lower'
 type Shown = Camera | 'both'
 type View = 'photo' | 'bounds'
+export type AnalysisTab = 'pods' | 'teach' | 'methods'
 
 const SHOWN = [{ value: 'both', label: 'Both' }, { value: 'upper', label: 'Upper' }, { value: 'lower', label: 'Lower' }] as const
-const VIEWS = [{ value: 'photo', label: 'Photo' }, { value: 'bounds', label: 'Pod bounds' }] as const
+const VIEWS = [{ value: 'photo', label: 'Photo' }, { value: 'towers', label: 'Towers' }] as const
+const TABS = [{ value: 'pods', label: 'Pods' }, { value: 'teach', label: 'Teach' }, { value: 'methods', label: 'Methods' }] as const
+export const isAnalysisTab = (v: unknown): v is AnalysisTab => TABS.some(t => t.value === v)
 const title = (c: Camera) => (c === 'upper' ? 'Upper' : 'Lower')
 
 function Panel({ id, className, children }: { id?: string, className?: string, children: ReactNode }) {
@@ -63,40 +66,80 @@ export function stateText(r: Pick<Result, 'value' | 'detail'>): string {
 }
 
 /**
- * Capture analysis (ADR-0019): which analysers ran, which one drives pod
- * trends, and how their outputs compare on the same pods and photos, for both
- * cameras at once.
+ * Capture analysis (ADR-0019), split by job: Pods is what the photos say
+ * about each pod, Teach is the labels and boxes that need the grower, and
+ * Methods is which analyser drives pod trends and how they compare over time.
  */
-export function AnalysisPage() {
+export function AnalysisPage({ tab: asked }: { tab?: AnalysisTab } = {}) {
   const analyzers = trpc.vision.analyzers.useQuery()
   const status = trpc.vision.status.useQuery(undefined, { refetchInterval: 5000 })
   const pods = trpc.grow.pods.useQuery()
   const trends = trpc.vision.podTrends.useQuery()
+  const [tab, setTab] = useState<AnalysisTab>(asked ?? 'pods')
   const [exporting, setExporting] = useState(false)
   const [picked, setPicked] = useState<string | null>(null)
   const [shown, setShown] = useState<Shown>('both')
-  const [view, setView] = useState<View>('photo')
-  // The pod picked on a photo: its card stays open and the chart below follows it.
+  const [view, setView] = useState<'photo' | 'towers'>('photo')
+  // The pod picked on a photo: its card stays open and the Methods chart follows it.
   const [pinned, setPinned] = useState<number | null>(null)
   const [slot, setSlot] = useState(0)
   const latest = [useLatest('upper'), useLatest('lower')]
   const calibration = useCalibration()
+  // A link to another tab while the page is open switches to it.
+  const [lastAsked, setLastAsked] = useState(asked)
+  if (asked !== lastAsked) {
+    setLastAsked(asked)
+    if (asked) setTab(asked)
+  }
   const st = status.data
   const list = analyzers.data ?? []
   const colorOf = (k: string) => colorAt(Math.max(0, list.findIndex(a => listingKey(a) === k)))
   // The primary analyser until one is picked.
   const selected = list.find(a => listingKey(a) === picked) ?? list.find(a => a.primary) ?? list[0]
+  const primary = list.find(a => a.primary) ?? list[0]
   const cameras = shown === 'both' ? latest : latest.filter(l => l.camera === shown)
   const pod = (slot: number) => pods.data?.find(p => p.slot === slot)
+  const still = (l: Latest, v: 'photo' | 'bounds') => (
+    <Still
+      key={l.camera}
+      latest={l}
+      view={v}
+      analyzer={primary && listingKey(primary)}
+      empty={slot => pod(slot)?.status === 'empty'}
+      pod={pod}
+      trend={s => trends.data?.find(t => t.slot === s)}
+      analyzers={list}
+      colorOf={colorOf}
+      pinned={pinned}
+      onPick={(s) => {
+        setPinned(p => (p === s ? null : s))
+        setSlot(s)
+      }}
+      onUnpin={() => setPinned(null)}
+      boxes={calibration.boxes(l.camera)}
+      calibrated={calibration.calibrated(l.camera)}
+      onChange={v === 'bounds' && calibration.draft ? (slot, r) => calibration.move(l.camera, slot, r) : undefined}
+      onRemove={v === 'bounds' && calibration.draft ? slot => calibration.remove(l.camera, slot) : undefined}
+    />
+  )
+  const stills = (v: 'photo' | 'bounds') => (
+    <div className={cn('grid grid-cols-1 gap-3', cameras.length > 1 && 'sm:grid-cols-2')}>
+      {cameras.map(l => still(l, v))}
+    </div>
+  )
+  const cameraPicker = <SegmentedControl ariaLabel="Camera" size="sm" options={SHOWN} value={shown} onChange={setShown} />
 
   return (
     <div className="mx-auto flex max-w-[1000px] flex-col gap-6">
       <div className="flex flex-wrap items-end gap-4">
-        <div className="flex min-w-[200px] flex-1 flex-col gap-1">
-          <h1 className="text-2xl font-semibold">Analysis</h1>
-          <p className="text-[13px] text-fg-2">How leaf cover is measured from camera frames</p>
+        <div className="flex min-w-[200px] flex-1 flex-col gap-2.5">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-2xl font-semibold">Analysis</h1>
+            <p className="text-[13px] text-fg-2">How leaf cover is measured from camera frames</p>
+          </div>
+          <Tabs value={tab} onChange={setTab} />
         </div>
-        <Button icon={Download} className="px-3 py-[7px]" onClick={() => setExporting(true)}>Export dataset</Button>
+        {tab === 'teach' && <Button icon={Download} className="px-3 py-[7px]" onClick={() => setExporting(true)}>Export dataset</Button>}
       </div>
       {st && (st.backfill || st.running || st.failed > 0) && (
         <p className="-mt-3 text-[13px] text-fg-2">
@@ -108,60 +151,79 @@ export function AnalysisPage() {
         </p>
       )}
 
-      <Panel id="latest-photos">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="mr-auto text-[15px] font-medium">Latest photos</span>
-          {list.length > 0 && selected && (
-            <SelectValue label="Analyser" value={listingKey(selected)} options={list.map(a => ({ value: listingKey(a), label: listingKey(a) }))} onChange={setPicked} />
-          )}
-          <SegmentedControl ariaLabel="Camera" size="sm" options={SHOWN} value={shown} onChange={setShown} />
-          <SegmentedControl ariaLabel="View" size="sm" options={VIEWS} value={view} onChange={setView} />
+      {tab === 'pods' && (
+        <div role="tabpanel" id="analysis-pods" aria-labelledby="analysis-tab-pods" className="flex flex-col gap-6">
+          <Panel id="latest-photos">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="mr-auto text-[15px] font-medium">Latest photos</span>
+              {view === 'photo' && cameraPicker}
+              <SegmentedControl ariaLabel="View" size="sm" options={VIEWS} value={view} onChange={setView} />
+            </div>
+            {view === 'photo' && stills('photo')}
+          </Panel>
+          {view === 'towers' && <LeafCover capturedAt={latest.map(l => l.frame?.ts).filter((t): t is string => !!t).sort().at(-1) ?? null} />}
         </div>
-        <div className={cn('grid grid-cols-1 gap-3', cameras.length > 1 && 'sm:grid-cols-2')}>
-          {cameras.map(l => (
-            <Still
-              key={l.camera}
-              latest={l}
-              view={view}
-              analyzer={selected && listingKey(selected)}
-              empty={slot => pod(slot)?.status === 'empty'}
-              pod={pod}
-              trend={s => trends.data?.find(t => t.slot === s)}
-              analyzers={list}
-              colorOf={colorOf}
-              pinned={pinned}
-              onPick={(s) => {
-                setPinned(p => (p === s ? null : s))
-                setSlot(s)
-              }}
-              onUnpin={() => setPinned(null)}
-              boxes={calibration.boxes(l.camera)}
-              calibrated={calibration.calibrated(l.camera)}
-              onChange={calibration.draft ? (slot, r) => calibration.move(l.camera, slot, r) : undefined}
-              onRemove={calibration.draft ? slot => calibration.remove(l.camera, slot) : undefined}
-            />
-          ))}
-        </div>
-        {view === 'bounds' && <Calibrate c={calibration} cameras={cameras.map(l => l.camera)} />}
-        {selected && <AnalyzerDetail a={selected} color={colorOf(listingKey(selected))} busy={!!st?.backfill} />}
-      </Panel>
+      )}
 
-      <LeafCover capturedAt={latest.map(l => l.frame?.ts).filter((t): t is string => !!t).sort().at(-1) ?? null} />
-      <LabelPods
-        boxes={calibration.boxes}
-        onEditBoxes={() => {
-          setView('bounds')
-          document.getElementById('latest-photos')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-        }}
-      />
-      <PerPod analyzers={list} latest={cameras} colorOf={colorOf} plant={slot => pod(slot)?.plant ?? '—'} empty={slot => pod(slot)?.status === 'empty'} />
-      <ComparePod colorOf={colorOf} slot={slot} onSlot={setSlot} pods={pods.data ?? []} trends={trends.data ?? []} />
+      {tab === 'teach' && (
+        <div role="tabpanel" id="analysis-teach" aria-labelledby="analysis-tab-teach" className="flex flex-col gap-6">
+          <LabelPods
+            boxes={calibration.boxes}
+            onEditBoxes={() => document.getElementById('pod-bounds')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+          />
+          <Panel id="pod-bounds">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="mr-auto text-[15px] font-medium">Pod bounds</span>
+              {cameraPicker}
+            </div>
+            {stills('bounds')}
+            <Calibrate c={calibration} cameras={cameras.map(l => l.camera)} />
+          </Panel>
+        </div>
+      )}
+
+      {tab === 'methods' && (
+        <div role="tabpanel" id="analysis-methods" aria-labelledby="analysis-tab-methods" className="flex flex-col gap-6">
+          <Panel>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="mr-auto text-[15px] font-medium">Methods</span>
+              {list.length > 0 && selected && (
+                <SelectValue label="Analyser" value={listingKey(selected)} options={list.map(a => ({ value: listingKey(a), label: listingKey(a) }))} onChange={setPicked} />
+              )}
+            </div>
+            {selected && <AnalyzerDetail a={selected} color={colorOf(listingKey(selected))} busy={!!st?.backfill} />}
+          </Panel>
+          <ComparePod colorOf={colorOf} slot={slot} onSlot={setSlot} pods={pods.data ?? []} trends={trends.data ?? []} />
+        </div>
+      )}
 
       {exporting && (
         <Modal open onClose={() => setExporting(false)} title="Export a dataset" icon={Download}>
           <DatasetExport />
         </Modal>
       )}
+    </div>
+  )
+}
+
+/** Pods, Teach and Methods, as underlined tabs over the page. */
+function Tabs({ value, onChange }: { value: AnalysisTab, onChange: (t: AnalysisTab) => void }) {
+  return (
+    <div role="tablist" aria-label="Analysis sections" className="flex gap-[22px] text-sm">
+      {TABS.map(t => (
+        <button
+          key={t.value}
+          type="button"
+          role="tab"
+          id={`analysis-tab-${t.value}`}
+          aria-selected={value === t.value}
+          aria-controls={`analysis-${t.value}`}
+          className={cn('-mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pb-1.5 pt-0', value === t.value ? 'border-fg text-fg' : 'border-transparent text-fg-3 hover:text-fg')}
+          onClick={() => onChange(t.value)}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -280,121 +342,6 @@ function AnalyzerDetail({ a, color, busy }: { a: Listing, color: string, busy: b
       </div>
       {(primary.error ?? rerun.error) && <InlineError>{(primary.error ?? rerun.error)?.message}</InlineError>}
     </div>
-  )
-}
-
-/** Short column head from an analyser id: `exg-otsu` → `OTSU`. */
-const head = (k: string) => (k.split('@')[0]?.split('-').at(-1) ?? k).toUpperCase()
-
-/** How the second analyser reads against the first, in percentage points, when they agree on direction. */
-export function gapSummary(rows: Result[], columns: string[], labels: Record<string, string>): string | null {
-  const [a, b] = columns
-  if (!a || !b) return null
-  const by = (col: string) => new Map(rows.filter(r => key(r) === col).map(r => [r.slot, r.value]))
-  const av = by(a)
-  const diffs = [...by(b)].filter(([s]) => av.has(s)).map(([s, v]) => Math.round((v - (av.get(s) as number)) * 100))
-  if (!diffs.length) return null
-  const lo = Math.min(...diffs)
-  const hi = Math.max(...diffs)
-  const span = (x: number, y: number) => (x === y ? `${x}` : `${x}–${y}`)
-  const [la, lb] = [labels[a] ?? a, labels[b] ?? b]
-  if (lo > 0) return `${lb} reads ${span(lo, hi)} points higher than ${la} on every pod.`
-  if (hi < 0) return `${lb} reads ${span(-hi, -lo)} points lower than ${la} on every pod.`
-  return `${lb} and ${la} differ by up to ${Math.max(-lo, hi)} points.`
-}
-
-/** Every pod on the cameras shown, one row each, with every analyser's reading of its camera's latest still. */
-function PerPod({ analyzers, latest, colorOf, plant, empty }: { analyzers: Listing[], latest: Latest[], colorOf: (k: string) => string, plant: (slot: number) => string, empty: (slot: number) => boolean }) {
-  const rows = latest.flatMap(l => l.rows)
-  const stateRows = latest.flatMap(l => l.states)
-  const order = analyzers.map(listingKey)
-  // Listing order, so the columns and summary read in the same order as the analyser picker.
-  const rank = (k: string) => (order.includes(k) ? order.indexOf(k) : order.length)
-  const columns = [...new Set(rows.map(key))].sort((a, b) => rank(a) - rank(b))
-  // A learned analyser's pod state, one column each, after the green fractions.
-  const stateColumns = [...new Set(stateRows.map(key))].sort((a, b) => rank(a) - rank(b))
-  const value = (l: Latest, slot: number, col: string) => l.rows.find(r => r.slot === slot && key(r) === col)?.value
-  const stateOf = (l: Latest, slot: number, col: string) => l.states.find(r => r.slot === slot && key(r) === col)
-  const labels = Object.fromEntries(analyzers.map(a => [listingKey(a), a.label]))
-  const summary = gapSummary(rows, columns, labels)
-  const cell = 'border-b border-grid py-[9px]'
-  const th = 'border-b border-line pb-2 font-mono text-[10px] font-normal text-fg-3'
-  const any = latest.some(l => l.frame)
-
-  return (
-    <Panel>
-      <div className="flex min-w-0 flex-col gap-[3px]">
-        <span className="text-[15px] font-medium">Per pod, latest frames</span>
-        {summary && <span className="text-xs text-fg-3">{summary}</span>}
-      </div>
-      {!any
-        ? <p className="text-[13px] text-fg-2">No photos yet.</p>
-        : columns.length + stateColumns.length === 0
-          ? <p className="text-[13px] text-fg-2">These photos haven&apos;t been scored yet.</p>
-          : (
-              <div className="-mx-1 overflow-x-auto px-1">
-                <table className="w-full table-fixed border-collapse text-left text-[13px]">
-                  <thead>
-                    <tr>
-                      <th className={cn(th, 'w-9')}>POD</th>
-                      <th className={cn(th, 'pl-3 sm:w-[30%]')}>PLANT</th>
-                      <th className={cn(th, 'hidden pl-3.5 sm:table-cell')}>LEAF COVER</th>
-                      {columns.map(c => <th key={c} title={c} className={cn(th, 'w-[64px] pl-2 text-right sm:w-[84px] sm:pl-3.5')}>{head(c)}</th>)}
-                      {stateColumns.map(c => <th key={c} title={c} className={cn(th, 'w-[84px] pl-2 text-right sm:w-[104px] sm:pl-3.5')}>{head(c)}</th>)}
-                    </tr>
-                  </thead>
-                  {latest.filter(l => l.rows.length + l.states.length > 0).map((l) => {
-                    const slots = [...new Set([...l.rows, ...l.states].map(r => r.slot))].sort((a, b) => a - b)
-                    return (
-                      <tbody key={l.camera}>
-                        <tr>
-                          <th colSpan={columns.length + stateColumns.length + 2} scope="rowgroup" className="pb-1 pt-3 text-left font-mono text-[10px] font-normal text-fg-3">
-                            {`${l.camera.toUpperCase()}${l.frame ? ` · ${fmtStamp(l.frame.ts)}` : ''}`}
-                          </th>
-                          {/* The leaf-cover column is hidden on a phone; a span over it would leave a ghost column there. */}
-                          <th className="hidden sm:table-cell" aria-hidden />
-                        </tr>
-                        {slots.map((s) => {
-                          const vals = columns.map(c => value(l, s, c)).filter((v): v is number => v !== undefined)
-                          const lo = Math.min(...vals)
-                          const hi = Math.max(...vals)
-                          // A pod marked empty has no leaf cover to report, whatever the camera sees there.
-                          const none = empty(s)
-                          const read = none ? `Marked empty; analysers read ${vals.map(pct).join(', ')}` : undefined
-                          return (
-                            <tr key={s} title={read}>
-                              <td className={cn(cell, 'font-mono text-xs text-fg-3')}>{s}</td>
-                              <td className={cn(cell, 'max-w-0 truncate pl-3')}>{none ? <span className="text-xs text-fg-3">Empty · no cover</span> : plant(s)}</td>
-                              <td className={cn(cell, 'hidden pl-3.5 sm:table-cell')}>
-                                {!none && (
-                                  <div className="relative h-2.5">
-                                    <span className="absolute inset-x-0 top-0.5 h-1.5 rounded-[3px] bg-active" />
-                                    <span className="absolute top-0.5 h-1.5 rounded-[3px] bg-line-2" style={{ left: pct(lo), width: pct(hi - lo) }} />
-                                    {columns.map((c) => {
-                                      const v = value(l, s, c)
-                                      return v === undefined ? null : <span key={c} className="absolute top-0 h-2.5 w-0.5" style={{ left: pct(Math.min(1, v)), background: colorOf(c) }} />
-                                    })}
-                                  </div>
-                                )}
-                              </td>
-                              {columns.map((c, ci) => {
-                                const v = value(l, s, c)
-                                return <td key={c} className={cn(cell, 'pl-2 text-right font-mono text-xs sm:pl-3.5')} style={ci > 0 && !none ? { color: colorOf(c) } : undefined}>{v === undefined || none ? '—' : pct(v)}</td>
-                              })}
-                              {stateColumns.map((c) => {
-                                const r = stateOf(l, s, c)
-                                return <td key={c} title={r ? stateText(r) : undefined} className={cn(cell, 'truncate pl-2 text-right font-mono text-xs sm:pl-3.5')} style={{ color: colorOf(c) }}>{r ? stateText(r).split(' · ')[0] : '—'}</td>
-                              })}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    )
-                  })}
-                </table>
-              </div>
-            )}
-    </Panel>
   )
 }
 

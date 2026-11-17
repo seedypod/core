@@ -28,8 +28,9 @@ test('cameras: a failed capture shows the failure with Retry, and raises an aler
   await expect(main.getByText(/cleared by you/).first()).toBeVisible()
 })
 
-test('analysis: the dataset export opens from the header', async ({ page }) => {
+test('analysis: the dataset export opens from the Teach tab', async ({ page }) => {
   await page.goto('/analysis')
+  await page.getByRole('main').getByRole('tab', { name: 'Teach' }).click()
   await page.getByRole('button', { name: 'Export dataset' }).click()
   const dialog = page.getByRole('dialog', { name: 'Export a dataset' })
   await expect(dialog.getByRole('tab', { name: '30 days' })).toBeVisible()
