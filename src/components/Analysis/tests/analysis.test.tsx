@@ -170,6 +170,33 @@ describe('AnalysisPage', () => {
     expect(strip.textContent).toContain('Pruned')
   })
 
+  it('fits the pod\'s tile to its still once it loads, and says when there is no photo or no box', () => {
+    data.set('frames:upper', [{ ...frame('upper'), path: 'data:image/jpeg;base64,AA' }])
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    const img = screen.getAllByAltText('Pod 1 at 2026-01-02T00:00:00Z')[0] as HTMLImageElement
+    expect(img.getAttribute('src')).toBe('data:image/jpeg;base64,AA')
+    const tile = img.parentElement as HTMLElement
+    const before = tile.style.aspectRatio
+    Object.defineProperty(img, 'naturalWidth', { value: 1280 })
+    Object.defineProperty(img, 'naturalHeight', { value: 720 })
+    fireEvent.load(img)
+    expect(tile.style.aspectRatio).not.toBe(before)
+    cleanup()
+    data.set('regions', [{ camera: 'upper', calibrated: true, removed: [1], regions: [] }])
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    expect(screen.getAllByText('No box').length).toBeGreaterThan(0)
+    cleanup()
+    data.set('frames:upper', [])
+    render(<AnalysisPage />)
+    open('Methods')
+    fireEvent.click(screen.getByRole('button', { name: 'Pod 1, Swiss Chard' }))
+    expect(screen.getAllByText('No photo').length).toBeGreaterThan(0)
+  })
+
   it('reads the chart against the pod\'s record in one line', () => {
     data.set('pods', [{ slot: 1, plant: 'Swiss Chard', status: 'seeded', plantedAt: '2026-01-01', notes: '' }])
     data.set('compare:green_fraction', [
