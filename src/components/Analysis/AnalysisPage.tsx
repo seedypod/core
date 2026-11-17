@@ -13,7 +13,7 @@ import type { AppRouter } from '@/src/server/routers/app'
 import { apiBase, trpc } from '@/src/utils/trpc'
 import type { Rect } from '@/src/vision/greenArea'
 import { POD_STATES } from '@/src/vision/podState'
-import { podRegions, type PodRegions } from '@/src/vision/regions'
+import { cameraSlots, podRegions, type PodRegions } from '@/src/vision/regions'
 import { AllPods } from './AllPods'
 import { LabelPods } from './LabelPods'
 import { LeafCover } from './LeafCover'
@@ -138,6 +138,7 @@ export function AnalysisPage() {
               boxes={calibration.boxes(l.camera)}
               calibrated={calibration.calibrated(l.camera)}
               onChange={calibration.draft ? (slot, r) => calibration.move(l.camera, slot, r) : undefined}
+              onRemove={calibration.draft ? slot => calibration.remove(l.camera, slot) : undefined}
             />
           ))}
         </div>
@@ -170,7 +171,7 @@ export function AnalysisPage() {
  * per pod drawn over it on request, and a card of everything known about a
  * pod when it is hovered or picked.
  */
-function Still({ latest, view, analyzer, empty, pod, trend, analyzers, colorOf, pinned, onPick, onUnpin, boxes, calibrated, onChange }: {
+function Still({ latest, view, analyzer, empty, pod, trend, analyzers, colorOf, pinned, onPick, onUnpin, boxes, calibrated, onChange, onRemove }: {
   latest: Latest
   view: View
   analyzer?: string
@@ -185,6 +186,7 @@ function Still({ latest, view, analyzer, empty, pod, trend, analyzers, colorOf, 
   boxes: PodRegions
   calibrated: boolean
   onChange?: (slot: number, r: Rect) => void
+  onRemove?: (slot: number) => void
 }) {
   const { camera, frame, rows, states } = latest
   // The box takes the still's own shape once it loads, so the bounds sit where the analysers put them.
@@ -223,7 +225,7 @@ function Still({ latest, view, analyzer, empty, pod, trend, analyzers, colorOf, 
               />
             )
           : <div className="flex size-full items-center justify-center p-4 text-center text-[13px] text-fg-3">No photos from this camera yet.</div>}
-        {frame && view === 'bounds' && <PodBounds boxes={boxes} label={reading} onChange={onChange} />}
+        {frame && view === 'bounds' && <PodBounds boxes={boxes} label={reading} onChange={onChange} onRemove={onRemove} />}
         {frame && !onChange && <PodHits boxes={boxes} shown={shown} onHover={setHovered} onPick={onPick} />}
         {frame && shown !== null && box && (
           <PodCard slot={shown} box={box} pod={pod(shown)} trend={trend(shown)} readings={readings(shown)} pinned={shown === pinned} onClose={onUnpin} />
@@ -400,8 +402,9 @@ type Calibration = ReturnType<typeof useCalibration>
 
 /**
  * The pod boxes on each camera (#143): the unit's, or a draft while they are
- * being edited. Saving sends each camera's boxes; the unit keeps only the ones
- * that moved from the measured defaults.
+ * being edited. Saving sends each camera's boxes and the ones removed; the
+ * unit keeps only the ones that moved from the measured defaults, and the
+ * removals.
  */
 function useCalibration() {
   const utils = trpc.useUtils()
@@ -414,24 +417,28 @@ function useCalibration() {
     return row ? Object.fromEntries(row.regions.map(({ slot, x, y, w, h }) => [slot, { x, y, w, h }])) : podRegions(camera)
   }
   const boxes = (camera: Camera) => draft?.[camera] ?? stored(camera)
+  const removed = (camera: Camera, regions = boxes(camera)) => cameraSlots(camera).filter(s => !regions[s])
   return {
     draft,
     done,
     error: save.error?.message,
     pending: save.isPending,
     boxes,
+    removed,
     calibrated: (camera: Camera) => saved.data?.find(r => r.camera === camera)?.calibrated ?? false,
     edit: () => {
       setDone(false)
       setDraft({ upper: stored('upper'), lower: stored('lower') })
     },
     move: (camera: Camera, slot: number, r: Rect) => setDraft(d => ({ ...d, [camera]: { ...boxes(camera), ...d?.[camera], [slot]: r } })),
+    remove: (camera: Camera, slot: number) => setDraft(d => ({ ...d, [camera]: Object.fromEntries(Object.entries(d?.[camera] ?? boxes(camera)).filter(([s]) => Number(s) !== slot)) })),
+    restore: (camera: Camera, slot: number) => setDraft(d => ({ ...d, [camera]: { ...(d?.[camera] ?? boxes(camera)), [slot]: podRegions(camera)[slot] as Rect } })),
     reset: (cameras: Camera[]) => setDraft(d => ({ ...d, ...Object.fromEntries(cameras.map(c => [c, podRegions(c)])) })),
     cancel: () => setDraft(null),
     save: async () => {
       if (!draft) return
       for (const [camera, regions] of Object.entries(draft) as Array<[Camera, PodRegions]>) {
-        await save.mutateAsync({ camera, regions: Object.entries(regions).map(([slot, r]) => ({ slot: Number(slot), ...r })) })
+        await save.mutateAsync({ camera, regions: Object.entries(regions).map(([slot, r]) => ({ slot: Number(slot), ...r })), removed: removed(camera, regions) })
       }
       setDraft(null)
       setDone(true)
@@ -442,13 +449,22 @@ function useCalibration() {
 /** Editing the boxes: how, and saving, resetting or dropping the changes. */
 function Calibrate({ c, cameras }: { c: Calibration, cameras: Camera[] }) {
   const action = 'cursor-pointer border-0 bg-transparent p-0 text-xs text-fg-2 hover:text-fg disabled:cursor-default disabled:opacity-45'
+  const gone = cameras.flatMap(camera => c.removed(camera).map(slot => ({ camera, slot })))
   return (
     <div className="-mt-1 flex flex-col gap-2 text-xs text-fg-3">
       <p>
         {c.draft
-          ? 'Drag a box onto its pod\'s cup and its corner to fit the plant. Arrow keys move the focused box; Shift with them resizes it.'
+          ? 'Drag a box onto its pod\'s cup and its corner to fit the plant. Arrow keys move the focused box; Shift with them resizes it. Remove a box (× or Delete) where this camera can\'t see its pod.'
           : 'Each pod counts plant inside its box that grows from it: centred in the box, or reaching the dashed middle.'}
       </p>
+      {gone.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>{`No box, not scored: ${gone.map(g => g.slot).join(', ')}`}</span>
+          {c.draft && gone.map(g => (
+            <button key={g.slot} type="button" className={action} onClick={() => c.restore(g.camera, g.slot)}>{`Put back ${g.slot}`}</button>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {c.draft
           ? (

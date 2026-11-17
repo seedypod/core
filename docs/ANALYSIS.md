@@ -55,7 +55,10 @@ each pod is scored on.
 If your camera sits a little differently, press **Edit boxes** in that view.
 Drag a box onto its pod's cup, and drag its corner to fit the plant. You can
 also focus a box and move it with the arrow keys, or resize it with Shift and
-the arrow keys. **Save boxes** keeps them per camera. **Reset to measured**
+the arrow keys. If a camera can't see a pod at all (slot 28's cup sits below
+the lower frame, so its box may land on bare pipe), remove that box with its
+**×** or Delete. The pod is then left unscored on that camera until you
+**Put back** its box. **Save boxes** keeps them per camera. **Reset to measured**
 brings back the defaults. New photos are scored on the saved boxes, and so is
 the Grow page's crop of each pod. **Re-run** an analyser to rescore the photos
 already on the unit. Scripts read and set the boxes with `GET /api/vision/regions`

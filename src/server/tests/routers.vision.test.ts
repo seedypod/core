@@ -145,10 +145,30 @@ describe('vision router (ADR-0019)', () => {
     expect((await c.vision.capture({ captureId: 'upper-x' })).find(r => r.slot === 1 && r.analyzer === 'green-threshold')?.value).toBe(1)
 
     await expect(c.vision.setRegions({ camera: 'upper', regions: [{ slot: 16, x: 0, y: 0, w: 0.1, h: 0.1 }] })).rejects.toThrow(/pod 16 is not on the upper camera/)
+    await expect(c.vision.setRegions({ camera: 'upper', regions: [], removed: [28] })).rejects.toThrow(/pod 28 is not on the upper camera/)
     await c.vision.setRegions({ camera: 'lower', regions: null })
     await c.vision.setRegions({ camera: 'upper', regions: [] })
     expect(ctx.store.settings.get().podRegions).toBeNull()
     expect((await c.vision.regions()).every(r => !r.calibrated)).toBe(true)
+  })
+
+  it('removes a box the camera can\'t see its pod in, so the pod isn\'t scored there, and puts it back', async () => {
+    const { c, ctx } = await scored(0)
+    // A removed box wins over one sent for the same pod.
+    const lower = await c.vision.setRegions({ camera: 'lower', regions: [{ slot: 28, x: 0.1, y: 0.1, w: 0.1, h: 0.1 }], removed: [28] })
+    expect([lower.calibrated, lower.removed, lower.regions.length]).toEqual([true, [28], 14])
+    expect(lower.regions.some(r => r.slot === 28)).toBe(false)
+    expect(ctx.store.settings.get().podRegions).toEqual({ lower: { 28: null } })
+    expect((await c.vision.regions()).map(r => r.removed)).toEqual([[], [28]])
+
+    const capture = { id: 'lower-x', camera: 'lower' as const, ts: '2026-02-01T00:00:00Z', path: 'lower-x.jpg', bytes: 1 }
+    ctx.analysis.enqueue(capture, jpeg(200, 100, true))
+    await ctx.analysis.idle()
+    const slots = new Set((await c.vision.capture({ captureId: 'lower-x' })).map(r => r.slot))
+    expect([slots.has(27), slots.has(28)]).toEqual([true, false])
+
+    await c.vision.setRegions({ camera: 'lower', regions: [] })
+    expect(ctx.store.settings.get().podRegions).toBeNull()
   })
 
   it('labels pods in a capture for training, relabels, clears and counts them', async () => {

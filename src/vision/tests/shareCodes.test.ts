@@ -123,6 +123,7 @@ describe('podCrop', () => {
 
   it('is null for a pod that isn\'t there, without a still, or with one that isn\'t a JPEG', async () => {
     expect(await podCrop(source(still, still), 31, null)).toBeNull()
+    expect(await podCrop(source(still, still), 6, { upper: { 6: null } })).toBeNull()
     expect(await podCrop(source(null, null), 6, null)).toBeNull()
     expect(await podCrop(source(new Uint8Array([1, 2, 3, 4]), null), 20, null)).toBeNull()
   })
