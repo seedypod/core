@@ -10,11 +10,12 @@ import { cameraOf, podRegions, type RegionCalibration } from '@/src/vision/regio
 import { CATALOG } from './plants/catalog'
 import { PlantModel } from './PlantModel'
 import { ProtocolCard } from './ProtocolCard'
-import { SwapBanner } from './SwapBanner'
+import { SwapBanner, SwapProgress } from './SwapBanner'
 import { PlantThumb, podForm } from './PlantThumb'
 import { ageDays, heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
 import { TowerView } from './TowerView'
+import { useSwapPods } from './useSwapPods'
 import { plantLight, podLight, ZONE_COLOR, ZONE_LABEL, type LightZone, type PodLight } from './lightZones'
 
 type Stage = 'germination' | 'seedling' | 'vegetative' | 'harvest'
@@ -92,7 +93,9 @@ export function GrowPage() {
   const setStage = trpc.grow.setStage.useMutation({ onSuccess: growChanged })
   const updatePod = trpc.grow.updatePod.useMutation({ onSuccess: growChanged })
   const markHarvested = trpc.grow.markHarvested.useMutation({ onSuccess: growChanged })
-  const swapPods = trpc.grow.swapPods.useMutation({ onSuccess: growChanged })
+  const swapPods = useSwapPods()
+  // The two pods of a swap still on its way to the unit.
+  const busy = swapPods.isPending && swapPods.variables ? [swapPods.variables.a, swapPods.variables.b] : []
   // The pod whose yCube moved, while the one it swapped with is being picked.
   const [swapping, setSwapping] = useState<number | null>(null)
   const trends = trpc.vision.podTrends.useQuery()
@@ -205,6 +208,7 @@ export function GrowPage() {
       <div className="flex flex-wrap items-start gap-5">
         <div className="min-w-0 flex-1 basis-[480px]">
           {swapping !== null && <SwapBanner slot={swapping} plant={all.find(p => p.slot === swapping)?.plant} onCancel={() => setSwapping(null)} />}
+          {busy.length > 0 && <SwapProgress a={busy[0] as number} b={busy[1] as number} />}
           {swapPods.error && <InlineError>{swapPods.error.message}</InlineError>}
           {shown === 'tower' && (
             <TowerView
@@ -241,8 +245,9 @@ export function GrowPage() {
                         }}
                         onClick={() => select(p.slot)}
                         aria-pressed={picked}
+                        aria-busy={busy.includes(p.slot) || undefined}
                         aria-label={`${p.slot} ${p.plant ?? 'empty'}`}
-                        className={cn('flex min-h-[44px] items-center gap-2.5 rounded-[9px] border px-2.5 py-[9px] text-left transition-colors hover:border-pod-empty', picked ? 'border-fg-2 bg-active' : ROW_CLASS[s])}
+                        className={cn('flex min-h-[44px] items-center gap-2.5 rounded-[9px] border px-2.5 py-[9px] text-left transition-colors hover:border-pod-empty', picked ? 'border-fg-2 bg-active' : ROW_CLASS[s], busy.includes(p.slot) && 'animate-pulse motion-reduce:animate-none')}
                       >
                         <span className="w-4 font-mono text-[10px] text-fg-3">{p.slot}</span>
                         <span className="size-[7px] shrink-0 rounded-full" style={{ background: s === 'empty' ? 'var(--border-2)' : SHOWN_TOKEN[s] }} />

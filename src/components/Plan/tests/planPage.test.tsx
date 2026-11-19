@@ -34,6 +34,15 @@ const { state, calls, invalidate } = vi.hoisted(() => ({
     catalogPending: false,
     /** Every mutation reports this error. */
     failure: null as null | string,
+    /** grow.swapPods is still on its way to the unit. */
+    swapPending: false,
+    /** grow.swapPods fails. */
+    swapFails: false,
+    /** The layout for the latest input hasn't answered: the last one shows, as keepPreviousData does. */
+    layoutPlaceholder: false,
+    lastLayout: undefined as unknown,
+    /** The options the layout query was last given. */
+    layoutOptions: undefined as undefined | { enabled?: boolean },
   },
   calls: { catalog: vi.fn(), layout: vi.fn(), save: vi.fn(), apply: vi.fn(), remove: vi.fn(), addPlant: vi.fn(), updatePlant: vi.fn(), removePlant: vi.fn(), swapPods: vi.fn(), updatePod: vi.fn() },
   invalidate: vi.fn(),
@@ -59,7 +68,7 @@ vi.mock('@/src/utils/trpc', async () => {
   })
   return {
     trpc: {
-      useUtils: () => ({ planner: { invalidate, plans: { invalidate } }, grow: { invalidate }, vision: { seenEmpty: { invalidate } } }),
+      useUtils: () => ({ planner: { invalidate, plans: { invalidate } }, grow: { invalidate, pods: { cancel: async () => undefined, getData: () => undefined, setData: () => undefined } }, vision: { seenEmpty: { invalidate } } }),
       planner: {
         zones: { useQuery: ({ model }: { model: Model }) => ({ data: state.loading ? undefined : { ...MODELS[model], slots: slots(model), counts: zoneCounts(model) } }) },
         catalog: { useQuery: (i: { q?: string, category?: string }) => {
@@ -67,12 +76,15 @@ vi.mock('@/src/utils/trpc', async () => {
           if (state.catalogPending) return { data: undefined }
           return { data: { plants: [...searchPlants(i as Parameters<typeof searchPlants>[0]).slice(0, 12), ...state.custom] } }
         } },
-        layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[], overrides?: PlanOverrides, suggestMoves?: boolean }) => {
+        layout: { useQuery: (i: { model: Model, plants: { plantId: string, count: number }[], overrides?: PlanOverrides, suggestMoves?: boolean }, o?: { enabled?: boolean }) => {
           calls.layout(i)
+          state.layoutOptions = o
           if (state.layoutPending || state.loading) return { data: undefined }
+          if (state.layoutPlaceholder) return { data: state.lastLayout, isPlaceholderData: true }
           // Planted pods count as their catalog plant, as the router reads them.
           const occupied = Object.fromEntries(state.pods.filter(p => p.status !== 'empty').map(p => [p.slot, findPlant(p.plant ?? '')?.id ?? 'planted']))
-          return { data: planLayout({ model: i.model, plants: i.plants, occupied, overrides: i.overrides, suggestMoves: i.suggestMoves }) }
+          state.lastLayout = planLayout({ model: i.model, plants: i.plants, occupied, overrides: i.overrides, suggestMoves: i.suggestMoves })
+          return { data: state.lastLayout }
         } },
         sowing: { useQuery: (i: { plants: { plantId: string, count: number }[], mode: 'staggered' | 'batch', start?: string }) => ({ data: sowingPlan(i.plants, new Date(i.start ?? '2026-11-02T00:00:00Z'), i.mode) }) },
         plans: { useQuery: () => ({ data: state.plans }) },
@@ -85,14 +97,20 @@ vi.mock('@/src/utils/trpc', async () => {
       },
       grow: {
         pods: { useQuery: () => ({ data: state.loading || state.podsPending ? undefined : state.pods }) },
-        // Swaps the records, as the router does, so the page lays out around where they land.
-        swapPods: mutation((i) => {
-          calls.swapPods(i)
-          const { a, b } = i as { a: number, b: number }
-          const at = (slot: number) => state.pods.find(p => p.slot === slot) ?? { slot, plant: null, status: 'empty' }
-          const [pa, pb] = [at(a), at(b)]
-          state.pods = [...state.pods.filter(p => p.slot !== a && p.slot !== b), { ...pb, slot: a }, { ...pa, slot: b }]
-        }),
+        // Swaps the records, as the router does (and the pods cache, at once), so the page lays out around where they land.
+        swapPods: { useMutation: () => ({
+          isPending: state.swapPending,
+          error: state.failure === null ? null : { message: state.failure },
+          mutate: (i: { a: number, b: number }, m?: { onSuccess?: () => void, onError?: () => void }) => {
+            calls.swapPods(i)
+            if (state.swapFails) return m?.onError?.()
+            const { a, b } = i
+            const at = (slot: number) => state.pods.find(p => p.slot === slot) ?? { slot, plant: null, status: 'empty' }
+            const [pa, pb] = [at(a), at(b)]
+            state.pods = [...state.pods.filter(p => p.slot !== a && p.slot !== b), { ...pb, slot: a }, { ...pa, slot: b }]
+            if (!state.swapPending) m?.onSuccess?.()
+          },
+        }) },
         updatePod: { useMutation: (o?: { onSuccess?: () => void }) => ({
           isPending: false,
           error: state.failure === null ? null : { message: state.failure },
@@ -128,6 +146,11 @@ beforeEach(() => {
   state.updateFails = null
   state.catalogPending = false
   state.failure = null
+  state.swapPending = false
+  state.swapFails = false
+  state.layoutPlaceholder = false
+  state.lastLayout = undefined
+  state.layoutOptions = undefined
   for (const f of [...Object.values(calls), invalidate]) f.mockReset()
   tower.props = null
   tower.unavailable = false
@@ -225,7 +248,11 @@ describe('PlanPage', () => {
     // A lettuce in high light and a pepper in medium: swapping them suits both.
     state.pods = [{ slot: 8, plant: 'Butterhead', status: 'growing' }, { slot: 4, plant: 'Jalapeño', status: 'growing' }]
     const { rerender } = render(<PlanPage />)
-    const list = within(screen.getByRole('list', { name: 'Suggested moves' }))
+    // Beside the layout, above the plants.
+    const moves = screen.getByRole('list', { name: 'Suggested moves' })
+    expect(moves.closest('#plan-layout')).toBeNull()
+    expect(moves.compareDocumentPosition(screen.getByText('Plants')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const list = within(moves)
     expect(list.getByRole('listitem').textContent).toBe('Swap Jalapeño in pod 4 with Butterhead in pod 8 — Butterhead gets its ideal medium light.Moved')
     fireEvent.click(list.getByRole('button', { name: 'Moved pod 4 to pod 8' }))
     expect(calls.swapPods).toHaveBeenCalledWith({ a: 4, b: 8 })
@@ -386,6 +413,81 @@ describe('PlanPage', () => {
     expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 30, b: basil })
     expect([slotOf('Oregano'), slotOf('Basil')]).toEqual([basil, 30])
     expect(calls.layout.mock.lastCall?.[0].overrides.pins).toEqual([{ slot: 30, plantId: 'basil' }])
+  })
+
+  it('shows a swap on its way at once, lays out again only once the records have moved, and takes one swap at a time', () => {
+    state.pods = [{ slot: 4, plant: 'Oregano', status: 'growing' }, { slot: 5, plant: 'Italian Parsley', status: 'growing' }]
+    state.swapPending = true
+    const { rerender } = render(<PlanPage />)
+    flat()
+    const grid = within(screen.getByTestId('plan-grid'))
+    const slotOf = (name: string) => Number(grid.getAllByText(name)[0]?.closest('[data-slot]')?.getAttribute('data-slot'))
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (k: string, v: string) => data.set(k, v), getData: (k: string) => data.get(k) ?? '' }
+    fireEvent.dragStart(cell(4), { dataTransfer })
+    fireEvent.drop(cell(5), { dataTransfer })
+    expect(screen.getByTestId('swap-progress').textContent).toBe('Swapping pods 4 and 5…')
+    expect([cell(4), cell(5), cell(6)].map(c => c.getAttribute('aria-busy'))).toEqual(['true', 'true', null])
+    expect([slotOf('Oregano'), slotOf('Italian Parsley')]).toEqual([5, 4])
+    // No layout is asked for while the records move: it would place around where they were.
+    expect(state.layoutOptions).toMatchObject({ enabled: false })
+    // A second drop waits for the first.
+    fireEvent.dragStart(cell(4), { dataTransfer })
+    fireEvent.drop(cell(6), { dataTransfer })
+    expect(calls.swapPods).toHaveBeenCalledTimes(1)
+    // The unit has them: the line and the pulse go.
+    state.swapPending = false
+    rerender(<PlanPage />)
+    expect(screen.queryByTestId('swap-progress')).toBeNull()
+    expect(cell(4).getAttribute('aria-busy')).toBeNull()
+    expect(state.layoutOptions).toMatchObject({ enabled: true })
+  })
+
+  it('moves a planned plant at once while its new layout is worked out', () => {
+    const { rerender } = render(<PlanPage />)
+    flat()
+    search('basil')
+    add('Basil')
+    const grid = within(screen.getByTestId('plan-grid'))
+    const slotOf = (name: string) => Number(grid.getAllByText(name)[0]?.closest('[data-slot]')?.getAttribute('data-slot'))
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const basil = slotOf('Basil')
+    const free = basil === 30 ? 29 : 30
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (k: string, v: string) => data.set(k, v), getData: (k: string) => data.get(k) ?? '' }
+    // The layout keeps answering with the one from before the drop.
+    state.layoutPlaceholder = true
+    fireEvent.dragStart(cell(basil), { dataTransfer })
+    fireEvent.drop(cell(free), { dataTransfer })
+    expect(slotOf('Basil')).toBe(free)
+    expect(screen.getByTestId('swap-progress').textContent).toBe(`Swapping pods ${basil} and ${free}…`)
+    expect(calls.swapPods).not.toHaveBeenCalled()
+    state.layoutPlaceholder = false
+    rerender(<PlanPage />)
+    expect(slotOf('Basil')).toBe(free)
+    expect(screen.queryByTestId('swap-progress')).toBeNull()
+  })
+
+  it('puts the plan back when a swap of records fails', () => {
+    state.pods = [{ slot: 30, plant: 'Oregano', status: 'growing' }]
+    render(<PlanPage />)
+    flat()
+    search('basil')
+    add('Basil')
+    const grid = within(screen.getByTestId('plan-grid'))
+    const slotOf = (name: string) => Number(grid.getAllByText(name)[0]?.closest('[data-slot]')?.getAttribute('data-slot'))
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const basil = slotOf('Basil')
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (k: string, v: string) => data.set(k, v), getData: (k: string) => data.get(k) ?? '' }
+    state.swapFails = true
+    fireEvent.dragStart(cell(30), { dataTransfer })
+    fireEvent.drop(cell(basil), { dataTransfer })
+    expect(calls.swapPods).toHaveBeenLastCalledWith({ a: 30, b: basil })
+    expect([slotOf('Oregano'), slotOf('Basil')]).toEqual([30, basil])
+    expect(calls.layout.mock.lastCall?.[0].overrides).toBeUndefined()
+    expect(screen.queryByTestId('swap-progress')).toBeNull()
   })
 
   it('opens a pod from the keyboard, moves a plant to a free pod, and lets go of a swap tapped back on its own pod', () => {

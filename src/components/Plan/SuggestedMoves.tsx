@@ -1,5 +1,5 @@
 import { ArrowLeftRight } from 'lucide-react'
-import { Button } from '@/src/components/ds/core'
+import { Button, Card, CardHeader } from '@/src/components/ds/core'
 
 interface Props {
   moves: { from: number, to: number, text: string }[]
@@ -11,8 +11,8 @@ interface Props {
 export function SuggestedMoves({ moves, onApply }: Props) {
   if (moves.length === 0) return null
   return (
-    <div className="mt-3 flex flex-col gap-1.5 rounded-[var(--radius-ctl)] border border-line px-3 py-2">
-      <div className="text-[12px] text-fg-3">Suggested moves · optional, once you move the yCubes</div>
+    <Card>
+      <CardHeader title="Suggested moves" subtitle="Optional, once you move the yCubes" icon={ArrowLeftRight} />
       <ul aria-label="Suggested moves" className="flex flex-col gap-1.5">
         {moves.map(m => (
           <li key={`${m.from}-${m.to}`} className="flex items-center gap-2 text-[13px] text-fg-2">
@@ -21,6 +21,6 @@ export function SuggestedMoves({ moves, onApply }: Props) {
           </li>
         ))}
       </ul>
-    </div>
+    </Card>
   )
 }
