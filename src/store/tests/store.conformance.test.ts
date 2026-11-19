@@ -251,6 +251,21 @@ for (const [name, make] of impls) {
       expect(store.analyses.forCapture('b')).toHaveLength(1)
     })
 
+    it('knows each analyser\'s newest version, through new rows and removed ones', () => {
+      store = make()
+      const row = (o: Partial<AnalysisRow>): AnalysisRow => ({ captureId: 'a', ts: '2026-01-01T00:00:00Z', camera: 'upper', analyzer: 'pod-state', version: 1, source: 'device', slot: 1, metric: 'pod_state', value: 1, detail: null, artifact: null, ...o })
+      expect(store.analyses.latestVersion('pod-state')).toBeNull()
+      store.analyses.add([row({})])
+      expect(store.analyses.latestVersion('pod-state')).toBe(1)
+      // Asked once, then kept up as rows arrive: an older version doesn't lower it.
+      store.analyses.add([row({ captureId: 'b', version: 3 }), row({ captureId: 'c', version: 2 })])
+      expect(store.analyses.latestVersion('pod-state')).toBe(3)
+      expect(store.analyses.series({ analyzer: 'pod-state', slot: 1, metric: 'pod_state' }).map(p => p.captureId)).toEqual(['b'])
+      store.analyses.removeDevice('b')
+      expect(store.analyses.latestVersion('pod-state')).toBe(2)
+      expect(store.analyses.latestVersion('green-threshold')).toBeNull()
+    })
+
     it('analysis rows upsert, version per series and stats per analyser', () => {
       store = make()
       const row = (o: Partial<AnalysisRow>): AnalysisRow => ({ captureId: 'a', ts: '2026-01-01T00:00:00Z', camera: 'upper', analyzer: 'green-threshold', version: 1, source: 'device', slot: 1, metric: 'green_fraction', value: 0.1, detail: null, artifact: null, ...o })

@@ -444,6 +444,8 @@ export interface Store {
   analyses: {
     /** Upsert on (capture, analyser, version, slot, metric): re-running is idempotent. */
     add(rows: AnalysisRow[]): void
+    /** The newest version of this analyser that has rows; null with none. */
+    latestVersion(analyzer: string): number | null
     /** Oldest → newest for one pod; `version` defaults to the newest version that has rows. */
     series(q: { analyzer: string, version?: number, slot: number, metric: string, limit?: number }): AnalysisPoint[]
     forCapture(captureId: string): AnalysisRow[]

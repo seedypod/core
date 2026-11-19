@@ -49,6 +49,8 @@ export class SqliteStore implements Store {
   private capFlushFailed = false
   /** Newest detail of active alerts whose rows still hold an older one, by alert id. */
   private readonly liveDetail = new Map<number, string>()
+  /** Each analyser's newest version with rows, once read: a series asks per pod, and the scan for it takes seconds on the unit. */
+  private readonly latestVersions = new Map<string, number | null>()
 
   constructor(opts: SqliteStoreOptions) {
     // better-sqlite3 creates the file but not its directory; a fresh install has no ./data yet.
@@ -350,11 +352,23 @@ export class SqliteStore implements Store {
           }).run()
         }
       })()
+      for (const r of rows) {
+        const v = this.latestVersions.get(r.analyzer)
+        if (v !== undefined) this.latestVersions.set(r.analyzer, Math.max(v ?? r.version, r.version))
+      }
+    },
+    latestVersion: (analyzer: string): number | null => {
+      const known = this.latestVersions.get(analyzer)
+      if (known !== undefined) return known
+      const a = t.analysisResults
+      const v = this.db.select({ v: sql<number | null>`max(${a.version})` }).from(a).where(eq(a.analyzer, analyzer)).get()?.v ?? null
+      this.latestVersions.set(analyzer, v)
+      return v
     },
     series: (q: { analyzer: string, version?: number, slot: number, metric: string, limit?: number }): AnalysisPoint[] => {
       const a = t.analysisResults
-      const version = q.version ?? this.db.select({ v: sql<number | null>`max(${a.version})` }).from(a).where(eq(a.analyzer, q.analyzer)).get()?.v
-      if (version === null || version === undefined) return []
+      const version = q.version ?? this.analyses.latestVersion(q.analyzer)
+      if (version === null) return []
       return this.db.select({ ts: a.ts, value: a.value, captureId: a.captureId }).from(a)
         .where(and(eq(a.analyzer, q.analyzer), eq(a.version, version), eq(a.slot, q.slot), eq(a.metric, q.metric)))
         .orderBy(desc(a.ts)).limit(q.limit ?? 200).all().reverse()
@@ -364,6 +378,7 @@ export class SqliteStore implements Store {
         .orderBy(asc(t.analysisResults.analyzer), asc(t.analysisResults.version), asc(t.analysisResults.slot), asc(t.analysisResults.metric)).all().map(rowToAnalysis),
     removeDevice: (captureId: string): void => {
       this.db.delete(t.analysisResults).where(and(eq(t.analysisResults.captureId, captureId), eq(t.analysisResults.source, 'device'))).run()
+      this.latestVersions.clear()
     },
     range: (fromTs: string, toTs: string): AnalysisRow[] =>
       this.db.select().from(t.analysisResults).where(and(gte(t.analysisResults.ts, fromTs), lte(t.analysisResults.ts, toTs)))
