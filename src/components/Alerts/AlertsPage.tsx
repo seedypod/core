@@ -9,6 +9,7 @@ import { SegmentedControl } from '@/src/components/ds/forms'
 import { DOCS_BASE } from '@/src/components/Search/docsIndex'
 import { pumpFault } from '@/src/lib/pumpFault'
 import { fmtStamp, timeAgo } from '@/src/lib/timeAgo'
+import { lowStopsPump, waterLowWords } from '@/src/lib/waterLow'
 import type { AppRouter } from '@/src/server/routers/app'
 import { trpc } from '@/src/utils/trpc'
 
@@ -84,18 +85,27 @@ const VIEW: Record<string, { to: string, label: string }> = {
   reminder_schedule_switch: { to: '/grow', label: 'View grow' },
 }
 const PODS = { upper: '1–15', lower: '16–30' } as const
+const TONE = { attention: 'bg-pod-attention/15 text-pod-attention', warn: 'bg-warn/15 text-warn', ready: 'bg-pod-ready/15 text-pod-ready' }
 
 /** The page that shows an alert's part of the tower, and the link's words. */
 export const alertView = (kind: string): { to: string, label: string } | undefined => VIEW[kind]
 
 export const categoryOf = (kind: string): 'hardware' | 'reminder' | 'service' => (HARDWARE.has(kind) ? 'hardware' : kind.startsWith('reminder_') || kind.startsWith('chore_') ? 'reminder' : 'service')
 
-/** Title and detail for an alert; a camera alert names the camera and the pods it covers. */
-export function describeAlert(a: Pick<AlertRow, 'kind' | 'detail'>): { title: string, detail: string } {
+/**
+ * Title and detail for an alert; a camera alert names the camera and the pods it
+ * covers, and a low tank says whether the pump stopped for it (`lowStops`, from
+ * the dry-run guard).
+ */
+export function describeAlert(a: Pick<AlertRow, 'kind' | 'detail'>, lowStops = true): { title: string, detail: string } {
   const cam = a.kind === 'camera_missing' ? /^(upper|lower) camera returned (\d+) bytes/.exec(a.detail) : null
   if (cam) {
     const camera = cam[1] as keyof typeof PODS
     return { title: `${camera === 'upper' ? 'Upper' : 'Lower'} camera not capturing`, detail: `Returned ${cam[2]} bytes on the last capture. Pods ${PODS[camera]} have no new photos.` }
+  }
+  if (a.kind === 'water_low') {
+    const w = waterLowWords(a.detail, lowStops)
+    return { title: w.title, detail: w.detail }
   }
   // The current guard says what the pump drew; the title keeps which fault it is.
   const pump = a.kind === 'pump_fault' ? pumpFault(a.detail) : null
@@ -118,6 +128,8 @@ export function AlertsPage() {
   const alerts = trpc.alerts.list.useQuery({ activeOnly: view === 'active' })
   const open = trpc.alerts.list.useQuery({ activeOnly: true })
   const pods = trpc.grow.pods.useQuery()
+  const system = trpc.system.info.useQuery()
+  const lowStops = lowStopsPump(system.data?.system?.limits)
   const ack = trpc.alerts.acknowledge.useMutation({
     onSuccess: () => {
       void utils.alerts.invalidate()
@@ -147,22 +159,24 @@ export function AlertsPage() {
         )}
         {rows.map((a) => {
           const cat = categoryOf(a.kind)
-          const { title, detail } = describeAlert(a)
+          const { title, detail } = describeAlert(a, lowStops)
           const Icon = ICON[a.kind] ?? Bell
-          const hot = a.active && cat === 'hardware'
-          const tone = cat === 'hardware' ? 'attention' : 'ready'
+          // A low tank the pump runs through, or a level it can't read, is a warning.
+          const warning = a.kind === 'water_low' && !waterLowWords(a.detail, lowStops).urgent
+          const hot = a.active && cat === 'hardware' && !warning
+          const tone = warning ? 'warn' : cat === 'hardware' ? 'attention' : 'ready'
           const go = a.active ? VIEW[a.kind] : undefined
           const actions = alertActions(a.kind)
           return (
             <div key={a.id} data-testid={`alert-${a.kind}`} className={cn('flex flex-col gap-3.5 rounded-[14px] border bg-surface px-5 py-[18px]', hot ? 'border-pod-attention/45' : 'border-line', !a.active && 'opacity-75')}>
               <div className="flex flex-wrap items-start gap-3.5">
-                <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', tone === 'attention' ? 'bg-pod-attention/15 text-pod-attention' : 'bg-pod-ready/15 text-pod-ready')}>
+                <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', TONE[tone])}>
                   <Icon size={16} />
                 </span>
                 <div className="flex min-w-[220px] flex-1 flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[15px] font-medium">{title}</span>
-                    <span className={cn('rounded-[10px] px-2 py-0.5 font-mono text-[10px] font-medium uppercase', tone === 'attention' ? 'bg-pod-attention/15 text-pod-attention' : 'bg-pod-ready/15 text-pod-ready')}>{cat}</span>
+                    <span className={cn('rounded-[10px] px-2 py-0.5 font-mono text-[10px] font-medium uppercase', TONE[tone])}>{warning ? 'warning' : cat}</span>
                   </div>
                   {detail && <span className="text-[13px] text-fg-2">{detail}</span>}
                   <span className="font-mono text-[11px] text-fg-3">

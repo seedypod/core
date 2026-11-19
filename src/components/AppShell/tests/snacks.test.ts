@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CoreEvent } from '@/src/lib/eventBus'
-import { alertSnack, followSnack, newAlertSnacks, pumpWatch } from '../snacks'
+import { Droplets } from 'lucide-react'
+import { alertSnack, followSnack, newAlertSnacks, pumpWatch, REPEAT_MS, repeatFilter } from '../snacks'
 
 const T0 = Date.parse('2026-11-11T08:00:00Z')
 const at = (s: number) => new Date(T0 + s * 1000).toISOString()
@@ -51,6 +52,12 @@ describe('alertSnack', () => {
     expect(alertSnack({ id: 1, kind: 'water_low', detail: 'tank low' })).toMatchObject({ id: 'pump', title: 'Pump off: water low', urgent: true, shownOn: '/water' })
   })
 
+  it('says a low tank is only a warning when the level guard is off, and an unreadable one is a sensor warning', () => {
+    expect(alertSnack({ id: 2, kind: 'water_low', detail: 'water distance 17.0 cm ≥ 16.0 cm' }, false)).toMatchObject({ id: 'alert:water_low', title: 'Tank reads low', detail: 'The pump keeps running on its current guard. Top off the tank.', urgent: false, tone: 'warn', shownOn: '/water' })
+    expect(alertSnack({ id: 2, kind: 'water_low', detail: 'water level sensor unavailable' })).toMatchObject({ title: 'Tank level unreadable', detail: 'The pump may stop until it reads again.', urgent: false, tone: 'warn' })
+    expect(alertSnack({ id: 2, kind: 'water_low', detail: 'water level sensor unavailable' }, false)?.detail).toBe('The pump keeps running on its current guard.')
+  })
+
   it('says the outputs are off on an over-temperature trip', () => {
     expect(alertSnack({ id: 1, kind: 'over_temp', detail: 'pcb 71.2 °C' })).toMatchObject({ title: 'Outputs off: board over temperature', detail: 'pcb 71.2 °C', urgent: true, view: { to: '/sensors' } })
     expect(alertSnack({ id: 1, kind: 'over_temp', detail: '' })?.detail).toBeUndefined()
@@ -97,6 +104,24 @@ describe('newAlertSnacks', () => {
   it('says the pump fault alone when a dry run raises water low with it', () => {
     expect(newAlertSnacks([], [a(3, 'water_low'), a(4, 'pump_fault', 'pump: dry-run')]).map(s => s.title)).toEqual(['Pump stopped: dry-run'])
     expect(newAlertSnacks([], [a(3, 'water_low')]).map(s => s.title)).toEqual(['Pump off: water low'])
+    expect(newAlertSnacks([], [a(3, 'water_low')], false).map(s => s.title)).toEqual(['Tank reads low'])
+  })
+})
+
+describe('repeatFilter', () => {
+  const snack = (title: string, urgent: boolean) => ({ id: title, tone: 'warn' as const, icon: Droplets, title, urgent })
+
+  it('says a warning once in REPEAT_MS, a different one apart, and every urgent one', () => {
+    let clock = T0
+    const news = repeatFilter(() => clock)
+    expect(news(snack('Tank level unreadable', false))).toBe(true)
+    expect(news(snack('Tank reads low', false))).toBe(true)
+    clock += REPEAT_MS - 1
+    expect(news(snack('Tank level unreadable', false))).toBe(false)
+    expect(news(snack('Pump stopped: dry-run', true))).toBe(true)
+    expect(news(snack('Pump stopped: dry-run', true))).toBe(true)
+    clock += 1
+    expect(news(snack('Tank level unreadable', false))).toBe(true)
   })
 })
 

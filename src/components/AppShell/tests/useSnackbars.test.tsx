@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CoreEvent } from '@/src/lib/eventBus'
 import { present, useSnackbars } from '../useSnackbars'
 
-const { route, alerts, shown } = vi.hoisted(() => ({
+const { route, alerts, system, shown } = vi.hoisted(() => ({
   route: { pathname: '/', navigate: vi.fn() },
   alerts: { data: undefined as Array<{ id: number, kind: string, detail: string }> | undefined },
+  system: { guard: undefined as undefined | 'level' | 'current' | 'both' },
   shown: [] as Array<{ id: string, title: unknown, urgent?: boolean, action?: { label: string, onClick: () => void } }>,
 }))
 
@@ -15,7 +16,10 @@ vi.mock('@tanstack/react-router', () => ({
   useLocation: () => ({ pathname: route.pathname }),
   useNavigate: () => route.navigate,
 }))
-vi.mock('@/src/utils/trpc', () => ({ trpc: { alerts: { list: { useQuery: () => ({ data: alerts.data }) } } } }))
+vi.mock('@/src/utils/trpc', () => ({ trpc: {
+  alerts: { list: { useQuery: () => ({ data: alerts.data }) } },
+  system: { info: { useQuery: () => ({ data: { system: { limits: { pumpDryGuard: system.guard } } } }) } },
+} }))
 vi.mock('@/src/components/ds/toast', () => {
   const show = (n: (typeof shown)[number]) => shown.push(n)
   return { useToast: () => ({ show }) }
@@ -25,6 +29,7 @@ beforeEach(() => {
   route.pathname = '/'
   route.navigate.mockReset()
   alerts.data = undefined
+  system.guard = undefined
   shown.length = 0
 })
 afterEach(cleanup)
@@ -85,6 +90,21 @@ describe('useSnackbars', () => {
     rerender()
     expect(shown.map(s => [s.title, s.urgent])).toEqual([['Pump stopped: dry-run', true]])
     alerts.data = [...alerts.data]
+    rerender()
+    expect(shown).toHaveLength(1)
+  })
+
+  it('warns of a low tank the pump runs through on its current guard, and says a flapping warning once', () => {
+    system.guard = 'current'
+    alerts.data = []
+    const { rerender } = renderHook(() => useSnackbars())
+    alerts.data = [{ id: 3, kind: 'water_low', detail: 'water distance 17.0 cm ≥ 16.0 cm' }]
+    rerender()
+    expect(shown.map(s => [s.title, s.urgent])).toEqual([['Tank reads low', false]])
+    // Cleared and raised again, as a noisy ranger does: Alerts has it, no second toast.
+    alerts.data = []
+    rerender()
+    alerts.data = [{ id: 4, kind: 'water_low', detail: 'water distance 17.2 cm ≥ 16.0 cm' }]
     rerender()
     expect(shown).toHaveLength(1)
   })
