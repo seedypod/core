@@ -27,7 +27,7 @@ export interface SeenEmpty {
  */
 export function seenEmpty(store: Pick<Store, 'pods' | 'analyses'>, now: Date): SeenEmpty[] {
   const since = now.getTime() - SEEN_MAX_AGE_MS
-  const version = Math.max(0, ...store.analyses.stats().filter(s => s.analyzer === POD_STATE_ID).map(s => s.version))
+  const version = store.analyses.latestVersion(POD_STATE_ID) ?? 0
   const out: SeenEmpty[] = []
   for (const pod of store.pods.list()) {
     if (pod.status === 'empty' || pod.status === 'seeded') continue
