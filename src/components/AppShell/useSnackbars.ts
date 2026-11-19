@@ -2,8 +2,9 @@ import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useToast, type ToastNotice } from '@/src/components/ds/toast'
 import type { CoreEvent } from '@/src/lib/eventBus'
+import { lowStopsPump } from '@/src/lib/waterLow'
 import { trpc } from '@/src/utils/trpc'
-import { followSnack, newAlertSnacks, pumpWatch, type Snack } from './snacks'
+import { followSnack, newAlertSnacks, pumpWatch, repeatFilter, type Snack } from './snacks'
 
 /** A snack as the toast shows it here: nothing on the kiosk or on the page that already shows it, and no View on the page it would open. */
 export function present(s: Snack, pathname: string, go: (to: string) => void): ToastNotice | null {
@@ -37,7 +38,10 @@ export function useSnackbars(): (e: CoreEvent) => void {
     here.current = pathname
   }, [pathname])
   const [pump] = useState(() => pumpWatch())
+  const [news] = useState(() => repeatFilter())
   const open = trpc.alerts.list.useQuery({ activeOnly: true })
+  const system = trpc.system.info.useQuery()
+  const lowStops = lowStopsPump(system.data?.system?.limits)
   const last = useRef<ReadonlyArray<{ id: number }> | undefined>(undefined)
 
   const emit = useCallback((s: Snack | null) => {
@@ -47,9 +51,9 @@ export function useSnackbars(): (e: CoreEvent) => void {
 
   useEffect(() => {
     if (!open.data) return
-    for (const s of newAlertSnacks(last.current, open.data)) emit(s)
+    for (const s of newAlertSnacks(last.current, open.data, lowStops).filter(news)) emit(s)
     last.current = open.data
-  }, [open.data, emit])
+  }, [open.data, emit, lowStops, news])
 
   return useCallback((e: CoreEvent) => emit(followSnack(e) ?? pump(e)), [emit, pump])
 }

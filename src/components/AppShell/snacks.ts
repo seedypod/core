@@ -3,6 +3,7 @@ import { alertView, categoryOf, describeAlert } from '@/src/components/Alerts/Al
 import type { NoticeTone } from '@/src/components/ds/notice'
 import type { CoreEvent } from '@/src/lib/eventBus'
 import { pumpFault } from '@/src/lib/pumpFault'
+import { waterLowWords } from '@/src/lib/waterLow'
 import { PUMP_PRESETS } from '@/src/scheduler/pumpPlan'
 
 /**
@@ -47,8 +48,9 @@ export function followSnack(e: CoreEvent): Snack | null {
  * A newly raised alert as a snack; reminders and chores are needs-you items,
  * not news, and Follow has its own. Each alert is its own toast, so two of a
  * kind both get said; the pump's share one, the latest saying why it's off.
+ * A low tank says the pump is off only when the level guard stops it (`lowStops`).
  */
-export function alertSnack(a: { id: number, kind: string, detail: string }): Snack | null {
+export function alertSnack(a: { id: number, kind: string, detail: string }, lowStops = true): Snack | null {
   if (categoryOf(a.kind) === 'reminder' || a.kind === 'watering_followed') return null
   const view = alertView(a.kind)
   const go = view ? { to: view.to, label: 'View' } : undefined
@@ -59,7 +61,11 @@ export function alertSnack(a: { id: number, kind: string, detail: string }): Sna
     const f = pumpFault(a.detail)
     return { ...base, id: 'pump', icon: Waves, title: `Pump stopped: ${f.reason}`, detail: f.detail ?? undefined, shownOn: '/water' }
   }
-  if (a.kind === 'water_low') return { ...base, id: 'pump', icon: Droplets, title: 'Pump off: water low', detail: 'It stays off until the tank is filled.', shownOn: '/water' }
+  if (a.kind === 'water_low') {
+    const w = waterLowWords(a.detail, lowStops)
+    if (w.urgent) return { ...base, id: 'pump', icon: Droplets, ...w.toast, shownOn: '/water' }
+    return { ...base, id: 'alert:water_low', icon: Droplets, ...w.toast, urgent: false, tone: 'warn', shownOn: '/water' }
+  }
   if (a.kind === 'over_temp') return { ...base, icon: Thermometer, title: 'Outputs off: board over temperature', detail: a.detail || undefined }
   const { title, detail } = describeAlert(a)
   // Autopilot notices have no label of their own; their detail names the rule.
@@ -71,12 +77,31 @@ export function alertSnack(a: { id: number, kind: string, detail: string }): Sna
  * the first list arrives, so opening the app doesn't replay what's open. A dry
  * run raises the pump fault and water low together: the fault says it.
  */
-export function newAlertSnacks(prev: ReadonlyArray<{ id: number }> | undefined, next: ReadonlyArray<{ id: number, kind: string, detail: string }>): Snack[] {
+export function newAlertSnacks(prev: ReadonlyArray<{ id: number }> | undefined, next: ReadonlyArray<{ id: number, kind: string, detail: string }>, lowStops = true): Snack[] {
   if (!prev) return []
   const seen = new Set(prev.map(a => a.id))
   const fresh = next.filter(a => !seen.has(a.id))
   const faulted = fresh.some(a => a.kind === 'pump_fault')
-  return fresh.filter(a => !(faulted && a.kind === 'water_low')).map(alertSnack).filter((s): s is Snack => s !== null)
+  return fresh.filter(a => !(faulted && a.kind === 'water_low')).map(a => alertSnack(a, lowStops)).filter((s): s is Snack => s !== null)
+}
+
+/** How long a warning toast stays said: the same one raised again sooner, as a flapping sensor raises it, stays on Alerts without another. */
+export const REPEAT_MS = 6 * 3_600_000
+
+/**
+ * Whether a snack is news: urgent ones always are, since each means something
+ * stopped; a warning only the first time its title is said in REPEAT_MS.
+ */
+export function repeatFilter(now: () => number = Date.now): (s: Snack) => boolean {
+  const said = new Map<string, number>()
+  return (s) => {
+    if (s.urgent) return true
+    const t = now()
+    const last = said.get(s.title)
+    if (last !== undefined && t - last < REPEAT_MS) return false
+    said.set(s.title, t)
+    return true
+  }
 }
 
 /** A run that ends within this of its planned end ran its course; earlier, someone stopped it. */

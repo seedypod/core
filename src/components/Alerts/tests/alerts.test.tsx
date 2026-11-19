@@ -32,6 +32,7 @@ vi.mock('@/src/utils/trpc', () => {
         dismiss: mutation('dismiss'),
       },
       grow: { pods: { useQuery: () => ({ data: data.get('pods') }) } },
+      system: { info: { useQuery: () => ({ data: data.get('system') }) } },
     },
   }
 })
@@ -90,6 +91,21 @@ describe('AlertsPage', () => {
     const chore = within(screen.getByTestId('alert-reminder_nutrients'))
     expect(chore.getByText('reminder')).toBeTruthy()
     expect(chore.queryByText(/re-enables/)).toBeNull()
+  })
+
+  it('shows a low tank as a warning while only the pump current guards it, and as hardware while the level does', () => {
+    data.set('open', [row(3, 'water_low', 'water distance 17.0 cm ≥ 16.0 cm')])
+    data.set('system', { system: { limits: { pumpDryGuard: 'current' } } })
+    const { rerender } = render(<AlertsPage />)
+    const low = () => within(screen.getByTestId('alert-water_low'))
+    expect(low().getByText('warning')).toBeTruthy()
+    expect(low().getByText('water distance 17.0 cm ≥ 16.0 cm. The pump keeps running: its current guard stops it if it runs dry.')).toBeTruthy()
+    expect(screen.getByTestId('alert-water_low').className).not.toContain('border-pod-attention')
+    data.set('system', { system: { limits: { pumpDryGuard: 'both' } } })
+    rerender(<AlertsPage />)
+    expect(low().getByText('hardware')).toBeTruthy()
+    expect(low().getByText('water distance 17.0 cm ≥ 16.0 cm')).toBeTruthy()
+    expect(screen.getByTestId('alert-water_low').className).toContain('border-pod-attention')
   })
 
   it('clears a fault, marks a reminder done and skips one', () => {
@@ -179,6 +195,12 @@ describe('alert helpers', () => {
     expect(describeAlert({ kind: 'mystery', detail: '' })).toEqual({ title: 'mystery', detail: '' })
     expect(describeAlert({ kind: 'camera_missing', detail: 'upper camera returned 0 bytes' }).detail).toContain('Pods 1–15')
     expect(describeAlert({ kind: 'pump_fault', detail: 'pump: dry-run' })).toEqual({ title: 'Pump fault', detail: 'pump: dry-run' })
+  })
+
+  it('names an unreadable tank level as such, and says what it means for the pump', () => {
+    expect(describeAlert({ kind: 'water_low', detail: 'water level sensor unavailable' })).toEqual({ title: 'Tank level unreadable', detail: 'No trusted tank reading came back, so the level guard may stop the pump until it reads again.' })
+    expect(describeAlert({ kind: 'water_low', detail: 'water level sensor unavailable' }, false).detail).toBe('No trusted tank reading came back. The pump keeps running on its current guard.')
+    expect(describeAlert({ kind: 'water_low', detail: '' }, false).detail).toBe('The pump keeps running: its current guard stops it if it runs dry.')
   })
 
   it('says what the pump drew when its current stopped it', () => {
