@@ -1,12 +1,14 @@
-import { Box, EyeOff, LayoutGrid, Minus, Pencil, Plus, Sprout } from 'lucide-react'
+import { keepPreviousData } from '@tanstack/react-query'
+import { Box, EyeOff, LayoutGrid, LoaderCircle, Minus, Pencil, Plus, Sprout } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
-import { SwapBanner } from '@/src/components/Grow/SwapBanner'
+import { SwapBanner, SwapProgress } from '@/src/components/Grow/SwapBanner'
 import { PLANNED_FORM, type PodStatus } from '@/src/components/Grow/towerLayout'
 import type { PodState } from '@/src/components/Grow/towerScene'
 import { TowerView } from '@/src/components/Grow/TowerView'
+import { useSwapPods } from '@/src/components/Grow/useSwapPods'
 import { Button, Card, CardHeader, GhostIcon, InlineError, SectionLabel } from '@/src/components/ds/core'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
@@ -91,6 +93,17 @@ export function swapPins(assignments: readonly Assignment[], from: number, to: n
   return assignments.map(a => ({ slot: a.slot === from ? to : a.slot === to ? from : a.slot, plantId: a.plantId }))
 }
 
+/** The planned pods with whatever was planned at `from` and at `to` traded. */
+function swapPlanned(bySlot: ReadonlyMap<number, Assignment>, from: number, to: number): Map<number, Assignment> {
+  const out = new Map(bySlot)
+  const [a, b] = [bySlot.get(from), bySlot.get(to)]
+  out.delete(from)
+  out.delete(to)
+  if (a) out.set(to, { ...a, slot: to })
+  if (b) out.set(from, { ...b, slot: from })
+  return out
+}
+
 /** Pins for every planned pod where it sits, with `slot` given `plantId` instead (or left empty), so the rest of the layout holds still. */
 function placePins(assignments: readonly Assignment[], slot: number, plantId: string | null): { slot: number, plantId: string }[] {
   return [...assignments.filter(a => a.slot !== slot).map(a => ({ slot: a.slot, plantId: a.plantId })), ...(plantId ? [{ slot, plantId }] : [])]
@@ -99,8 +112,9 @@ function placePins(assignments: readonly Assignment[], slot: number, plantId: st
 /**
  * The flat grid of slots, tinted by zone: each planned or planted plant pictured and named (planted ones italic), pods outside the zones their plant does well in outlined.
  * A tap opens the pod (`onOpen`); while a swap is being picked (`swapping`), it picks the other pod instead. A plant also drags onto another pod to swap them (`onSwap`).
+ * Pods in a swap still on its way (`busy`) pulse.
  */
-function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwapping, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, open: number | null, swapping: number | null, onOpen: (slot: number) => void, onSwapping: (slot: number | null) => void, onSwap: (from: number, to: number) => void }) {
+function PlanGrid({ cols, slots, bySlot, planted, open, swapping, busy, onOpen, onSwapping, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, open: number | null, swapping: number | null, busy: readonly number[], onOpen: (slot: number) => void, onSwapping: (slot: number | null) => void, onSwap: (from: number, to: number) => void }) {
   // The pod a drag is over, ringed so it's clear where the drop lands.
   const [over, setOver] = useState<number | null>(null)
   const swap = (from: number, to: number) => {
@@ -116,6 +130,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwap
         const z = (s.zone ?? 'medium') as Zone
         const plant = a?.plantName ?? ex?.plant ?? null
         const off = offZone(a)
+        const moving = busy.includes(s.slot)
         return (
           <div
             key={s.slot}
@@ -123,6 +138,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwap
             role="button"
             tabIndex={0}
             aria-pressed={open === s.slot}
+            aria-busy={moving || undefined}
             aria-label={`Pod ${s.slot}${plant ? `, ${plant}` : ''}${ex?.seenEmpty ? ', cameras see it empty' : ''}`}
             draggable={!!(a || ex)}
             onDragStart={e => e.dataTransfer.setData('text/plain', String(s.slot))}
@@ -147,7 +163,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwap
                 e.currentTarget.click()
               }
             }}
-            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3')}
+            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', moving && 'animate-pulse motion-reduce:animate-none')}
             style={zoneStyle(z)}
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >
@@ -155,6 +171,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, onOpen, onSwap
               <span className="flex items-center gap-1">
                 {s.slot}
                 {ex?.seenEmpty && <EyeOff size={10} aria-hidden="true" data-testid="seen-empty" />}
+                {moving && <LoaderCircle size={10} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
               </span>
               <span>{z === 'medium' ? 'med' : z}</span>
             </div>
@@ -201,6 +218,8 @@ export function PlanPage() {
   // The pod open beside the 2D grid, and the one whose swap is being picked.
   const [open, setOpen] = useState<number | null>(null)
   const [swapping, setSwapping] = useState<number | null>(null)
+  // A swap shows at once: until the unit has the records and the plan is laid out again, its two pods trade places here.
+  const [moving, setMoving] = useState<{ from: number, to: number } | null>(null)
   const chooseView = (v: View) => {
     setView(v)
     try {
@@ -220,7 +239,9 @@ export function PlanPage() {
   const [edited, setEdited] = useState<Overrides | undefined>(undefined)
   const overrides = edited ?? opened?.overrides
   const start = opened?.start ?? undefined
-  const layout = trpc.planner.layout.useQuery({ model, plants: request, respectExisting: true, suggestMoves: true, ...(overrides && { overrides }) }, { enabled: true })
+  const swapPods = useSwapPods()
+  // The last layout stays up while the next is worked out, and none is asked for while records are moving, which it would place around.
+  const layout = trpc.planner.layout.useQuery({ model, plants: request, respectExisting: true, suggestMoves: true, ...(overrides && { overrides }) }, { placeholderData: keepPreviousData, enabled: !swapPods.isPending })
   const sowing = trpc.planner.sowing.useQuery({ plants: request, mode, ...(start && { start }) }, { enabled: request.length > 0 })
   const pods = trpc.grow.pods.useQuery()
   const seen = trpc.vision.seenEmpty.useQuery()
@@ -233,22 +254,38 @@ export function PlanPage() {
     },
   })
   const remove = trpc.planner.removePlan.useMutation({ onSuccess: () => utils.planner.plans.invalidate() })
-  const swapPods = trpc.grow.swapPods.useMutation({ onSuccess: () => utils.grow.invalidate() })
   const updatePod = trpc.grow.updatePod.useMutation({ onSuccess: () => utils.grow.invalidate() })
 
   const total = request.reduce((s, r) => s + r.count, 0)
   // Pods the plan leaves empty: neither planted now nor planned.
   const empty = layout.data?.free.length ?? (zones.data ? zones.data.slots.length - (pods.data ?? []).filter(p => p.status !== 'empty' && p.slot <= zones.data.slots.length).length : 0)
-  const bySlot = new Map((layout.data?.assignments ?? []).map(a => [a.slot, a]))
+  const laidOut = new Map((layout.data?.assignments ?? []).map(a => [a.slot, a]))
+  const settling = swapPods.isPending || !!layout.isPlaceholderData
+  const bySlot = moving && settling ? swapPlanned(laidOut, moving.from, moving.to) : laidOut
+  // Laid out again: the layout shows the swap itself.
+  if (moving && !settling) setMoving(null)
   // A replant lays out the whole tower, so nothing planted now holds a pod.
   const seenSlots = new Set((seen.data ?? []).map(s => s.slot))
   const planted = new Map(overrides?.replant ? [] : (pods.data ?? []).filter(p => p.status !== 'empty').map(p => [p.slot, { slot: p.slot, status: p.status, plant: p.plant, ...(seenSlots.has(p.slot) && { seenEmpty: true }) }]))
-  const swap = (from: number, to: number) => setEdited({ ...overrides, pins: swapPins(layout.data?.assignments ?? [], from, to) })
-  // A planted pod's record moves with its yCube; a plant planned on either side moves the other way, once the records have.
-  const move = (from: number, to: number) => swapPods.mutate({ a: from, b: to }, { onSuccess: () => (bySlot.has(from) || bySlot.has(to)) && swap(from, to) })
-  // Any pod onto any other, on the grid or the tower: pods with a plant in either swap their records, plans alone their pins.
+  const swap = (from: number, to: number) => {
+    setMoving({ from, to })
+    setEdited({ ...overrides, pins: swapPins([...bySlot.values()], from, to) })
+  }
+  // A planted pod's record moves with its yCube; a plant planned on either side moves the other way, laid out once the records have.
+  const move = (from: number, to: number) => {
+    const was = edited
+    setMoving({ from, to })
+    if (bySlot.has(from) || bySlot.has(to)) swap(from, to)
+    swapPods.mutate({ a: from, b: to }, {
+      onError: () => {
+        setEdited(was)
+        setMoving(null)
+      },
+    })
+  }
+  // Any pod onto any other, on the grid or the tower: pods with a plant in either swap their records, plans alone their pins. One swap at a time.
   const exchange = (from: number, to: number) => {
-    if (from === to) return
+    if (from === to || moving) return
     if (planted.has(from) || planted.has(to)) move(from, to)
     else if (bySlot.has(from) || bySlot.has(to)) swap(from, to)
   }
@@ -335,7 +372,8 @@ export function PlanPage() {
             <div className="mt-3 flex flex-col gap-3 min-[640px]:flex-row min-[640px]:items-start">
               <div className="min-w-0 flex-1">
                 {swapping !== null && <SwapBanner slot={swapping} plant={bySlot.get(swapping)?.plantName ?? planted.get(swapping)?.plant} onCancel={() => setSwapping(null)} />}
-                <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} open={open} swapping={swapping} onOpen={setOpen} onSwapping={setSwapping} onSwap={exchange} />
+                {moving && <SwapProgress a={moving.from} b={moving.to} />}
+                <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} open={open} swapping={swapping} busy={moving ? [moving.from, moving.to] : []} onOpen={setOpen} onSwapping={setSwapping} onSwap={exchange} />
               </div>
               {openSlot && (
                 <PodPanel
@@ -361,6 +399,7 @@ export function PlanPage() {
           )}
           {zones.data && shown === '3d' && (
             <div className="mt-3">
+              {moving && <SwapProgress a={moving.from} b={moving.to} />}
               <TowerView
                 pods={planPods(zones.data.slots, bySlot, planted)}
                 waterPct={null}
@@ -379,7 +418,6 @@ export function PlanPage() {
           {updatePod.error && <InlineError>{updatePod.error.message}</InlineError>}
           {noWebGL && <p className="mt-2 text-xs text-fg-3">The 3D tower needs WebGL, which this browser doesn&apos;t offer, so the plan is shown as a grid.</p>}
           <Unplaced unplaced={layout.data?.unplaced ?? []} suggestions={layout.data?.suggestions ?? []} />
-          <SuggestedMoves moves={layout.data?.moves ?? []} onApply={exchange} />
           <p className="mt-2 text-[12px] text-fg-3">
             {shown === '2d'
               ? `Tap a pod to change its plant or swap it, or drag a plant onto another pod to swap them. Italic = in the tower now.${shiftNotes(layout.data?.assignments ?? [], '2d')}`
@@ -387,32 +425,35 @@ export function PlanPage() {
           </p>
         </Card>
 
-        <Card>
-          <CardHeader title="Plants" subtitle="Gardyn catalog and yours · zone, first harvest" icon={Sprout} right={<Button size="sm" icon={Plus} onClick={() => setEditing('new')}>Add plant</Button>} />
-          <TextField className="mt-3" mono={false} value={q} onChange={setQ} placeholder="Search basil, kale, pepper…" aria-label="Search plants" />
-          <div className="mt-2 flex flex-wrap gap-1">
-            {CATS.map(c => <button key={c.value} type="button" onClick={() => setCat(c.value)} className={cn('rounded-full border px-2 py-0.5 text-[11px]', cat === c.value ? 'border-fg-2 text-fg' : 'border-line text-fg-3')}>{c.label}</button>)}
-          </div>
-          <div className="mt-2 max-h-[420px] overflow-y-auto">
-            {(catalog.data?.plants ?? []).map(p => (
-              <div key={p.id} className="flex items-center gap-2 border-b border-line py-1.5 last:border-0">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: ZONE_COLOR[p.zone], borderColor: ZONE_COLOR[p.zone] }} title={`${ZONE_LABEL[p.zone]} light`} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px]">
-                    {p.name}
-                    {p.custom ? <span className="ml-1 text-[10px] text-fg-3">(yours)</span> : !p.inStore && <span className="ml-1 text-[10px] text-fg-3">(guide only)</span>}
+        <div className="flex min-w-0 flex-col gap-4">
+          <SuggestedMoves moves={layout.data?.moves ?? []} onApply={exchange} />
+          <Card>
+            <CardHeader title="Plants" subtitle="Gardyn catalog and yours · zone, first harvest" icon={Sprout} right={<Button size="sm" icon={Plus} onClick={() => setEditing('new')}>Add plant</Button>} />
+            <TextField className="mt-3" mono={false} value={q} onChange={setQ} placeholder="Search basil, kale, pepper…" aria-label="Search plants" />
+            <div className="mt-2 flex flex-wrap gap-1">
+              {CATS.map(c => <button key={c.value} type="button" onClick={() => setCat(c.value)} className={cn('rounded-full border px-2 py-0.5 text-[11px]', cat === c.value ? 'border-fg-2 text-fg' : 'border-line text-fg-3')}>{c.label}</button>)}
+            </div>
+            <div className="mt-2 max-h-[420px] overflow-y-auto">
+              {(catalog.data?.plants ?? []).map(p => (
+                <div key={p.id} className="flex items-center gap-2 border-b border-line py-1.5 last:border-0">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: ZONE_COLOR[p.zone], borderColor: ZONE_COLOR[p.zone] }} title={`${ZONE_LABEL[p.zone]} light`} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px]">
+                      {p.name}
+                      {p.custom ? <span className="ml-1 text-[10px] text-fg-3">(yours)</span> : !p.inStore && <span className="ml-1 text-[10px] text-fg-3">(guide only)</span>}
+                    </div>
+                    <div className="text-[11px] text-fg-3">{`${p.harvestMonths[0]}–${p.harvestMonths[1]} mo${p.harvestEstimated ? '*' : ''} · ${p.careLevel ?? '—'}`}</div>
                   </div>
-                  <div className="text-[11px] text-fg-3">{`${p.harvestMonths[0]}–${p.harvestMonths[1]} mo${p.harvestEstimated ? '*' : ''} · ${p.careLevel ?? '—'}`}</div>
+                  {p.custom && <GhostIcon icon={Pencil} label={`Edit ${p.name}`} onClick={() => setEditing(p)} />}
+                  <GhostIcon icon={Minus} label={`Remove ${p.name}`} onClick={() => bump(p.id, -1)} disabled={!picks[p.id]} />
+                  <span className="w-4 text-center font-mono text-[12px]">{picks[p.id] ?? 0}</span>
+                  <GhostIcon icon={Plus} label={`Add ${p.name}`} onClick={() => bump(p.id, 1)} />
                 </div>
-                {p.custom && <GhostIcon icon={Pencil} label={`Edit ${p.name}`} onClick={() => setEditing(p)} />}
-                <GhostIcon icon={Minus} label={`Remove ${p.name}`} onClick={() => bump(p.id, -1)} disabled={!picks[p.id]} />
-                <span className="w-4 text-center font-mono text-[12px]">{picks[p.id] ?? 0}</span>
-                <GhostIcon icon={Plus} label={`Add ${p.name}`} onClick={() => bump(p.id, 1)} />
-              </div>
-            ))}
-          </div>
-          <p className="mt-2 text-[11px] text-fg-3">* harvest window estimated from the category; Gardyn doesn’t list one.</p>
-        </Card>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-fg-3">* harvest window estimated from the category; Gardyn doesn’t list one.</p>
+          </Card>
+        </div>
       </div>
 
       {request.length > 0 && (

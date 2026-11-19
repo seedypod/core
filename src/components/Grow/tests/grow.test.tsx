@@ -4,10 +4,12 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GrowPage } from '../GrowPage'
 
-const { data, calls, tower } = vi.hoisted(() => ({
+const { data, calls, tower, swap } = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   calls: { start: vi.fn(), end: vi.fn(), setStage: vi.fn(), updatePod: vi.fn(), markHarvested: vi.fn(), swapPods: vi.fn(), invalidateGrow: vi.fn(), invalidateProtocol: vi.fn() },
   tower: { props: null as null | Record<string, unknown>, unavailable: false },
+  /** A swap still on its way to the unit. */
+  swap: { pending: null as null | { a: number, b: number } },
 }))
 
 vi.mock('@/src/utils/trpc', () => {
@@ -20,8 +22,11 @@ vi.mock('@/src/utils/trpc', () => {
   return {
     apiBase: () => '',
     trpc: {
-      useUtils: () => ({ grow: { invalidate: calls.invalidateGrow }, protocol: { invalidate: calls.invalidateProtocol } }),
-      grow: { current: query('grow'), pods: query('pods'), harvest: query('harvest'), start: mutation('start'), end: mutation('end'), setStage: mutation('setStage'), updatePod: mutation('updatePod'), markHarvested: mutation('markHarvested'), swapPods: mutation('swapPods') },
+      useUtils: () => ({ grow: { invalidate: calls.invalidateGrow, pods: { cancel: async () => undefined, getData: () => data.get('pods'), setData: () => undefined } }, protocol: { invalidate: calls.invalidateProtocol } }),
+      grow: {
+        current: query('grow'), pods: query('pods'), harvest: query('harvest'), start: mutation('start'), end: mutation('end'), setStage: mutation('setStage'), updatePod: mutation('updatePod'), markHarvested: mutation('markHarvested'),
+        swapPods: { useMutation: () => ({ isPending: swap.pending !== null, variables: swap.pending ?? undefined, mutate: (i: unknown) => calls.swapPods(i) }) },
+      },
       settings: { get: query('settings') },
       camera: { list: query('captures') },
       vision: { podTrends: query('trends'), regions: query('regions') },
@@ -52,6 +57,7 @@ beforeEach(() => {
   for (const f of Object.values(calls)) f.mockReset()
   tower.props = null
   tower.unavailable = false
+  swap.pending = null
   localStorage.clear()
   window.history.replaceState(null, '', '/grow')
   data.set('grow', { cycle: { id: 'c1', startedAt: '2026-10-12T00:00:00Z', endedAt: null, stage: 'vegetative', notes: 'greens', issued: [] }, day: 19 })
@@ -334,6 +340,17 @@ describe('GrowPage: swapping pods', () => {
     fireEvent.click(row(2))
     expect(calls.swapPods).toHaveBeenCalledWith({ a: 1, b: 2 })
     expect(screen.queryByTestId('swap-banner')).toBeNull()
+  })
+
+  it('says a swap is on its way and pulses its two rows until the unit answers', () => {
+    swap.pending = { a: 1, b: 3 }
+    const { rerender } = render(<GrowPage />)
+    expect(screen.getByTestId('swap-progress').textContent).toBe('Swapping pods 1 and 3…')
+    expect([row(1), row(2), row(3)].map(r => r.getAttribute('aria-busy'))).toEqual(['true', null, 'true'])
+    swap.pending = null
+    rerender(<GrowPage />)
+    expect(screen.queryByTestId('swap-progress')).toBeNull()
+    expect(row(1).getAttribute('aria-busy')).toBeNull()
   })
 
   it('names an empty pod by number alone while picking', () => {
