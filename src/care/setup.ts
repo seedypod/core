@@ -39,7 +39,12 @@ function runs(s: Schedule): boolean {
 
 const pods = (n: number) => `${n} pod${n === 1 ? '' : 's'}`
 
-export function setupReport(store: Store, snap: HalSnapshot): SetupReport {
+/**
+ * `suspectLately`: the tank level read suspect recently, though not now. The
+ * care engine holds the warning up through good spells this way, since a
+ * flapping sensor would otherwise raise it again every few minutes.
+ */
+export function setupReport(store: Store, snap: HalSnapshot, opts: { suspectLately?: boolean } = {}): SetupReport {
   const planted = store.pods.list().filter(p => p.status !== 'empty').length
   const schedules = store.schedules.list().filter(runs)
   const issues: SetupIssue[] = []
@@ -56,8 +61,8 @@ export function setupReport(store: Store, snap: HalSnapshot): SetupReport {
     if (!snap.system.caps.sensors.includes('water_level_pct') || device?.status === 'absent') {
       issues.push({ id: 'water_sensor_absent', alert: 'setup_water_sensor', title: 'Tank sensor not answering', detail: `No tank level sensor is answering${device?.detail ? ` (${device.detail})` : ''}, so the unit can't tell when the tank runs low.`, fix: 'Check the level sensor\'s cable; Sensors lists it.' })
     }
-    else if (reading?.quality === 'suspect') {
-      issues.push({ id: 'water_sensor_suspect', alert: 'setup_water_sensor', title: 'Tank level suspect', detail: 'The tank level reads suspect: its pings disagreed or too few came back, so top-offs aren\'t advised from it.', fix: 'Check nothing blocks the level sensor and its cable is seated; Sensors shows the reading.' })
+    else if (reading?.quality === 'suspect' || (reading && opts.suspectLately)) {
+      issues.push({ id: 'water_sensor_suspect', alert: 'setup_water_sensor', title: 'Tank level suspect', detail: 'The tank level keeps reading suspect: its pings disagree or too few come back, so top-offs aren\'t advised from it. This clears after 2 h of good readings.', fix: 'Check nothing blocks the level sensor and its cable is seated; Sensors shows the reading.' })
     }
   }
   const summary = issues.length

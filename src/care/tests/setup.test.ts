@@ -12,7 +12,7 @@ import { appRouter } from '../../server/routers/app'
 import { createCallerFactory } from '../../server/trpc'
 import { MemoryStore } from '../../store/memory'
 import type { Schedule } from '../../store/types'
-import { CareEngine } from '../engine'
+import { CareEngine, SUSPECT_HOLD_MS } from '../engine'
 import { setupReport } from '../setup'
 
 const NOW = new Date('2026-11-09T12:00:00Z')
@@ -21,7 +21,7 @@ const light: Omit<Schedule, 'createdAt' | 'updatedAt'> = { id: 'day', kind: 'lig
 const pump: Omit<Schedule, 'createdAt' | 'updatedAt'> = { id: 'cycle', kind: 'pump', name: 'Cycle', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } }
 const level = (quality: Reading['quality']): Reading => ({ ts: T, value: 62, unit: '%', quality })
 
-function rig(snap: (s: HalSnapshot) => HalSnapshot = s => s) {
+function rig(snap: (s: HalSnapshot) => HalSnapshot = s => s, now: () => Date = () => NOW) {
   const hal = new SimHal({ tickMs: 0, now: () => NOW })
   const base = hal.snapshot.bind(hal)
   let shape = snap
@@ -32,7 +32,7 @@ function rig(snap: (s: HalSnapshot) => HalSnapshot = s => s) {
   events.subscribe((e) => {
     if (e.kind === 'mutation') seen.push(e.path)
   })
-  const care = new CareEngine({ store, hal, events, now: () => NOW })
+  const care = new CareEngine({ store, hal, events, now })
   const reshape = (f: (s: HalSnapshot) => HalSnapshot) => {
     shape = f
   }
@@ -92,6 +92,10 @@ describe('setupReport', () => {
     expect(setupReport(store, hal.snapshot()).issues).toEqual([])
     reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('good') } }))
     expect(setupReport(store, hal.snapshot()).issues).toEqual([])
+    // Read suspect lately: still warned, until the engine lets it go.
+    expect(setupReport(store, hal.snapshot(), { suspectLately: true }).issues).toMatchObject([{ id: 'water_sensor_suspect', detail: expect.stringContaining('clears after 2 h of good readings') }])
+    reshape(s => ({ ...s, sensors: {} }))
+    expect(setupReport(store, hal.snapshot(), { suspectLately: true }).issues).toEqual([])
   })
 })
 
@@ -140,7 +144,8 @@ describe('CareEngine', () => {
 
   it('re-checks when a schedule, a pod, the devices or the tank level change, without waiting for its tick', () => {
     vi.useFakeTimers()
-    const { store, care, events, reshape } = rig()
+    vi.setSystemTime(NOW)
+    const { store, care, events, reshape } = rig(undefined, () => new Date())
     care.start()
     stop = () => {
       care.stop()
@@ -162,12 +167,27 @@ describe('CareEngine', () => {
     reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('suspect') } }))
     events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: level('suspect') } })
     expect(active(store)).toEqual(['setup_water_sensor'])
-    // Back to good clears on the tick, not on the reading, so a flapping sensor can't churn the card.
-    reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('good') } }))
-    events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: level('good') } })
+    const first = store.alerts.list({ activeOnly: true })[0]?.id
+    // Back to good doesn't clear it on the reading, nor on the next tick: a flapping sensor would raise it again.
+    const good = () => {
+      reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('good') } }))
+      events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: level('good') } })
+    }
+    good()
     expect(active(store)).toEqual(['setup_water_sensor'])
     vi.advanceTimersByTime(15 * 60_000)
+    expect(active(store)).toEqual(['setup_water_sensor'])
+    // Suspect again within the hold: the same alert, and the hold starts over.
+    vi.advanceTimersByTime(30 * 60_000)
+    reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('suspect') } }))
+    events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: level('suspect') } })
+    good()
+    vi.advanceTimersByTime(SUSPECT_HOLD_MS - 15 * 60_000)
+    expect(store.alerts.list({ activeOnly: true }).map(a => a.id)).toEqual([first])
+    // Good for the whole hold: it clears on the tick.
+    vi.advanceTimersByTime(15 * 60_000)
     expect(active(store)).toEqual([])
+    expect(store.alerts.list().filter(a => a.kind === 'setup_water_sensor')).toHaveLength(1)
   })
 
   it('logs and carries on when a check throws', () => {

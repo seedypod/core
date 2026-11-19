@@ -18,6 +18,8 @@ import { runProtocol } from './protocol'
 import { SETUP_ALERTS, setupReport, type SetupReport } from './setup'
 
 const TICK_MS = 15 * 60_000
+/** How long the tank level must read good before its suspect warning clears: the unit's flaps every 15–40 min, and each raise was a new alert. */
+export const SUSPECT_HOLD_MS = 2 * 3_600_000
 
 /** The chores a reading can make due, and the alert each raises. */
 export const CHORE_ALERTS = { top_off: 'chore_top_off', feed: 'chore_feed', thin: 'chore_thin' } as const satisfies Partial<Record<ChoreId, string>>
@@ -35,6 +37,8 @@ export class CareEngine {
   private timer: ReturnType<typeof setInterval> | null = null
   private unsub: (() => void) | null = null
   private lastQuality: string | undefined
+  /** When the tank level last read suspect (ms). */
+  private suspectAt: number | null = null
   /** A tick is running, and whether something asked for another while it did. */
   private ticking = false
   private again = false
@@ -60,7 +64,8 @@ export class CareEngine {
     }
     // The runner has written its needs-you items already, before marking each Then done.
     for (const n of notices) events.emit({ kind: 'mutation', path: `alerts.${n.kind}` })
-    const setup = setupReport(store, snap)
+    if (snap.sensors.water_level_pct?.quality === 'suspect') this.suspectAt = now.getTime()
+    const setup = setupReport(store, snap, { suspectLately: this.suspectAt !== null && now.getTime() - this.suspectAt < SUSPECT_HOLD_MS })
     const list = chores(store, snap, now)
     const rows = store.alerts.list()
     for (const kind of SETUP_ALERTS) this.sync(rows, kind, setup.issues.find(i => i.alert === kind)?.detail ?? null, false)
@@ -101,9 +106,12 @@ export class CareEngine {
       const relevant = (e.kind === 'schedule' && e.action === 'changed')
         || (e.kind === 'mutation' && (e.path === 'pods' || e.path === 'grow' || e.path === 'devices' || e.path === 'tank' || e.path === 'captures'))
         || (e.kind === 'hal' && (e.event.type === 'availability' || e.event.type === 'system' || e.event.type === 'devices'))
-        // Turning suspect warns at once; turning good again clears on the tick, so a flapping sensor can't churn the card.
+        // Turning suspect warns at once; it clears on a tick once the level has read good for SUSPECT_HOLD_MS, so a flapping sensor can't churn the card.
         || (e.kind === 'hal' && e.event.type === 'sensor' && e.event.id === 'water_level_pct' && e.event.reading.quality === 'suspect' && this.lastQuality !== 'suspect')
-      if (e.kind === 'hal' && e.event.type === 'sensor' && e.event.id === 'water_level_pct') this.lastQuality = e.event.reading.quality
+      if (e.kind === 'hal' && e.event.type === 'sensor' && e.event.id === 'water_level_pct') {
+        this.lastQuality = e.event.reading.quality
+        if (e.event.reading.quality === 'suspect') this.suspectAt = this.now().getTime()
+      }
       if (relevant) this.safeTick()
     })
     this.safeTick()
