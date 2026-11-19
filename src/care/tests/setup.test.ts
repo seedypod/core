@@ -154,6 +154,12 @@ describe('CareEngine', () => {
     expect(active(store)).toEqual([])
     store.pods.update(3, { plant: 'Basil', status: 'seeded' }, T)
     events.emit({ kind: 'mutation', path: 'pods' })
+    // A pod edit's check runs once its request has answered, and a burst of edits shares one.
+    expect(active(store)).toEqual([])
+    const tick = vi.spyOn(care, 'tick')
+    events.emit({ kind: 'mutation', path: 'pods' })
+    vi.advanceTimersByTime(0)
+    expect(tick).toHaveBeenCalledTimes(1)
     expect(active(store)).toEqual(['setup_light_schedule', 'setup_pump_schedule'])
     store.schedules.upsert(light)
     events.emit({ kind: 'schedule', action: 'changed', id: 'day' })
@@ -188,6 +194,18 @@ describe('CareEngine', () => {
     vi.advanceTimersByTime(15 * 60_000)
     expect(active(store)).toEqual([])
     expect(store.alerts.list().filter(a => a.kind === 'setup_water_sensor')).toHaveLength(1)
+  })
+
+  it('drops a pod edit\'s pending check when stopped', () => {
+    vi.useFakeTimers()
+    const { care, events } = rig()
+    care.start()
+    stop = () => vi.useRealTimers()
+    const tick = vi.spyOn(care, 'tick')
+    events.emit({ kind: 'mutation', path: 'pods' })
+    care.stop()
+    vi.advanceTimersByTime(0)
+    expect(tick).not.toHaveBeenCalled()
   })
 
   it('logs and carries on when a check throws', () => {

@@ -42,6 +42,8 @@ export class CareEngine {
   /** A tick is running, and whether something asked for another while it did. */
   private ticking = false
   private again = false
+  /** A tick an event asked for, waiting for the request that raised the event to answer. */
+  private soon: ReturnType<typeof setTimeout> | null = null
   /** When each kind's problem was last seen gone; a dismissal before that no longer holds. */
   private readonly resolvedAt = new Map<string, string>()
 
@@ -112,10 +114,24 @@ export class CareEngine {
         this.lastQuality = e.event.reading.quality
         if (e.event.reading.quality === 'suspect') this.suspectAt = this.now().getTime()
       }
-      if (relevant) this.safeTick()
+      // A pod edit's tick waits for its request to answer; the rest run now, since some actions answer with what the tick did.
+      if (relevant && e.kind === 'mutation' && e.path === 'pods') this.tickSoon()
+      else if (relevant) this.safeTick()
     })
     this.safeTick()
     this.timer = setInterval(() => this.safeTick(), TICK_MS)
+  }
+
+  /**
+   * A tick once the current request has answered: events are emitted inside
+   * mutations, and a tick takes about a second on the unit, which every pod
+   * swap and edit waited on. Edits in one burst share the tick.
+   */
+  private tickSoon(): void {
+    this.soon ??= setTimeout(() => {
+      this.soon = null
+      this.safeTick()
+    }, 0)
   }
 
   /**
@@ -150,5 +166,7 @@ export class CareEngine {
     this.unsub = null
     if (this.timer) clearInterval(this.timer)
     this.timer = null
+    if (this.soon) clearTimeout(this.soon)
+    this.soon = null
   }
 }
