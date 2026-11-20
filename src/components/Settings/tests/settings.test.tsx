@@ -30,6 +30,7 @@ vi.mock('@/src/utils/trpc', () => {
       sensors: { latest: query('sensors') },
       grow: { current: query('grow') },
       homekit: { status: query('homekit'), setEnabled: mutation('update'), resetPairing: mutation('update') },
+      notifications: { status: query('notifications'), configure: mutation('update'), newTopic: mutation('update'), test: mutation('test') },
       update: { status: query('updateInfo'), check: mutation('update'), setChannel: mutation('update'), start: mutation('update') },
     },
   }
@@ -323,7 +324,7 @@ describe('Settings: header and section nav', () => {
     render(<SettingsPage />)
     const nav = screen.getByRole('navigation')
     const labels = Array.from(nav.querySelectorAll('button'), b => b.textContent)
-    expect(labels).toEqual(['Unit', 'Tank', 'Reminders', 'Cameras', 'API access', 'Storage', 'SD card', 'Backup', 'Home Assistant', 'Apple Home', 'Wi-Fi', 'Updates', 'About'])
+    expect(labels).toEqual(['Unit', 'Tank', 'Reminders', 'Notifications', 'Cameras', 'API access', 'Storage', 'SD card', 'Backup', 'Home Assistant', 'Apple Home', 'Wi-Fi', 'Updates', 'About'])
     for (const id of ['unit', 'tank', 'reminders', 'cameras', 'api', 'off-device', 'storage', 'backup', 'home-assistant', 'homekit', 'wifi', 'update', 'about']) expect(document.getElementById(id)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Backup' }))
     expect(scroll).toHaveBeenCalled()
@@ -340,7 +341,7 @@ describe('Settings: header and section nav', () => {
       disconnect = vi.fn()
     })
     render(<SettingsPage />)
-    expect(observe).toHaveBeenCalledTimes(13)
+    expect(observe).toHaveBeenCalledTimes(14)
     const entry = (id: string, isIntersecting: boolean) => ({ target: document.getElementById(id), isIntersecting }) as unknown as IntersectionObserverEntry
     act(() => cb([entry('cameras', true), entry('api', true)], {} as IntersectionObserver))
     expect(screen.getByRole('button', { name: 'Cameras' }).getAttribute('aria-current')).toBe('page')

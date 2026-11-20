@@ -17,6 +17,7 @@ import type { PodCodeService } from '../vision/podCodes'
 import type { HomeKitControl } from '../homekit/types'
 import type { BridgeStatus } from '../mqtt/bridge'
 import type { LoggingControl } from '../logging/policy'
+import type { Notifier } from '../notify/notifier'
 
 export interface Context {
   hal: HalClient
@@ -31,6 +32,8 @@ export interface Context {
   autopilot: AutopilotEngine
   /** SD card writes (ADR-0021); reports unavailable off a Pi. */
   flash: FlashMeter
+  /** Outbound notifications to ntfy or a webhook (ADR-0032); dormant until the owner picks one. */
+  notifier: Notifier
   /** The Database view's scan; absent in tests. */
   database?: DatabaseInspector
   /** Present when stills go through the opt-in off-device mirror (the unit; not tests or the demo). */

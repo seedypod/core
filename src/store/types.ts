@@ -54,6 +54,17 @@ export interface DeviceSettings {
   homekitEnabled: boolean
   /** False until the owner picks Welcome → Set up a new garden, or restores a backup. */
   setupComplete: boolean
+  /** Where pod events are sent (ADR-0032); 'off' sends nothing. */
+  notifyTarget: 'off' | 'ntfy' | 'webhook'
+  ntfyServer: string
+  /** Random, so nobody guesses it on a public ntfy server; null until generated. */
+  ntfyTopic: string | null
+  webhookUrl: string | null
+  webhookFormat: 'json' | 'discord' | 'slack'
+  /** Signs webhook bodies (X-Seedypod-Signature); null = unsigned. */
+  webhookSecret: string | null
+  /** Event groups that notify; null = the defaults. */
+  notifyGroups: string[] | null
   updatedAt: string
 }
 
@@ -570,4 +581,11 @@ export const DEFAULT_SETTINGS: Omit<DeviceSettings, 'updatedAt'> = {
   autopilotEnabled: true,
   homekitEnabled: false,
   setupComplete: false,
+  notifyTarget: 'off',
+  ntfyServer: 'https://ntfy.sh',
+  ntfyTopic: null,
+  webhookUrl: null,
+  webhookFormat: 'json',
+  webhookSecret: null,
+  notifyGroups: null,
 }

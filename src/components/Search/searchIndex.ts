@@ -4,7 +4,7 @@
  * guides, ranked with BM25.
  */
 import type { LucideIcon } from 'lucide-react'
-import { Archive, BookOpen, CloudUpload, Code, Database, HardDrive, House, Info, KeyRound, Monitor, Radio, RefreshCw, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
+import { Archive, Bell, BookOpen, CloudUpload, Code, Database, HardDrive, House, Info, KeyRound, Monitor, Radio, RefreshCw, Ruler, Settings, Sprout, Timer, Camera, Wand2, Wifi } from 'lucide-react'
 import { navItems } from '@/src/components/AppShell/navItems'
 import { createBm25Index, tokenize } from '@/src/lib/bm25'
 import { DOCS_BASE, type DocsIndex } from './docsIndex'
@@ -54,6 +54,7 @@ const SETTINGS: ReadonlyArray<Omit<SearchEntry, 'crumbs' | 'href'> & { anchor: s
   { id: 'unit', anchor: 'unit', title: 'Unit', description: 'Name, timezone and units (°C, L, cm or °F, gal, in)', keywords: 'name timezone time zone celsius fahrenheit degrees units metric imperial us gallons litres liters inches centimetres', icon: Settings },
   { id: 'tank', anchor: 'tank', title: 'Tank calibration', description: 'Distance to the water when full and when empty, and the capacity', keywords: 'tank calibration full empty capacity litres liters distance ultrasonic water level', icon: Ruler },
   { id: 'reminders', anchor: 'reminders', title: 'Grow reminders', description: 'Days to thinning, root check and harvest, and how often to feed', keywords: 'reminders thinning root check harvest nutrients feed days', icon: Timer },
+  { id: 'notifications', anchor: 'notifications', title: 'Notifications', description: 'Phone notifications through the ntfy app, or a webhook', keywords: 'notifications notify alerts push phone ntfy webhook discord slack message iphone android', icon: Bell },
   { id: 'cameras', anchor: 'cameras', title: 'Capture interval', description: 'How often the cameras take a still, and analysis masks', keywords: 'camera capture interval timelapse masks artifacts photos', icon: Camera },
   { id: 'storage', anchor: 'storage', title: 'Storage', description: 'How much the unit writes to its SD card each day', keywords: 'sd card flash writes wear storage disk endurance', icon: HardDrive },
   { id: 'backup', anchor: 'backup', title: 'Backup', description: 'Download a backup, nightly backups to the bucket, restore and undo', keywords: 'backup restore download nightly bucket undo archive recovery card', icon: Archive },
