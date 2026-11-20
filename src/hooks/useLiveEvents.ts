@@ -36,6 +36,8 @@ const TOUCHES = new Map<string, readonly Area[]>([
   // Pod labels for training: the Analysis tagger and the export's counts.
   ['labels', ['vision', 'datasets']],
   ['network', ['network', 'system']],
+  // Each delivery updates Settings → Notifications' last-sent line.
+  ['notifications', ['notifications']],
   // The active plan is what pods out of order (#224) are checked against.
   ['plans', ['planner', 'vision']],
   ['plants', ['plants', 'grow']],

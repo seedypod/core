@@ -60,6 +60,15 @@ export const deviceSettings = sqliteTable('device_settings', {
   homekitEnabled: integer({ mode: 'boolean' }).notNull().default(false),
   /** Off on a new database so the first run opens on Welcome (ADR-0021); databases from before it migrate as set up. */
   setupComplete: integer({ mode: 'boolean' }).notNull().default(true),
+  /** Outbound notifications (ADR-0032): where pod events go; off until the owner picks one. */
+  notifyTarget: text({ enum: ['off', 'ntfy', 'webhook'] }).notNull().default('off'),
+  ntfyServer: text().notNull().default('https://ntfy.sh'),
+  ntfyTopic: text(),
+  webhookUrl: text(),
+  webhookFormat: text({ enum: ['json', 'discord', 'slack'] }).notNull().default('json'),
+  webhookSecret: text(),
+  /** Event groups that notify; null = the defaults (alerts, reminders, autopilot). */
+  notifyGroups: text({ mode: 'json' }).$type<string[]>(),
   updatedAt: text().notNull(),
 })
 

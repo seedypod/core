@@ -12,6 +12,7 @@ import { eventsRouter } from './events'
 import { growRouter } from './grow'
 import { homekitRouter } from './homekit'
 import { networkRouter } from './network'
+import { notificationsRouter } from './notifications'
 import { plannerRouter } from './planner'
 import { plantsRouter } from './plants'
 import { protocolRouter } from './protocol'
@@ -50,6 +51,7 @@ export const appRouter = router({
   backup: backupRouter,
   update: updateRouter,
   homekit: homekitRouter,
+  notifications: notificationsRouter,
   alerts: alertsRouter,
   events: eventsRouter,
 })

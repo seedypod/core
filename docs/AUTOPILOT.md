@@ -133,8 +133,10 @@ The log keeps 30 days.
   off, and the run log says so.
 - **Notifications clear themselves.** A rule's notification appears in
   **Alerts** and in the MCP `status` tool. It clears when the rule's condition
-  stops holding. The Home Assistant bridge only publishes grow reminders, so
-  these notifications don't reach Home Assistant yet.
+  stops holding. With [notifications](NOTIFICATIONS.md) on, it also reaches
+  your phone or webhook. The Home Assistant bridge only publishes grow
+  reminders, so to get these in Home Assistant, point the webhook at an HA
+  webhook trigger.
 
 ## Who controls the light
 

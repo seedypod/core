@@ -33,3 +33,4 @@ Format follows [sleepypod/core](https://sleepypod.github.io/) (`# ADR NNNN: Titl
 - [0029 Care engine and agent boundary](0029-care-engine-and-agent-boundary.md) — proposed
 - [0030 Grow protocols](0030-grow-protocols.md) — proposed
 - [0031 Shared pod codes](0031-shared-pod-codes.md)
+- [0032 Outbound notifications](0032-outbound-notifications.md)

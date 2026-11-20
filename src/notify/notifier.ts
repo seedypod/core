@@ -1,0 +1,212 @@
+/**
+ * Sends pod events to the owner's ntfy topic or webhook (ADR-0032). Alerts are
+ * seen where every alert is written, the store, so each one notifies once when
+ * it's raised and, for problems, once when it clears. Pump runs come from the
+ * HAL. Delivery is one request at a time, off the caller's path, with a few
+ * retries; a failure is kept for Settings and logged without the URL.
+ */
+import type { PumpRun } from '../hardware/contract'
+import type { EventBus } from '../lib/eventBus'
+import type { AlertRow, Store } from '../store/types'
+import { alertTitle, buildRequest, enabledGroups, groupOf, type NotifyConfig, type NotifyEvent } from './targets'
+
+export interface DeliveryStatus {
+  at: string
+  ok: boolean
+  title: string
+  /** `HTTP 200`, or why it failed. */
+  detail: string
+}
+
+/** Waits before the 2nd, 3rd and 4th try. */
+const RETRY_MS = [10_000, 60_000, 300_000]
+const TIMEOUT_MS = 10_000
+const MAX_QUEUE = 20
+/** The same alert raising or clearing again within this long doesn't notify again. */
+const REPEAT_MS = 15 * 60_000
+/** A pump run that ended longer ago than this is the broker's retained copy, not a new run. */
+const STALE_RUN_MS = 5 * 60_000
+
+export interface NotifierOptions {
+  store: Store
+  events: EventBus
+  now?: () => Date
+  fetch?: typeof fetch
+  log?: (m: string) => void
+}
+
+export class Notifier {
+  private queue: Array<{ e: NotifyEvent, tries: number }> = []
+  private busy = false
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private last: DeliveryStatus | null = null
+  private active = new Set<number>()
+  private sentAt = new Map<string, number>()
+  private lastRunStart: string | null = null
+  private undo: Array<() => void> = []
+
+  constructor(private o: NotifierOptions) {}
+
+  private now() {
+    return this.o.now?.() ?? new Date()
+  }
+
+  start(): void {
+    if (this.undo.length) return
+    const a = this.o.store.alerts
+    const { raise, clear, dismiss } = a
+    for (const r of a.list({ activeOnly: true })) this.active.add(r.id)
+    a.raise = (kind, detail, ts, opts) => {
+      const row = raise(kind, detail, ts, opts)
+      if (!this.active.has(row.id)) {
+        this.active.add(row.id)
+        this.alert(row, 'raised')
+      }
+      return row
+    }
+    a.clear = (kind, ts) => {
+      const row = clear(kind, ts)
+      if (row && this.active.delete(row.id) && !row.acknowledgedAt) this.alert(row, 'cleared')
+      return row
+    }
+    a.dismiss = (id, ts) => {
+      const row = dismiss(id, ts)
+      if (row) this.active.delete(row.id)
+      return row
+    }
+    const unsub = this.o.events.subscribe((e) => {
+      if (e.kind === 'hal' && e.event.type === 'pumpRun') this.pumpRun(e.event.run)
+    })
+    this.undo.push(() => Object.assign(a, { raise, clear, dismiss }), unsub)
+  }
+
+  stop(): void {
+    for (const u of this.undo.splice(0)) u()
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+    this.queue = []
+  }
+
+  status(): { last: DeliveryStatus | null, pending: number } {
+    return { last: this.last, pending: this.queue.length }
+  }
+
+  /** Sends a test now, past the event groups and without retries. */
+  async test(): Promise<DeliveryStatus> {
+    const c = this.config()
+    if (!c) throw new Error('Pick where to send notifications first.')
+    const e: NotifyEvent = { group: 'test', type: 'test', title: 'Test notification', message: 'Notifications from your seedypod work.', priority: 'default', at: this.now().toISOString(), data: {} }
+    return (await this.deliver(c, e)).status
+  }
+
+  private config(): NotifyConfig | null {
+    const s = this.o.store.settings.get()
+    if (s.notifyTarget === 'ntfy' && s.ntfyTopic) return { target: 'ntfy', server: s.ntfyServer, topic: s.ntfyTopic, unitName: s.unitName }
+    if (s.notifyTarget === 'webhook' && s.webhookUrl) return { target: 'webhook', url: s.webhookUrl, format: s.webhookFormat, secret: s.webhookSecret, unitName: s.unitName }
+    return null
+  }
+
+  private alert(row: AlertRow, type: 'raised' | 'cleared'): void {
+    const group = groupOf(row.kind)
+    if (type === 'cleared' && group !== 'alerts') return
+    const key = `${row.kind}:${type}`
+    const now = this.now().getTime()
+    const prev = this.sentAt.get(key)
+    if (prev !== undefined && now - prev < REPEAT_MS) return
+    const title = group === 'autopilot' ? 'Autopilot' : alertTitle(row.kind)
+    const sent = this.send({
+      group,
+      type,
+      title: type === 'cleared' ? `${title}: resolved` : title,
+      message: type === 'cleared' ? 'Cleared by itself.' : row.detail,
+      priority: type === 'cleared' ? 'low' : group === 'alerts' ? 'high' : 'default',
+      at: (type === 'cleared' ? row.clearedAt : row.raisedAt) ?? this.now().toISOString(),
+      data: { kind: row.kind, id: row.id, detail: row.detail },
+    })
+    if (sent) this.sentAt.set(key, now)
+  }
+
+  private pumpRun(run: PumpRun): void {
+    const ended = Date.parse(run.endedAt)
+    if (run.startedAt === this.lastRunStart || this.now().getTime() - ended > STALE_RUN_MS) return
+    this.lastRunStart = run.startedAt
+    const took = fmtDuration(ended - Date.parse(run.startedAt))
+    const tank = run.levelPct === null ? '' : `, tank ${Math.round(run.levelPct)}% full`
+    const message = run.endedBy === 'fault'
+      ? `Watering stopped after ${took}: ${run.fault ?? 'pump fault'}${tank}.`
+      : `Watered for ${took}${run.endedBy === 'stop' ? ' (stopped early)' : ''}${tank}.`
+    this.send({ group: 'watering', type: 'ran', title: 'Watering', message, priority: run.endedBy === 'fault' ? 'high' : 'low', at: run.endedAt, data: { startedAt: run.startedAt, endedAt: run.endedAt, endedBy: run.endedBy, fault: run.fault, levelPct: run.levelPct } })
+  }
+
+  /** Queues an event the owner opted into; false when it isn't sent anywhere. */
+  private send(e: NotifyEvent): boolean {
+    const s = this.o.store.settings.get()
+    if (!this.config() || e.group === 'test' || !enabledGroups(s.notifyGroups).has(e.group)) return false
+    this.queue.push({ e, tries: 0 })
+    if (this.queue.length > MAX_QUEUE) this.queue.shift()
+    void this.drain()
+    return true
+  }
+
+  private async drain(): Promise<void> {
+    if (this.busy || this.timer) return
+    this.busy = true
+    try {
+      while (this.queue.length) {
+        const job = this.queue[0]
+        const c = this.config()
+        if (!c) {
+          this.queue = []
+          break
+        }
+        const r = await this.deliver(c, job.e)
+        if (r.status.ok || !r.retry || job.tries >= RETRY_MS.length) {
+          this.queue.shift()
+          continue
+        }
+        this.timer = setTimeout(() => {
+          this.timer = null
+          void this.drain()
+        }, RETRY_MS[job.tries])
+        job.tries++
+        break
+      }
+    }
+    finally {
+      this.busy = false
+    }
+  }
+
+  private async deliver(c: NotifyConfig, e: NotifyEvent): Promise<{ status: DeliveryStatus, retry: boolean }> {
+    const req = await buildRequest(c, e)
+    let ok = false
+    let retry = true
+    let detail: string
+    try {
+      const res = await (this.o.fetch ?? fetch)(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(TIMEOUT_MS) })
+      ok = res.ok
+      retry = res.status >= 500 || res.status === 429
+      detail = `HTTP ${res.status}`
+    }
+    catch (err) {
+      detail = failure(err).split(req.url).join('the server')
+    }
+    this.last = { at: this.now().toISOString(), ok, title: e.title, detail }
+    if (!ok) this.o.log?.(`notify: ${e.title}: ${detail}`)
+    this.o.events.emit({ kind: 'mutation', path: 'notifications' })
+    return { status: this.last, retry }
+  }
+}
+
+function failure(err: unknown): string {
+  const e = err as Error & { cause?: { code?: string } }
+  if (e.name === 'TimeoutError') return `no answer in ${TIMEOUT_MS / 1000} s`
+  return e.cause?.code ? `couldn't connect (${e.cause.code})` : e.message
+}
+
+function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s} s`
+  const m = Math.floor(s / 60)
+  return s % 60 ? `${m} min ${s % 60} s` : `${m} min`
+}

@@ -1,7 +1,7 @@
 ---
 type: "Policy"
 title: "Privacy"
-description: "No outbound connections unless you configure an off-device mirror; no accounts, no telemetry."
+description: "No outbound connections unless you configure an off-device mirror or notifications; no accounts, no telemetry."
 status: "stable"
 generated: {"by": "claude/opus-5.5", "at": "2026-10-31T12:00:00+00:00"}
 sources: [{"resource": "https://github.com/sleepypod/core", "title": "sleepypod/core (conventions and ADR precedents)"}, {"resource": "/adr/0019-pluggable-capture-analysis.md", "title": "ADR 0019: Pluggable capture analysis"}]
@@ -32,6 +32,14 @@ under **Settings → Off-device storage and analysis** (ADR 0019):
   post analysis results to `POST /api/analyses/results`. Nothing leaves the
   unit for this: the worker reads stills through the same REST API (and API
   key, if you set one) as any other LAN client.
+
+**Notifications** (Settings → Notifications, off by default) send the unit's
+name and an alert's title and text to the target you pick (ADR 0032). On
+the phone path, that's the ntfy.sh server, where anyone who knows the topic
+can read them; the topic is long and random for that reason. A webhook goes
+only to the URL you paste, over https unless it's on your network. The
+webhook URL and signing secret stay on the unit and are never returned by the
+API. A backup holds them. Photos and readings history are never sent.
 
 **HomeKit** (Settings → Apple Home, off by default) is local too. iPhones on
 your network pair with the unit and control it directly over HAP; nothing

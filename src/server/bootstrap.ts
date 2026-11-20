@@ -20,6 +20,7 @@ import { createEventBus, type EventBus } from '../lib/eventBus'
 import type { LoggingControl } from '../logging/policy'
 import type { BridgeStatus } from '../mqtt/bridge'
 import { SimWifi, type Wifi } from '../network/wifi'
+import { Notifier } from '../notify/notifier'
 import { Scheduler } from '../scheduler/scheduler'
 import type { Store } from '../store/types'
 import { FlashMeter, type DiskUsage, type FlashSource } from '../telemetry/flash'
@@ -77,6 +78,8 @@ export interface CoreOptions {
   clockTrusted?: () => boolean
   /** HomeKit (ADR 0023); node hosts only. Attached to the context here, unpublished on stop. */
   homekit?: HomeKitControl & { attach(ctx: Context): void, shutdown(): Promise<void> }
+  /** What notifications are sent with; tests pass a fake. */
+  notifyFetch?: typeof fetch
 }
 
 export interface Core {
@@ -109,7 +112,8 @@ export function createCore(o: CoreOptions): Core {
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
   const podCodes = new PodCodeService({ store: o.store, captures, reader: o.codeReader ?? null, log: m => console.warn(m), onRead: () => events.emit({ kind: 'mutation', path: 'podCodes' }) })
-  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, podCodes, mirror: o.mirror, backup: o.backup, restore: o.restore, update: o.update, bootLog: o.bootLog, homekit: o.homekit, models: o.models, podvision: o.podvision, bridge: o.bridge, flash, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
+  const notifier = new Notifier({ store: o.store, events, now: o.now, fetch: o.notifyFetch, log: m => console.warn(m) })
+  const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, podCodes, mirror: o.mirror, backup: o.backup, restore: o.restore, update: o.update, bootLog: o.bootLog, homekit: o.homekit, models: o.models, podvision: o.podvision, bridge: o.bridge, flash, notifier, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })
   const retention = new TelemetryRetention({ store: o.store, now: o.now })
@@ -119,6 +123,7 @@ export function createCore(o: CoreOptions): Core {
 
   let growTimer: ReturnType<typeof setInterval> | null = null
   if (o.startServices) {
+    notifier.start()
     recorder.start()
     retention.start()
     scheduler.start()
@@ -152,6 +157,7 @@ export function createCore(o: CoreOptions): Core {
       podCodes.stop()
       flash.stop()
       o.backup?.stop()
+      notifier.stop()
       await analysis.idle()
       await retention.stop()
       recorder.stop()
