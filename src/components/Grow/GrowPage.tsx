@@ -247,13 +247,14 @@ export function GrowPage() {
                         aria-pressed={picked}
                         aria-busy={busy.includes(p.slot) || undefined}
                         aria-label={`${p.slot} ${p.plant ?? 'empty'}`}
-                        className={cn('flex min-h-[44px] w-[90%] items-center gap-2.5 rounded-[9px] border', podSide(row) === 1 ? 'self-end' : 'self-start', ' px-2.5 py-[9px] text-left transition-colors hover:border-pod-empty', picked ? 'border-fg-2 bg-active' : ROW_CLASS[s], busy.includes(p.slot) && 'animate-pulse motion-reduce:animate-none')}
+                        className={cn('flex min-h-[44px] items-center gap-2.5 rounded-[9px] border px-2.5 py-[9px] text-left transition-colors hover:border-pod-empty', picked ? 'border-fg-2 bg-active' : ROW_CLASS[s], busy.includes(p.slot) && 'animate-pulse motion-reduce:animate-none')}
                       >
                         <span className="w-4 font-mono text-[10px] text-fg-3">{p.slot}</span>
                         <span className="size-[7px] shrink-0 rounded-full" style={{ background: s === 'empty' ? 'var(--border-2)' : SHOWN_TOKEN[s] }} />
-                        <PlantThumb plant={p.plant} stage={podForm(p)} size={32} />
+                        {podSide(row) === -1 && <PlantThumb plant={p.plant} stage={podForm(p)} size={32} />}
                         <span className={cn('min-w-0 flex-1 truncate text-[13px]', s === 'empty' ? 'text-pod-empty' : 'text-fg')}>{p.plant ?? (s === 'empty' ? 'Empty · plant' : '')}</span>
                         {s !== 'empty' && cover !== null && <span className="font-mono text-[11px] text-fg-3">{pct(cover)}</span>}
+                        {podSide(row) === 1 && <PlantThumb plant={p.plant} stage={podForm(p)} size={32} />}
                       </button>
                     )
                   })}

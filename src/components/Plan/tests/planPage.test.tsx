@@ -183,12 +183,20 @@ describe('PlanPage', () => {
     expect(screen.queryByText('Sowing schedule')).toBeNull()
   })
 
-  it('leans each pod either side of its column on the grid, as the 3D tower does', () => {
+  it('puts each pod\'s plant on the side of its column it leans to, and marks the pods a suggested move takes in', () => {
+    // A lettuce in high light and a pepper in medium: swapping them suits both.
+    state.pods = [{ slot: 8, plant: 'Butterhead', status: 'growing' }, { slot: 4, plant: 'Jalapeño', status: 'growing' }]
     render(<PlanPage />)
     flat()
     const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
-    expect(cell(1).className).toContain('justify-self-end')
-    expect(cell(4).className).toContain('justify-self-start')
+    const plantRow = (slot: number) => within(cell(slot)).getByText(/Butterhead|Jalapeño/).parentElement as HTMLElement
+    // Row 2 leans right, row 1 left, as on the 3D tower.
+    expect(plantRow(8).className).toContain('flex-row-reverse')
+    expect(plantRow(4).className).not.toContain('flex-row-reverse')
+    expect(within(cell(4)).getByTestId('move-suggested').title).toBe('Swap Jalapeño in pod 4 with Butterhead in pod 8 — Butterhead gets its ideal medium light.')
+    expect(within(cell(8)).getByTestId('move-suggested')).toBeTruthy()
+    expect(cell(4).getAttribute('aria-label')).toBe('Pod 4, Jalapeño, a move is suggested')
+    expect(within(cell(1)).queryByTestId('move-suggested')).toBeNull()
   })
 
   it('switches to the Studio grid', () => {
