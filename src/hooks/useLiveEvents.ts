@@ -77,7 +77,10 @@ export const BURST_MS = 250
  * Subscribes to the core event stream (SSE), writes each sensor reading into
  * the `sensors.latest` cache and invalidates the queries any other event
  * touches, so the UI is live without polling. A reading for a sensor the cache
- * doesn't know, and a reconnect (it may have missed readings), refetch instead.
+ * doesn't know refetches the sensors instead, and a reconnect everything: the
+ * stream drops while the core restarts (an update) or the device sleeps, and
+ * any change made meanwhile, from another device too, would otherwise wait for
+ * a reload.
  * `onEvent` sees every event as it arrives, for the snackbars.
  */
 export function useLiveEvents(onEvent?: (e: CoreEvent) => void) {
@@ -112,7 +115,7 @@ export function useLiveEvents(onEvent?: (e: CoreEvent) => void) {
   const stream = trpc.events.onChange.useSubscription(undefined, {
     onStarted() {
       if (connected.current || failed.current) {
-        pending.current.add('sensors')
+        pending.current.add('all')
         schedule()
       }
       connected.current = true
