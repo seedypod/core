@@ -123,7 +123,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, busy, onOpen, 
     onSwap(from, to)
   }
   return (
-    <div data-testid="plan-grid" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+    <div data-testid="plan-grid" className="grid select-none gap-1.5 [-webkit-touch-callout:none]" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
       {slots.map((s) => {
         const a = bySlot.get(s.slot)
         const ex = planted.get(s.slot)
