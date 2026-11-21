@@ -114,7 +114,7 @@ function placePins(assignments: readonly Assignment[], slot: number, plantId: st
  * A tap opens the pod (`onOpen`); while a swap is being picked (`swapping`), it picks the other pod instead. A plant also drags onto another pod to swap them (`onSwap`).
  * Pods in a swap still on its way (`busy`) pulse.
  */
-function PlanGrid({ cols, slots, bySlot, planted, moves, open, swapping, busy, onOpen, onSwapping, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, moves: { from: number, to: number, swap: unknown, text: string }[], open: number | null, swapping: number | null, busy: readonly number[], onOpen: (slot: number) => void, onSwapping: (slot: number | null) => void, onSwap: (from: number, to: number) => void }) {
+function PlanGrid({ cols, slots, bySlot, planted, moves, highlight, open, swapping, busy, onOpen, onSwapping, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, moves: { from: number, to: number, swap: unknown, text: string }[], highlight: readonly number[], open: number | null, swapping: number | null, busy: readonly number[], onOpen: (slot: number) => void, onSwapping: (slot: number | null) => void, onSwap: (from: number, to: number) => void }) {
   // The pod a drag is over, ringed so it's clear where the drop lands.
   const [over, setOver] = useState<number | null>(null)
   // Both pods of a suggested swap, or the planted one of a move to a free pod.
@@ -166,7 +166,7 @@ function PlanGrid({ cols, slots, bySlot, planted, moves, open, swapping, busy, o
                 e.currentTarget.click()
               }
             }}
-            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', moving && 'animate-pulse motion-reduce:animate-none')}
+            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', highlight.includes(s.slot) && 'outline-2 outline-offset-2 outline-fg-2 outline-dashed', moving && 'animate-pulse motion-reduce:animate-none')}
             style={zoneStyle(z)}
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >
@@ -219,8 +219,10 @@ export function PlanPage() {
   const [view, setView] = useState<View>(savedView)
   const [noWebGL, setNoWebGL] = useState(false)
   const [selected, setSelected] = useState<number | null>(null)
-  // The pod open beside the 2D grid, and the one whose swap is being picked.
+  // The pod open from the 2D grid, and the one whose swap is being picked.
   const [open, setOpen] = useState<number | null>(null)
+  // A suggested move under the pointer in its card, picked out on the layout.
+  const [hovered, setHovered] = useState<{ from: number, to: number } | null>(null)
   const [swapping, setSwapping] = useState<number | null>(null)
   // A swap shows at once: until the unit has the records and the plan is laid out again, its two pods trade places here.
   const [moving, setMoving] = useState<{ from: number, to: number } | null>(null)
@@ -328,6 +330,10 @@ export function PlanPage() {
   }
   const shown: View = noWebGL ? '2d' : view
   const openSlot = open === null ? undefined : zones.data?.slots.find(s => s.slot === open)
+  const moves = layout.data?.moves ?? []
+  const openMove = open === null ? undefined : moves.find(m => m.from === open || m.to === open)
+  const shownMove = hovered ?? openMove
+  const highlight = shownMove ? [shownMove.from, shownMove.to] : []
   const openPlantId = openSlot ? bySlot.get(openSlot.slot)?.plantId ?? everything.data?.plants.find(p => p.name === planted.get(openSlot.slot)?.plant)?.id ?? null : null
 
   return (
@@ -373,32 +379,10 @@ export function PlanPage() {
           />
           <SeenEmpty slots={[...planted.values()].filter(p => p.seenEmpty && p.slot <= (zones.data?.slots.length ?? 0)).map(p => p.slot)} />
           {zones.data && shown === '2d' && (
-            <div className="mt-3 flex flex-col gap-3 min-[640px]:flex-row min-[640px]:items-start">
-              <div className="min-w-0 flex-1">
-                {swapping !== null && <SwapBanner slot={swapping} plant={bySlot.get(swapping)?.plantName ?? planted.get(swapping)?.plant} onCancel={() => setSwapping(null)} />}
-                {moving && <SwapProgress a={moving.from} b={moving.to} />}
-                <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} moves={layout.data?.moves ?? []} open={open} swapping={swapping} busy={moving ? [moving.from, moving.to] : []} onOpen={setOpen} onSwapping={setSwapping} onSwap={exchange} />
-              </div>
-              {openSlot && (
-                <PodPanel
-                  key={openSlot.slot}
-                  slot={openSlot.slot}
-                  zone={(openSlot.zone ?? 'medium') as Zone}
-                  plant={bySlot.get(openSlot.slot)?.plantName ?? planted.get(openSlot.slot)?.plant ?? null}
-                  plantId={openPlantId}
-                  reason={bySlot.get(openSlot.slot)?.reason}
-                  planted={planted.has(openSlot.slot)}
-                  plants={everything.data?.plants ?? []}
-                  zones={zonesFor(openPlantId)}
-                  onZones={z => setZones(openPlantId as string, z)}
-                  onPlant={id => plantAt(openSlot.slot, id || null)}
-                  onSwap={() => setSwapping(openSlot.slot)}
-                  onClose={() => {
-                    setOpen(null)
-                    setSwapping(null)
-                  }}
-                />
-              )}
+            <div className="mt-3">
+              {swapping !== null && <SwapBanner slot={swapping} plant={bySlot.get(swapping)?.plantName ?? planted.get(swapping)?.plant} onCancel={() => setSwapping(null)} />}
+              {moving && <SwapProgress a={moving.from} b={moving.to} />}
+              <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} moves={moves} highlight={highlight} open={open} swapping={swapping} busy={moving ? [moving.from, moving.to] : []} onOpen={setOpen} onSwapping={setSwapping} onSwap={exchange} />
             </div>
           )}
           {zones.data && shown === '3d' && (
@@ -430,7 +414,28 @@ export function PlanPage() {
         </Card>
 
         <div className="flex min-w-0 flex-col gap-4">
-          <SuggestedMoves moves={layout.data?.moves ?? []} onApply={exchange} />
+          {shown === '2d' && openSlot && (
+            <PodPanel
+              key={openSlot.slot}
+              slot={openSlot.slot}
+              zone={(openSlot.zone ?? 'medium') as Zone}
+              plant={bySlot.get(openSlot.slot)?.plantName ?? planted.get(openSlot.slot)?.plant ?? null}
+              plantId={openPlantId}
+              reason={bySlot.get(openSlot.slot)?.reason}
+              planted={planted.has(openSlot.slot)}
+              move={openMove?.text}
+              plants={everything.data?.plants ?? []}
+              zones={zonesFor(openPlantId)}
+              onZones={z => setZones(openPlantId as string, z)}
+              onPlant={id => plantAt(openSlot.slot, id || null)}
+              onSwap={() => setSwapping(openSlot.slot)}
+              onClose={() => {
+                setOpen(null)
+                setSwapping(null)
+              }}
+            />
+          )}
+          <SuggestedMoves moves={moves} onApply={exchange} onHover={setHovered} />
           <Card>
             <CardHeader title="Plants" subtitle="Gardyn catalog and yours · zone, first harvest" icon={Sprout} right={<Button size="sm" icon={Plus} onClick={() => setEditing('new')}>Add plant</Button>} />
             <TextField className="mt-3" mono={false} value={q} onChange={setQ} placeholder="Search basil, kale, pepper…" aria-label="Search plants" />

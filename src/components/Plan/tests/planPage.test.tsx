@@ -199,6 +199,23 @@ describe('PlanPage', () => {
     expect(within(cell(1)).queryByTestId('move-suggested')).toBeNull()
   })
 
+  it('picks out a suggested move\'s pods on the grid while it is hovered, or while one of them is open', () => {
+    state.pods = [{ slot: 8, plant: 'Butterhead', status: 'growing' }, { slot: 4, plant: 'Jalapeño', status: 'growing' }]
+    render(<PlanPage />)
+    flat()
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const marked = () => [...screen.getByTestId('plan-grid').querySelectorAll<HTMLElement>('[data-slot]')].filter(c => c.className.includes('outline-dashed')).map(c => Number(c.dataset.slot))
+    expect(marked()).toEqual([])
+    const row = within(screen.getByRole('list', { name: 'Suggested moves' })).getByRole('listitem')
+    fireEvent.mouseEnter(row)
+    expect(marked()).toEqual([4, 8])
+    fireEvent.mouseLeave(row)
+    expect(marked()).toEqual([])
+    fireEvent.click(cell(8))
+    expect(marked()).toEqual([4, 8])
+    expect(within(screen.getByRole('complementary', { name: 'Pod 8' })).getByText('Suggested: Swap Jalapeño in pod 4 with Butterhead in pod 8 — Butterhead gets its ideal medium light.')).toBeTruthy()
+  })
+
   it('switches to the Studio grid', () => {
     render(<PlanPage />)
     fireEvent.click(screen.getByRole('tab', { name: 'Studio · 16' }))

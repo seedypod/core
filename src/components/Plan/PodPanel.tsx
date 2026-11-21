@@ -1,4 +1,5 @@
 import { ArrowLeftRight, ChevronDown, X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR, ZONE_LABEL, ZONES, type LightZone } from '@/src/components/Grow/lightZones'
 import { Button } from '@/src/components/ds/core'
@@ -14,6 +15,8 @@ interface Props {
   /** Why the plan put it here; none for a pod in the tower now. */
   reason?: string
   planted: boolean
+  /** A suggested move this pod takes part in, as the Suggested moves card words it. */
+  move?: string
   plants: { id: string, name: string, zone: LightZone }[]
   /** The zones this plan may put the pod's plant in, and whether they are the plan's own rather than the plant's usual ones; none when the catalog doesn't know it. */
   zones?: { allowed: LightZone[], own: boolean }
@@ -31,12 +34,17 @@ interface Props {
  * instead (those suited to its light first), the zones the plan may use for
  * that plant, and Swap. Planned, planted and empty pods all edit the same way.
  */
-export function PodPanel({ slot, zone, plant, plantId, reason, planted, plants, zones, onZones, onPlant, onSwap, onClose }: Props) {
+export function PodPanel({ slot, zone, plant, plantId, reason, planted, move, plants, zones, onZones, onPlant, onSwap, onClose }: Props) {
   const suited = plants.filter(p => p.zone === zone)
   const others = plants.filter(p => p.zone !== zone)
   const about = reason ? `Planned: ${reason}.` : planted ? 'In the tower now.' : 'Nothing planned here.'
+  // Below the layout on a narrow screen, so it comes into view when opened.
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  }, [])
   return (
-    <aside aria-label={`Pod ${slot}`} className="flex w-full shrink-0 flex-col gap-3 rounded-[14px] border border-line bg-surface p-4 min-[640px]:w-[260px]">
+    <aside ref={ref} aria-label={`Pod ${slot}`} className="flex w-full flex-col gap-3 rounded-[14px] border border-line bg-surface p-4">
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-1.5 font-mono text-[11px] tracking-[0.06em] text-fg-3">
@@ -48,6 +56,12 @@ export function PodPanel({ slot, zone, plant, plantId, reason, planted, plants, 
         <button type="button" aria-label="Close" onClick={onClose} className="cursor-pointer text-fg-3 hover:text-fg"><X size={16} /></button>
       </div>
       <p className="text-[13px] leading-normal text-fg-2">{about}</p>
+      {move && (
+        <p className="flex gap-1.5 text-[13px] leading-normal text-fg-2">
+          <ArrowLeftRight size={14} className="mt-[3px] shrink-0" aria-hidden="true" />
+          {`Suggested: ${move}`}
+        </p>
+      )}
       <label className="flex items-center justify-between gap-3 border-y border-line/70 py-2.5 text-[13px]">
         <span className="shrink-0 text-fg-2">Plant</span>
         <span className="flex min-w-0 items-center gap-1">
@@ -104,7 +118,7 @@ export function PodPanel({ slot, zone, plant, plantId, reason, planted, plants, 
         </div>
       )}
       <div className="flex gap-2">
-        <Button icon={ArrowLeftRight} full onClick={onSwap}>Swap</Button>
+        <Button icon={ArrowLeftRight} className="min-w-0 flex-1" onClick={onSwap}>Swap</Button>
         {plant && <Button onClick={() => onPlant(null)}>Remove</Button>}
       </div>
     </aside>
