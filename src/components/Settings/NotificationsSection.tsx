@@ -4,6 +4,7 @@ import { Button, InlineError, StatusDot } from '@/src/components/ds/core'
 import { SegmentedControl, TextField, Toggle } from '@/src/components/ds/forms'
 import { Row, Section } from '@/src/components/Settings/Section'
 import { timeAgo } from '@/src/lib/timeAgo'
+import { formatFor } from '@/src/notify/targets'
 import type { AppRouter } from '@/src/server/routers/app'
 import { trpc } from '@/src/utils/trpc'
 
@@ -141,7 +142,17 @@ function WebhookForm({ s, busy, onSave }: { s: Status, busy: boolean, onSave: (p
   return (
     <>
       <Row label="URL" sub={s.webhookUrl ? `Saved: ${s.webhookUrl}` : 'Discord, Slack, Home Assistant or your own server. https, or http on your network.'}>
-        <TextField className="w-60" type="password" value={url} onChange={setUrl} placeholder={s.webhookUrl ? 'Paste a new one to replace it' : 'https://…'} />
+        <TextField
+          className="w-60"
+          type="password"
+          value={url}
+          onChange={(v) => {
+            setUrl(v)
+            const f = formatFor(v)
+            if (f) setFormat(f)
+          }}
+          placeholder={s.webhookUrl ? 'Paste a new one to replace it' : 'https://…'}
+        />
       </Row>
       <Row label="Format">
         <SegmentedControl ariaLabel="Webhook format" size="sm" options={FORMATS} value={format} onChange={setFormat} />

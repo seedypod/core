@@ -106,6 +106,10 @@ describe('Settings → Notifications', () => {
     fireEvent.change(secret as Element, { target: { value: 'k' } })
     fireEvent.click(save)
     expect(calls.configure).toHaveBeenCalledWith({ target: 'webhook', webhookFormat: 'json', webhookUrl: 'https://hooks.example.com/abc', webhookSecret: 'k' })
+    fireEvent.change(url as Element, { target: { value: 'https://discord.com/api/webhooks/1/tok' } })
+    expect(screen.queryByText('Signing secret')).toBeNull()
+    fireEvent.click(save)
+    expect(calls.configure).toHaveBeenLastCalledWith({ target: 'webhook', webhookFormat: 'discord', webhookUrl: 'https://discord.com/api/webhooks/1/tok', webhookSecret: 'k' })
   })
 
   it('shows a saved webhook masked, hides the secret for Discord, and switches to it at once', () => {

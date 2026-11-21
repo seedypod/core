@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { DEFAULT_GROUPS, enabledGroups, maskUrl, newTopic, NOTIFY_GROUPS, ntfyLink, urlProblem } from '../../notify/targets'
+import { DEFAULT_GROUPS, enabledGroups, formatProblem, maskUrl, newTopic, NOTIFY_GROUPS, ntfyLink, urlProblem } from '../../notify/targets'
 import type { DeviceSettings } from '../../store/types'
 import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
@@ -84,6 +84,9 @@ export const notificationsRouter = router({
       if (input.webhookFormat !== undefined) patch.webhookFormat = input.webhookFormat
       if (input.webhookSecret !== undefined) patch.webhookSecret = input.webhookSecret || null
       if (input.groups !== undefined) patch.notifyGroups = [...new Set(input.groups)]
+      const url = patch.webhookUrl ?? s.webhookUrl
+      const mismatch = url && formatProblem(url, patch.webhookFormat ?? s.webhookFormat)
+      if (mismatch) throw new TRPCError({ code: 'BAD_REQUEST', message: mismatch })
       const target = patch.notifyTarget ?? s.notifyTarget
       if (target === 'webhook' && !(patch.webhookUrl ?? s.webhookUrl)) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Paste the webhook URL first.' })
       if (target === 'ntfy' && !s.ntfyTopic) patch.ntfyTopic = newTopic()
