@@ -101,19 +101,26 @@ export function heldFor(since: string | null | undefined, now: Date = new Date()
 
 /** Days a leafy green or herb takes from planting to its first harvest, roughly. */
 const DAYS_TO_HARVEST = 35
+/** Days from sowing to a seedling's first true leaves, roughly. */
+const DAYS_TO_SEEDLING = 14
+/** Leaf cover below this is noise, or seedlings too small for the cameras to make out. */
+export const GREEN_SEEN = 0.02
 
 /**
  * Plant size in the scene, 0 (nothing) to 1 (full). The analysers' green
  * fraction (0–1) when there is one; otherwise days since planting, so a young
- * pod reads smaller than an old one; otherwise a size by status.
+ * pod reads smaller than an old one; otherwise a size by status. A seeded pod
+ * takes the cameras' reading only once they see leaves, and grows with its
+ * age from a sprout until then.
  */
 export function plantScale(status: PodStatus, green: number | null | undefined, ageDays?: number | null): number {
   if (status === 'empty') return 0
-  if (status === 'seeded') return 0.25
   const g = green ?? null
+  const age = typeof ageDays === 'number' && Number.isFinite(ageDays) ? ageDays : null
+  if (status === 'seeded' && (g === null || !Number.isFinite(g) || g < GREEN_SEEN)) return age === null ? 0.25 : Math.min(0.35, 0.15 + (age / DAYS_TO_SEEDLING) * 0.2)
   if (g !== null && Number.isFinite(g)) return Math.max(0.3, Math.min(1, 0.35 + g * 1.1))
   if (status === 'harvest') return 0.95
-  if (typeof ageDays === 'number' && Number.isFinite(ageDays)) return Math.max(0.3, Math.min(1, 0.3 + (ageDays / DAYS_TO_HARVEST) * 0.65))
+  if (age !== null) return Math.max(0.3, Math.min(1, 0.3 + (age / DAYS_TO_HARVEST) * 0.65))
   return 0.55
 }
 
@@ -122,7 +129,7 @@ export type PlantForm = 'none' | 'sprout' | 'young' | 'bush' | 'full'
 /** The plant's shape by stage: two seed leaves, a few leaves, a bush, a full head ready to cut. */
 export function plantForm(status: PodStatus, scale: number): PlantForm {
   if (status === 'empty') return 'none'
-  if (status === 'seeded') return 'sprout'
+  if (status === 'seeded' && scale < 0.4) return 'sprout'
   if (status === 'harvest') return 'full'
   return scale < 0.6 ? 'young' : 'bush'
 }

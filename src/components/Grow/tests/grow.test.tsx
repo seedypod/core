@@ -314,6 +314,20 @@ describe('Grow', () => {
     expect(screen.queryByRole('button', { name: 'Empty pod' })).toBeNull()
   })
 
+  it('shows a dash for leaf cover the cameras can\'t read yet, and sizes each pod\'s plant as the tower does', () => {
+    data.set('pods', [pod(1, { plant: 'Basil', status: 'growing', plantedAt: '2026-10-12' }), pod(2, { plant: 'Kale', status: 'seeded' })])
+    data.set('trends', [{ slot: 1, green: 0.01, verdict: 'growing', recent: [] }])
+    data.set('harvest', [])
+    render(<GrowPage />)
+    const basil = screen.getByRole('button', { name: '1 Basil' })
+    expect(basil.textContent).toBe('1Basil—')
+    expect(within(basil).getByText('—').getAttribute('title')).toBe('Too small for the cameras to read yet')
+    // No WebGL in jsdom: the leaf stands in, sized by the plant's scale (a seeded pod with no age is a quarter grown).
+    const leaf = (name: string) => screen.getByRole('button', { name }).querySelector('[data-testid="plant-thumb"] svg')?.getAttribute('width')
+    expect(leaf('2 Kale')).toBe('10')
+    expect(leaf('1 Basil')).toBe('11')
+  })
+
   it('switches to the tower and remembers it', () => {
     const { unmount } = render(<GrowPage />)
     fireEvent.click(screen.getByRole('tab', { name: 'Tower' }))

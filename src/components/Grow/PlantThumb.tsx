@@ -9,6 +9,11 @@ export function podForm(p: { status: PodStatus, green?: number | null, ageDays?:
   return p.planned ? PLANNED_FORM : plantForm(p.status, plantScale(p.status, p.green, p.ageDays))
 }
 
+/** How much of its circle a pod's thumbnail fills, half to all, by the size the 3D tower draws it. */
+export function podFill(p: { status: PodStatus, green?: number | null, ageDays?: number | null, planned?: boolean }): number {
+  return p.planned ? 1 : 0.5 + 0.5 * plantScale(p.status, p.green, p.ageDays)
+}
+
 const subscribeTheme = (cb: () => void) => {
   const o = new MutationObserver(cb)
   o.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
@@ -25,7 +30,7 @@ export const useLightTheme = () => useSyncExternalStore(subscribeTheme, () => do
  * always sits beside it. `passive` keeps the leaf until three.js is on the page
  * anyway: the sidebar shows on every page, and one thumbnail isn't worth 150 KB.
  */
-export function PlantThumb({ plant, stage, size = 36, passive = false, className }: { plant: string | null | undefined, stage: PlantForm, size?: number, passive?: boolean, className?: string }) {
+export function PlantThumb({ plant, stage, size = 36, fill = 1, passive = false, className }: { plant: string | null | undefined, stage: PlantForm, size?: number, /** How much of the circle the plant fills, 0–1. */ fill?: number, passive?: boolean, className?: string }) {
   const light = useLightTheme()
   const key = stage === 'none' ? null : thumbKey(plant, stage, light)
   const [loaded, setLoaded] = useState<{ key: string, url: string } | null>(null)
@@ -50,8 +55,8 @@ export function PlantThumb({ plant, stage, size = 36, passive = false, className
       style={{ width: size, height: size }}
     >
       {url
-        ? <img src={url} alt="" width={size} height={size} className="size-full object-contain" />
-        : kind === 'neutral' && <Leaf size={Math.round(size * 0.5)} strokeWidth={1.75} />}
+        ? <img src={url} alt="" width={size} height={size} className="size-full object-contain" style={fill < 1 ? { transform: `scale(${fill})` } : undefined} />
+        : kind === 'neutral' && <Leaf size={Math.round(size * 0.5 * fill)} strokeWidth={1.75} />}
     </span>
   )
 }

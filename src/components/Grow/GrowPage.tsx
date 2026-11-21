@@ -12,8 +12,8 @@ import { CATALOG } from './plants/catalog'
 import { PlantModel } from './PlantModel'
 import { ProtocolCard } from './ProtocolCard'
 import { SwapBanner, SwapProgress } from './SwapBanner'
-import { PlantThumb, podForm } from './PlantThumb'
-import { ageDays, heldFor, podPlaces, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
+import { PlantThumb, podFill, podForm } from './PlantThumb'
+import { ageDays, GREEN_SEEN, heldFor, podPlaces, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
 import { TowerView } from './TowerView'
 import { useSwapPods } from './useSwapPods'
@@ -58,6 +58,8 @@ function savedTab(): GrowTab {
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
+/** Leaf cover, or a dash while the plant is too small for the cameras to read. */
+const coverText = (v: number) => (v < GREEN_SEEN ? '—' : pct(v))
 /** "12 Oct"; a bare date ("2026-10-12") is read as that day wherever the browser is. */
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', ...(iso.length === 10 ? { timeZone: 'UTC' } : null) })
 const towerName = (i: number) => String.fromCharCode(65 + i)
@@ -299,9 +301,9 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
                         >
                           <span className="w-4 font-mono text-[10px] text-fg-3">{p.slot}</span>
                           <span className="size-[7px] shrink-0 rounded-full" style={{ background: s === 'empty' ? 'var(--border-2)' : SHOWN_TOKEN[s] }} />
-                          <PlantThumb plant={p.plant} stage={podForm(p)} size={32} />
+                          <PlantThumb plant={p.plant} stage={podForm(p)} size={32} fill={podFill(p)} />
                           <span className={cn('min-w-0 flex-1 truncate text-[13px]', s === 'empty' ? 'text-pod-empty' : 'text-fg')}>{p.plant ?? (s === 'empty' ? 'Empty · plant' : '')}</span>
-                          {s !== 'empty' && cover !== null && <span className="font-mono text-[11px] text-fg-3">{pct(cover)}</span>}
+                          {s !== 'empty' && cover !== null && <span className="font-mono text-[11px] text-fg-3" title={cover < GREEN_SEEN ? 'Too small for the cameras to read yet' : undefined}>{coverText(cover)}</span>}
                         </button>
                       )
                     })}
@@ -511,7 +513,7 @@ function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, sav
         <div className="flex flex-col gap-2">
           <div className="flex justify-between font-mono text-[10px] font-medium tracking-[0.1em] text-fg-3">
             <span>LEAF COVER</span>
-            <span className="text-fg">{cover === null ? '—' : pct(cover)}</span>
+            <span className="text-fg" title={cover !== null && cover < GREEN_SEEN ? 'Too small for the cameras to read yet' : undefined}>{cover === null ? '—' : coverText(cover)}</span>
           </div>
           {recent.length > 1 && <LineChart series={[{ data: recent, color: 'var(--pod-ok)', width: 1.5 }]} height={40} />}
           <div className="text-xs text-fg-3">{trend}</div>
