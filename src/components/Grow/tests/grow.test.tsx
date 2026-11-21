@@ -9,7 +9,7 @@ const { data, calls, tower, swap } = vi.hoisted(() => ({
   calls: { start: vi.fn(), end: vi.fn(), setStage: vi.fn(), updatePod: vi.fn(), markHarvested: vi.fn(), swapPods: vi.fn(), invalidateGrow: vi.fn(), invalidateProtocol: vi.fn() },
   tower: { props: null as null | Record<string, unknown>, unavailable: false },
   /** A swap still on its way to the unit. */
-  swap: { pending: null as null | { a: number, b: number } },
+  swap: { pending: null as null | { a: number, b: number }, error: null as null | { message: string } },
 }))
 
 vi.mock('@/src/utils/trpc', () => {
@@ -25,7 +25,7 @@ vi.mock('@/src/utils/trpc', () => {
       useUtils: () => ({ grow: { invalidate: calls.invalidateGrow, pods: { cancel: async () => undefined, getData: () => data.get('pods'), setData: () => undefined } }, protocol: { invalidate: calls.invalidateProtocol } }),
       grow: {
         current: query('grow'), pods: query('pods'), harvest: query('harvest'), start: mutation('start'), end: mutation('end'), setStage: mutation('setStage'), updatePod: mutation('updatePod'), markHarvested: mutation('markHarvested'),
-        swapPods: { useMutation: () => ({ isPending: swap.pending !== null, variables: swap.pending ?? undefined, mutate: (i: unknown) => calls.swapPods(i) }) },
+        swapPods: { useMutation: () => ({ isPending: swap.pending !== null, variables: swap.pending ?? undefined, error: swap.error, mutate: (i: unknown) => calls.swapPods(i) }) },
       },
       settings: { get: query('settings') },
       camera: { list: query('captures') },
@@ -58,6 +58,7 @@ beforeEach(() => {
   tower.props = null
   tower.unavailable = false
   swap.pending = null
+  swap.error = null
   localStorage.clear()
   window.history.replaceState(null, '', '/grow')
   data.set('grow', { cycle: { id: 'c1', startedAt: '2026-10-12T00:00:00Z', endedAt: null, stage: 'vegetative', notes: 'greens', issued: [] }, day: 19 })
@@ -228,6 +229,22 @@ describe('Grow', () => {
     expect(screen.getByText('Click a pod on the tower to see and edit it.')).toBeTruthy()
   })
 
+  it('gives the tower no tank level before a reading, and no light while it is off', () => {
+    data.delete('sensors')
+    data.set('light', { on: false, level: 85 })
+    render(<GrowPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Tower' }))
+    expect(tower.props).toMatchObject({ waterPct: null, lightLevel: 0 })
+  })
+
+  it('leaves a seeded pod with no plant named blank in the list', () => {
+    data.set('pods', [pod(1, { status: 'seeded' })])
+    data.set('trends', [])
+    data.set('harvest', [])
+    render(<GrowPage />)
+    expect(screen.getByRole('button', { name: '1 empty' }).textContent).toBe('1')
+  })
+
   it('edits the pod picked on the tower in the side panel', () => {
     render(<GrowPage />)
     fireEvent.click(screen.getByRole('tab', { name: 'Tower' }))
@@ -301,6 +318,19 @@ describe('Grow', () => {
     expect(screen.getByLabelText('Pod list')).toBeTruthy()
   })
 
+  it('opens on the pods when storage is blocked, and follows a tab linked while open', () => {
+    const blocked = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const { rerender } = render(<GrowPage />)
+    blocked.mockRestore()
+    expect(screen.getByLabelText('Pod list')).toBeTruthy()
+    rerender(<GrowPage pod={2} />)
+    expect(screen.getByText('POD 2 · TOWER B')).toBeTruthy()
+    rerender(<GrowPage pod={2} tab="protocol" />)
+    expect(screen.getByRole('tabpanel').id).toBe('grow-protocol')
+  })
+
   it('empties a pod only after confirming, and offers nothing to empty on an empty one', () => {
     render(<GrowPage />)
     fireEvent.click(screen.getByRole('button', { name: '2 Kale' }))
@@ -309,6 +339,9 @@ describe('Grow', () => {
     expect(dialog.getByText('This clears Kale, its sow date and notes. Camera history stays with the pod\'s position.')).toBeTruthy()
     fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }))
     expect(calls.updatePod).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Empty pod' }))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Empty pod' }))
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Empty pod' }))
     expect(calls.updatePod).toHaveBeenCalledWith({ slot: 2, plant: null, plantedAt: null, status: 'empty', notes: '' })
@@ -324,6 +357,8 @@ describe('Grow', () => {
     const basil = screen.getByRole('button', { name: '1 Basil' })
     expect(basil.textContent).toBe('1Basil—')
     expect(within(basil).getByText('—').getAttribute('title')).toBe('Too small for the cameras to read yet')
+    fireEvent.click(basil)
+    expect(within(screen.getByRole('complementary', { name: 'Pod 1' })).getByTitle('Too small for the cameras to read yet')).toBeTruthy()
     // No WebGL in jsdom: the leaf stands in, sized by the plant's scale (a seeded pod with no age is a quarter grown).
     const leaf = (name: string) => screen.getByRole('button', { name }).querySelector('[data-testid="plant-thumb"] svg')?.getAttribute('width')
     expect(leaf('2 Kale')).toBe('10')
@@ -411,6 +446,12 @@ describe('GrowPage: swapping pods', () => {
     rerender(<GrowPage />)
     expect(screen.queryByTestId('swap-progress')).toBeNull()
     expect(row(1).getAttribute('aria-busy')).toBeNull()
+  })
+
+  it('says why a swap failed', () => {
+    swap.error = { message: 'The unit did not answer' }
+    render(<GrowPage />)
+    expect(screen.getByText('The unit did not answer')).toBeTruthy()
   })
 
   it('names an empty pod by number alone while picking', () => {
