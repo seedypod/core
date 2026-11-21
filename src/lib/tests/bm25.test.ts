@@ -43,6 +43,18 @@ describe('createBm25Index', () => {
     expect(index.search('clock netw').map(h => h.index).sort()).toEqual([2, 3])
   })
 
+  it('scores a prefix expansion with the rarity of what was typed, not of the longer word', () => {
+    // "light" is on many pages, "lightzone" on one: the expansion mustn't win on rarity alone.
+    const index = createBm25Index([
+      { title: 'Light', body: 'brightness' },
+      { title: 'Zones', body: 'light-zone grid light-zone map' },
+      ...Array.from({ length: 8 }, (_, i) => ({ title: `Plant ${i}`, body: 'light' })),
+    ], FIELDS)
+    expect(index.search('light')[0]?.index).toBe(0)
+    expect(index.search('lig')[0]?.index).toBe(0)
+    expect(index.search('lightz')[0]?.index).toBe(1)
+  })
+
   it('breaks score ties by indexing order', () => {
     const docs = [
       { title: 'Alpha', body: 'shared' },

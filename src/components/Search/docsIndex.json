@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-02T07:07:28.116Z",
+  "generatedAt": "2026-11-21T09:42:40.697Z",
   "base": "https://seedypod.github.io",
   "pages": [
     {
@@ -56,8 +56,56 @@
           "anchor": "on-the-unit"
         },
         {
+          "title": "Pod boxes",
+          "anchor": "pod-boxes"
+        },
+        {
+          "title": "Label pods",
+          "anchor": "label-pods"
+        },
+        {
+          "title": "Suggested labels",
+          "anchor": "suggested-labels"
+        },
+        {
+          "title": "Dismissed suggestions",
+          "anchor": "dismissed-suggestions"
+        },
+        {
+          "title": "Pod codes",
+          "anchor": "pod-codes"
+        },
+        {
+          "title": "Pods out of order",
+          "anchor": "pods-out-of-order"
+        },
+        {
           "title": "Export a dataset",
           "anchor": "export-a-dataset"
+        },
+        {
+          "title": "Labels and pod crops",
+          "anchor": "labels-and-pod-crops"
+        },
+        {
+          "title": "The learned pod-state analyser",
+          "anchor": "the-learned-pod-state-analyser"
+        },
+        {
+          "title": "Native runner",
+          "anchor": "native-runner"
+        },
+        {
+          "title": "Dot codes",
+          "anchor": "dot-codes"
+        },
+        {
+          "title": "Weights file",
+          "anchor": "weights-file"
+        },
+        {
+          "title": "Train, upload and compare models",
+          "anchor": "train-upload-and-compare-models"
         },
         {
           "title": "Mirror photos off the unit (opt-in)",
@@ -87,6 +135,10 @@
         {
           "title": "Dry run, then arm",
           "anchor": "dry-run-then-arm"
+        },
+        {
+          "title": "Starter rules",
+          "anchor": "starter-rules"
         },
         {
           "title": "Backtest before you arm",
@@ -130,6 +182,14 @@
           "anchor": "logs-only-last-until-reboot"
         },
         {
+          "title": "Open a debug logging window",
+          "anchor": "open-a-debug-logging-window"
+        },
+        {
+          "title": "Cameras missing after boot",
+          "anchor": "cameras-missing-after-boot"
+        },
+        {
           "title": "Check core",
           "anchor": "check-core"
         },
@@ -157,6 +217,39 @@
       "keywords": ""
     },
     {
+      "path": "/core/feeding/",
+      "title": "Feeding and water quality",
+      "section": "User guide",
+      "description": "What to put in the tank and when, Gardyn's way or with another nutrient such as MaxiGro, the pH and EC to aim for, and how a probe and Autopilot replace guesswork.",
+      "headings": [
+        {
+          "title": "Gardyn’s routine",
+          "anchor": "gardyns-routine"
+        },
+        {
+          "title": "Using another nutrient",
+          "anchor": "using-another-nutrient"
+        },
+        {
+          "title": "Targets",
+          "anchor": "targets"
+        },
+        {
+          "title": "With seedypod",
+          "anchor": "with-seedypod"
+        },
+        {
+          "title": "Chores",
+          "anchor": "chores"
+        },
+        {
+          "title": "Keep a tank log",
+          "anchor": "keep-a-tank-log"
+        }
+      ],
+      "keywords": ""
+    },
+    {
       "path": "/core/grow-cycle/",
       "title": "Grow cycle and pods",
       "section": "User guide",
@@ -165,6 +258,10 @@
         {
           "title": "Start a cycle",
           "anchor": "start-a-cycle"
+        },
+        {
+          "title": "Grow protocol",
+          "anchor": "grow-protocol"
         },
         {
           "title": "Reminders",
@@ -185,7 +282,7 @@
       "path": "/core/home-assistant/",
       "title": "Home Assistant",
       "section": "User guide",
-      "description": "The Gardyn appears in Home Assistant through MQTT discovery; core adds grow reminders and a water-now button.",
+      "description": "The Gardyn appears in Home Assistant through MQTT discovery; core adds grow reminders, a water-now button and camera snapshots.",
       "headings": [
         {
           "title": "Connect the daemon",
@@ -203,30 +300,51 @@
       "keywords": ""
     },
     {
+      "path": "/core/homekit/",
+      "title": "Apple Home (HomeKit)",
+      "section": "User guide",
+      "description": "Add the tower to the Home app: the grow light, a bounded watering, temperature, humidity, the tank and both cameras, over your own network.",
+      "headings": [
+        {
+          "title": "Pair it",
+          "anchor": "pair-it"
+        },
+        {
+          "title": "What appears in Home",
+          "anchor": "what-appears-in-home"
+        },
+        {
+          "title": "Reset pairing",
+          "anchor": "reset-pairing"
+        },
+        {
+          "title": "Backups, reinstalls and new cards",
+          "anchor": "backups-reinstalls-and-new-cards"
+        },
+        {
+          "title": "Troubleshooting",
+          "anchor": "troubleshooting"
+        }
+      ],
+      "keywords": ""
+    },
+    {
       "path": "/core/installation/",
       "title": "Install seedypod on a Gardyn",
       "section": "User guide",
-      "description": "Back up the stock card, flash Raspberry Pi OS, install hald and core, connect Home Assistant.",
+      "description": "Back up the stock card, flash seedypod OS or install on Raspberry Pi OS, and connect Home Assistant.",
       "headings": [
         {
           "title": "Back up the stock card",
           "anchor": "back-up-the-stock-card"
         },
         {
-          "title": "Flash Raspberry Pi OS",
-          "anchor": "flash-raspberry-pi-os"
+          "title": "What about a Docker backup?",
+          "anchor": "what-about-a-docker-backup"
         },
         {
-          "title": "Enable I²C and install the hardware daemon",
-          "anchor": "enable-ic-and-install-the-hardware-daemon"
-        },
-        {
-          "title": "Install core",
-          "anchor": "install-core"
-        },
-        {
-          "title": "Connect Home Assistant (optional)",
-          "anchor": "connect-home-assistant-optional"
+          "title": "Choose an install path",
+          "anchor": "choose-an-install-path"
         },
         {
           "title": "First things to set",
@@ -245,10 +363,6 @@
           "anchor": "flash-a-new-card"
         },
         {
-          "title": "Run both installers",
-          "anchor": "run-both-installers"
-        },
-        {
           "title": "Restore",
           "anchor": "restore"
         },
@@ -259,6 +373,47 @@
         {
           "title": "Uninstall",
           "anchor": "uninstall"
+        },
+        {
+          "title": "Connect Home Assistant (optional)",
+          "anchor": "connect-home-assistant-optional"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/core/installation/image/",
+      "title": "Flash seedypod OS",
+      "section": "User guide",
+      "description": "Install the prebuilt image with Raspberry Pi Imager.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/core/installation/performance/",
+      "title": "Pi Zero W performance",
+      "section": "User guide",
+      "description": "Measured install, boot, update and idle-resource observations from real hardware.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/core/installation/scripts/",
+      "title": "Install on Raspberry Pi OS",
+      "section": "User guide",
+      "description": "Install prebuilt hald and core releases on an existing OS.",
+      "headings": [
+        {
+          "title": "Flash Raspberry Pi OS",
+          "anchor": "flash-raspberry-pi-os"
+        },
+        {
+          "title": "Enable I²C and install the hardware daemon",
+          "anchor": "enable-ic-and-install-the-hardware-daemon"
+        },
+        {
+          "title": "Install core",
+          "anchor": "install-core"
         }
       ],
       "keywords": ""
@@ -290,6 +445,18 @@
           "anchor": "restoring-a-backup"
         },
         {
+          "title": "Check which camera is which",
+          "anchor": "check-which-camera-is-which"
+        },
+        {
+          "title": "Reseat a camera cable",
+          "anchor": "reseat-a-camera-cable"
+        },
+        {
+          "title": "Power cuts",
+          "anchor": "power-cuts"
+        },
+        {
           "title": "Updates",
           "anchor": "updates"
         },
@@ -304,11 +471,39 @@
       "path": "/core/mcp/",
       "title": "MCP for agents",
       "section": "User guide",
-      "description": "Let an AI agent read your tower and run bounded actions through the Model Context Protocol.",
+      "description": "Let an AI agent read your tower, plan your pods from a seed order, and run bounded actions through the Model Context Protocol.",
       "headings": [
         {
           "title": "Tools",
           "anchor": "tools"
+        },
+        {
+          "title": "The tower",
+          "anchor": "the-tower"
+        },
+        {
+          "title": "Light and water",
+          "anchor": "light-and-water"
+        },
+        {
+          "title": "Grow cycle and protocol",
+          "anchor": "grow-cycle-and-protocol"
+        },
+        {
+          "title": "Pods, cameras and harvests",
+          "anchor": "pods-cameras-and-harvests"
+        },
+        {
+          "title": "Pod-state models",
+          "anchor": "pod-state-models"
+        },
+        {
+          "title": "Planning",
+          "anchor": "planning"
+        },
+        {
+          "title": "Plan from an order",
+          "anchor": "plan-from-an-order"
         },
         {
           "title": "Security",
@@ -342,15 +537,39 @@
       "path": "/core/schedules/",
       "title": "Schedules",
       "section": "User guide",
-      "description": "Light curves with sunrise and sunset ramps, and bounded watering cycles.",
+      "description": "Auto light that follows the sun, light curves of your own, holds by hand, and watering from the grow protocol or your own schedules.",
       "headings": [
+        {
+          "title": "Auto light",
+          "anchor": "auto-light"
+        },
+        {
+          "title": "The Light strip",
+          "anchor": "the-light-strip"
+        },
+        {
+          "title": "Today",
+          "anchor": "today"
+        },
         {
           "title": "Light curves",
           "anchor": "light-curves"
         },
         {
-          "title": "Pump cycles",
-          "anchor": "pump-cycles"
+          "title": "How Auto follows the sun",
+          "anchor": "how-auto-follows-the-sun"
+        },
+        {
+          "title": "Watering",
+          "anchor": "watering"
+        },
+        {
+          "title": "Your schedules",
+          "anchor": "your-schedules"
+        },
+        {
+          "title": "Safety",
+          "anchor": "safety"
         },
         {
           "title": "From other tools",
@@ -392,15 +611,35 @@
       "path": "/core/web-ui/",
       "title": "Web UI tour",
       "section": "User guide",
-      "description": "Every screen of the seedypod web UI, from the home screen to the wall-display kiosk.",
+      "description": "Every screen of the seedypod web UI, from the 3D tower on Home to the wall-display kiosk.",
       "headings": [
         {
           "title": "Welcome",
           "anchor": "welcome"
         },
         {
+          "title": "Garden",
+          "anchor": "garden"
+        },
+        {
           "title": "Home",
           "anchor": "home"
+        },
+        {
+          "title": "Grow",
+          "anchor": "grow"
+        },
+        {
+          "title": "Plan",
+          "anchor": "plan"
+        },
+        {
+          "title": "Care",
+          "anchor": "care"
+        },
+        {
+          "title": "Control",
+          "anchor": "control"
         },
         {
           "title": "Light",
@@ -411,16 +650,12 @@
           "anchor": "water"
         },
         {
-          "title": "Schedule",
-          "anchor": "schedule"
-        },
-        {
           "title": "Autopilot",
           "anchor": "autopilot"
         },
         {
-          "title": "Grow",
-          "anchor": "grow"
+          "title": "Observe",
+          "anchor": "observe"
         },
         {
           "title": "Cameras",
@@ -431,12 +666,20 @@
           "anchor": "analysis"
         },
         {
-          "title": "Alerts",
-          "anchor": "alerts"
+          "title": "System",
+          "anchor": "system"
+        },
+        {
+          "title": "Status",
+          "anchor": "status"
         },
         {
           "title": "Sensors",
           "anchor": "sensors"
+        },
+        {
+          "title": "Alerts",
+          "anchor": "alerts"
         },
         {
           "title": "Settings",
@@ -673,7 +916,7 @@
       "path": "/developers/adr/0009-pump-safety-guard/",
       "title": "ADR 0009: Pump safety guard and latched faults",
       "section": "Developers",
-      "description": "Pump duty clamp, bounded runs, dry-run interlock, over-temp cutoff and latched faults.",
+      "description": "Pump duty clamp, bounded runs, dry-run interlock, over-temp cutoff and latched faults; amended 2026-11-14 for full duty, the brown-out and current guards, and hal.toml-only guard settings.",
       "headings": [
         {
           "title": "Context",
@@ -686,6 +929,10 @@
         {
           "title": "Consequences",
           "anchor": "consequences"
+        },
+        {
+          "title": "Amendment, 2026-11-14",
+          "anchor": "amendment-2026-11-14"
         }
       ],
       "keywords": ""
@@ -996,6 +1243,10 @@
           "anchor": "consequences"
         },
         {
+          "title": "Amendment 2026-11-06: phase 4 as built",
+          "anchor": "amendment-2026-11-06-phase-4-as-built"
+        },
+        {
           "title": "Recommended card",
           "anchor": "recommended-card"
         }
@@ -1056,6 +1307,375 @@
         {
           "title": "Backups carry HomeKit",
           "anchor": "backups-carry-homekit"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Amendment (2026-11-08): a “Tank low” sensor next to the battery",
+          "anchor": "amendment-2026-11-08-a-tank-low-sensor-next-to-the-battery"
+        },
+        {
+          "title": "Amendment (2026-11-09): the tank is a level, with no low flag in HomeKit",
+          "anchor": "amendment-2026-11-09-the-tank-is-a-level-with-no-low-flag-in-homekit"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0024-pod-planner/",
+      "title": "ADR 0024: Pod planner and Gardyn plant catalog",
+      "section": "Developers",
+      "description": "A Gardyn-sourced catalog of 139 plants and a planner that lays pods out by light zone with Gardyn's own rules, staggers sowing by Gardyn's succession groups, and saves plans that can be applied to the…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0025-accessory-sensor-nodes/",
+      "title": "ADR 0025: Accessory sensor nodes",
+      "section": "Developers",
+      "description": "Add-on probes live on a separate sensors-only hald outside the unit, which names its parent unit and which core merges into that unit behind HalClient. First use: an external pH probe.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "The node",
+          "anchor": "the-node"
+        },
+        {
+          "title": "The contract",
+          "anchor": "the-contract"
+        },
+        {
+          "title": "Core",
+          "anchor": "core"
+        },
+        {
+          "title": "The broker",
+          "anchor": "the-broker"
+        },
+        {
+          "title": "Safety",
+          "anchor": "safety"
+        },
+        {
+          "title": "Hardware",
+          "anchor": "hardware"
+        },
+        {
+          "title": "Buses",
+          "anchor": "buses"
+        },
+        {
+          "title": "Alternatives considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Positive",
+          "anchor": "positive"
+        },
+        {
+          "title": "Negative",
+          "anchor": "negative"
+        },
+        {
+          "title": "Not addressed",
+          "anchor": "not-addressed"
+        },
+        {
+          "title": "Unverified",
+          "anchor": "unverified"
+        },
+        {
+          "title": "Implementation order",
+          "anchor": "implementation-order"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0026-web-update/",
+      "title": "ADR 0026: One-click update from the web UI",
+      "section": "Developers",
+      "description": "A root update helper core runs through sudo with fixed arguments: it downloads the CI-built release for the chosen channel from GitHub, checks each asset's sha256, swaps it in keeping the previous…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "A root helper with fixed arguments",
+          "anchor": "a-root-helper-with-fixed-arguments"
+        },
+        {
+          "title": "Channels",
+          "anchor": "channels"
+        },
+        {
+          "title": "Only prebuilt artifacts, each checked",
+          "anchor": "only-prebuilt-artifacts-each-checked"
+        },
+        {
+          "title": "Swap, health check, rollback",
+          "anchor": "swap-health-check-rollback"
+        },
+        {
+          "title": "Progress",
+          "anchor": "progress"
+        },
+        {
+          "title": "The exception to LAN-only",
+          "anchor": "the-exception-to-lan-only"
+        },
+        {
+          "title": "Trust",
+          "anchor": "trust"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0027-camera-exposure/",
+      "title": "ADR 0027: Cameras in HomeKit and Home Assistant",
+      "section": "Developers",
+      "description": "Both tower cameras appear in the Home app and Home Assistant as snapshot cameras that show the newest stored still. Live streaming is declined on the Pi Zero W, with CPU measured on a real unit.",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "What things cost on a real unit",
+          "anchor": "what-things-cost-on-a-real-unit"
+        },
+        {
+          "title": "Options",
+          "anchor": "options"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Amendment (2026-11-09): snapshot-only cameras must still advertise a full camera",
+          "anchor": "amendment-2026-11-09-snapshot-only-cameras-must-still-advertise-a-full-camera"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0028-camera-capture-format/",
+      "title": "ADR 0028: Camera capture format for image analysis",
+      "section": "Developers",
+      "description": "Measured on a real unit: fswebcam's second JPEG pass costs analysis almost nothing, while the camera's own MJPEG at 30 fps adds chroma noise that reads as leaf cover on empty pods. Keep JPEG stills…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "What the cameras offer",
+          "anchor": "what-the-cameras-offer"
+        },
+        {
+          "title": "Capture time and size (1280x960 unless noted)",
+          "anchor": "capture-time-and-size-1280x960-unless-noted"
+        },
+        {
+          "title": "Analysis",
+          "anchor": "analysis"
+        },
+        {
+          "title": "Drift with auto exposure and white balance",
+          "anchor": "drift-with-auto-exposure-and-white-balance"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0029-care-engine-and-agent-boundary/",
+      "title": "ADR 0029: Care engine and agent boundary",
+      "section": "Developers",
+      "description": "Chores, setup warnings and starter rules come from a deterministic care engine in core that works with no model; an optional LLM agent sits on top over MCP, where it reads, explains, logs tank actions…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "1. A deterministic care engine in core",
+          "anchor": "1-a-deterministic-care-engine-in-core"
+        },
+        {
+          "title": "2. Readings first, an honest calendar second",
+          "anchor": "2-readings-first-an-honest-calendar-second"
+        },
+        {
+          "title": "3. Every dose and target cites the knowledge bundle",
+          "anchor": "3-every-dose-and-target-cites-the-knowledge-bundle"
+        },
+        {
+          "title": "4. The agent sits on top, over MCP",
+          "anchor": "4-the-agent-sits-on-top-over-mcp"
+        },
+        {
+          "title": "5. Learning the tank",
+          "anchor": "5-learning-the-tank"
+        },
+        {
+          "title": "6. Event-driven, never a polling LLM",
+          "anchor": "6-event-driven-never-a-polling-llm"
+        },
+        {
+          "title": "Alternatives considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Implementation",
+          "anchor": "implementation"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0030-grow-protocols/",
+      "title": "ADR 0030: Grow protocols",
+      "section": "Developers",
+      "description": "The watering presets become one grow protocol per tower: an ordered sequence of stages, each setting water, light, feed and checks with citations, run from the sowing day with Hold and Advance, and…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "1. One protocol per tower, as stages",
+          "anchor": "1-one-protocol-per-tower-as-stages"
+        },
+        {
+          "title": "2. The grow cycle carries the protocol’s state",
+          "anchor": "2-the-grow-cycle-carries-the-protocols-state"
+        },
+        {
+          "title": "3. Then: what comes after, chosen by a person",
+          "anchor": "3-then-what-comes-after-chosen-by-a-person"
+        },
+        {
+          "title": "4. Your schedules",
+          "anchor": "4-your-schedules"
+        },
+        {
+          "title": "5. The runner",
+          "anchor": "5-the-runner"
+        },
+        {
+          "title": "6. API and MCP",
+          "anchor": "6-api-and-mcp"
+        },
+        {
+          "title": "Alternatives considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "title": "Implementation",
+          "anchor": "implementation"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0031-shared-pod-codes/",
+      "title": "ADR 0031: Shared pod codes",
+      "section": "Developers",
+      "description": "A code → plant table that other owners' confirmations build, shipped inside each release and never fetched by a unit. A unit's own confirmations win, a shared entry needs two units to agree or a…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "title": "Consequences",
+          "anchor": "consequences"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/developers/adr/0032-outbound-notifications/",
+      "title": "ADR 0032: Outbound notifications",
+      "section": "Developers",
+      "description": "Pod events go to an ntfy topic or a webhook the owner picks: ntfy with a random topic and a QR for most owners, a webhook for the rest. Opt-in event groups, one notification per alert transition…",
+      "headings": [
+        {
+          "title": "Context",
+          "anchor": "context"
+        },
+        {
+          "title": "Decision",
+          "anchor": "decision"
         },
         {
           "title": "Consequences",
@@ -1199,6 +1819,14 @@
           "anchor": "http"
         },
         {
+          "title": "Stills",
+          "anchor": "stills"
+        },
+        {
+          "title": "Pod-ID stills",
+          "anchor": "pod-id-stills"
+        },
+        {
           "title": "Camera names",
           "anchor": "camera-names"
         },
@@ -1213,6 +1841,18 @@
         {
           "title": "Install",
           "anchor": "install"
+        },
+        {
+          "title": "Watchdog",
+          "anchor": "watchdog"
+        },
+        {
+          "title": "Hardware watchdog (off)",
+          "anchor": "hardware-watchdog-off"
+        },
+        {
+          "title": "USB recovery",
+          "anchor": "usb-recovery"
         },
         {
           "title": "Verification status",
@@ -1250,6 +1890,38 @@
         {
           "title": "6. Conventions to keep",
           "anchor": "6-conventions-to-keep"
+        },
+        {
+          "title": "7. Real unit bring-up (2026-11-06)",
+          "anchor": "7-real-unit-bring-up-2026-11-06"
+        },
+        {
+          "title": "Where it stands",
+          "anchor": "where-it-stands"
+        },
+        {
+          "title": "Measured",
+          "anchor": "measured"
+        },
+        {
+          "title": "Confirmed on hardware",
+          "anchor": "confirmed-on-hardware"
+        },
+        {
+          "title": "The USB hub: the one open fault",
+          "anchor": "the-usb-hub-the-one-open-fault"
+        },
+        {
+          "title": "Smaller follow-ups",
+          "anchor": "smaller-follow-ups"
+        },
+        {
+          "title": "8. Controlled hub comparison (2026-11-07)",
+          "anchor": "8-controlled-hub-comparison-2026-11-07"
+        },
+        {
+          "title": "Current state and next test",
+          "anchor": "current-state-and-next-test"
         }
       ],
       "keywords": ""
@@ -1263,6 +1935,18 @@
         {
           "title": "Tank and pump, from two weeks of stock logs",
           "anchor": "tank-and-pump-from-two-weeks-of-stock-logs"
+        },
+        {
+          "title": "Controller board, from a photo",
+          "anchor": "controller-board-from-a-photo"
+        },
+        {
+          "title": "Torn camera frames: a loose connector",
+          "anchor": "torn-camera-frames-a-loose-connector"
+        },
+        {
+          "title": "Known issue: USB hub missing at boot",
+          "anchor": "known-issue-usb-hub-missing-at-boot"
         },
         {
           "title": "Model detection",
@@ -1486,6 +2170,3925 @@
         }
       ],
       "keywords": "ios iphone app bonjour demo mode api key xcode"
+    },
+    {
+      "path": "/knowledge/",
+      "title": "Knowledge",
+      "section": "Knowledge",
+      "description": "The evidence behind seedypod's care advice and pump safety: watering cadences, feeding doses, pH and EC targets, light zones, and measured pump current, each with its sources.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/nutrients/",
+      "title": "Nutrients",
+      "section": "Knowledge",
+      "description": "Imported from knowledge/nutrients/index.md in seedypod/core. Edit it there, not here.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/nutrients/community-nutrients/",
+      "title": "Community nutrients",
+      "section": "Knowledge",
+      "description": "What Gardyn owners report feeding instead of Gardyn Plant Food and HydroBoost — MaxiGro, MaxiBloom, Veg+Bloom, Flora, Masterblend, pH Up/Down, CalMag — with doses, targets and failure modes.",
+      "headings": [
+        {
+          "title": "The products",
+          "anchor": "the-products"
+        },
+        {
+          "title": "Doses owners use on a Gardyn",
+          "anchor": "doses-owners-use-on-a-gardyn"
+        },
+        {
+          "title": "Targets owners report",
+          "anchor": "targets-owners-report"
+        },
+        {
+          "title": "Failure modes",
+          "anchor": "failure-modes"
+        },
+        {
+          "title": "Maintainer report",
+          "anchor": "maintainer-report"
+        },
+        {
+          "title": "Gaps",
+          "anchor": "gaps"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/nutrients/gardyn-feeding-guidance/",
+      "title": "Gardyn feeding guidance",
+      "section": "Knowledge",
+      "description": "Gardyn's published plant food, HydroBoost, top-off and refresh doses, and its pH and EC targets, including where its own pages disagree.",
+      "headings": [
+        {
+          "title": "Plant food",
+          "anchor": "plant-food"
+        },
+        {
+          "title": "HydroBoost",
+          "anchor": "hydroboost"
+        },
+        {
+          "title": "Tank cadence",
+          "anchor": "tank-cadence"
+        },
+        {
+          "title": "pH and EC",
+          "anchor": "ph-and-ec"
+        },
+        {
+          "title": "Gaps",
+          "anchor": "gaps"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/operations/",
+      "title": "Operations",
+      "section": "Knowledge",
+      "description": "Imported from knowledge/operations/index.md in seedypod/core. Edit it there, not here.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/operations/pump-dry-trace-2026-11-16/",
+      "title": "Pump dry and air-lock trace (2026-11-16)",
+      "section": "Knowledge",
+      "description": "Supervised dry run on the unit at 100 % duty: 0.55–0.71 A dry against 0.93 A wet, and an air lock after re-submerging that looked the same as dry for ~70 s before clearing by itself.",
+      "headings": [
+        {
+          "title": "The run",
+          "anchor": "the-run"
+        },
+        {
+          "title": "What it means for the guard",
+          "anchor": "what-it-means-for-the-guard"
+        },
+        {
+          "title": "Open",
+          "anchor": "open"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/operations/pump-safety-limits/",
+      "title": "Pump safety limits",
+      "section": "Knowledge",
+      "description": "Defaults for max run, duty, dry-run threshold and over-temperature, and where each number came from.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/operations/pump-wet-trace-2026-11-16/",
+      "title": "Pump wet trace (2026-11-16)",
+      "section": "Knowledge",
+      "description": "First real wet pump-current trace from the unit at 100 % duty: 0.93 A steady after a ~2.3 s ramp, which moves the dry cutoff and grace away from the synthetic assumptions.",
+      "headings": [
+        {
+          "title": "The run",
+          "anchor": "the-run"
+        },
+        {
+          "title": "Start-up ramp",
+          "anchor": "start-up-ramp"
+        },
+        {
+          "title": "What it changes",
+          "anchor": "what-it-changes"
+        },
+        {
+          "title": "Still open",
+          "anchor": "still-open"
+        },
+        {
+          "title": "Missed scheduled run",
+          "anchor": "missed-scheduled-run"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/plants/",
+      "title": "Plants",
+      "section": "Knowledge",
+      "description": "Imported from knowledge/plants/index.md in seedypod/core. Edit it there, not here.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/plants/catalog-provenance/",
+      "title": "Catalog provenance",
+      "section": "Knowledge",
+      "description": "Field-by-field sources for the 139-plant catalog: Gardyn's zone guide, yCube store, Plant Book, help centre plant pages and thinning article, plus rule-derived fields flagged as inferred.",
+      "headings": [
+        {
+          "title": "Sprouting windows",
+          "anchor": "sprouting-windows"
+        },
+        {
+          "title": "Known gaps",
+          "anchor": "known-gaps"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/plants/gardyn-light-zones/",
+      "title": "Gardyn light zones",
+      "section": "Knowledge",
+      "description": "Per-pod light-zone grid for the Gardyn Home (30) and Studio (16), measured from Gardyn's official zone map, with Gardyn's placement rules.",
+      "headings": [
+        {
+          "title": "Gardyn’s placement rules (paraphrased)",
+          "anchor": "gardyns-placement-rules-paraphrased"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/plants/germination/",
+      "title": "Germination",
+      "section": "Knowledge",
+      "description": "Gardyn's published guidance for sprouting yCubes in the tower: covers off before germinating, checking daily, how long sprouting can take, and yCovers only after thinning. Behind the grow protocol's…",
+      "headings": [
+        {
+          "title": "Before germinating",
+          "anchor": "before-germinating"
+        },
+        {
+          "title": "Sprouting",
+          "anchor": "sprouting"
+        },
+        {
+          "title": "Thinning and yCovers",
+          "anchor": "thinning-and-ycovers"
+        },
+        {
+          "title": "Gaps",
+          "anchor": "gaps"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/plants/plant-pages/",
+      "title": "Plant pages",
+      "section": "Knowledge",
+      "description": "What seedypod takes from each plant's page in Gardyn's help centre (Latin name, days to sprout and to maturity, size, temperature, care level, full-dose cue, care and harvest notes), how the notes…",
+      "headings": [
+        {
+          "title": "Facts",
+          "anchor": "facts"
+        },
+        {
+          "title": "Care and harvest notes",
+          "anchor": "care-and-harvest-notes"
+        },
+        {
+          "title": "Where the pages are wrong",
+          "anchor": "where-the-pages-are-wrong"
+        },
+        {
+          "title": "Re-reading",
+          "anchor": "re-reading"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/plants/thinning/",
+      "title": "Thinning",
+      "section": "Knowledge",
+      "description": "How many sprouts to keep in each yCube, by plant, from Gardyn's thinning article: 1 for greens, lettuces, fruiting plants and large flowers, 3 for herbs and small flowers, and five plants not thinned…",
+      "headings": [
+        {
+          "title": "Sprouts to keep",
+          "anchor": "sprouts-to-keep"
+        },
+        {
+          "title": "How",
+          "anchor": "how"
+        },
+        {
+          "title": "Where the list and the plant pages disagree",
+          "anchor": "where-the-list-and-the-plant-pages-disagree"
+        },
+        {
+          "title": "Gaps",
+          "anchor": "gaps"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/plants/zone-tolerance/",
+      "title": "Zone tolerance",
+      "section": "Knowledge",
+      "description": "Which light zones beyond its ideal one a plant does acceptably in, by category, and what each costs the pod planner: Gardyn's one-zone-lower rule first, one zone higher for herbs, flowers and legumes…",
+      "headings": [
+        {
+          "title": "Defaults by category",
+          "anchor": "defaults-by-category"
+        },
+        {
+          "title": "Costs",
+          "anchor": "costs"
+        },
+        {
+          "title": "Gaps",
+          "anchor": "gaps"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/watering/",
+      "title": "Watering",
+      "section": "Knowledge",
+      "description": "Imported from knowledge/watering/index.md in seedypod/core. Edit it there, not here.",
+      "headings": [],
+      "keywords": ""
+    },
+    {
+      "path": "/knowledge/watering/schedules/",
+      "title": "Watering schedules",
+      "section": "Knowledge",
+      "description": "Starting points for a tower's pump cycles by growth stage — germination, seedlings, young plants, mature greens and herbs, large or fruiting plants — and how to judge a schedule by the roots…",
+      "headings": [
+        {
+          "title": "Germination",
+          "anchor": "germination"
+        },
+        {
+          "title": "Seedlings",
+          "anchor": "seedlings"
+        },
+        {
+          "title": "Young plants",
+          "anchor": "young-plants"
+        },
+        {
+          "title": "Mature greens and herbs",
+          "anchor": "mature-greens-and-herbs"
+        },
+        {
+          "title": "Large or fruiting plants",
+          "anchor": "large-or-fruiting-plants"
+        },
+        {
+          "title": "Judging a schedule",
+          "anchor": "judging-a-schedule"
+        }
+      ],
+      "keywords": ""
+    },
+    {
+      "path": "/plants/",
+      "title": "Plants",
+      "section": "Plants",
+      "description": "Every yCube seedypod knows, 139 in all: how many sprouts to keep in each pod, how long it takes to sprout and to harvest, and how to look after it.",
+      "headings": [
+        {
+          "title": "Leafy greens",
+          "anchor": "leafy-greens"
+        },
+        {
+          "title": "Lettuces",
+          "anchor": "lettuces"
+        },
+        {
+          "title": "Herbs",
+          "anchor": "herbs"
+        },
+        {
+          "title": "Vegetables",
+          "anchor": "vegetables"
+        },
+        {
+          "title": "Legumes",
+          "anchor": "legumes"
+        },
+        {
+          "title": "Fruiting plants",
+          "anchor": "fruiting-plants"
+        },
+        {
+          "title": "Flowers",
+          "anchor": "flowers"
+        }
+      ],
+      "keywords": "ycube catalog thin thinning sprouts seedlings harvest care"
+    },
+    {
+      "path": "/plants/american-mustard/",
+      "title": "American Mustard",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica juncea leafy green ycube american mustard"
+    },
+    {
+      "path": "/plants/arugula/",
+      "title": "Arugula",
+      "section": "Plants",
+      "description": "Leafy green for the low light zone. Don’t thin; sprouts in 4–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Eruca sativa leafy green ycube arugula"
+    },
+    {
+      "path": "/plants/banana-pepper/",
+      "title": "Banana Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube banana pepper"
+    },
+    {
+      "path": "/plants/bare-root-strawberries/",
+      "title": "Bare Root Strawberries",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Don’t thin; sprouts in 10–24 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Fragaria ananassa fruiting plant ycube bare root strawberries"
+    },
+    {
+      "path": "/plants/basil/",
+      "title": "Basil",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 5–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Ocimum basilicum herb ycube basil"
+    },
+    {
+      "path": "/plants/bi-color-sunflower/",
+      "title": "Bi-Color Sunflower",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 1 sprout per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Helianthus annuus flower ycube bi color sunflower"
+    },
+    {
+      "path": "/plants/black-pearl-pepper/",
+      "title": "Black Pearl Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–21 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube black pearl pepper"
+    },
+    {
+      "path": "/plants/black-viola/",
+      "title": "Black Viola",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Viola cornuta flower ycube black viola"
+    },
+    {
+      "path": "/plants/blue-cornflower/",
+      "title": "Blue Cornflower",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Centaurea cyanus flower ycube blue cornflower"
+    },
+    {
+      "path": "/plants/blush-hibiscus/",
+      "title": "Blush Hibiscus",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 1 sprout per pod; sprouts in 10–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Hibiscus moscheutos flower ycube blush hibiscus"
+    },
+    {
+      "path": "/plants/borage/",
+      "title": "Borage",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        }
+      ],
+      "keywords": "Borago officinalis flower ycube borage"
+    },
+    {
+      "path": "/plants/breen/",
+      "title": "Breen",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube breen"
+    },
+    {
+      "path": "/plants/bronze-arrow/",
+      "title": "Bronze Arrow",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube bronze arrow"
+    },
+    {
+      "path": "/plants/bulls-blood-beets/",
+      "title": "Bull's Blood Beets",
+      "section": "Plants",
+      "description": "Vegetable for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        }
+      ],
+      "keywords": "Beta vulgaris vegetable ycube bulls blood beets"
+    },
+    {
+      "path": "/plants/bunching-onions/",
+      "title": "Bunching Onions",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 7–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Allium fistulosum herb ycube bunching onions"
+    },
+    {
+      "path": "/plants/burrito-pepper/",
+      "title": "Burrito Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube burrito pepper"
+    },
+    {
+      "path": "/plants/buttercrunch/",
+      "title": "Buttercrunch",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube buttercrunch"
+    },
+    {
+      "path": "/plants/butterhead/",
+      "title": "Butterhead",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube butterhead"
+    },
+    {
+      "path": "/plants/candy-cane-pepper/",
+      "title": "Candy Cane Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube candy cane pepper"
+    },
+    {
+      "path": "/plants/canna-flower/",
+      "title": "Canna Flower",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 1 sprout per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Canna generalis flower ycube canna flower"
+    },
+    {
+      "path": "/plants/cape-gooseberry/",
+      "title": "Cape Gooseberry",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Physalis peruviana fruiting plant ycube cape gooseberry"
+    },
+    {
+      "path": "/plants/cardinale/",
+      "title": "Cardinale",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube cardinale"
+    },
+    {
+      "path": "/plants/catnip/",
+      "title": "Catnip",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 10–14 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Nepeta cataria herb ycube catnip"
+    },
+    {
+      "path": "/plants/celery/",
+      "title": "Celery",
+      "section": "Plants",
+      "description": "Vegetable for the medium light zone. Keep 1 sprout per pod; sprouts in 14–30 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        }
+      ],
+      "keywords": "Apium graveolens vegetable ycube celery"
+    },
+    {
+      "path": "/plants/celosia-mix/",
+      "title": "Celosia Mix",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Celosia argentea plumosa flower ycube celosia mix"
+    },
+    {
+      "path": "/plants/chamomile/",
+      "title": "Chamomile",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Don’t thin; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Matricaria recutita flower ycube chamomile"
+    },
+    {
+      "path": "/plants/chervil/",
+      "title": "Chervil",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Anthriscus cerefolium herb ycube chervil"
+    },
+    {
+      "path": "/plants/chives/",
+      "title": "Chives",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Don’t thin; sprouts in 7–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Allium schoenoprasum herb ycube chives"
+    },
+    {
+      "path": "/plants/cilantro/",
+      "title": "Cilantro",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 5–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Coriandrum sativum herb ycube cilantro"
+    },
+    {
+      "path": "/plants/collard-greens/",
+      "title": "Collard Greens",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica oleracea var. acephala leafy green ycube collard greens"
+    },
+    {
+      "path": "/plants/cucumber/",
+      "title": "Cucumber",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Cucumis sativus fruiting plant ycube cucumber"
+    },
+    {
+      "path": "/plants/dianthus/",
+      "title": "Dianthus",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 5–7 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Dianthus chinensis x barbatus flower ycube dianthus"
+    },
+    {
+      "path": "/plants/dill/",
+      "title": "Dill",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 7–24 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Anethum graveolens herb ycube dill"
+    },
+    {
+      "path": "/plants/dragon-beans/",
+      "title": "Dragon Beans",
+      "section": "Plants",
+      "description": "Legume for the high light zone. Keep 1 sprout per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Phaseolus vulgaris legume ycube dragon beans"
+    },
+    {
+      "path": "/plants/endive-lettuce/",
+      "title": "Endive Lettuce",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Cichorium endivia lettuce ycube endive lettuce"
+    },
+    {
+      "path": "/plants/fairytale-eggplant/",
+      "title": "Fairytale Eggplant",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–21 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Solanum melongena fruiting plant ycube fairytale eggplant"
+    },
+    {
+      "path": "/plants/fiesta-gitana/",
+      "title": "Fiesta Gitana",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 14–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Calendula officinalis flower ycube fiesta gitana"
+    },
+    {
+      "path": "/plants/flashy-trout-back/",
+      "title": "Flashy Trout Back",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa Flashy Trout Back lettuce ycube flashy trout back"
+    },
+    {
+      "path": "/plants/fuchsia-snapdragon/",
+      "title": "Fuchsia Snapdragon",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 3 sprouts per pod; sprouts in 7–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Antirrhinum majus flower ycube fuchsia snapdragon"
+    },
+    {
+      "path": "/plants/garlic-chives/",
+      "title": "Garlic Chives",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Don’t thin; sprouts in 10–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Allium tuberosum herb ycube garlic chives"
+    },
+    {
+      "path": "/plants/goliath-pepper/",
+      "title": "Goliath Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube goliath pepper"
+    },
+    {
+      "path": "/plants/green-beans/",
+      "title": "Green Beans",
+      "section": "Plants",
+      "description": "Legume for the high light zone. Keep 1 sprout per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Phaseolus vulgaris legume ycube green beans"
+    },
+    {
+      "path": "/plants/green-bok-choy/",
+      "title": "Green Bok Choy",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica rapa var. chinensis leafy green ycube green bok choy"
+    },
+    {
+      "path": "/plants/green-cabbage/",
+      "title": "Green Cabbage",
+      "section": "Plants",
+      "description": "Vegetable for the medium light zone. Keep 1 sprout per pod; sprouts in 7–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica oleracea vegetable ycube green cabbage"
+    },
+    {
+      "path": "/plants/green-mustard/",
+      "title": "Green Mustard",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 5–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica rapa var. japonica leafy green ycube green mustard"
+    },
+    {
+      "path": "/plants/green-salanova/",
+      "title": "Green Salanova",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube green salanova"
+    },
+    {
+      "path": "/plants/green-tatsoi/",
+      "title": "Green Tatsoi",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 5–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica rapa var. narinosa leafy green ycube green tatsoi"
+    },
+    {
+      "path": "/plants/holy-basil/",
+      "title": "Holy Basil",
+      "section": "Plants",
+      "description": "Herb for the high light zone. Keep 3 sprouts per pod; sprouts in 5–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Ocimum tenuiflorum herb ycube holy basil"
+    },
+    {
+      "path": "/plants/hon-tsai-tai/",
+      "title": "Hon Tsai Tai",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Brassica rapa leafy green ycube hon tsai tai"
+    },
+    {
+      "path": "/plants/hungarian-hot-wax-pepper/",
+      "title": "Hungarian Hot Wax Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube hungarian hot wax pepper"
+    },
+    {
+      "path": "/plants/iceberg/",
+      "title": "Iceberg",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 5–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube iceberg"
+    },
+    {
+      "path": "/plants/italian-parsley/",
+      "title": "Italian Parsley",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 10–30 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Petroselinum crispum neopolitanum herb ycube italian parsley"
+    },
+    {
+      "path": "/plants/jalapeno/",
+      "title": "Jalapeño",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube jalapeno"
+    },
+    {
+      "path": "/plants/kale-lacinato/",
+      "title": "Kale Lacinato",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        }
+      ],
+      "keywords": "Brassica oleracea Lacinato leafy green ycube kale lacinato"
+    },
+    {
+      "path": "/plants/kale/",
+      "title": "Kale",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Brassica oleracea leafy green ycube kale"
+    },
+    {
+      "path": "/plants/lavender/",
+      "title": "Lavender",
+      "section": "Plants",
+      "description": "Herb for the high light zone. Keep 3 sprouts per pod; sprouts in 15–30 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Lavandula angustifolia herb ycube lavender"
+    },
+    {
+      "path": "/plants/lemon-balm/",
+      "title": "Lemon Balm",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Melissa officinalis herb ycube lemon balm"
+    },
+    {
+      "path": "/plants/lemon-hot-pepper/",
+      "title": "Lemon Hot Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube lemon hot pepper"
+    },
+    {
+      "path": "/plants/lemongrass/",
+      "title": "Lemongrass",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 10–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Cymbopogon citratus herb ycube lemongrass"
+    },
+    {
+      "path": "/plants/lime-basil/",
+      "title": "Lime Basil",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 5–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Ocimum americanum Lime herb ycube lime basil"
+    },
+    {
+      "path": "/plants/lollo-rossa/",
+      "title": "Lollo Rossa",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa Lollo Rossa lettuce ycube lollo rossa"
+    },
+    {
+      "path": "/plants/mammoth-basil/",
+      "title": "Mammoth Basil",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 1 sprout per pod; sprouts in 10–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Ocimum basilicum herb ycube mammoth basil"
+    },
+    {
+      "path": "/plants/marietta-marigold/",
+      "title": "Marietta Marigold",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Tagetes patula flower ycube marietta marigold"
+    },
+    {
+      "path": "/plants/matilda/",
+      "title": "Matilda",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa flower ycube matilda"
+    },
+    {
+      "path": "/plants/mini-broccoli/",
+      "title": "Mini Broccoli",
+      "section": "Plants",
+      "description": "Vegetable for the high light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        }
+      ],
+      "keywords": "Brassica oleracea Italica vegetable ycube mini broccoli"
+    },
+    {
+      "path": "/plants/mini-cauliflower/",
+      "title": "Mini Cauliflower",
+      "section": "Plants",
+      "description": "Vegetable for the high light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Brassica oleracea botrytis vegetable ycube mini cauliflower"
+    },
+    {
+      "path": "/plants/mini-eggplant/",
+      "title": "Mini Eggplant",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Solanum melongena fruiting plant ycube mini eggplant"
+    },
+    {
+      "path": "/plants/mini-okra/",
+      "title": "Mini Okra",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–16 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Abelmoschus esculentus fruiting plant ycube mini okra"
+    },
+    {
+      "path": "/plants/mini-pumpkin/",
+      "title": "Mini Pumpkin",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Cucurbita pepo fruiting plant ycube mini pumpkin"
+    },
+    {
+      "path": "/plants/mini-squash/",
+      "title": "Mini Squash",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Cucurbita pepo fruiting plant ycube mini squash"
+    },
+    {
+      "path": "/plants/mint/",
+      "title": "Mint",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 10–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Mentha herb ycube mint"
+    },
+    {
+      "path": "/plants/monte-carlo/",
+      "title": "Monte Carlo",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa Monte Carlo lettuce ycube monte carlo"
+    },
+    {
+      "path": "/plants/muir-lettuce/",
+      "title": "Muir Lettuce",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 5–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube muir lettuce"
+    },
+    {
+      "path": "/plants/nasturtium/",
+      "title": "Nasturtium",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–18 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        }
+      ],
+      "keywords": "Tropaeolum majus flower ycube nasturtium"
+    },
+    {
+      "path": "/plants/night-scented-stock/",
+      "title": "Night-Scented Stock",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 5–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Matthiola longipetala flower ycube night scented stock"
+    },
+    {
+      "path": "/plants/oregano/",
+      "title": "Oregano",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 7–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Origanum heracleoticum herb ycube oregano"
+    },
+    {
+      "path": "/plants/peas/",
+      "title": "Peas",
+      "section": "Plants",
+      "description": "Legume for the medium light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Pisum sativum legume ycube peas"
+    },
+    {
+      "path": "/plants/perpetual-spinach/",
+      "title": "Perpetual Spinach",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Beta vulgaris leafy green ycube perpetual spinach"
+    },
+    {
+      "path": "/plants/pink-celery/",
+      "title": "Pink Celery",
+      "section": "Plants",
+      "description": "Vegetable for the medium light zone. Keep 1 sprout per pod; sprouts in 12–20 days; first harvest after 2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Apium graveolens vegetable ycube pink celery"
+    },
+    {
+      "path": "/plants/pink-petunia/",
+      "title": "Pink Petunia",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–12 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        }
+      ],
+      "keywords": "Petunia x hybrida flower ycube pink petunia"
+    },
+    {
+      "path": "/plants/poblano-pepper/",
+      "title": "Poblano Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube poblano pepper"
+    },
+    {
+      "path": "/plants/portulaca-mix/",
+      "title": "Portulaca Mix",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "flower ycube portulaca mix"
+    },
+    {
+      "path": "/plants/purple-basil/",
+      "title": "Purple Basil",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 5–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Ocimum basilicum herb ycube purple basil"
+    },
+    {
+      "path": "/plants/purple-beans/",
+      "title": "Purple Beans",
+      "section": "Plants",
+      "description": "Legume for the high light zone. Keep 1 sprout per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Phaseolus vulgaris legume ycube purple beans"
+    },
+    {
+      "path": "/plants/purple-bok-choy/",
+      "title": "Purple Bok Choy",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica rapa subsp. chinensis leafy green ycube purple bok choy"
+    },
+    {
+      "path": "/plants/purple-campanula/",
+      "title": "Purple Campanula",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 12–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Campanula medium flower ycube purple campanula"
+    },
+    {
+      "path": "/plants/purple-cayenne-pepper/",
+      "title": "Purple Cayenne Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube purple cayenne pepper"
+    },
+    {
+      "path": "/plants/purple-kohlrabi/",
+      "title": "Purple Kohlrabi",
+      "section": "Plants",
+      "description": "Vegetable for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        }
+      ],
+      "keywords": "Brassica oleracea vegetable ycube purple kohlrabi"
+    },
+    {
+      "path": "/plants/purple-petunia/",
+      "title": "Purple Petunia",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–12 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        }
+      ],
+      "keywords": "Petunia x hybrida flower ycube purple petunia"
+    },
+    {
+      "path": "/plants/purple-snapdragon/",
+      "title": "Purple Snapdragon",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 3 sprouts per pod; sprouts in 7–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Antirrhinum majus flower ycube purple snapdragon"
+    },
+    {
+      "path": "/plants/purslane/",
+      "title": "Purslane",
+      "section": "Plants",
+      "description": "Leafy green for the low light zone. Keep 3 sprouts per pod; sprouts in 7–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Portulaca oleracea leafy green ycube purslane"
+    },
+    {
+      "path": "/plants/radicchio/",
+      "title": "Radicchio",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Cichorium intybus leafy green ycube radicchio"
+    },
+    {
+      "path": "/plants/radio-calendula/",
+      "title": "Radio Calendula",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 6–14 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Calendula officinalis flower ycube radio calendula"
+    },
+    {
+      "path": "/plants/red-amaranth/",
+      "title": "Red Amaranth",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Amaranthus cruentus leafy green ycube red amaranth"
+    },
+    {
+      "path": "/plants/red-cherry-tomato/",
+      "title": "Red Cherry Tomato",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 7–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        }
+      ],
+      "keywords": "Lycopersicum esculentum fruiting plant ycube red cherry tomato"
+    },
+    {
+      "path": "/plants/red-hibiscus/",
+      "title": "Red Hibiscus",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 1 sprout per pod; sprouts in 10–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Hibiscus moscheutos flower ycube red hibiscus"
+    },
+    {
+      "path": "/plants/red-impatiens/",
+      "title": "Red Impatiens",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–10 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Impatiens walleriana flower ycube red impatiens"
+    },
+    {
+      "path": "/plants/red-mini-strawberries/",
+      "title": "Red Mini Strawberries",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 3 sprouts per pod; sprouts in 10–15 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Fragaria vesca fruiting plant ycube red mini strawberries"
+    },
+    {
+      "path": "/plants/red-mustard/",
+      "title": "Red Mustard",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 5–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica juncea leafy green ycube red mustard"
+    },
+    {
+      "path": "/plants/red-oak-leaf-lettuce/",
+      "title": "Red Oak Leaf Lettuce",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa Oak Leaf Red lettuce ycube red oak leaf lettuce"
+    },
+    {
+      "path": "/plants/red-romaine/",
+      "title": "Red Romaine",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa cimmaron lettuce ycube red romaine"
+    },
+    {
+      "path": "/plants/red-sails-lettuce/",
+      "title": "Red Sails Lettuce",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa Red Sails lettuce ycube red sails lettuce"
+    },
+    {
+      "path": "/plants/red-salad-bowl/",
+      "title": "Red Salad Bowl",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa Red Salad Bowl lettuce ycube red salad bowl"
+    },
+    {
+      "path": "/plants/red-sorrel/",
+      "title": "Red Sorrel",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Rumex acetosa leafy green ycube red sorrel"
+    },
+    {
+      "path": "/plants/red-swiss-chard/",
+      "title": "Red Swiss Chard",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Beta vulgaris var. cicla leafy green ycube red swiss chard"
+    },
+    {
+      "path": "/plants/red-tatsoi/",
+      "title": "Red Tatsoi",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 5–12 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Brassica narinosa leafy green ycube red tatsoi"
+    },
+    {
+      "path": "/plants/romaine/",
+      "title": "Romaine",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa Paris Island Cos lettuce ycube romaine"
+    },
+    {
+      "path": "/plants/rosemary/",
+      "title": "Rosemary",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 15–25 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Salvia rosmarinus (Rosmarinus officinalis) herb ycube rosemary"
+    },
+    {
+      "path": "/plants/rouge-dhiver/",
+      "title": "Rouge d'Hiver",
+      "section": "Plants",
+      "description": "Lettuce for the medium light zone. Keep 1 sprout per pod; sprouts in 7–10 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Lactuca sativa lettuce ycube rouge dhiver"
+    },
+    {
+      "path": "/plants/sage/",
+      "title": "Sage",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Salvia officinalis herb ycube sage"
+    },
+    {
+      "path": "/plants/savory/",
+      "title": "Savory",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Satureja hortensis herb ycube savory"
+    },
+    {
+      "path": "/plants/scarlet-snapdragon/",
+      "title": "Scarlet Snapdragon",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 3 sprouts per pod; sprouts in 7–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Antirrhinum majus flower ycube scarlet snapdragon"
+    },
+    {
+      "path": "/plants/shishito-pepper/",
+      "title": "Shishito Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube shishito pepper"
+    },
+    {
+      "path": "/plants/shiso/",
+      "title": "Shiso",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Perilla frutescens var. crispa herb ycube shiso"
+    },
+    {
+      "path": "/plants/sorrel/",
+      "title": "Sorrel",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Rumex acetosa leafy green ycube sorrel"
+    },
+    {
+      "path": "/plants/stevia/",
+      "title": "Stevia",
+      "section": "Plants",
+      "description": "Herb for the high light zone. Keep 3 sprouts per pod; sprouts in 14–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Stevia rebaudiana herb ycube stevia"
+    },
+    {
+      "path": "/plants/stock-flower/",
+      "title": "Stock Flower",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 3 sprouts per pod; sprouts in 5–10 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Matthiola incana flower ycube stock flower"
+    },
+    {
+      "path": "/plants/sunflower/",
+      "title": "Sunflower",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 1 sprout per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Helianthus annuus flower ycube sunflower"
+    },
+    {
+      "path": "/plants/sweet-marjoram/",
+      "title": "Sweet Marjoram",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Origanum syriacum herb ycube sweet marjoram"
+    },
+    {
+      "path": "/plants/sweet-pepper/",
+      "title": "Sweet Pepper",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Capsicum annuum fruiting plant ycube sweet pepper"
+    },
+    {
+      "path": "/plants/sweet-thai-basil/",
+      "title": "Sweet Thai Basil",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 5–10 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Ocimum basilicum var. thyrsiflora herb ycube sweet thai basil"
+    },
+    {
+      "path": "/plants/tarragon/",
+      "title": "Tarragon",
+      "section": "Plants",
+      "description": "Herb for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Tagetes lucida herb ycube tarragon"
+    },
+    {
+      "path": "/plants/thai-eggplant/",
+      "title": "Thai Eggplant",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 10–21 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Solanum melongena fruiting plant ycube thai eggplant"
+    },
+    {
+      "path": "/plants/thyme/",
+      "title": "Thyme",
+      "section": "Plants",
+      "description": "Herb for the low light zone. Keep 3 sprouts per pod; sprouts in 7–21 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Thymus vulgaris herb ycube thyme"
+    },
+    {
+      "path": "/plants/tokyo-bekana/",
+      "title": "Tokyo Bekana",
+      "section": "Plants",
+      "description": "Leafy green for the high light zone. Keep 1 sprout per pod; sprouts in 7–14 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        }
+      ],
+      "keywords": "Brassica rapa var. chinensis leafy green ycube tokyo bekana"
+    },
+    {
+      "path": "/plants/torenia/",
+      "title": "Torenia",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 6–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Torenia fournieri flower ycube torenia"
+    },
+    {
+      "path": "/plants/viola/",
+      "title": "Viola",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Viola cornuta flower ycube viola"
+    },
+    {
+      "path": "/plants/violet-impatiens/",
+      "title": "Violet Impatiens",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–10 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Impatiens walleriana flower ycube violet impatiens"
+    },
+    {
+      "path": "/plants/wasabi-greens/",
+      "title": "Wasabi Greens",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 4–21 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Brassica juncea leafy green ycube wasabi greens"
+    },
+    {
+      "path": "/plants/watercress/",
+      "title": "Watercress",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Nasturtium officinale leafy green ycube watercress"
+    },
+    {
+      "path": "/plants/wheatgrass/",
+      "title": "Wheatgrass",
+      "section": "Plants",
+      "description": "Leafy green for the low light zone. Don’t thin; sprouts in 1–7 days; first harvest after 1–2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        }
+      ],
+      "keywords": "Triticum aestivum leafy green ycube wheatgrass"
+    },
+    {
+      "path": "/plants/white-kohlrabi/",
+      "title": "White Kohlrabi",
+      "section": "Plants",
+      "description": "Vegetable for the medium light zone. Keep 1 sprout per pod; sprouts in 5–10 days; first harvest after 2 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        }
+      ],
+      "keywords": "Brassica oleracea vegetable ycube white kohlrabi"
+    },
+    {
+      "path": "/plants/white-petunia/",
+      "title": "White Petunia",
+      "section": "Plants",
+      "description": "Flower for the medium light zone. Keep 3 sprouts per pod; sprouts in 7–12 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        }
+      ],
+      "keywords": "Petunia x hybrida flower ycube white petunia"
+    },
+    {
+      "path": "/plants/yellow-beans/",
+      "title": "Yellow Beans",
+      "section": "Plants",
+      "description": "Legume for the high light zone. Keep 1 sprout per pod; sprouts in 10–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Phaseolus vulgaris legume ycube yellow beans"
+    },
+    {
+      "path": "/plants/yellow-cherry-tomato/",
+      "title": "Yellow Cherry Tomato",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 1 sprout per pod; sprouts in 7–28 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Support",
+          "anchor": "support"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        }
+      ],
+      "keywords": "Lycopersicum esculentum fruiting plant ycube yellow cherry tomato"
+    },
+    {
+      "path": "/plants/yellow-mini-strawberry/",
+      "title": "Yellow Mini Strawberry",
+      "section": "Plants",
+      "description": "Fruiting plant for the high light zone. Keep 3 sprouts per pod; sprouts in 10–15 days; first harvest after 3–4 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pollinating",
+          "anchor": "pollinating"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Fragaria vesca fruiting plant ycube yellow mini strawberry"
+    },
+    {
+      "path": "/plants/yellow-snapdragon/",
+      "title": "Yellow Snapdragon",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 3 sprouts per pod; sprouts in 7–20 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Antirrhinum majus flower ycube yellow snapdragon"
+    },
+    {
+      "path": "/plants/yellow-swiss-chard/",
+      "title": "Yellow Swiss Chard",
+      "section": "Plants",
+      "description": "Leafy green for the medium light zone. Keep 1 sprout per pod; sprouts in 7–21 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        }
+      ],
+      "keywords": "Beta vulgaris var. cicla leafy green ycube yellow swiss chard"
+    },
+    {
+      "path": "/plants/zinnia/",
+      "title": "Zinnia",
+      "section": "Plants",
+      "description": "Flower for the high light zone. Keep 3 sprouts per pod; sprouts in 7–14 days; first harvest after 2–3 months.",
+      "headings": [
+        {
+          "title": "At a glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "title": "Harvest",
+          "anchor": "harvest"
+        },
+        {
+          "title": "Pruning",
+          "anchor": "pruning"
+        },
+        {
+          "title": "Pests and disease",
+          "anchor": "pests-and-disease"
+        },
+        {
+          "title": "Climate",
+          "anchor": "climate"
+        }
+      ],
+      "keywords": "Zinnia elegans flower ycube zinnia"
     }
   ]
 }
