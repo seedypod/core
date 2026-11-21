@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { PumpRun } from '../../hardware/contract'
+import type { LightSource } from '../../control/light'
+import type { ActuatorState, PumpRun } from '../../hardware/contract'
 import { createEventBus } from '../../lib/eventBus'
 import { MemoryStore } from '../../store/memory'
 import type { DeviceSettings } from '../../store/types'
@@ -7,7 +8,7 @@ import { Notifier } from '../notifier'
 
 const T0 = new Date('2026-11-20T10:00:00.000Z')
 
-function setup(settings: Partial<DeviceSettings> = { notifyTarget: 'ntfy', ntfyTopic: 'seedypod-test' }, respond: (n: number) => Response | Promise<Response> = () => new Response('ok')) {
+function setup(settings: Partial<DeviceSettings> = { notifyTarget: 'ntfy', ntfyTopic: 'seedypod-test' }, respond: (n: number) => Response | Promise<Response> = () => new Response('ok'), lightSource?: () => LightSource) {
   const store = new MemoryStore()
   store.settings.update(settings)
   const events = createEventBus()
@@ -18,12 +19,14 @@ function setup(settings: Partial<DeviceSettings> = { notifyTarget: 'ntfy', ntfyT
     return respond(sent.length)
   })
   const logs: string[] = []
-  const n = new Notifier({ store, events, now: () => now, fetch: fetch as unknown as typeof globalThis.fetch, log: m => logs.push(m) })
+  const n = new Notifier({ store, events, now: () => now, fetch: fetch as unknown as typeof globalThis.fetch, log: m => logs.push(m), lightSource })
   n.start()
   return { store, events, n, sent, fetch, logs, at: (ms: number) => (now = new Date(T0.getTime() + ms)) }
 }
 
 const run = (o: Partial<PumpRun> = {}): PumpRun => ({ startedAt: '2026-11-20T09:57:30.000Z', endedAt: '2026-11-20T10:00:00.000Z', everyMs: 1000, samples: [], wetA: null, endedBy: 'deadline', fault: null, levelPct: 62.4, levelCm: 10, ...o })
+
+const lamp = (level: number): ActuatorState => ({ on: level > 0, level, since: T0.toISOString(), fault: null, remainingS: null })
 
 afterEach(() => vi.useRealTimers())
 
@@ -108,6 +111,61 @@ describe('Notifier', () => {
     pump(run({ startedAt: '2026-11-20T09:00:00.000Z' }))
     await new Promise(r => setTimeout(r, 20))
     expect(sent).toHaveLength(3)
+  })
+
+  it('reports the light once it settles, with who changed it, and skips the first state and small moves', async () => {
+    vi.useFakeTimers({ now: T0 })
+    let source: LightSource = 'schedule'
+    const { events, sent, n } = setup({ notifyTarget: 'webhook', webhookUrl: 'https://x.test/h', notifyGroups: ['lights'] }, undefined, () => source)
+    const light = (level: number) => events.emit({ kind: 'hal', event: { type: 'actuator', id: 'light', state: lamp(level) } })
+    light(0)
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    expect(sent).toHaveLength(0)
+    for (const level of [10, 30, 50, 70, 80]) {
+      light(level)
+      await vi.advanceTimersByTimeAsync(60_000)
+    }
+    expect(sent).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(2 * 60_000)
+    expect(sent.map(s => s.body)).toEqual([expect.objectContaining({ event: 'lights.changed', title: 'Light on', message: 'On at 80%, on schedule.', priority: 'low', data: { from: 0, to: 80, source: 'schedule' } })])
+    light(83)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    expect(sent).toHaveLength(1)
+    source = 'autopilot'
+    light(40)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    source = 'manual'
+    light(100)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    source = null
+    light(0)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    expect(sent.slice(1).map(s => [s.body.title, s.body.message])).toEqual([
+      ['Light dimmed', 'Now 40%, by Autopilot.'],
+      ['Light brightened', 'Now 100%, by hand.'],
+      ['Light off', 'Turned off.'],
+    ])
+    light(60)
+    n.stop()
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    expect(sent).toHaveLength(4)
+  })
+
+  it('keeps the light quiet unless Lights is on, without reporting the old change once it is', async () => {
+    vi.useFakeTimers({ now: T0 })
+    const { events, sent, store } = setup({ notifyTarget: 'ntfy', ntfyTopic: 't' })
+    const light = (level: number) => events.emit({ kind: 'hal', event: { type: 'actuator', id: 'light', state: lamp(level) } })
+    light(0)
+    light(80)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    expect(sent).toHaveLength(0)
+    store.settings.update({ notifyGroups: ['lights'] })
+    light(80)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    expect(sent).toHaveLength(0)
+    light(0)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    expect(sent.map(s => s.body)).toEqual([expect.objectContaining({ title: 'Gardyn: Light off', message: 'Turned off.', tags: ['bulb'], priority: 2 })])
   })
 
   it('retries server errors with backoff, gives up after four tries, and never logs the URL', async () => {

@@ -2,6 +2,7 @@
 
 ## 2026-11-20
 
+- **Update**: [ADR 0032](adr/0032-outbound-notifications.md) and [Notifications](NOTIFICATIONS.md) add a Lights group (off by default): on, off, dimmed or brightened once the light holds for 3 minutes, with who changed it.
 - **Creation**: [ADR 0032](adr/0032-outbound-notifications.md), outbound notifications: ntfy with a random topic and QR, or a webhook (JSON, Discord, Slack, optional HMAC signature); opt-in event groups; https off the LAN; the webhook URL never returned. Guide: [Notifications](NOTIFICATIONS.md). Updated [Privacy](PRIVACY.md) and [Autopilot](AUTOPILOT.md).
 
 ## 2026-11-09

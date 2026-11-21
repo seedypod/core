@@ -112,7 +112,7 @@ export function createCore(o: CoreOptions): Core {
   const autopilot = createAutopilot({ hal: o.hal, store: o.store, events, light, now: o.now, clockTrusted: o.clockTrusted, log: m => console.warn(m) })
   const flash = new FlashMeter({ store: o.store, source: o.flashSource ?? null, disk: o.disk, now: o.now })
   const podCodes = new PodCodeService({ store: o.store, captures, reader: o.codeReader ?? null, log: m => console.warn(m), onRead: () => events.emit({ kind: 'mutation', path: 'podCodes' }) })
-  const notifier = new Notifier({ store: o.store, events, now: o.now, fetch: o.notifyFetch, log: m => console.warn(m) })
+  const notifier = new Notifier({ store: o.store, events, now: o.now, fetch: o.notifyFetch, log: m => console.warn(m), lightSource: () => light.status().source })
   const ctx: Context = { hal: o.hal, events, store: o.store, captures, analysis, podCodes, mirror: o.mirror, backup: o.backup, restore: o.restore, update: o.update, bootLog: o.bootLog, homekit: o.homekit, models: o.models, podvision: o.podvision, bridge: o.bridge, flash, notifier, database: o.database, logging: o.logging, wifi, light, autopilot, version: o.version, host: o.host, now: o.now }
   o.homekit?.attach(ctx)
   const recorder = new Recorder({ store: o.store, events, now: o.now })

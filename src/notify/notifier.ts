@@ -1,11 +1,12 @@
 /**
  * Sends pod events to the owner's ntfy topic or webhook (ADR-0032). Alerts are
  * seen where every alert is written, the store, so each one notifies once when
- * it's raised and, for problems, once when it clears. Pump runs come from the
- * HAL. Delivery is one request at a time, off the caller's path, with a few
+ * it's raised and, for problems, once when it clears. Pump runs and light
+ * changes come from the HAL. Delivery is one request at a time, off the caller's path, with a few
  * retries; a failure is kept for Settings and logged without the URL.
  */
-import type { PumpRun } from '../hardware/contract'
+import type { LightSource } from '../control/light'
+import type { ActuatorState, PumpRun } from '../hardware/contract'
 import type { EventBus } from '../lib/eventBus'
 import type { AlertRow, Store } from '../store/types'
 import { alertTitle, buildRequest, enabledGroups, groupOf, type NotifyConfig, type NotifyEvent } from './targets'
@@ -26,6 +27,11 @@ const MAX_QUEUE = 20
 const REPEAT_MS = 15 * 60_000
 /** A pump run that ended longer ago than this is the broker's retained copy, not a new run. */
 const STALE_RUN_MS = 5 * 60_000
+/** A light change waits this long for the next one, so a fade or a curve's ramp (a step a minute) sends one message. */
+const LIGHT_SETTLE_MS = 3 * 60_000
+/** A smaller move while the light stays on isn't worth a message. */
+const LIGHT_STEP = 5
+const LIGHT_WHY: Record<Exclude<LightSource, null>, string> = { schedule: 'on schedule', autopilot: 'by Autopilot', manual: 'by hand' }
 
 export interface NotifierOptions {
   store: Store
@@ -33,6 +39,8 @@ export interface NotifierOptions {
   now?: () => Date
   fetch?: typeof fetch
   log?: (m: string) => void
+  /** Who's driving the light now, to say why it changed. */
+  lightSource?: () => LightSource
 }
 
 export class Notifier {
@@ -43,6 +51,10 @@ export class Notifier {
   private active = new Set<number>()
   private sentAt = new Map<string, number>()
   private lastRunStart: string | null = null
+  /** The light level last reported (0 is off); null until the first state, which is the baseline. */
+  private lightSent: number | null = null
+  private lightNow = 0
+  private lightTimer: ReturnType<typeof setTimeout> | null = null
   private undo: Array<() => void> = []
 
   constructor(private o: NotifierOptions) {}
@@ -76,6 +88,7 @@ export class Notifier {
     }
     const unsub = this.o.events.subscribe((e) => {
       if (e.kind === 'hal' && e.event.type === 'pumpRun') this.pumpRun(e.event.run)
+      if (e.kind === 'hal' && e.event.type === 'actuator' && e.event.id === 'light') this.light(e.event.state)
     })
     this.undo.push(() => Object.assign(a, { raise, clear, dismiss }), unsub)
   }
@@ -83,7 +96,9 @@ export class Notifier {
   stop(): void {
     for (const u of this.undo.splice(0)) u()
     if (this.timer) clearTimeout(this.timer)
+    if (this.lightTimer) clearTimeout(this.lightTimer)
     this.timer = null
+    this.lightTimer = null
     this.queue = []
   }
 
@@ -136,6 +151,32 @@ export class Notifier {
       ? `Watering stopped after ${took}: ${run.fault ?? 'pump fault'}${tank}.`
       : `Watered for ${took}${run.endedBy === 'stop' ? ' (stopped early)' : ''}${tank}.`
     this.send({ group: 'watering', type: 'ran', title: 'Watering', message, priority: run.endedBy === 'fault' ? 'high' : 'low', at: run.endedAt, data: { startedAt: run.startedAt, endedAt: run.endedAt, endedBy: run.endedBy, fault: run.fault, levelPct: run.levelPct } })
+  }
+
+  private light(state: ActuatorState): void {
+    const level = state.on ? Math.round(state.level) : 0
+    if (this.lightSent === null) {
+      this.lightSent = level
+      return
+    }
+    this.lightNow = level
+    if (this.lightTimer) clearTimeout(this.lightTimer)
+    this.lightTimer = setTimeout(() => {
+      this.lightTimer = null
+      this.lightSettled()
+    }, LIGHT_SETTLE_MS)
+  }
+
+  private lightSettled(): void {
+    const from = this.lightSent ?? 0
+    const to = this.lightNow
+    if (from === to || (from > 0 && to > 0 && Math.abs(to - from) < LIGHT_STEP)) return
+    this.lightSent = to
+    const source = this.o.lightSource?.() ?? null
+    const why = source ? LIGHT_WHY[source] : null
+    const title = to === 0 ? 'Light off' : from === 0 ? 'Light on' : to < from ? 'Light dimmed' : 'Light brightened'
+    const message = to === 0 ? `Turned off${why ? ` ${why}` : ''}.` : `${from === 0 ? 'On at' : 'Now'} ${to}%${why ? `, ${why}` : ''}.`
+    this.send({ group: 'lights', type: 'changed', title, message, priority: 'low', at: this.now().toISOString(), data: { from, to, source } })
   }
 
   /** Queues an event the owner opted into; false when it isn't sent anywhere. */

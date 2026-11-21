@@ -42,7 +42,7 @@ Pick **Webhook**, paste the URL and pick a format:
 | JSON | `{ "event", "at", "unit", "title", "message", "priority", "data" }` | Home Assistant's webhook trigger, n8n, your own server |
 
 `event` is `alerts.raised`, `alerts.cleared`, `reminders.raised`,
-`autopilot.raised`, `watering.ran` or `test`. With a **signing secret** set,
+`autopilot.raised`, `watering.ran`, `lights.changed` or `test`. With a **signing secret** set,
 each JSON body carries `X-Seedypod-Signature: sha256=<hex>`, the HMAC-SHA256
 of the body with your secret, so your server can tell the request came from
 the unit.
@@ -59,9 +59,14 @@ only masked; paste a new one to replace it.
 | Reminders | on | Thin, feed, top off, check roots, harvest |
 | Autopilot | on | A rule's **Notify** action |
 | Watering | off | Every pump run, with how long it ran and how full the tank is. Several a day |
+| Lights | off | The light turning on, off, dimming or brightening, and whether the schedule, Autopilot or a person did it |
 
 Each alert notifies once when it opens, not while it stays open. An alert
 that keeps coming and going notifies at most once every 15 minutes.
+
+A light change is sent once the light has held for three minutes, so a
+sunrise ramp or a fade is one message with where it ended up, not one a
+minute. Moves under 5% while the light stays on aren't sent.
 
 If a server doesn't answer, the unit tries again after 10 seconds, a minute
 and five minutes, then gives up on that message. The last delivery, and why it

@@ -4,15 +4,15 @@
  */
 import { ALERT_LABEL } from '../lib/alertLabels'
 
-export const NOTIFY_GROUPS = ['alerts', 'reminders', 'autopilot', 'watering'] as const
+export const NOTIFY_GROUPS = ['alerts', 'reminders', 'autopilot', 'watering', 'lights'] as const
 export type NotifyGroup = typeof NOTIFY_GROUPS[number]
 /** What a new unit sends: anything that needs the owner, nothing routine. */
 export const DEFAULT_GROUPS: readonly NotifyGroup[] = ['alerts', 'reminders', 'autopilot']
 
 export interface NotifyEvent {
   group: NotifyGroup | 'test'
-  /** `raised`/`cleared` for alerts, `ran` for a pump run, `test` for Send test. */
-  type: 'raised' | 'cleared' | 'ran' | 'test'
+  /** `raised`/`cleared` for alerts, `ran` for a pump run, `changed` for the light, `test` for Send test. */
+  type: 'raised' | 'cleared' | 'ran' | 'changed' | 'test'
   title: string
   message: string
   priority: 'high' | 'default' | 'low'
@@ -91,7 +91,7 @@ export function ntfyLink(server: string, topic: string, unitName: string): strin
 }
 
 const NTFY_PRIORITY = { high: 4, default: 3, low: 2 } as const
-const NTFY_TAG: Record<NotifyEvent['group'], string> = { alerts: 'warning', reminders: 'seedling', autopilot: 'robot', watering: 'droplet', test: 'wave' }
+const NTFY_TAG: Record<NotifyEvent['group'], string> = { alerts: 'warning', reminders: 'seedling', autopilot: 'robot', watering: 'droplet', lights: 'bulb', test: 'wave' }
 
 export interface OutboundRequest {
   url: string
