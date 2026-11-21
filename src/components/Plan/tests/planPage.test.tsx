@@ -183,6 +183,14 @@ describe('PlanPage', () => {
     expect(screen.queryByText('Sowing schedule')).toBeNull()
   })
 
+  it('leans each pod toward its side of the column, as the 3D tower and Gardyn\'s light zones draw them', () => {
+    render(<PlanPage />)
+    flat()
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    expect(cell(1).className).toContain('justify-self-end')
+    expect(cell(4).className).toContain('justify-self-start')
+  })
+
   it('marks the pods a suggested move takes in', () => {
     // A lettuce in high light and a pepper in medium: swapping them suits both.
     state.pods = [{ slot: 8, plant: 'Butterhead', status: 'growing' }, { slot: 4, plant: 'Jalapeño', status: 'growing' }]

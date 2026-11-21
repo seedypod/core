@@ -13,7 +13,7 @@ import { PlantModel } from './PlantModel'
 import { ProtocolCard } from './ProtocolCard'
 import { SwapBanner, SwapProgress } from './SwapBanner'
 import { PlantThumb, podFill, podForm } from './PlantThumb'
-import { ageDays, GREEN_SEEN, heldFor, podPlaces, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
+import { ageDays, GREEN_SEEN, heldFor, podPlaces, podShown, podSide, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
 import { TowerView } from './TowerView'
 import { useSwapPods } from './useSwapPods'
@@ -278,7 +278,7 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
                     <div className="mb-1 px-0.5 font-mono text-[10px] font-medium tracking-[0.1em] text-fg-3">
                       {`TOWER ${towerName(i)} · ${tower.length} ${tower.length === 1 ? 'POD' : 'PODS'}`}
                     </div>
-                    {tower.map((p) => {
+                    {tower.map((p, row) => {
                       const s = shownOf.get(p.slot) ?? 'empty'
                       const cover = p.harvest?.cover ?? p.green ?? null
                       const picked = selected === p.slot
@@ -297,7 +297,7 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
                           aria-pressed={picked}
                           aria-busy={busy.includes(p.slot) || undefined}
                           aria-label={`${p.slot} ${p.plant ?? 'empty'}`}
-                          className={cn('flex min-h-[44px] items-center gap-2.5 rounded-[9px] border px-2.5 py-[9px] text-left transition-colors hover:border-pod-empty', picked ? 'border-fg-2 bg-active' : ROW_CLASS[s], busy.includes(p.slot) && 'animate-pulse motion-reduce:animate-none')}
+                          className={cn('flex min-h-[44px] w-[90%] items-center gap-2.5 rounded-[9px] border px-2.5 py-[9px] text-left transition-colors hover:border-pod-empty', podSide(row) === 1 ? 'self-end' : 'self-start', picked ? 'border-fg-2 bg-active' : ROW_CLASS[s], busy.includes(p.slot) && 'animate-pulse motion-reduce:animate-none')}
                         >
                           <span className="w-4 font-mono text-[10px] text-fg-3">{p.slot}</span>
                           <span className="size-[7px] shrink-0 rounded-full" style={{ background: s === 'empty' ? 'var(--border-2)' : SHOWN_TOKEN[s] }} />

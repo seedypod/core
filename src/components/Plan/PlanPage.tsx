@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
 import { SwapBanner, SwapProgress } from '@/src/components/Grow/SwapBanner'
-import { PLANNED_FORM, type PodStatus } from '@/src/components/Grow/towerLayout'
+import { PLANNED_FORM, podSide, type PodStatus } from '@/src/components/Grow/towerLayout'
 import type { PodState } from '@/src/components/Grow/towerScene'
 import { TowerView } from '@/src/components/Grow/TowerView'
 import { useSwapPods } from '@/src/components/Grow/useSwapPods'
@@ -166,7 +166,7 @@ function PlanGrid({ cols, slots, bySlot, planted, moves, highlight, open, swappi
                 e.currentTarget.click()
               }
             }}
-            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', highlight.includes(s.slot) && 'outline-2 outline-offset-2 outline-fg-2 outline-dashed', moving && 'animate-pulse motion-reduce:animate-none')}
+            className={cn('flex min-h-[58px] w-[85%] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', podSide(s.row) === 1 ? 'justify-self-end' : 'justify-self-start', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', highlight.includes(s.slot) && 'outline-2 outline-offset-2 outline-fg-2 outline-dashed', moving && 'animate-pulse motion-reduce:animate-none')}
             style={zoneStyle(z)}
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >
