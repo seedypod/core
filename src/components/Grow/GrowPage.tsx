@@ -12,7 +12,7 @@ import { PlantModel } from './PlantModel'
 import { ProtocolCard } from './ProtocolCard'
 import { SwapBanner, SwapProgress } from './SwapBanner'
 import { PlantThumb, podForm } from './PlantThumb'
-import { ageDays, heldFor, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
+import { ageDays, heldFor, podPlaces, podShown, podSide, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
 import { TowerView } from './TowerView'
 import { useSwapPods } from './useSwapPods'
@@ -47,12 +47,12 @@ const pct = (v: number) => `${Math.round(v * 100)}%`
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', ...(iso.length === 10 ? { timeZone: 'UTC' } : null) })
 const towerName = (i: number) => String.fromCharCode(65 + i)
 
-/** The pods down each of the tower's columns: A holds 1–10 on a Home's three, 1–8 on a Studio's two. */
+/** The pods down each of the tower's columns, top first, where the 3D tower puts them: A holds 1, 4, 7… on a Home's three. */
 function towersOf<T extends { slot: number }>(pods: T[]): T[][] {
   if (pods.length === 0) return []
+  const places = podPlaces(pods.length)
   const n = towerShape(pods.length).columns
-  const per = Math.ceil(pods.length / n)
-  return Array.from({ length: n }, (_, i) => pods.slice(i * per, (i + 1) * per)).filter(t => t.length > 0)
+  return Array.from({ length: n }, (_, c) => pods.filter((_, i) => places[i]?.column === c)).filter(t => t.length > 0)
 }
 
 /** Which camera sees a pod, and where in its frame: the box the analysers score, calibrated or the default. */
@@ -226,9 +226,9 @@ export function GrowPage() {
               {towers.map((tower, i) => (
                 <div key={towerName(i)} className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <div className="mb-1 px-0.5 font-mono text-[10px] font-medium tracking-[0.1em] text-fg-3">
-                    {`TOWER ${towerName(i)} · PODS ${tower[0]?.slot}–${tower.at(-1)?.slot}`}
+                    {`TOWER ${towerName(i)} · ${tower.length} ${tower.length === 1 ? 'POD' : 'PODS'}`}
                   </div>
-                  {tower.map((p) => {
+                  {tower.map((p, row) => {
                     const s = shownOf.get(p.slot) ?? 'empty'
                     const cover = p.harvest?.cover ?? p.green ?? null
                     const picked = selected === p.slot
@@ -247,7 +247,7 @@ export function GrowPage() {
                         aria-pressed={picked}
                         aria-busy={busy.includes(p.slot) || undefined}
                         aria-label={`${p.slot} ${p.plant ?? 'empty'}`}
-                        className={cn('flex min-h-[44px] items-center gap-2.5 rounded-[9px] border px-2.5 py-[9px] text-left transition-colors hover:border-pod-empty', picked ? 'border-fg-2 bg-active' : ROW_CLASS[s], busy.includes(p.slot) && 'animate-pulse motion-reduce:animate-none')}
+                        className={cn('flex min-h-[44px] w-[90%] items-center gap-2.5 rounded-[9px] border', podSide(row) === 1 ? 'self-end' : 'self-start', ' px-2.5 py-[9px] text-left transition-colors hover:border-pod-empty', picked ? 'border-fg-2 bg-active' : ROW_CLASS[s], busy.includes(p.slot) && 'animate-pulse motion-reduce:animate-none')}
                       >
                         <span className="w-4 font-mono text-[10px] text-fg-3">{p.slot}</span>
                         <span className="size-[7px] shrink-0 rounded-full" style={{ background: s === 'empty' ? 'var(--border-2)' : SHOWN_TOKEN[s] }} />

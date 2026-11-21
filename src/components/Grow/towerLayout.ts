@@ -43,13 +43,15 @@ export function towerShape(podCount: number): TowerShape {
   return { columns, rows, height, width: spacing * columns + 0.12, baseTop, pitch, columnX }
 }
 
+/** Which side of its column's spine a pod in this row leans out to: every column starts on the right and alternates, as Gardyn's light-zone diagrams draw them. */
+export const podSide = (row: number): -1 | 1 => (row % 2 === 0 ? 1 : -1)
+
 export function podPlaces(podCount: number): PodPlace[] {
   const shape = towerShape(podCount)
   return Array.from({ length: podCount }, (_, i) => {
     const row = Math.floor(i / shape.columns)
     const column = i % shape.columns
-    // Every column starts on the right and alternates, as Gardyn's light-zone diagrams draw them.
-    const side: -1 | 1 = row % 2 === 0 ? 1 : -1
+    const side = podSide(row)
     return {
       slot: i + 1,
       column,

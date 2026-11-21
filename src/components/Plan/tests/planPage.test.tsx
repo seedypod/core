@@ -183,6 +183,14 @@ describe('PlanPage', () => {
     expect(screen.queryByText('Sowing schedule')).toBeNull()
   })
 
+  it('leans each pod either side of its column on the grid, as the 3D tower does', () => {
+    render(<PlanPage />)
+    flat()
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    expect(cell(1).className).toContain('justify-self-end')
+    expect(cell(4).className).toContain('justify-self-start')
+  })
+
   it('switches to the Studio grid', () => {
     render(<PlanPage />)
     fireEvent.click(screen.getByRole('tab', { name: 'Studio · 16' }))
