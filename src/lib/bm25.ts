@@ -84,7 +84,9 @@ export function createBm25Index<F extends string>(
   const vocabulary = [...df.keys()].sort()
   const n = docs.length
 
-  const termScore = (term: string, d: number): number => {
+  const idf = (freq: number): number => Math.log(1 + (n - freq + 0.5) / (freq + 0.5))
+
+  const termScore = (term: string, d: number, maxIdf = Infinity): number => {
     let weighted = 0
     for (const f of names) {
       const { tf, length } = stats[d][f]
@@ -95,9 +97,7 @@ export function createBm25Index<F extends string>(
       weighted += (fields[f].weight * count) / norm
     }
     if (weighted === 0) return 0
-    const freq = df.get(term) ?? 0
-    const idf = Math.log(1 + (n - freq + 0.5) / (freq + 0.5))
-    return (idf * weighted * (k1 + 1)) / (k1 + weighted)
+    return (Math.min(idf(df.get(term) ?? 0), maxIdf) * weighted * (k1 + 1)) / (k1 + weighted)
   }
 
   return {
@@ -108,12 +108,16 @@ export function createBm25Index<F extends string>(
 
       // One group per distinct query token; a document scores the best
       // expansion within each group, summed across groups.
-      const groups: Array<Array<{ term: string, weight: number }>> = []
+      // An expansion is rarer than what was typed, so it scores with the
+      // prefix's own rarity: "lig" can't rank a page saying "light-zone" above
+      // one titled "Light" just because fewer pages use the longer word.
+      const groups: Array<Array<{ term: string, weight: number, maxIdf?: number }>> = []
       for (const tok of new Set(tokens)) {
         if (tok === last) {
-          const expansions = vocabulary
-            .filter(v => v.startsWith(tok))
-            .map(v => ({ term: v, weight: v === tok ? 1 : prefixWeight }))
+          const terms = vocabulary.filter(v => v.startsWith(tok))
+          const prefixDf = stats.filter(row => terms.some(t => names.some(f => row[f].tf.has(t)))).length
+          const maxIdf = idf(prefixDf)
+          const expansions = terms.map(v => ({ term: v, weight: v === tok ? 1 : prefixWeight, maxIdf }))
           if (expansions.length) groups.push(expansions)
         }
         else if (df.has(tok)) {
@@ -127,7 +131,7 @@ export function createBm25Index<F extends string>(
         let score = 0
         for (const group of groups) {
           let best = 0
-          for (const { term, weight } of group) best = Math.max(best, weight * termScore(term, d))
+          for (const { term, weight, maxIdf } of group) best = Math.max(best, weight * termScore(term, d, maxIdf))
           score += best
         }
         if (score > 0) hits.push({ index: d, score: score * (docs[d].boost ?? 1) })

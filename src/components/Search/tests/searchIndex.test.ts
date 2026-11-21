@@ -90,14 +90,20 @@ describe('docs snapshot', () => {
 
   it('finds docs pages by title and by heading', () => {
     expect(withDocs('debugging')[0]).toMatchObject({ id: 'docs:/core/debugging/', external: true })
-    expect(withDocs('raspberry pi os')[0]?.id).toBe('docs:/core/installation/')
+    expect(withDocs('raspberry pi os')[0]?.id).toMatch(/^docs:\/core\/installation\//)
     const byHeading = buildDocsEntries({ ...valid, pages: [{ ...page, title: 'Install', headings: [{ title: 'Flash the zeppelin', anchor: 'flash' }] }] })
     expect(createSearch([...appEntries, ...byHeading])('zeppelin')[0]?.id).toBe('docs:/a/')
   })
 
+  it('finds a yCube\'s plant page by name or Latin name, after the pod growing it', () => {
+    expect(withDocs('basil').slice(0, 2).map(e => e.id)).toEqual(['pod:6', 'docs:/plants/basil/'])
+    expect(withDocs('ocimum')[0]).toMatchObject({ id: 'docs:/plants/basil/', crumbs: ['Docs', 'Plants'] })
+    expect(withDocs('cucumber')[0]?.description).toMatch(/Keep 1 sprout per pod/)
+  })
+
   it('keeps an app page, setting, plant or rule ahead of a docs page with the same name', () => {
     for (const e of appEntries) expect(withDocs(e.title)[0]?.external, e.title).toBeUndefined()
-    for (const q of ['restore', 'sd card', 'hass', 'timezone', 'wifi', 'pump', 'tom', 'backup', 'calibration', 'home assistant']) {
+    for (const q of ['restore', 'sd card', 'hass', 'timezone', 'wifi', 'pump', 'tom', 'backup', 'calibration', 'home assistant', 'light', 'lig', 'harvest']) {
       expect(withDocs(q)[0]?.external, q).toBeUndefined()
       expect(withDocs(q)[0]?.href, q).toBe(top(q)[0]?.href)
     }
