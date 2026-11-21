@@ -1,5 +1,5 @@
 import { keepPreviousData } from '@tanstack/react-query'
-import { Box, EyeOff, LayoutGrid, LoaderCircle, Minus, Pencil, Plus, Sprout } from 'lucide-react'
+import { ArrowLeftRight, Box, EyeOff, LayoutGrid, LoaderCircle, Minus, Pencil, Plus, Sprout } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
@@ -114,9 +114,11 @@ function placePins(assignments: readonly Assignment[], slot: number, plantId: st
  * A tap opens the pod (`onOpen`); while a swap is being picked (`swapping`), it picks the other pod instead. A plant also drags onto another pod to swap them (`onSwap`).
  * Pods in a swap still on its way (`busy`) pulse.
  */
-function PlanGrid({ cols, slots, bySlot, planted, open, swapping, busy, onOpen, onSwapping, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, open: number | null, swapping: number | null, busy: readonly number[], onOpen: (slot: number) => void, onSwapping: (slot: number | null) => void, onSwap: (from: number, to: number) => void }) {
+function PlanGrid({ cols, slots, bySlot, planted, moves, open, swapping, busy, onOpen, onSwapping, onSwap }: { cols: number, slots: Slot[], bySlot: Map<number, Assignment>, planted: Map<number, Planted>, moves: { from: number, to: number, swap: unknown, text: string }[], open: number | null, swapping: number | null, busy: readonly number[], onOpen: (slot: number) => void, onSwapping: (slot: number | null) => void, onSwap: (from: number, to: number) => void }) {
   // The pod a drag is over, ringed so it's clear where the drop lands.
   const [over, setOver] = useState<number | null>(null)
+  // Both pods of a suggested swap, or the planted one of a move to a free pod.
+  const moveOf = new Map(moves.flatMap(m => (m.swap ? [[m.from, m.text], [m.to, m.text]] as const : [[m.from, m.text]] as const)))
   const swap = (from: number, to: number) => {
     onSwapping(null)
     setOver(null)
@@ -131,6 +133,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, busy, onOpen, 
         const plant = a?.plantName ?? ex?.plant ?? null
         const off = offZone(a)
         const moving = busy.includes(s.slot)
+        const suggested = moveOf.get(s.slot)
         return (
           <div
             key={s.slot}
@@ -139,7 +142,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, busy, onOpen, 
             tabIndex={0}
             aria-pressed={open === s.slot}
             aria-busy={moving || undefined}
-            aria-label={`Pod ${s.slot}${plant ? `, ${plant}` : ''}${ex?.seenEmpty ? ', cameras see it empty' : ''}`}
+            aria-label={`Pod ${s.slot}${plant ? `, ${plant}` : ''}${ex?.seenEmpty ? ', cameras see it empty' : ''}${suggested ? ', a move is suggested' : ''}`}
             draggable={!!(a || ex)}
             onDragStart={e => e.dataTransfer.setData('text/plain', String(s.slot))}
             onDragOver={(e) => {
@@ -163,7 +166,7 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, busy, onOpen, 
                 e.currentTarget.click()
               }
             }}
-            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', 'w-[85%]', podSide(s.row) === 1 ? 'justify-self-end' : 'justify-self-start', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', moving && 'animate-pulse motion-reduce:animate-none')}
+            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', moving && 'animate-pulse motion-reduce:animate-none')}
             style={zoneStyle(z)}
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >
@@ -172,11 +175,12 @@ function PlanGrid({ cols, slots, bySlot, planted, open, swapping, busy, onOpen, 
                 {s.slot}
                 {ex?.seenEmpty && <EyeOff size={10} aria-hidden="true" data-testid="seen-empty" />}
                 {moving && <LoaderCircle size={10} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                {suggested && <span title={suggested} className="text-fg-2" data-testid="move-suggested"><ArrowLeftRight size={10} aria-hidden="true" /></span>}
               </span>
               <span>{z === 'medium' ? 'med' : z}</span>
             </div>
             {plant && (
-              <div className={cn('flex min-w-0 items-center gap-1.5', ex?.seenEmpty && 'opacity-50')}>
+              <div className={cn('flex min-w-0 items-center gap-1.5', podSide(s.row) === 1 && 'flex-row-reverse', ex?.seenEmpty && 'opacity-50')}>
                 <PlantThumb plant={plant} stage={a ? PLANNED_FORM : podForm(ex ?? { status: 'empty' })} size={24} />
                 <span className={cn('min-w-0 truncate text-[12px] leading-tight', a ? 'text-fg' : 'text-fg-2 italic')}>{plant}</span>
               </div>
@@ -373,7 +377,7 @@ export function PlanPage() {
               <div className="min-w-0 flex-1">
                 {swapping !== null && <SwapBanner slot={swapping} plant={bySlot.get(swapping)?.plantName ?? planted.get(swapping)?.plant} onCancel={() => setSwapping(null)} />}
                 {moving && <SwapProgress a={moving.from} b={moving.to} />}
-                <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} open={open} swapping={swapping} busy={moving ? [moving.from, moving.to] : []} onOpen={setOpen} onSwapping={setSwapping} onSwap={exchange} />
+                <PlanGrid cols={zones.data.cols} slots={zones.data.slots} bySlot={bySlot} planted={planted} moves={layout.data?.moves ?? []} open={open} swapping={swapping} busy={moving ? [moving.from, moving.to] : []} onOpen={setOpen} onSwapping={setSwapping} onSwap={exchange} />
               </div>
               {openSlot && (
                 <PodPanel
