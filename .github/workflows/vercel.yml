@@ -1,7 +1,7 @@
 name: Vercel Demo
 
 # Deploys the browser demo (VITE_DEMO=1, simulated hardware) to Vercel.
-# dev → production deployment at seedypod.vercel.app; PRs → preview URL in a comment.
+# dev → production deployment at seedypod.vercel.app; PRs labeled `preview` → preview URL in a comment.
 # Needs secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
 
 on:
@@ -9,6 +9,7 @@ on:
     branches: [dev]
   pull_request:
     branches: [dev]
+    types: [opened, synchronize, reopened, labeled]
 
 concurrency:
   group: vercel-${{ github.ref }}
@@ -21,7 +22,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ vars.VERCEL_ENABLED == 'true' }}
+    if: ${{ vars.VERCEL_ENABLED == 'true' && (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'preview')) }}
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
