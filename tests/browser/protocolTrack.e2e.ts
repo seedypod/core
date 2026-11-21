@@ -20,7 +20,7 @@ test('grow: the protocol track and its panel fit at every width, the page never 
   expect((await page.request.post('/api/grow/start', { data: { notes: 'e2e' } })).ok()).toBe(true)
   // A schedule of your own, so the Then panel has its picker and Switch now to measure.
   expect((await page.request.post('/api/schedules/library', { data: { name: 'Summer evenings', cycles: [{ minute: 420, durationS: 300, days: 127 }, { minute: 1020, durationS: 300, days: 127 }] } })).ok()).toBe(true)
-  await page.goto('/grow')
+  await page.goto('/grow?tab=protocol')
   const card = page.getByRole('main').getByTestId('protocol')
   await expect(card.getByRole('group', { name: 'Stages' })).toBeVisible()
   // Nothing spills out of its box but the names cut short on purpose (`truncate`).

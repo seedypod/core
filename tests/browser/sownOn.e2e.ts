@@ -39,7 +39,7 @@ test('grow: start germination today at the protocol track\'s left end, then move
   // From no grow cycle and no cycles, whatever earlier specs left.
   await endCycle(page)
   await clearPumpCycles(page)
-  await page.goto('/grow')
+  await page.goto('/grow?tab=protocol')
   const main = page.getByRole('main')
   const sown = main.getByTestId('sown')
   await sown.getByRole('button', { name: 'Start germination today' }).click()

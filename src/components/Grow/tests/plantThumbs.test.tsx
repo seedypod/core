@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cachedThumb, clearThumbs, noteThreeLoaded, plantThumb, thumbKey, THUMB_PX } from '../plantThumbs'
-import { PlantThumb, podForm } from '../PlantThumb'
+import { PlantThumb, podFill, podForm } from '../PlantThumb'
 
 const { draw } = vi.hoisted(() => ({ draw: { calls: [] as unknown[][], fail: false } }))
 
@@ -94,6 +94,11 @@ describe('podForm', () => {
     // A planned pod shows the plant grown, whatever its status.
     expect(podForm({ status: 'seeded', planned: true })).toBe('full')
   })
+
+  it('fills half the circle at the smallest, and all of it for a planned pod', () => {
+    expect(podFill({ status: 'empty' })).toBe(0.5)
+    expect(podFill({ status: 'seeded', planned: true })).toBe(1)
+  })
 })
 
 describe('PlantThumb', () => {
@@ -128,6 +133,7 @@ describe('PlantThumb', () => {
     const { unmount } = render(<PlantThumb plant="Red Russian Kale" stage="young" size={40} />)
     await waitFor(() => expect(thumb().dataset.kind).toBe('model'))
     expect(thumb().querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,Kale|young|false')
+    expect(thumb().querySelector('img')?.style.transform).toBe('')
     unmount()
     render(<PlantThumb plant="Kale" stage="young" size={40} />)
     expect(thumb().dataset.kind).toBe('model')
@@ -135,5 +141,11 @@ describe('PlantThumb', () => {
     document.documentElement.dataset.theme = 'light'
     await waitFor(() => expect(thumb().querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,Kale|young|true'))
     expect(draw.calls).toHaveLength(2)
+  })
+
+  it('shrinks the still to the share of the circle the plant fills', async () => {
+    webGL()
+    render(<PlantThumb plant="Kale" stage="young" size={40} fill={0.6} />)
+    await waitFor(() => expect(thumb().querySelector('img')?.style.transform).toBe('scale(0.6)'))
   })
 })

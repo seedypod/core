@@ -27,7 +27,7 @@ describe('tower layout', () => {
 
   it('sizes a plant by its green area, then by age, then by status', () => {
     expect(plantScale('empty', 0.9)).toBe(0)
-    expect(plantScale('seeded', 0.9)).toBe(0.25)
+    expect(plantScale('seeded', 0.9)).toBe(1)
     expect(plantScale('growing', 0)).toBeCloseTo(0.35)
     expect(plantScale('growing', 0.4)).toBeCloseTo(0.79)
     expect(plantScale('attention', 2)).toBe(1)
@@ -38,9 +38,20 @@ describe('tower layout', () => {
     expect(plantScale('growing', null)).toBe(0.55)
   })
 
+  it('grows a seeded pod with its age until the cameras see its leaves', () => {
+    expect(plantScale('seeded', null)).toBe(0.25)
+    expect(plantScale('seeded', null, 0)).toBeCloseTo(0.15)
+    expect(plantScale('seeded', 0.01, 7)).toBeCloseTo(0.25)
+    expect(plantScale('seeded', 0, 14)).toBeCloseTo(0.35)
+    expect(plantScale('seeded', null, 40)).toBeCloseTo(0.35)
+    // Leaves the cameras can make out: their reading wins.
+    expect(plantScale('seeded', 0.1, 2)).toBeCloseTo(0.46)
+  })
+
   it('shapes a plant by stage: seed leaves, a few leaves, a bush, a full head', () => {
     expect(plantForm('empty', 0)).toBe('none')
     expect(plantForm('seeded', 0.25)).toBe('sprout')
+    expect(plantForm('seeded', 0.46)).toBe('young')
     expect(plantForm('growing', 0.45)).toBe('young')
     expect(plantForm('attention', 0.8)).toBe('bush')
     expect(plantForm('harvest', 0.95)).toBe('full')

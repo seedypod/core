@@ -166,7 +166,7 @@ function PlanGrid({ cols, slots, bySlot, planted, moves, highlight, open, swappi
                 e.currentTarget.click()
               }
             }}
-            className={cn('flex min-h-[58px] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', highlight.includes(s.slot) && 'outline-2 outline-offset-2 outline-fg-2 outline-dashed', moving && 'animate-pulse motion-reduce:animate-none')}
+            className={cn('flex min-h-[58px] w-[85%] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', podSide(s.row) === 1 ? 'justify-self-end' : 'justify-self-start', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', highlight.includes(s.slot) && 'outline-2 outline-offset-2 outline-fg-2 outline-dashed', moving && 'animate-pulse motion-reduce:animate-none')}
             style={zoneStyle(z)}
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >
@@ -180,7 +180,7 @@ function PlanGrid({ cols, slots, bySlot, planted, moves, highlight, open, swappi
               <span>{z === 'medium' ? 'med' : z}</span>
             </div>
             {plant && (
-              <div className={cn('flex min-w-0 items-center gap-1.5', podSide(s.row) === 1 && 'flex-row-reverse', ex?.seenEmpty && 'opacity-50')}>
+              <div className={cn('flex min-w-0 items-center gap-1.5', ex?.seenEmpty && 'opacity-50')}>
                 <PlantThumb plant={plant} stage={a ? PLANNED_FORM : podForm(ex ?? { status: 'empty' })} size={24} />
                 <span className={cn('min-w-0 truncate text-[12px] leading-tight', a ? 'text-fg' : 'text-fg-2 italic')}>{plant}</span>
               </div>

@@ -29,7 +29,7 @@ test('grow: the tower renders in 3D, a pod picked on it opens in the side panel'
   // The click picked a pod: the side panel now shows one.
   await expect(page.getByRole('complementary', { name: /^Pod \d+$/ })).toBeVisible()
 
-  await page.getByRole('tab', { name: 'Pods' }).click()
+  await page.getByRole('tab', { name: 'List' }).click()
   await page.getByRole('button', { name: '5 Cherry Tomato', exact: true }).click()
   await expect(page.getByRole('complementary', { name: 'Pod 5' })).toBeVisible()
   await expect(page.getByLabel('Notes')).toHaveValue('leaf curl')
