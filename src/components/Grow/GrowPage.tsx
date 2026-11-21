@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowLeftRight, Box, Camera, ChevronDown, List, X } from 'lucide-react'
+import { ArrowLeftRight, Box, Camera, ChevronDown, List, Trash2, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button, InlineError } from '@/src/components/ds/core'
+import { Modal } from '@/src/components/ds/feedback'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { cn } from '@/lib/utils'
 import { apiBase, trpc } from '@/src/utils/trpc'
@@ -335,6 +336,7 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
                     onHarvested={() => markHarvested.mutate({ slot: draft.slot })}
                     onDismiss={() => updatePod.mutate({ slot: draft.slot, status: 'growing' }, { onSuccess: () => setDraft(null) })}
                     onSwap={() => setSwapping(draft.slot)}
+                    onEmpty={() => updatePod.mutate({ slot: draft.slot, plant: null, plantedAt: null, status: 'empty', notes: '' }, { onSuccess: () => setDraft(null) })}
                   />
                 )
               : (
@@ -447,7 +449,7 @@ function Row({ label, children, last }: { label: string, children: ReactNode, la
 
 const INLINE = 'min-w-0 flex-1 bg-transparent text-right text-fg outline-none placeholder:text-fg-3'
 
-function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, saving, onChange, onClose, onSave, onRevert, onHarvested, onDismiss, onSwap }: {
+function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, saving, onChange, onClose, onSave, onRevert, onHarvested, onDismiss, onSwap, onEmpty }: {
   pod: PodState
   tower: string
   /** Leaf cover gained a day, from the harvest outlook. */
@@ -466,8 +468,11 @@ function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, sav
   onDismiss: () => void
   /** Start picking the pod to swap this one with. */
   onSwap: () => void
+  /** Clear the pod: no plant, sow date or notes. */
+  onEmpty: () => void
 }) {
   const shown = podShown(pod)
+  const [emptying, setEmptying] = useState(false)
   const form = podForm(pod)
   const h = pod.harvest ?? null
   const cover = h?.cover ?? pod.green ?? null
@@ -564,6 +569,34 @@ function PodPanel({ pod, tower, coverPerDay, light, plantedAt, draft, dirty, sav
               <Button icon={ArrowLeftRight} onClick={onSwap} title="After moving its yCube to another pod">Swap</Button>
             </div>
           )}
+      {!dirty && (pod.plant || pod.status !== 'empty') && (
+        <button type="button" onClick={() => setEmptying(true)} className="flex cursor-pointer items-center gap-1.5 self-start bg-transparent text-[12px] text-fg-3 hover:text-fg">
+          <Trash2 size={14} aria-hidden="true" />
+          Empty pod
+        </button>
+      )}
+      <Modal
+        open={emptying}
+        onClose={() => setEmptying(false)}
+        title={`Empty pod ${pod.slot}?`}
+        icon={Trash2}
+        footer={(
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              onClick={() => {
+                onEmpty()
+                setEmptying(false)
+              }}
+            >
+              Empty pod
+            </Button>
+            <Button onClick={() => setEmptying(false)}>Cancel</Button>
+          </div>
+        )}
+      >
+        <p className="text-[13px] text-fg-2">{`This clears ${pod.plant ?? 'the pod'}, its sow date and notes. Camera history stays with the pod's position.`}</p>
+      </Modal>
     </>
   )
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GrowPage } from '../GrowPage'
@@ -297,6 +297,21 @@ describe('Grow', () => {
     cleanup()
     render(<GrowPage tab="pods" />)
     expect(screen.getByLabelText('Pod list')).toBeTruthy()
+  })
+
+  it('empties a pod only after confirming, and offers nothing to empty on an empty one', () => {
+    render(<GrowPage />)
+    fireEvent.click(screen.getByRole('button', { name: '2 Kale' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Empty pod' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText('This clears Kale, its sow date and notes. Camera history stays with the pod\'s position.')).toBeTruthy()
+    fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }))
+    expect(calls.updatePod).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Empty pod' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Empty pod' }))
+    expect(calls.updatePod).toHaveBeenCalledWith({ slot: 2, plant: null, plantedAt: null, status: 'empty', notes: '' })
+    fireEvent.click(screen.getByRole('button', { name: '3 empty' }))
+    expect(screen.queryByRole('button', { name: 'Empty pod' })).toBeNull()
   })
 
   it('switches to the tower and remembers it', () => {
