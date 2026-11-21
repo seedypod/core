@@ -75,8 +75,8 @@ describe('Grow', () => {
   it('opens on the pods: one row per pod with its plant and leaf cover, split by tower', () => {
     render(<GrowPage />)
     expect(screen.queryByTestId('tower')).toBeNull()
-    expect(screen.getByText('TOWER A · PODS 1–2')).toBeTruthy()
-    expect(screen.getByText('TOWER B · PODS 3–3')).toBeTruthy()
+    expect(screen.getByText('TOWER A · 2 PODS')).toBeTruthy()
+    expect(screen.getByText('TOWER B · 1 POD')).toBeTruthy()
     const basil = screen.getByRole('button', { name: '1 Basil' })
     expect(basil.textContent).toBe('1Basil42%')
     expect(screen.getByRole('button', { name: '3 empty' }).textContent).toBe('3Empty · plant')
@@ -90,13 +90,23 @@ describe('Grow', () => {
   it('takes the tower split from the pod count: three towers of ten on a Home, two of eight on a Studio', () => {
     data.set('pods', Array.from({ length: 30 }, (_, i) => pod(i + 1)))
     const { unmount } = render(<GrowPage />)
-    expect(screen.getByText('TOWER A · PODS 1–10')).toBeTruthy()
-    expect(screen.getByText('TOWER C · PODS 21–30')).toBeTruthy()
+    expect(screen.getByText('TOWER A · 10 PODS')).toBeTruthy()
+    expect(screen.getByText('TOWER C · 10 PODS')).toBeTruthy()
     unmount()
     data.set('pods', Array.from({ length: 16 }, (_, i) => pod(i + 1)))
     render(<GrowPage />)
-    expect(screen.getByText('TOWER B · PODS 9–16')).toBeTruthy()
+    expect(screen.getByText('TOWER B · 8 PODS')).toBeTruthy()
     expect(screen.queryByText(/TOWER C/)).toBeNull()
+  })
+
+  it('lays the pods out as the 3D tower does: across then down, leaning either side of each column', () => {
+    data.set('pods', Array.from({ length: 30 }, (_, i) => pod(i + 1)))
+    render(<GrowPage />)
+    const towerA = screen.getByText('TOWER A · 10 PODS').parentElement as HTMLElement
+    const slots = [...towerA.querySelectorAll('button')].map(b => b.getAttribute('aria-label')?.split(' ')[0])
+    expect(slots).toEqual(['1', '4', '7', '10', '13', '16', '19', '22', '25', '28'])
+    expect(screen.getByRole('button', { name: /^1 / }).className).toContain('self-end')
+    expect(screen.getByRole('button', { name: /^4 / }).className).toContain('self-start')
   })
 
   it('shows the cycle: name, start, day of its length, stage and counts', () => {
@@ -117,11 +127,11 @@ describe('Grow', () => {
   it('opens the pod named in ?pod=N, and closes it', () => {
     window.history.replaceState(null, '', '/grow?pod=2')
     render(<GrowPage />)
-    expect(screen.getByText('POD 2 · TOWER A')).toBeTruthy()
+    expect(screen.getByText('POD 2 · TOWER B')).toBeTruthy()
     expect(screen.getByText('Needs attention')).toBeTruthy()
     expect(screen.getByText('yellow')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(screen.queryByText('POD 2 · TOWER A')).toBeNull()
+    expect(screen.queryByText('POD 2 · TOWER B')).toBeNull()
   })
 
   it('details the picked pod: its crop, leaf-cover trend, seeded date and harvest window', () => {
@@ -144,8 +154,8 @@ describe('Grow', () => {
   it('pictures each pod\'s plant in its row, and the picked one as a model to scrub from seedling to harvest', () => {
     render(<GrowPage />)
     const kinds = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-testid="plant-thumb"]')].map(t => t.dataset.kind)
-    // No WebGL in jsdom: a neutral leaf for each planted pod, a ring for the empty one.
-    expect(kinds(screen.getByLabelText('Pods'))).toEqual(['neutral', 'neutral', 'empty'])
+    // No WebGL in jsdom: a neutral leaf for each planted pod, a ring for the empty one. Pods 1 and 3 share tower A.
+    expect(kinds(screen.getByLabelText('Pods'))).toEqual(['neutral', 'empty', 'neutral'])
     expect(screen.getByRole('button', { name: '1 Basil' }).querySelector<HTMLElement>('[data-testid="plant-thumb"]')?.style.width).toBe('32px')
     fireEvent.click(screen.getByRole('button', { name: '1 Basil' }))
     const stage = screen.getByRole('slider', { name: 'Growth stage' })
