@@ -12,7 +12,7 @@ import { PlantModel } from './PlantModel'
 import { ProtocolCard } from './ProtocolCard'
 import { SwapBanner, SwapProgress } from './SwapBanner'
 import { PlantThumb, podForm } from './PlantThumb'
-import { ageDays, heldFor, podPlaces, podShown, podSide, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
+import { ageDays, heldFor, podPlaces, podShown, SHOWN_LABEL, SHOWN_TOKEN, towerShape, type PodShown } from './towerLayout'
 import type { PodState } from './towerScene'
 import { TowerView } from './TowerView'
 import { useSwapPods } from './useSwapPods'
@@ -275,7 +275,7 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
                     <div className="mb-1 px-0.5 font-mono text-[10px] font-medium tracking-[0.1em] text-fg-3">
                       {`TOWER ${towerName(i)} · ${tower.length} ${tower.length === 1 ? 'POD' : 'PODS'}`}
                     </div>
-                    {tower.map((p, row) => {
+                    {tower.map((p) => {
                       const s = shownOf.get(p.slot) ?? 'empty'
                       const cover = p.harvest?.cover ?? p.green ?? null
                       const picked = selected === p.slot
@@ -298,10 +298,9 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
                         >
                           <span className="w-4 font-mono text-[10px] text-fg-3">{p.slot}</span>
                           <span className="size-[7px] shrink-0 rounded-full" style={{ background: s === 'empty' ? 'var(--border-2)' : SHOWN_TOKEN[s] }} />
-                          {podSide(row) === -1 && <PlantThumb plant={p.plant} stage={podForm(p)} size={32} />}
+                          <PlantThumb plant={p.plant} stage={podForm(p)} size={32} />
                           <span className={cn('min-w-0 flex-1 truncate text-[13px]', s === 'empty' ? 'text-pod-empty' : 'text-fg')}>{p.plant ?? (s === 'empty' ? 'Empty · plant' : '')}</span>
                           {s !== 'empty' && cover !== null && <span className="font-mono text-[11px] text-fg-3">{pct(cover)}</span>}
-                          {podSide(row) === 1 && <PlantThumb plant={p.plant} stage={podForm(p)} size={32} />}
                         </button>
                       )
                     })}

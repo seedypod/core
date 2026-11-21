@@ -99,15 +99,12 @@ describe('Grow', () => {
     expect(screen.queryByText(/TOWER C/)).toBeNull()
   })
 
-  it('lays the pods out as the 3D tower does: across then down, leaning either side of each column', () => {
+  it('groups the pods into columns as the 3D tower does: across then down', () => {
     data.set('pods', Array.from({ length: 30 }, (_, i) => pod(i + 1)))
     render(<GrowPage />)
     const towerA = screen.getByText('TOWER A · 10 PODS').parentElement as HTMLElement
     const slots = [...towerA.querySelectorAll('button')].map(b => b.getAttribute('aria-label')?.split(' ')[0])
     expect(slots).toEqual(['1', '4', '7', '10', '13', '16', '19', '22', '25', '28'])
-    // Row 0 leans right, so its plant sits at the row's right end; row 1's at the left.
-    expect(screen.getByRole('button', { name: /^1 / }).lastElementChild?.getAttribute('data-testid')).toBe('plant-thumb')
-    expect(screen.getByRole('button', { name: /^4 / }).children[2]?.getAttribute('data-testid')).toBe('plant-thumb')
   })
 
   it('shows the cycle: name, start, day of its length, stage and counts', () => {

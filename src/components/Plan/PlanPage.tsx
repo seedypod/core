@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
 import { SwapBanner, SwapProgress } from '@/src/components/Grow/SwapBanner'
-import { PLANNED_FORM, podSide, type PodStatus } from '@/src/components/Grow/towerLayout'
+import { PLANNED_FORM, type PodStatus } from '@/src/components/Grow/towerLayout'
 import type { PodState } from '@/src/components/Grow/towerScene'
 import { TowerView } from '@/src/components/Grow/TowerView'
 import { useSwapPods } from '@/src/components/Grow/useSwapPods'
@@ -180,7 +180,7 @@ function PlanGrid({ cols, slots, bySlot, planted, moves, highlight, open, swappi
               <span>{z === 'medium' ? 'med' : z}</span>
             </div>
             {plant && (
-              <div className={cn('flex min-w-0 items-center gap-1.5', podSide(s.row) === 1 && 'flex-row-reverse', ex?.seenEmpty && 'opacity-50')}>
+              <div className={cn('flex min-w-0 items-center gap-1.5', ex?.seenEmpty && 'opacity-50')}>
                 <PlantThumb plant={plant} stage={a ? PLANNED_FORM : podForm(ex ?? { status: 'empty' })} size={24} />
                 <span className={cn('min-w-0 truncate text-[12px] leading-tight', a ? 'text-fg' : 'text-fg-2 italic')}>{plant}</span>
               </div>
