@@ -139,26 +139,23 @@ function WebhookForm({ s, busy, onSave }: { s: Status, busy: boolean, onSave: (p
   const [url, setUrl] = useState('')
   const [format, setFormat] = useState(s.webhookFormat)
   const [secret, setSecret] = useState('')
-  const changed = !!url || format !== s.webhookFormat || !!secret
+  // Discord and Slack take only their own format, so their URL picks it.
+  const fixed = url ? formatFor(url) : s.webhookFormatFixed ? s.webhookFormat : null
+  const effective = fixed ?? format
+  const changed = !!url || effective !== s.webhookFormat || !!secret
   return (
     <>
       <Row label="URL" sub={s.webhookUrl ? `Saved: ${s.webhookUrl}` : 'Discord, Slack, Home Assistant or your own server. https, or http on your network.'}>
-        <TextField
-          className="w-60"
-          type="password"
-          value={url}
-          onChange={(v) => {
-            setUrl(v)
-            const f = formatFor(v)
-            if (f) setFormat(f)
-          }}
-          placeholder={s.webhookUrl ? 'Paste a new one to replace it' : 'https://…'}
-        />
+        <TextField className="w-60" type="password" value={url} onChange={setUrl} placeholder={s.webhookUrl ? 'Paste a new one to replace it' : 'https://…'} />
       </Row>
-      <Row label="Format">
-        <SegmentedControl ariaLabel="Webhook format" size="sm" options={FORMATS} value={format} onChange={setFormat} />
-      </Row>
-      {format === 'json' && (
+      {fixed
+        ? <Row label="Format" sub="Set by the URL"><span className="text-sm">{FORMATS.find(f => f.value === fixed)?.label}</span></Row>
+        : (
+            <Row label="Format">
+              <SegmentedControl ariaLabel="Webhook format" size="sm" options={FORMATS} value={format} onChange={setFormat} />
+            </Row>
+          )}
+      {effective === 'json' && (
         <Row label="Signing secret" sub={s.hasWebhookSecret ? 'set · signs each body in X-Seedypod-Signature' : 'Optional. Signs each body (HMAC-SHA256) in X-Seedypod-Signature'}>
           <TextField className="w-60" type="password" value={secret} onChange={setSecret} placeholder="••••••" />
         </Row>
@@ -168,7 +165,7 @@ function WebhookForm({ s, busy, onSave }: { s: Status, busy: boolean, onSave: (p
           size="sm"
           variant="primary"
           disabled={busy || (!changed && !!s.webhookUrl) || (!url && !s.webhookUrl)}
-          onClick={() => onSave({ webhookFormat: format, ...(url ? { webhookUrl: url } : {}), ...(secret ? { webhookSecret: secret } : {}) })}
+          onClick={() => onSave({ webhookFormat: effective, ...(url ? { webhookUrl: url } : {}), ...(secret ? { webhookSecret: secret } : {}) })}
         >
           {busy ? 'Saving…' : 'Save webhook'}
         </Button>

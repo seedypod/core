@@ -38,7 +38,7 @@ describe('notifications router', () => {
     const { c, store } = unit()
     const url = 'https://discord.com/api/webhooks/42/verysecrettoken'
     const s = await c.notifications.configure({ target: 'webhook', webhookUrl: url, webhookFormat: 'discord', webhookSecret: 'k', groups: ['watering', 'alerts', 'watering'] })
-    expect(s).toMatchObject({ target: 'webhook', webhookUrl: 'https://discord.com/…oken', webhookFormat: 'discord', hasWebhookSecret: true, groups: ['watering', 'alerts'] })
+    expect(s).toMatchObject({ target: 'webhook', webhookUrl: 'https://discord.com/…oken', webhookFormat: 'discord', webhookFormatFixed: true, hasWebhookSecret: true, groups: ['watering', 'alerts'] })
     expect(JSON.stringify(await c.notifications.status())).not.toContain('verysecret')
     expect(JSON.stringify(await c.settings.get())).not.toContain('verysecret')
     expect(store.settings.get().webhookUrl).toBe(url)

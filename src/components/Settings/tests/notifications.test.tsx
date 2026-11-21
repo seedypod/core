@@ -34,7 +34,7 @@ vi.mock('@/src/utils/trpc', () => {
 
 const off = {
   target: 'off', ntfyServer: 'https://ntfy.sh', ntfyTopic: null, ntfyLink: null, qrSvg: null, webhookUrl: null, webhookFormat: 'json',
-  hasWebhookSecret: false, groups: ['alerts', 'reminders', 'autopilot'], defaultGroups: ['alerts', 'reminders', 'autopilot'], last: null, pending: 0,
+  webhookFormatFixed: false, hasWebhookSecret: false, groups: ['alerts', 'reminders', 'autopilot'], defaultGroups: ['alerts', 'reminders', 'autopilot'], last: null, pending: 0,
 }
 const ntfy = { ...off, target: 'ntfy', ntfyTopic: 'seedypod-abcdefghjkmn', ntfyLink: 'ntfy://ntfy.sh/seedypod-abcdefghjkmn?display=Gardyn', qrSvg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' }
 
@@ -114,12 +114,21 @@ describe('Settings → Notifications', () => {
     expect(calls.configure).toHaveBeenLastCalledWith({ target: 'webhook', webhookFormat: 'discord', webhookUrl: 'https://discord.com/api/webhooks/1/tok', webhookSecret: 'k' })
   })
 
-  it('shows a saved webhook masked, hides the secret for Discord, and switches to it at once', () => {
-    state.status = { ...off, webhookUrl: 'https://discord.com/…abc1', webhookFormat: 'discord' }
+  it('shows a saved webhook masked, and lets the URL pick Discord\'s format', () => {
+    state.status = { ...off, webhookUrl: 'https://discord.com/…abc1', webhookFormat: 'discord', webhookFormatFixed: true }
     render(<NotificationsSection />)
     fireEvent.click(seg('Webhook'))
     expect(calls.configure).toHaveBeenCalledWith({ target: 'webhook' })
     expect(screen.getByText('Saved: https://discord.com/…abc1')).toBeTruthy()
+    expect(screen.getByText('Set by the URL')).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: 'JSON' })).toBeNull()
+    expect(screen.queryByText('Signing secret')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Save webhook' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('offers every format for another server, with the secret only for JSON', () => {
+    state.status = { ...off, target: 'webhook', webhookUrl: 'https://hooks.example.com/…abc1', webhookFormat: 'slack' }
+    render(<NotificationsSection />)
     expect(screen.queryByText('Signing secret')).toBeNull()
     fireEvent.click(seg('JSON'))
     expect(screen.getByText('Signing secret')).toBeTruthy()
