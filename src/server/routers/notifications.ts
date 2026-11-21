@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { DEFAULT_GROUPS, enabledGroups, formatProblem, maskUrl, newTopic, NOTIFY_GROUPS, ntfyLink, urlProblem } from '../../notify/targets'
+import { DEFAULT_GROUPS, enabledGroups, formatFor, formatProblem, maskUrl, newTopic, NOTIFY_GROUPS, ntfyLink, urlProblem } from '../../notify/targets'
 import type { DeviceSettings } from '../../store/types'
 import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
@@ -21,6 +21,8 @@ const Status = z.object({
   /** Masked: the full URL is the secret and never leaves the unit. */
   webhookUrl: z.string().nullable(),
   webhookFormat: Format,
+  /** The saved URL is Discord's or Slack's, which take only their own format. */
+  webhookFormatFixed: z.boolean(),
   hasWebhookSecret: z.boolean(),
   groups: z.array(Group),
   defaultGroups: z.array(Group),
@@ -44,6 +46,7 @@ async function status(ctx: Context): Promise<z.infer<typeof Status>> {
     qrSvg: link && s.notifyTarget === 'ntfy' ? await svgQr(link) : null,
     webhookUrl: s.webhookUrl ? maskUrl(s.webhookUrl) : null,
     webhookFormat: s.webhookFormat,
+    webhookFormatFixed: !!s.webhookUrl && formatFor(s.webhookUrl) !== null,
     hasWebhookSecret: !!s.webhookSecret,
     groups: [...enabledGroups(s.notifyGroups)],
     defaultGroups: [...DEFAULT_GROUPS],

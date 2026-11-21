@@ -41,8 +41,8 @@ Pick **Webhook**, paste the URL and pick a format:
 | Slack | `{ "text" }` | A Slack incoming webhook |
 | JSON | `{ "event", "at", "unit", "title", "message", "priority", "data" }` | Home Assistant's webhook trigger, n8n, your own server |
 
-Pasting a Discord or Slack URL picks its format for you; those servers refuse
-any other shape, so the unit won't save one with the wrong format.
+A Discord or Slack URL sets its format for you, and the format picker only
+appears for other servers: Discord and Slack refuse any other shape.
 
 `event` is `alerts.raised`, `alerts.cleared`, `reminders.raised`,
 `autopilot.raised`, `watering.ran`, `lights.changed` or `test`. With a **signing secret** set,
