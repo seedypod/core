@@ -222,7 +222,7 @@ export function GrowPage() {
           )}
           {noWebGL && <p className="mb-2 text-xs text-fg-3">The 3D tower needs WebGL, which this browser doesn&apos;t offer, so the pods are shown as a list.</p>}
           {shown === 'pods' && (
-            <div className="flex flex-col gap-2.5 min-[640px]:flex-row" aria-label="Pods">
+            <div className="flex select-none flex-col gap-2.5 [-webkit-touch-callout:none] min-[640px]:flex-row" aria-label="Pods">
               {towers.map((tower, i) => (
                 <div key={towerName(i)} className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <div className="mb-1 px-0.5 font-mono text-[10px] font-medium tracking-[0.1em] text-fg-3">
