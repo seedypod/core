@@ -48,7 +48,7 @@ const preset = (id: PumpPresetId) => PUMP_PRESETS.find(p => p.id === id) as Pump
 const checks = {
   covers: { text: 'Take the cardboard covers off before germinating.', citation: CITE.germinationStart },
   sprouts: { text: 'Check the yCubes daily for sprouts; some take up to 21 days.', citation: CITE.sprouting },
-  thin: { text: 'Thin each pod to its strongest sprout, and put yCovers on only after thinning.', citation: CITE.yCovers },
+  thin: { text: 'Thin each pod to its plant\'s count, cutting the extras at the base: 1 sprout for greens and fruiting plants, 3 for herbs and small flowers; leave arugula and chives unthinned. Put yCovers on only after thinning.', citation: CITE.thinning },
   roots: { text: 'Check the roots: dry and brittle wants more water, pooled water before a cycle wants less.', citation: CITE.roots },
   tank: { text: 'Keep the tank at least half full.', citation: CITE.tankHalfFull },
   cadence: { text: 'Top off weekly with water and plant food; refresh at least every 4 weeks.', citation: CITE.tankCadence },

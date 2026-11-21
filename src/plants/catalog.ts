@@ -46,11 +46,30 @@ export type Plant = z.infer<typeof Plant>
 
 const Days = z.tuple([z.number().int(), z.number().int()])
 
+/** Sprouts to keep per yCube after thinning, or 'all' for a plant Gardyn says not to thin. */
+export const ThinTo = z.union([z.number().int().min(1), z.literal('all')])
+export type ThinTo = z.infer<typeof ThinTo>
+
+/** A plant's page in Gardyn's help centre, as facts (scripts/plants/gardyn-help-plants.txt), with the thinning article's count. */
+const Facts = z.object({
+  thinTo: ThinTo.nullable(),
+  article: z.string().optional(),
+  latinName: z.string().nullable().optional(),
+  /** Days to maturity; for fruiting plants it runs about a month ahead of the store's first harvest. */
+  maturityDays: Days.nullable().optional(),
+  /** Grown height in feet as Gardyn labels it: "<1", "1", "2-3", "1+". */
+  heightFt: z.string().nullable().optional(),
+  tempF: Days.nullable().optional(),
+  /** When the seedlings take the full dose of plant food: true leaves or 1/2-inch roots, or roots only. */
+  fullDose: z.enum(['leavesOrRoots', 'roots']).optional(),
+})
+
 const Catalog = z.object({
   version: z.literal(1),
   sources: z.record(z.string(), z.string()),
   categorySproutMedians: z.record(z.string(), Days),
   sproutDays: z.record(z.string(), Days),
+  facts: z.record(z.string(), Facts),
   plants: z.array(Plant.omit({ tolerates: true })),
 })
 
@@ -60,15 +79,47 @@ const catalog = Catalog.parse(raw)
 export const PLANTS: readonly Plant[] = catalog.plants.map(p => ({ ...p, tolerates: defaultTolerance(p) }))
 export const CATALOG_SOURCES = catalog.sources
 
-/** Days from sowing to the first sprout, [from, to]; `estimated` when it is the category's median because neither source gives one for the plant. */
+/** Days from sowing to the first sprout, [from, to]; `estimated` when it is the category's median because no source gives one for the plant. */
 export interface SproutWindow { days: [number, number], estimated: boolean }
 
-/** A plant's sprouting window from Gardyn's Plant Book or Iowa State's germination table, else its category's median; null for a category neither has a plant in. */
+/** A plant's sprouting window from Gardyn's Plant Book, its help centre page or Iowa State's germination table, else its category's median; null for a category none has a plant in. */
 export function sproutWindow(p: Pick<Plant, 'id' | 'category'>): SproutWindow | null {
   const own = catalog.sproutDays[p.id]
   if (own) return { days: own, estimated: false }
   const median = catalog.categorySproutMedians[p.category]
   return median ? { days: median, estimated: true } : null
+}
+
+/** A plant's facts from its help centre page; `thinTo` falls back to Gardyn's rule for its kind, flagged `thinEstimated`. */
+export interface PlantFacts {
+  thinTo: ThinTo
+  thinEstimated: boolean
+  /** help.mygardyn.com/en/articles/<article>; null for a plant with no page. */
+  article: string | null
+  latinName: string | null
+  maturityDays: [number, number] | null
+  heightFt: string | null
+  tempF: [number, number] | null
+  fullDose: 'leavesOrRoots' | 'roots' | null
+}
+
+/** Gardyn's thinning rule by kind: one for greens, lettuces, vegetables, fruiting plants and large flowers; three for herbs and small flowers. */
+export function thinRule(p: Pick<Plant, 'category' | 'size'>): number {
+  return p.category === 'herb' || (p.category === 'flower' && p.size !== 'large') ? 3 : 1
+}
+
+export function plantFacts(p: Pick<Plant, 'id' | 'category' | 'size'>): PlantFacts {
+  const f = catalog.facts[p.id]
+  return {
+    thinTo: f?.thinTo ?? thinRule(p),
+    thinEstimated: f?.thinTo == null,
+    article: f?.article ?? null,
+    latinName: f?.latinName ?? null,
+    maturityDays: f?.maturityDays ?? null,
+    heightFt: f?.heightFt ?? null,
+    tempF: f?.tempF ?? null,
+    fullDose: f?.fullDose ?? null,
+  }
 }
 
 export interface PlantFilter {

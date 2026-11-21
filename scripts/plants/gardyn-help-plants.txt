@@ -1,0 +1,142 @@
+# Gardyn help centre plant pages (help.mygardyn.com/en/categories/456897-ycubes → /en/articles/<article>), read 2026-11-20.
+# id|article|latin name|days to sprout|thin to (page)|days to maturity|plant size ft|temperature °F|care level|full dose cue
+# Facts only, from each page's header and its Care & Harvest temperature. One Hibiscus page covers blush-hibiscus and red-hibiscus. Empty = not on the page.
+american-mustard|1780033|Brassica juncea|5-10|1|21-45|1|60-70|beginner|leaves-or-roots
+arugula|1795649|Eruca sativa|4-21|all|30-40|1|60-70|beginner|leaves-or-roots
+banana-pepper|1785345|Capsicum annuum|7-14|1|60-90|2|70-85|advanced|leaves-or-roots
+bare-root-strawberries|1786241|Fragaria ananassa||all|60-90|1||advanced|leaves-or-roots
+basil|1783873|Ocimum basilicum|5-21|3|68|<1|70-85|beginner|leaves-or-roots
+bi-color-sunflower|1782529|Helianthus annuus|10-14|1|70-80|<1||intermediate|leaves-or-roots
+black-pearl-pepper|14281601|Capsicum annuum|10-21|1|90-100|2|70-85|advanced|leaves-or-roots
+black-viola|2644289|Viola cornuta|7-14||50|<1|65-70|beginner|leaves-or-roots
+blue-cornflower|1782465|Centaurea cyanus|5-10|1|70|1+||beginner|leaves-or-roots
+blush-hibiscus|1782401|Hibiscus moscheutos|10-20|1|100-130|2-3||advanced|leaves-or-roots
+borage|1782657|Borago officinalis|5-10|1|50-60|2||beginner|leaves-or-roots
+breen|1796161|Lactuca sativa|7-21||45|<1|60-70|beginner|leaves-or-roots
+bronze-arrow|2348737|Lactuca sativa|7-14||45|<1|60-70|beginner|leaves-or-roots
+bulls-blood-beets|1796225|Beta vulgaris|5-10||35|1||beginner|leaves-or-roots
+bunching-onions|1783745|Allium fistulosum|7-21|3|60|1||intermediate|roots
+burrito-pepper|1785473|Capsicum annuum|7-14|1|80-95|1|70-85|advanced|leaves-or-roots
+buttercrunch|1796417|Lactuca sativa|7-21|1|45|<1|60-70|beginner|leaves-or-roots
+butterhead|1780481|Lactuca sativa|7-21|1|45|<1|60-70|beginner|leaves-or-roots
+candy-cane-pepper|3525697|Capsicum annuum|10-28|1|85-100|<1|70-85|advanced|leaves-or-roots
+canna-flower|1782593|Canna generalis|10-14|1|75-85|2||intermediate|roots
+cape-gooseberry|1785281|Physalis peruviana|10-28|1|80|2|70-85|advanced|leaves-or-roots
+cardinale|1796481|Lactuca sativa|7-14|1|60|<1|60-70|beginner|leaves-or-roots
+catnip|1783937|Nepeta cataria|10-14|3|40-50|1|60-70|beginner|leaves-or-roots
+celery|1796545|Apium graveolens|14-30|1|75-100|1|70-75|intermediate|leaves-or-roots
+celosia-mix|2566209|Celosia argentea plumosa|7-14|3|75-100|2||intermediate|leaves-or-roots
+chamomile|1782721|Matricaria recutita|10-14|1|75-120|2||intermediate|leaves-or-roots
+chervil|1783809|Anthriscus cerefolium|10-14|3|60-70|<1|55-65|intermediate|leaves-or-roots
+chives|1784193|Allium schoenoprasum|7-21|all|75-85|1||intermediate|roots
+cilantro|1784129|Coriandrum sativum|5-21|3|50-55|1|60-70|beginner|leaves-or-roots
+collard-greens|1796609|Brassica oleracea var. acephala|5-10|1|60-70|<2|55-75|beginner|leaves-or-roots
+cucumber|1785537|Cucumis sativus|10-14|1|65-75|2|70-85|advanced|leaves-or-roots
+dianthus|2566529|Dianthus chinensis x barbatus|5-7|3|50|<1||beginner|leaves-or-roots
+dill|1784065|Anethum graveolens|7-21|3|40-50|1||beginner|leaves-or-roots
+dragon-beans|1785409|Phaseolus vulgaris|10-14|1|55-70|2|70-90|advanced|leaves-or-roots
+endive-lettuce|1796673|Cichorium endivia|5-10|1|48|1|60-70|beginner|leaves-or-roots
+fairytale-eggplant|1785601|Solanum melongena|10-21|1|65-85|2|70-85|advanced|leaves-or-roots
+fiesta-gitana|1782785|Calendula officinalis|14-21|3|50-60|1||intermediate|leaves-or-roots
+flashy-trout-back|1796737|Lactuca sativa 'Flashy Trout Back'|5-10|1|27-55|1|60-70|beginner|leaves-or-roots
+fuchsia-snapdragon|1867009|Antirrhinum majus|7-20|3|80-115|<1||intermediate|leaves-or-roots
+garlic-chives|1784001|Allium tuberosum|10-21|all|90|<1||intermediate|roots
+goliath-pepper|1785857|Capsicum annuum|7-14|1|90-100|2|70-85|advanced|leaves-or-roots
+green-beans|1785665|Phaseolus vulgaris|10-14|1|50-75|2|70-85|advanced|roots
+green-bok-choy|1796033|Brassica rapa var. chinensis|5-10||20-45|<1|60-70|beginner|leaves-or-roots
+green-cabbage|4256513|Brassica oleracea|7-20||80-115|<1|55-75|intermediate|leaves-or-roots
+green-mustard|1796801|Brassica rapa var. japonica|5-21|1|21-40|1|60-70|beginner|leaves-or-roots
+green-salanova|2349057|Lactuca sativa|7-14|1|55|<1|60-70|beginner|leaves-or-roots
+green-tatsoi|1796865|Brassica rapa var. narinosa|5-21|1|21-45|<1|60-70|beginner|leaves-or-roots
+holy-basil|1784257|Ocimum tenuiflorum|5-14|3|70|<2|70-75|beginner|leaves-or-roots
+hon-tsai-tai|1796929|Brassica rapa|7-14|1|40-50|1||intermediate|leaves-or-roots
+hungarian-hot-wax-pepper|1785793|Capsicum annuum|7-21|1|60-90|2|70-85|advanced|leaves-or-roots
+iceberg|2348801|Lactuca sativa|5-14|1|80|<1|60-70|beginner|leaves-or-roots
+italian-parsley|1784321|Petroselinum crispum neopolitanum|10-30|3|70-90|1|60-70|intermediate|leaves-or-roots
+jalapeno|1799809|Capsicum annuum|10-28|1|60-80|2|70-85|advanced|leaves-or-roots
+kale-lacinato|1797057|Brassica oleracea 'Lacinato'|7-21||65|1|60-70|beginner|leaves-or-roots
+kale|1796993|Brassica oleracea|7-21|1|53-65|1|60-70|beginner|leaves-or-roots
+lavender|1782977|Lavandula angustifolia|14-30|3|100-110|1||intermediate|leaves-or-roots
+lemon-balm|1784385|Melissa officinalis|7-14|3|70|2||intermediate|leaves-or-roots
+lemon-hot-pepper|1786049|Capsicum annuum|7-21|1|100-115|1|70-85|advanced|leaves-or-roots
+lemongrass|1784449|Cymbopogon citratus|10-21|3|100|2||intermediate|roots
+lime-basil|1783681|Ocimum americanum 'Lime'|7-21|3|55-65|<1||beginner|leaves-or-roots
+lollo-rossa|1797121|Lactuca sativa 'Lollo Rossa'|7-10|1|40|<1|60-70|beginner|leaves-or-roots
+mammoth-basil|12832065|Ocimum basilicum|10-21|1|55-65|<1|70-85|beginner|leaves-or-roots
+marietta-marigold|1782849|Tagetes patula|7-14|3|60|1||beginner|leaves-or-roots
+matilda|1780929|Lactuca sativa|7-14|1|52|<1|60-70|beginner|leaves-or-roots
+mini-broccoli|2644225|Brassica oleracea Italica|5-10|1|85-100|2|65-70|advance|leaves-or-roots
+mini-cauliflower|1797249|Brassica oleracea botrytis|5-10|1|50-60|<1|65-70|beginner|leaves-or-roots
+mini-eggplant|1785985|Solanum melongena|7-10|1|50-85|2|70-85|advanced|leaves-or-roots
+mini-okra|5141633|Abelmoschus esculentus|10-16|1|60-75|2||advanced|leaves-or-roots
+mini-pumpkin|1786113|Cucurbita pepo|7-14|1|100-130|2||advanced|leaves-or-roots
+mini-squash|2125121|Cucurbita pepo|7-14|1|50-75|<2||advanced|leaves-or-roots
+mint|1784513|Mentha|10-21|3|60-75|<1|60-70|intermediate|leaves-or-roots
+monte-carlo|1797313|Lactuca sativa 'Monte Carlo'|7-10|1|46|<1|60-70|beginner|leaves-or-roots
+muir-lettuce|5249729|Lactuca sativa|5-14|1|80|<1|60-70|beginner|leaves-or-roots
+nasturtium|1783169|Tropaeolum majus|7-18|3|55-65|2||intermediate|leaves-or-roots
+night-scented-stock|1783233|Matthiola longipetala|5-20|3|50-70|<2||intermediate|leaves-or-roots
+oregano|1784833|Origanum heracleoticum|7-21|3|80-90|<1|60-70|intermediate|leaves-or-roots
+peas|1786433|Pisum sativum|7-14|1|60-80|<2||advanced|leaves-or-roots
+perpetual-spinach|1797377|Beta vulgaris|7-10|1|40-50|<1|60-70|beginner|leaves-or-roots
+pink-celery|1797441|Apium graveolens|12-20|1|75-100|1|70-75|intermediate|leaves-or-roots
+pink-petunia|1783105|Petunia x hybrida|7-12|3|30-40|1||intermediate|leaves-or-roots
+poblano-pepper|2125697|Capsicum annuum|10-18|1|90-100|2|70-85|advanced|leaves-or-roots
+portulaca-mix|2566401||7-14|3|60-75|<1|70-80|intermediate|leaves-or-roots
+purple-basil|1784769|Ocimum basilicum|5-10|3|72|1|70-85|beginner|leaves-or-roots
+purple-beans|1786369|Phaseolus vulgaris|10-14|1|50-75|2|70-85|advanced|roots
+purple-bok-choy|1797505|Brassica rapa subsp. chinensis|7-12|1|40-50|<1|60-80|beginner|leaves-or-roots
+purple-campanula|1782913|Campanula medium|12-21||70-80|2.5-3||intermediate|leaves-or-roots
+purple-cayenne-pepper|8023489|Capsicum annuum|10-15|1|90-100|2|70-85|advanced|leaves-or-roots
+purple-kohlrabi|1797569|Brassica oleracea|5-10|1|45-55|<1|60-70|beginner|leaves-or-roots
+purple-petunia|13115585|Petunia x hybrida|7-12|3|30-40|1||intermediate|leaves-or-roots
+purple-snapdragon|2400513|Antirrhinum majus|7-20|3|80-115|<1||intermediate|leaves-or-roots
+purslane|1797633|Portulaca oleracea|7-14|3|50-70|<1|60-70|beginner|leaves-or-roots
+radicchio|1781761|Cichorium intybus|5-10|1|65-75|<1|60-70|intermediate|leaves-or-roots
+radio-calendula|1783297|Calendula officinalis|6-14|3|50-55|2||intermediate|leaves-or-roots
+red-amaranth|1797761|Amaranthus cruentus|7-10|1|100-120|<2||moderate|leaves-or-roots
+red-cherry-tomato|1786305|Lycopersicum esculentum|7-28|1|60|<1||advanced|leaves-or-roots
+red-hibiscus|1782401|Hibiscus moscheutos|10-20|1|100-130|2-3||advanced|leaves-or-roots
+red-impatiens|3123137|Impatiens walleriana|7-10|3|60-75|<1|65-75|beginner|leaves-or-roots
+red-mini-strawberries|1786177|Fragaria vesca|10-15|3|100-120|<1|70-85|advanced|leaves-or-roots
+red-mustard|1797889|Brassica juncea|5-21|1|21-45|<1|60-70|beginner|leaves-or-roots
+red-oak-leaf-lettuce|1797953|Lactuca sativa 'Oak Leaf Red'|7-10|1|40-50|<1|60-70|beginner|leaves-or-roots
+red-romaine|1798017|Lactuca sativa 'cimmaron'|7-10|1|68|1|60-70|beginner|leaves-or-roots
+red-sails-lettuce|1798081|Lactuca sativa 'Red Sails'|7-10|1|40-50|<1|60-70|beginner|leaves-or-roots
+red-salad-bowl|1798145|Lactuca sativa 'Red Salad Bowl'|7-10|1|40-50|<1|60-70|beginner|leaves-or-roots
+red-sorrel|1798209|Rumex acetosa|7-14|3|60-75|<1|60-70|intermediate|leaves-or-roots
+red-swiss-chard|1798529|Beta vulgaris var. cicla|7-21|1|32-60|1|60-70|beginner|leaves-or-roots
+red-tatsoi|1798273|Brassica narinosa|5-12|1|45-55|<1||beginner|leaves-or-roots
+romaine|1798337|Lactuca sativa 'Paris Island Cos'|7-10|1|68|1|60-70|beginner|leaves-or-roots
+rosemary|1799873|Salvia rosmarinus (Rosmarinus officinalis)|15-25|3|42|1||beginner|leaves-or-roots
+rouge-dhiver|1798401|Lactuca sativa|7-14|1|30-50|<1|60-70|beginner|leaves-or-roots
+sage|1784641|Salvia officinalis|7-21|3|80-90|<1||intermediate|leaves-or-roots
+savory|1784897|Satureja hortensis|7-14|3|50-60|<1|65-85|beginner|leaves-or-roots
+scarlet-snapdragon|1783361|Antirrhinum majus|7-20|3|80-115|<1||intermediate|leaves-or-roots
+shishito-pepper|2644353|Capsicum annuum|10-28|1|75-100|2|70-85|advanced|leaves-or-roots
+shiso|1785025|Perilla frutescens var. crispa|7-14|3|50-60|1||intermediate|leaves-or-roots
+sorrel|1798465|Rumex acetosa|||||60-70|beginner, intermediate, or advanced|leaves-or-roots
+stevia|1785153|Stevia rebaudiana|14-21|3|40-60|1||beginner|leaves-or-roots
+stock-flower|1783425|Matthiola incana|5-10|3|65-80|<1|55-75|beginner|leaves-or-roots
+sunflower|1783489|Helianthus annuus|10-14|1|65-75|1||intermediate|leaves-or-roots
+sweet-marjoram|1785217|Origanum syriacum|7-14|3|65-75|<1|60-70|beginner|leaves-or-roots
+sweet-pepper|1786497|Capsicum annuum|10-21|1|75-85|1-2|70-85|advanced|leaves-or-roots
+sweet-thai-basil|1785089|Ocimum basilicum var. thyrsiflora|5-10|3|64|<1|70-85|beginner|leaves-or-roots
+tarragon|1784577|Tagetes lucida|7-14|3|65-75|<1||beginner|leaves-or-roots
+thai-eggplant|1786689|Solanum melongena|10-21|1|60-75|2|70-85|advanced|leaves-or-roots
+thyme|1784961|Thymus vulgaris|7-21|3|90-95|<1||intermediate|leaves-or-roots
+tokyo-bekana|1795969|Brassica rapa var. chinensis|7-14|1|45-55|<1||beginner|leaves-or-roots
+torenia|1783553|Torenia fournieri|6-20|3|60-75|<1||intermediate|leaves-or-roots
+viola|1783617|Viola cornuta|7-14|3|50|<1|65-70|beginner|leaves-or-roots
+violet-impatiens|13614913|Impatiens walleriana|7-10|3|60-75|<1|65-75|beginner|leaves-or-roots
+wasabi-greens|1795905|Brassica juncea|5-10|1|45|<1|60-70|beginner|leaves-or-roots
+watercress|1795777|Nasturtium officinale|7-21|all|60|<1|60-70|beginner|leaves-or-roots
+wheatgrass|1795713|Triticum aestivum|5-7|all|21|<1||beginner|roots
+white-kohlrabi|3519233|Brassica oleracea|5-10|1|45-55|<1|60-70|beginner|leaves-or-roots
+white-petunia|1866945|Petunia x hybrida|7-12|3|30-40|1||intermediate|leaves-or-roots
+yellow-beans|1786625|Phaseolus vulgaris|5-12|1|68|<1|70-85|beginner|roots
+yellow-cherry-tomato|1786561|Lycopersicum esculentum|7-21|1|60-75|2||advanced|leaves-or-roots
+yellow-mini-strawberry|4367169|Fragaria vesca|10-15|3|100-120|<1|65-85|advanced|leaves-or-roots
+yellow-snapdragon|4256001|Antirrhinum majus|7-20||80-115|<1||intermediate|leaves-or-roots
+yellow-swiss-chard|2400321|Beta vulgaris var. cicla|7-21|1|32-60|1|60-70|beginner|leaves-or-roots
+zinnia|4367233|Zinnia elegans|7-14||60-75|<1|70-85|beginner|leaves-or-roots

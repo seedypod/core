@@ -25,6 +25,7 @@ export function cite(note: string, section: string): Citation {
 const GARDYN = 'knowledge/nutrients/gardyn-feeding-guidance.md'
 const COMMUNITY = 'knowledge/nutrients/community-nutrients.md'
 const GERMINATION = 'knowledge/plants/germination.md'
+const THINNING = 'knowledge/plants/thinning.md'
 
 export const CITE = {
   /** "Tank volumes: Home 5 gal full, Studio 4 gal full; keep the tank at least half full." */
@@ -45,6 +46,8 @@ export const CITE = {
   sprouting: cite(GERMINATION, 'Sprouting'),
   /** yCovers only after thinning: covers trap moisture around the seed. */
   yCovers: cite(GERMINATION, 'Thinning and yCovers'),
+  /** Keep 1 sprout for greens, lettuces, fruiting plants and large flowers, 3 for herbs and small flowers; don't thin arugula, chamomile, chives, garlic chives or wheatgrass. */
+  thinning: cite(THINNING, 'Sprouts to keep'),
   /** Judge the watering by the roots: dry and brittle wants more, pooled water less. */
   roots: cite('knowledge/watering/schedules.md', 'Judging a schedule'),
 } as const

@@ -114,3 +114,34 @@ describe('custom catalog plants', () => {
     await client.close()
   })
 })
+
+describe('plant care', () => {
+  it('gives a plant\'s thinning count, timings, size, temperature and notes, by id or name', async () => {
+    const { c } = setup()
+    const basil = await c.planner.care({ id: 'basil' })
+    expect(basil).toMatchObject({ thinTo: 3, thinEstimated: false, sproutDays: [5, 21], sproutEstimated: false, maturityDays: [68, 68], heightFt: '<1', tempF: [70, 85], fullDose: 'leavesOrRoots', latinName: 'Ocimum basilicum', url: 'https://help.mygardyn.com/en/articles/1783873' })
+    expect(basil.notes?.harvest).toMatch(/1\/4 to 1\/2 inch above the nodes/)
+    expect((await c.planner.care({ id: 'Chives' })).thinTo).toBe('all')
+    expect((await c.planner.care({ id: 'pink-petunia' })).notes).toBeNull()
+    await expect(c.planner.care({ id: 'nope' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('falls back to the rule for its kind for a custom plant, with no page or notes', async () => {
+    const { c } = setup()
+    await c.planner.addPlant({ ...okra, careLevel: null })
+    expect(await c.planner.care({ id: 'okra' })).toMatchObject({ thinTo: 1, thinEstimated: true, maturityDays: null, url: null, notes: null, sproutEstimated: true })
+  })
+
+  it('reaches agents as plant_care, and plant_catalog lists each plant\'s count', async () => {
+    const { core } = setup()
+    const server = createMcpServer(core.ctx)
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    await server.connect(a)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(b)
+    const body = async (name: string, args: Record<string, unknown>) => JSON.parse(((await client.callTool({ name, arguments: args })).content as Array<{ text: string }>)[0]?.text ?? '') as unknown
+    expect(await body('plant_care', { id: 'cucumber' })).toMatchObject({ thinTo: 1, notes: { pollinate: expect.stringMatching(/only female flowers/) } })
+    expect(await body('plant_catalog', { q: 'arugula' })).toEqual([expect.objectContaining({ id: 'arugula', thinTo: 'all' })])
+    await client.close()
+  })
+})

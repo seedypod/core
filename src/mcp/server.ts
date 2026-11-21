@@ -13,6 +13,7 @@ import { GARDYN_LIGHT_GUIDE, LIGHT_PRESETS, lightHours, lightRating, LONG_DAY_HO
 import { dayEnabled, localTime } from '../scheduler/time'
 import { appliedPreset, dailyMinutes, daysSinceSowing, GARDYN_WATERING_GUIDE, lightWindow, presetRuns, presetDays, presetSchedules, PUMP_PRESETS, plantCategories, recommendedPreset, sowWeekday, TIPS_CITATION, WATERING_TIPS } from '../scheduler/pumpPlan'
 import { SensorId } from '../hardware/contract'
+import { plantFacts } from '../plants/catalog'
 import type { Context } from '../server/context'
 import { appRouter } from '../server/routers/app'
 import { Overrides } from '../server/routers/planner'
@@ -208,9 +209,14 @@ export function createMcpServer(ctx: Context): McpServer {
   })
 
   server.registerTool('plant_catalog', {
-    description: 'Search the plant catalog: Gardyn\'s built-in plants plus custom ones added on this unit (custom: true). Each has its light zone high/medium/low, the zones beyond it where it still does acceptably (tolerates, each with its cost to the planner: 1 for one zone lower, 2 for one higher), first-harvest window in months, care level, size (large plants are spaced apart) and succession group. Filter by q (name), category (fruiting, vegetable, legume, flower, herb, green, lettuce), zone or custom. A crop missing from it can be added with add_plant.',
+    description: 'Search the plant catalog: Gardyn\'s built-in plants plus custom ones added on this unit (custom: true). Each has its light zone high/medium/low, the zones beyond it where it still does acceptably (tolerates, each with its cost to the planner: 1 for one zone lower, 2 for one higher), first-harvest window in months, care level, size (large plants are spaced apart), succession group, and thinTo: the sprouts to keep per yCube when thinning ("all" = don\'t thin). plant_care has one plant\'s full care. Filter by q (name), category (fruiting, vegetable, legume, flower, herb, green, lettuce), zone or custom. A crop missing from it can be added with add_plant.',
     inputSchema: { q: z.string().optional(), category: z.enum(['fruiting', 'vegetable', 'legume', 'flower', 'herb', 'green', 'lettuce']).optional(), zone: z.enum(['high', 'medium', 'low']).optional(), custom: z.boolean().optional() },
-  }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, tolerates: p.tolerates, harvestMonths: p.harvestMonths, careLevel: p.careLevel, size: p.size, succession: p.succession, inStore: p.inStore, custom: p.custom }))))
+  }, async i => text((await caller.planner.catalog(i)).plants.map(p => ({ id: p.id, name: p.name, category: p.category, zone: p.zone, tolerates: p.tolerates, harvestMonths: p.harvestMonths, careLevel: p.careLevel, size: p.size, succession: p.succession, thinTo: plantFacts(p).thinTo, inStore: p.inStore, custom: p.custom }))))
+
+  server.registerTool('plant_care', {
+    description: 'One plant\'s care, from its page in Gardyn\'s help centre: thinTo, the sprouts to keep per yCube when thinning ("all" = don\'t thin; thinEstimated when it is Gardyn\'s rule for the kind: 1 for greens, lettuces, vegetables, fruiting plants and large flowers, 3 for herbs and small flowers), days to sprout, days to maturity (for fruiting plants about a month ahead of the first harvest from sowing), height in feet, temperature range in °F, when it takes the full plant-food dose, and notes on harvesting, pruning, support, pollinating, pests and climate. Use the id or name from plant_catalog.',
+    inputSchema: { id: z.string() },
+  }, async i => text(await caller.planner.care({ id: i.id })))
 
   server.registerTool('add_plant', {
     description: 'Add a plant that is not in the catalog (check plant_catalog first), so plan_layout, best_spot and save_plan can use it. Its id is the name as a slug ("Purple Shiso" → purple-shiso). zone: the light it needs (high for fruiting crops, medium for most greens and herbs, low for shade-tolerant herbs like mint). harvest_months: [from, to] months from starting the yCube to first harvest. size large for plants that shade their neighbours. succession defaults from category. tolerates: the zones beyond its own where it still does acceptably; leave it out for its category\'s default (one zone lower, never below medium for fruiting plants; one higher too for herbs, flowers and legumes). Fails if the name or id is already in the catalog.',

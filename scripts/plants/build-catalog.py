@@ -4,8 +4,11 @@ Inputs (both in this folder, raw extracts with provenance headers):
   gardyn-zone-guide.txt     name|zone              (Gardyn light-zone placement guide)
   gardyn-store-ycubes.txt   name|handle|yield|care|first harvest  (Gardyn yCube store)
   gardyn-plant-book-sprout.txt  id|days to sprout|page  (Gardyn Plant Book)
+  gardyn-help-plants.txt    id|article|latin|sprout|thin|maturity|size|°F|care|full dose
+                            (Gardyn help centre plant pages)
+  gardyn-thinning.txt       id|sprouts to keep  (Gardyn's thinning article, per plant)
   isu-germination.txt       id|days to germination|row  (Iowa State Extension table,
-                            for plants the Plant Book has no page for)
+                            for plants neither Gardyn source gives days for)
 
 Everything else is derived by rules in this file and flagged as inferred:
   category      by name (fruiting, vegetable, legume, flower, herb, green, lettuce)
@@ -15,9 +18,13 @@ Everything else is derived by rules in this file and flagged as inferred:
   placement     'bottomCenter' for cucumbers (Gardyn's explicit exception)
   harvestMonths from the store when present; otherwise the median of the same
                 category in the store, flagged estimated
-  sproutDays    per plant id from the Plant Book, else the Iowa State table,
-                kept beside the plants with each category's median for the
-                plants both lack
+  careLevel     from the store when present; otherwise the help centre page
+  sproutDays    per plant id from the Plant Book, else the help centre page,
+                else the Iowa State table, kept beside the plants with each
+                category's median for the plants all three lack
+  facts         per plant id from the help centre: Latin name, days to
+                maturity, plant size, temperature range, full-dose cue, and
+                sprouts to keep from the thinning article (else the page)
 
 Run:  python3 -I scripts/plants/build-catalog.py
 """
@@ -116,6 +123,19 @@ def days(s):
     return m if len(m) == 2 else None
 
 
+# The help centre's care levels; the store says "Expert" where the help centre says "Advanced".
+CARE = {'beginner': 'beginner', 'intermediate': 'intermediate', 'moderate': 'intermediate', 'advanced': 'expert', 'advance': 'expert'}
+
+
+def span(s):
+    n = [int(x) for x in re.findall(r'\d+', s)]
+    return [n[0], n[-1]] if n else None
+
+
+def keep(s):
+    return 'all' if s == 'all' else int(s) if s else None
+
+
 def main():
     zones = {}
     for name, zone in rows('gardyn-zone-guide.txt'):
@@ -143,12 +163,18 @@ def main():
             by_cat.setdefault(category(name), []).append(s['harvest'])
     median = {c: [round(statistics.median(h[0] for h in hs)), round(statistics.median(h[1] for h in hs))] for c, hs in by_cat.items()}
 
+    help_pages = {r[0]: r for r in rows('gardyn-help-plants.txt')}
+    thinning = {pid: keep(k) for pid, k in rows('gardyn-thinning.txt')}
+
     sprout = {pid: days(d) for pid, d, _page in rows('gardyn-plant-book-sprout.txt')}
     isu = {pid: days(d) for pid, d, _row in rows('isu-germination.txt')}
     both = sorted(set(sprout) & set(isu))
     if both:
         raise SystemExit(f'sprout days from both the Plant Book and Iowa State: {both}')
-    sprout.update(isu)
+    for pid, r in help_pages.items():
+        if r[3] and not sprout.get(pid):
+            sprout[pid] = span(r[3])
+    sprout.update({pid: d for pid, d in isu.items() if pid not in sprout})
 
     plants = []
     for name in sorted(zones):
@@ -164,7 +190,7 @@ def main():
             'zone': zones[name],
             'harvestMonths': harvest or median.get(cat),
             'harvestEstimated': harvest is None,
-            'careLevel': s.get('care'),
+            'careLevel': s.get('care') or CARE.get(help_pages.get(slug(name), [''] * 10)[8]),
             'yield': s.get('yield'),
             'succession': succ,
             'successionInferred': succ_inferred,
@@ -174,9 +200,28 @@ def main():
             'inStore': bool(s),
         })
 
-    unknown = sorted(set(sprout) - {p['id'] for p in plants})
-    if unknown:
-        raise SystemExit(f'sprout days for plants not in the catalog: {unknown}')
+    ids = {p['id'] for p in plants}
+    for src, got in (('sprout days', sprout), ('help pages', help_pages), ('thinning', thinning)):
+        unknown = sorted(set(got) - ids)
+        if unknown:
+            raise SystemExit(f'{src} for plants not in the catalog: {unknown}')
+    facts = {}
+    for pid in sorted(ids):
+        r = help_pages.get(pid)
+        thin = thinning.get(pid) or (keep(r[4]) if r else None)
+        if not r and thin is None:
+            continue
+        f = {'thinTo': thin}
+        if r:
+            f.update({
+                'article': r[1],
+                'latinName': r[2] or None,
+                'maturityDays': span(r[5]),
+                'heightFt': r[6] or None,
+                'tempF': span(r[7]),
+                'fullDose': 'roots' if r[9] == 'roots' else 'leavesOrRoots',
+            })
+        facts[pid] = f
     by_cat = {}
     for p in plants:
         if sprout.get(p['id']):
@@ -186,18 +231,21 @@ def main():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     doc = {
         'version': 1,
-        'generatedFrom': ['scripts/plants/gardyn-zone-guide.txt', 'scripts/plants/gardyn-store-ycubes.txt', 'scripts/plants/gardyn-plant-book-sprout.txt', 'scripts/plants/isu-germination.txt'],
+        'generatedFrom': ['scripts/plants/gardyn-zone-guide.txt', 'scripts/plants/gardyn-store-ycubes.txt', 'scripts/plants/gardyn-plant-book-sprout.txt', 'scripts/plants/gardyn-help-plants.txt', 'scripts/plants/gardyn-thinning.txt', 'scripts/plants/isu-germination.txt'],
         'sources': {
             'zone': 'https://help.mygardyn.com/en/articles/11547329',
             'zoneMap': 'https://help.mygardyn.com/en/articles/11567361',
             'store': 'https://mygardyn.com/collections/ycubes',
             'succession': 'https://help.mygardyn.com/en/articles/1782337',
             'sprout': 'https://mygardyn.com/plant-book',
+            'plantPages': 'https://help.mygardyn.com/en/categories/456897-ycubes',
+            'thinning': 'https://help.mygardyn.com/en/articles/1771329',
             'germination': 'https://yardandgarden.extension.iastate.edu/how-to/germination-requirements-annuals-and-vegetables',
         },
         'categoryHarvestMedians': median,
         'categorySproutMedians': sprout_median,
         'sproutDays': {pid: d for pid, d in sorted(sprout.items()) if d},
+        'facts': facts,
         'plants': plants,
     }
     OUT.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n')

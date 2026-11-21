@@ -33,8 +33,8 @@ describe('sprouting', () => {
     }
     expect(of('red-swiss-chard')).toEqual({ days: [7, 21], estimated: false })
     expect(of('green-bok-choy')).toEqual({ days: [5, 10], estimated: false })
-    expect(of('tokyo-bekana')).toEqual({ days: [6, 21], estimated: true })
-    expect(sproutWindow({ id: 'custom', category: 'vegetable' })).toEqual({ days: [4, 7], estimated: true })
+    expect(of('bare-root-strawberries')).toEqual({ days: [10, 24], estimated: true })
+    expect(sproutWindow({ id: 'custom', category: 'vegetable' })).toEqual({ days: [5, 10], estimated: true })
     expect(windowText({ days: [5, 10], estimated: false })).toBe('day 5–10 typical')
     expect(windowText({ days: [7, 10], estimated: true })).toBe('about day 7–10')
   })

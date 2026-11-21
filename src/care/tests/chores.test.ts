@@ -197,14 +197,27 @@ describe('refresh, clean and roots', () => {
 
 describe('thin', () => {
   function photographed(covers: number[], photoDaysAgo = 0.2) {
-    const store = garden(covers.map(() => ['Arugula', 9] as [string, number]), 'seeded')
+    const store = garden(covers.map(() => ['Romaine', 9] as [string, number]), 'seeded')
     store.analyses.add(covers.map((value, i) => ({ captureId: `c${i}`, ts: ago(photoDaysAgo), camera: 'upper' as const, analyzer: 'green-threshold', version: 2, source: 'device' as const, slot: i + 1, metric: 'green_fraction', value, detail: null, artifact: null })))
     return store
   }
 
   it('is due from the camera once most young pods show leaves', () => {
     const c = one(photographed([0.05, 0.03, 0.04, 0.01]), snap({}), 'thin')
-    expect(c).toMatchObject({ state: 'due', basis: 'reading', citations: [CITE.plantFood], reason: '3 of 4 young pods show leaves on camera, so most have sprouted: thin each pod to its strongest sprout.' })
+    expect(c).toMatchObject({ state: 'due', basis: 'reading', citations: [CITE.plantFood, CITE.thinning], reason: '3 of 4 young pods show leaves on camera, so most have sprouted: thin pods 1, 2, 3 and 4 to 1 sprout.' })
+  })
+
+  it('says how many sprouts to keep in each pod, and leaves out the plants Gardyn doesn\'t thin', () => {
+    const store = garden([['Basil', 9], ['Romaine', 9], ['Chives', 9], ['Kale', 9], ['Mystery Melon', 9]], 'seeded')
+    const c = one(store, snap({}), 'thin')
+    expect(c.reason).toBe('Calendar guess, no recent photos of the young pods: 9 d since the oldest young pod was planted. yCubes usually sprout within 14 d; thin about 14 d after planting: pods 2 and 4 to 1 sprout, pod 1 to 3 and pod 5 to its plant\'s count.')
+    expect(one(garden([['Arugula', 9], ['Chives', 9]], 'seeded'), snap({}), 'thin')).toMatchObject({ state: 'ok', reason: 'No pods planted in the last 35 d to thin.' })
+  })
+
+  it('counts a custom plant by Gardyn\'s rule for its kind', () => {
+    const store = garden([['Purple Shiso', 9]], 'seeded')
+    store.customPlants.upsert({ id: 'purple-shiso', name: 'Purple Shiso', category: 'herb', zone: 'medium', harvestMonths: [1, 2], careLevel: null, size: 'normal', succession: 'long-greens-herbs', tolerates: null, source: 'agent' }, ago(1))
+    expect(one(store, snap({}), 'thin').reason).toMatch(/: pod 1 to 3 sprouts\.$/)
   })
 
   it('is soon with a few up, and ok with none yet', () => {
@@ -214,7 +227,7 @@ describe('thin', () => {
 
   it('falls back to the calendar without recent photos of most young pods', () => {
     const old = one(photographed([0.05, 0.05], 3), snap({}), 'thin')
-    expect(old).toMatchObject({ state: 'ok', basis: 'timeline', reason: 'Calendar guess, no recent photos of the young pods: 9 d since the oldest young pod was planted. yCubes usually sprout within 14 d; thin about 14 d after planting.' })
+    expect(old).toMatchObject({ state: 'ok', basis: 'timeline', reason: 'Calendar guess, no recent photos of the young pods: 9 d since the oldest young pod was planted. yCubes usually sprout within 14 d; thin about 14 d after planting: pods 1 and 2 to 1 sprout.' })
     const store = photographed([0.05])
     store.pods.update(2, { plant: 'Kale', status: 'seeded', plantedAt: ago(13) }, ago(13))
     store.pods.update(3, { plant: 'Kale', status: 'seeded', plantedAt: ago(13) }, ago(13))
