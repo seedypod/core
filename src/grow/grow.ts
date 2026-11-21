@@ -33,7 +33,7 @@ export function dueReminders(cycle: GrowCycle, settings: DeviceSettings, now: Da
   const day = cycleDay(cycle, now)
   const out: Reminder[] = []
   const oneShot: [ReminderKind, number, string][] = [
-    ['reminder_thinning', settings.thinningReminderDays, 'Thin seedlings to the strongest sprout per pod'],
+    ['reminder_thinning', settings.thinningReminderDays, 'Thin seedlings: 1 sprout per pod for greens and fruiting plants, 3 for herbs and small flowers'],
     ['reminder_root_check', settings.rootCheckReminderDays, 'Check roots for length and colour; trim if they reach the pump'],
     ['reminder_harvest', settings.harvestReminderDays, 'First harvest window — pick outer leaves to keep plants producing'],
   ]

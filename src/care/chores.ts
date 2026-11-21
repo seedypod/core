@@ -10,7 +10,8 @@
  */
 import type { Reading, SensorId } from '../hardware/contract'
 import type { HalSnapshot } from '../hardware/types'
-import { findPlant } from '../plants/catalog'
+import { type Catalog, findPlant, plantFacts } from '../plants/catalog'
+import { catalogFor } from '../plants/custom'
 import type { Pod, Store, TankActionKind } from '../store/types'
 import { CITE, type Citation, type CropGroup, EC_TARGETS, FRUITING_FOR_FAST_REFRESH, REFRESH_DAYS, REFRESH_FRUITING_DAYS, SPROUT_DOSE_DAYS, TANK_MIN_PCT, TOP_OFF_DAYS } from './knowledge'
 
@@ -217,15 +218,41 @@ function trimRoots(store: Store, now: Date, planted: Pod[]): Chore {
   return onCalendar(c, { every, from: anchor(store, ['trim_roots'], planted), now, why: 'Calendar guess, as no sensor sees the roots', rule: `Check them every ${every} d (Settings → Grow reminders) and trim any reaching the pump.`, none: 'nothing logged or planted to count from.' })
 }
 
+const slotList = (slots: number[]) => `pod${slots.length === 1 ? '' : 's'} ${slots.length > 1 ? `${slots.slice(0, -1).join(', ')} and ${slots.at(-1)}` : slots[0]}`
+
+/**
+ * How many sprouts to keep in each pod, from Gardyn's thinning article by
+ * plant: "thin pods 2 and 5 to 1 sprout and pod 7 to 3". A pod whose plant the
+ * catalog doesn't know is left to its plant's count.
+ */
+export function thinCounts(pods: Pod[], catalog: Catalog): string {
+  const by = new Map<number | null, number[]>()
+  for (const p of [...pods].sort((a, b) => a.slot - b.slot)) {
+    const plant = p.plant ? catalog.find(p.plant) : undefined
+    const keep = plant ? plantFacts(plant).thinTo : null
+    if (keep === 'all') continue
+    by.set(keep, [...(by.get(keep) ?? []), p.slot])
+  }
+  const known = [...by].filter((e): e is [number, number[]] => e[0] !== null).sort((a, b) => a[0] - b[0])
+  const parts = known.map(([keep, slots], i) => `${slotList(slots)} to ${keep}${i === 0 ? ` sprout${keep === 1 ? '' : 's'}` : ''}`)
+  const unknown = by.get(null)
+  if (unknown) parts.push(`${slotList(unknown)} to its plant's count`)
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0] ?? ''
+}
+
 function thin(store: Store, now: Date, planted: Pod[]): Chore {
   const done = lastDone(store, ['thin'])
-  const c = { id: 'thin' as const, title: TITLE.thin, lastDoneAt: done ? iso(done.at) : null, doneKind: 'thin' as const, citations: [CITE.plantFood] }
+  const c = { id: 'thin' as const, title: TITLE.thin, lastDoneAt: done ? iso(done.at) : null, doneKind: 'thin' as const, citations: [CITE.plantFood, CITE.thinning] }
   const t = now.getTime()
+  const catalog = catalogFor(store)
+  // Pods Gardyn says not to thin (arugula, chives…) never make it due.
   const young = planted.filter((p) => {
     const at = p.plantedAt ? Date.parse(p.plantedAt) : Number.NaN
-    return (p.status === 'seeded' || p.status === 'growing') && !Number.isNaN(at) && t - at <= THIN_WINDOW_DAYS * DAY_MS && (!done || done.at < at)
+    const plant = p.plant ? catalog.find(p.plant) : undefined
+    return (p.status === 'seeded' || p.status === 'growing') && !Number.isNaN(at) && t - at <= THIN_WINDOW_DAYS * DAY_MS && (!done || done.at < at) && (!plant || plantFacts(plant).thinTo !== 'all')
   })
   if (!young.length) return { ...c, state: 'ok', basis: 'timeline', dueAt: null, readings: [], reason: done ? 'Thinned since the youngest pods were planted.' : `No pods planted in the last ${THIN_WINDOW_DAYS} d to thin.` }
+  const counts = thinCounts(young, catalog)
   // The camera: the primary analyser's latest leaf cover for each young pod, since it was planted.
   const analyzer = store.settings.get().primaryAnalyzer
   const covers = young.flatMap((p) => {
@@ -237,13 +264,13 @@ function thin(store: Store, now: Date, planted: Pod[]): Chore {
     const up = covers.filter(v => v >= SPROUT_COVER).length
     const of = `${up} of ${covers.length} young pods`
     const base = { ...c, basis: 'reading' as const, dueAt: null, readings: [] }
-    if (up * 4 >= covers.length * 3) return { ...base, state: 'due', dueAt: now.toISOString(), reason: `${of} show leaves on camera, so most have sprouted: thin each pod to its strongest sprout.` }
+    if (up * 4 >= covers.length * 3) return { ...base, state: 'due', dueAt: now.toISOString(), reason: `${of} show leaves on camera, so most have sprouted: thin ${counts}.` }
     if (up > 0) return { ...base, state: 'soon', reason: `${of} show leaves on camera; thin once most have sprouted.` }
     return { ...base, state: 'ok', reason: `No leaves on camera yet in ${covers.length} young pods.` }
   }
   const every = store.settings.get().thinningReminderDays || SPROUT_DOSE_DAYS
   const oldest = Math.min(...young.map(p => Date.parse(p.plantedAt ?? '')))
-  return onCalendar(c, { every, from: { at: oldest, what: 'the oldest young pod was planted' }, now, why: `Calendar guess, ${covers.length ? 'too few recent photos of the young pods' : 'no recent photos of the young pods'}`, rule: `yCubes usually sprout within ${SPROUT_DOSE_DAYS} d; thin about ${every} d after planting.`, none: '' })
+  return onCalendar(c, { every, from: { at: oldest, what: 'the oldest young pod was planted' }, now, why: `Calendar guess, ${covers.length ? 'too few recent photos of the young pods' : 'no recent photos of the young pods'}`, rule: `yCubes usually sprout within ${SPROUT_DOSE_DAYS} d; thin about ${every} d after planting: ${counts}.`, none: '' })
 }
 
 /** Every chore for the unit as it is now, in a fixed order. */

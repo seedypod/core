@@ -10,7 +10,7 @@ describe('grow reminders', () => {
     const s = store.settings.get()
     expect(cycleDay(cycle, new Date('2026-01-15T12:00:00Z'))).toBe(14)
     const due = dueReminders(cycle, s, new Date('2026-01-15T12:00:00Z'))
-    expect(due).toEqual([{ kind: 'reminder_thinning', dueDay: 14, detail: 'Thin seedlings to the strongest sprout per pod' }])
+    expect(due).toEqual([{ kind: 'reminder_thinning', dueDay: 14, detail: 'Thin seedlings: 1 sprout per pod for greens and fruiting plants, 3 for herbs and small flowers' }])
   })
 
   it('engine issues each reminder once and acknowledge clears it', () => {

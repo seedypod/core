@@ -1,5 +1,11 @@
 # Knowledge update log
 
+## 2026-11-20
+
+- **Creation**: [Thinning](plants/thinning.md), Gardyn's per-plant count of sprouts to keep, behind the thin chore and the catalog's `thinTo`, with the four plants whose pages disagree.
+- **Creation**: [Plant pages](plants/plant-pages.md), the facts and care and harvest notes taken from all 140 plant pages in Gardyn's help centre.
+- **Update**: [Catalog provenance](plants/catalog-provenance.md) lists the new fields and the sprout-days precedence.
+
 ## 2026-11-17
 
 - **Creation**: [Zone tolerance](plants/zone-tolerance.md), the zones beyond its ideal one a plant does acceptably in, by category, and their costs to the pod planner: Gardyn's one-zone-lower rule first, one higher too for herbs, flowers and legumes, never below medium for fruiting plants.

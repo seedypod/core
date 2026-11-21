@@ -1,0 +1,721 @@
+{
+ "version": 1,
+ "source": "https://help.mygardyn.com/en/categories/456897-ycubes",
+ "note": "Rewritten in seedypod's own words from the Care & Harvest section of each plant's page in Gardyn's help centre, read 2026-11-20. Facts and numbers kept; no prose copied.",
+ "plants": {
+  "american-mustard": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Young leaves taste freshest and stay tender, while older ones toughen. Keep at least 1/3 of the plant for regrowth, or let the head mature and cut it at the base.",
+   "prune": "Cut yellow flower stems as soon as they show to hold off bolting. Throw out leaves that yellow from going unpicked.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "arugula": {
+   "harvest": "It stays least bitter when cut all at once: when outer leaves are 2-3 inches tall, cut every leaf at its base. For repeat picking, take outer leaves at 2-3 inches and remove no more than 1/3 of the plant at a time. Bigger leaves taste hotter and more bitter.",
+   "prune": "Cut yellow flower stems as they form to hold off bolting.",
+   "health": "Watch for aphids.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "banana-pepper": {
+   "harvest": "Pick at any color once a pepper is firm and 8-9 inches long. Cut each pepper off at its own stem.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures, since each pepper can grow 8-9 inches long.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant to mimic wind, or brush inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "bare-root-strawberries": {
+   "harvest": "Ripeness shows in color, not size, so wait until the berry is red right up to the stem. Any white or pale red areas mean it needs more time. Leave ripe berries a day or two longer for the best flavor, until they feel soft rather than firm. Pinch them off or snip each stem with clean scissors.",
+   "prune": "Remove no more than ⅓ of the leaves at one time, and cut off any yellow or brown ones. Snip off flowers until the plant has at least 6 fully open leaves. Cut away every runner for the plant's whole life. Trim roots twice a month, removing any that are brown, black, slimy, or past the yPod.",
+   "pollinate": "Pollinate each white flower by hand once it opens. Cradle it between your index and middle fingers and rub your thumb around the whole flower head 2-3 times, covering every part. Patchy pollination gives oddly shaped but still edible berries. A pollinated flower sheds its petals and grows into a berry over about 2 weeks.",
+   "health": "The roots are very sensitive and highly prone to root rot. Watch for aphids and spider mites.",
+   "climate": "Keep humidity at 60-75%. Brown leaf edges mean the air is too dry, so set a humidifier near the tower."
+  },
+  "basil": {
+   "harvest": "Frequent harvests extend the plant's life. Take single leaves, or cut the stem 1/4 to 1/2 inch above the nodes, the tiny leaf pair or knobs that sit just above a stem's two biggest leaves. Those small leaves then grow into the next harvest.",
+   "prune": "Pick off any leaf that develops brown spots. Cutting stems back above the nodes on a regular basis makes the plant bushier. Pinch out flower buds as soon as they show to hold off bolting.",
+   "health": "Watch for aphids. Root rot and downy mildew are common, and inspecting the roots regularly and pulling brown-spotted leaves early keeps them in check."
+  },
+  "bi-color-sunflower": {
+   "harvest": "For petals, snip each flower at its stem and pull the petals off the head. For a vase, cut just before the bloom opens, when the petals are nearly unfurled, and stand it in water.",
+   "prune": "Deadhead fading blooms at their own stems to prompt new buds. Remove yellowing leaves at the same time.",
+   "health": "Watch for aphids."
+  },
+  "black-pearl-pepper": {
+   "harvest": "The small round fruits start onyx black and ripen to crimson red. Pick at either color; fruit left on the plant keeps ripening, shifting color and getting sweeter. Cut each pepper off at its own stem.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant or brushing inside each bloom with a fingertip or small brush. Use a separate finger or brush for each pepper variety so they don't cross.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "black-viola": {
+   "harvest": "Cut flowers at the stem once fully open.",
+   "prune": "Pinch fading flowers off below the head to make way for new blooms.",
+   "health": "Watch for aphids."
+  },
+  "blue-cornflower": {
+   "harvest": "Pinch or cut single blooms where the head meets the stem. For a vase, cut stems and get them into water right away.",
+   "prune": "Pinch the tips of growing stalks now and then to keep it compact and under the light. Deadhead spent blooms, and cut the leftover bare stem back too so it does not rot.",
+   "health": "Watch for aphids."
+  },
+  "blush-hibiscus": {
+   "harvest": "Petals and young leaves are edible, and the leaves work raw or cooked. For petals, snip each flower at its stem and pull them off, leaving the center. For a vase, cut a flower just before it opens, when the petals are only starting to show, and stand it in water.",
+   "prune": "Check and trim roots twice a month, since the root system gets large with age. Before flowering, once it has a few sets of leaves, you can top the main stem back to ⅔ of its height for bushier growth, though buds may arrive a few weeks later. Pinch fading flowers off below the head, and once blooming starts, cut it back to size as needed while keeping ⅔ of its height.",
+   "support": "Secure the tall main stem with a plant belt as it grows.",
+   "health": "Yellow or brown patches between the veins or along leaf edges are common and harmless. Discolored leaves do not stop it from flowering in repeated waves."
+  },
+  "borage": {
+   "harvest": "Blooms appear 6-8 weeks after sprouting. Snip or pinch open flowers at their base. Take leaves by cutting where they join the main stem.",
+   "prune": "Remove older leaves as they yellow or brown, cutting where they join the main stem.",
+   "support": "If it gets top-heavy, steady it with a plant belt."
+  },
+  "breen": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Warm conditions can make it bolt and taste bitter."
+  },
+  "bronze-arrow": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Warm conditions can make it bolt and taste bitter."
+  },
+  "bulls-blood-beets": {
+   "harvest": "Pick outer leaves at 4 inches just above the base and keep at least 1/3 of the plant for regrowth. For one harvest, take every leaf together with the small beetroot."
+  },
+  "bunching-onions": {
+   "harvest": "Wait until stalks are at least 6-8 inches tall, then cut them back to about 2 inches above the base. The cut stalks are round and hollow and grow back in 1-2 weeks.",
+   "climate": "Slow to germinate. Sprouting goes best around 65-70°F and can take 21 days or more."
+  },
+  "burrito-pepper": {
+   "harvest": "Pick at any color once a pepper is firm and about 4 inches long. Cut each pepper off at its own stem.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it and its fruit mature.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant or brushing inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "buttercrunch": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Warm conditions can make it bolt and taste bitter."
+  },
+  "butterhead": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Warm conditions can make it bolt and taste bitter."
+  },
+  "candy-cane-pepper": {
+   "harvest": "Pick once a pepper is firm and about 3-4 inches long and 1-1.5 inches wide. The longer it stays on, the sweeter it gets, and its green-and-white stripes shift to chocolate and cherry red. Cut each pepper at its own stem once it reaches the color you like.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it and its fruit mature.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant or brushing inside each bloom with a fingertip or small brush. Use a separate finger or brush for each pepper variety so they don't cross.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids. Leaves mixing green with white to cream-yellow are normal for this variegated variety."
+  },
+  "canna-flower": {
+   "harvest": "Expect several waves of blooms from the main stem.",
+   "prune": "Deadhead fading blooms at their own stems to prompt new buds.",
+   "support": "Grow it in a bottom moderate-light spot so its height stays within the light. Steady the tall stalks with a plant belt as it matures.",
+   "climate": "In warmer months it can move outdoors, where it may reach 4 feet. It returns each year in warm climates."
+  },
+  "cape-gooseberry": {
+   "harvest": "Each fruit grows inside a papery husk, and the husk usually dries out and fades as the fruit ripens. Ripe fruit is yellow-orange all over and drops on its own, or you can shake the branches lightly to release it. Confirm the fruit is fully yellow before eating, and leave fallen green fruit on a windowsill to finish ripening. Never eat green fruit, because unripe fruit is poisonous.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "Hand-pollination is needed. Once flowers open, shake the whole plant to mimic wind, or brush inside each bloom with a fingertip or small brush.",
+   "health": "Watch for thrips."
+  },
+  "cardinale": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Heat makes it bolt, flower early, and turn bitter."
+  },
+  "catnip": {
+   "harvest": "Frequent harvests extend the plant's life. Take single leaves, or cut the stem 1/4 to 1/2 inch above the nodes, the tiny leaf pair or knobs that sit just above a stem's two biggest leaves. Those small leaves then grow into the next harvest.",
+   "prune": "Pick off any leaf that develops brown spots."
+  },
+  "celery": {
+   "harvest": "Let stalks reach about 6 inches before cutting them at the base. Leaves can be picked sooner, but leave ⅓ of the plant so the stalks keep developing."
+  },
+  "celosia-mix": {
+   "harvest": "For a vase, cut stems at a 45° angle just above a leaf node, at whatever height you want.",
+   "prune": "Deadhead spent blooms to push new buds, and snip off yellow or brown leaves. Always keep at least a third of the plant so it can rebloom.",
+   "health": "Watch for aphids."
+  },
+  "chamomile": {
+   "harvest": "Pick blooms once fully open by pinching or snipping at the base of the head. Regular picking keeps new flowers coming and extends the plant's life.",
+   "prune": "Remove any leaves that develop brown spots.",
+   "health": "Watch for aphids."
+  },
+  "chervil": {
+   "harvest": "Flavor peaks while the plant is young and not yet flowering, and frequent harvests extend its life. Cut whole outer branches at the base, always leaving 1/3 of the plant for continued bushy growth. Replace the plant once its leaves go brown or purple.",
+   "prune": "Pick off brown-spotted leaves and snip flowers as soon as they appear to keep the plant going longer. Its long taproot needs a root check at least monthly.",
+   "health": "Watch for thrips.",
+   "climate": "Bolts quickly in warm rooms."
+  },
+  "chives": {
+   "harvest": "Let leaves reach at least 4 inches, then cut them back to 1-2 inches above the base. The flowers are edible. Keep cut chives in the fridge's crisper drawer, wrapped loosely in a paper towel.",
+   "prune": "Cut flowering scapes as they appear to delay bolting.",
+   "health": "Watch for thrips."
+  },
+  "cilantro": {
+   "harvest": "At 6 inches tall, start cutting the larger outer stalks at their base, or take single leaves or stems cut above the nodes. Frequent harvests extend its life. Keep 1/3 of the plant in place if you want it to keep producing.",
+   "prune": "Pick off any leaf that develops brown spots.",
+   "health": "Watch for aphids.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "collard-greens": {
+   "harvest": "For repeat picking, cut lower leaves just above the stem and let the top keep growing, taking no more than 1/3 of the plant at a time. For one harvest, cut the mature plant at the stem base, then strip the leaves off.",
+   "prune": "Trim off yellow or brown leaves when they show up. Cut yellow flower stems as they form to hold off bolting.",
+   "health": "A waxy, glossy leaf coating helps fend off pests naturally.",
+   "climate": "Still produces in warmer conditions."
+  },
+  "cucumber": {
+   "harvest": "Pick when fruit is 3-6 inches long and dark green, and the yellow flower has dropped from the tip. Cut each cucumber off at its own stem. Fruit left too long turns bitter.",
+   "prune": "Pinch off the 5 lowest flowers. After that, remove extra flowers so no more than 5 cucumbers grow on the plant at once. An overloaded plant lets young fruit yellow or brown and shrivel before maturing. Top the main stem at your chosen height to push side branches, which keeps the plant bushy and inside the light.",
+   "support": "Train the vine up the tower columns with a trellis and plant ties to hold the fruit.",
+   "pollinate": "No pollination is needed. This variety grows only female flowers.",
+   "health": "Watch for thrips.",
+   "climate": "Cucumbers drink heavily and do best in fresh water. Keep the tank above 60% and top it off every week."
+  },
+  "dianthus": {
+   "harvest": "For a vase, cut stems at a 45° angle just above a leaf node, at whatever height you want.",
+   "prune": "Deadhead spent blooms to push new buds, and snip off yellow or brown leaves. Always keep at least a third of the plant so it can rebloom."
+  },
+  "dill": {
+   "harvest": "Frequent harvests extend its life. Once mature, cut back the top third every 2 months and take small fronds whenever needed. Harvesting from the top down makes it bushier.",
+   "prune": "Pick off any leaf that develops brown spots. Pinch off flowers when they show so the plant keeps putting energy into leaves.",
+   "health": "Watch for aphids."
+  },
+  "dragon-beans": {
+   "harvest": "Pods are ready when flat, about 6 inches long, and pale yellow streaked with purple, usually 1-2 weeks after flowering. Snip each pod off at its own stem. Picking often prompts the plant to set more pods.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown.",
+   "support": "The vine needs support as it grows. Train it up the tower columns with a trellis and plant ties to carry the pods.",
+   "pollinate": "White, pink, and purple flowers appear 4-6 weeks after sprouting. Help them set pods by shaking the plant gently or swirling a fingertip or small brush inside each bloom.",
+   "health": "Watch for aphids and thrips."
+  },
+  "endive-lettuce": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "prune": "Cut yellow flower stems as they form to hold off bolting.",
+   "health": "Watch for aphids.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "fairytale-eggplant": {
+   "harvest": "Pick once fruit is 2-4 inches long and about 1 inch across, singly or as a cluster. Cut at each stem with clean shears. Glossy skin means ready, and dull skin means overripe. Picking often keeps new fruit coming.",
+   "prune": "Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "Hand-pollination is needed. Once purple flowers open, shake the whole plant to mimic wind, or brush inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "fiesta-gitana": {
+   "harvest": "For a vase, cut long stems when blooms are half open and put them in water right away. For petals, cut off the heads and dry the petals completely, then use them as a garnish or in place of saffron. For medicinal use, take petals before they start to wither on the plant.",
+   "prune": "Pinch the tips of growing stalks now and then to keep it compact and under the light. Deadhead spent blooms, and cut the leftover bare stem back too so it does not rot.",
+   "health": "Watch for aphids and whiteflies."
+  },
+  "flashy-trout-back": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "prune": "Cut yellow flower stems as they form to hold off bolting.",
+   "health": "Watch for aphids.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "fuchsia-snapdragon": {
+   "harvest": "For a vase, cut stems at a 45° angle just above a leaf node, at whatever height you want. Leave ⅓ of the plant each time so it keeps growing and blooms in waves.",
+   "prune": "Deadhead spent blooms to push new buds.",
+   "health": "Watch for aphids."
+  },
+  "garlic-chives": {
+   "harvest": "Let leaves reach at least 4-6 inches before cutting them back to 1-2 inches above the base, and they regrow in 1-2 weeks. Pick flower buds as soon as they form to lengthen the plant's life, and use them as a garnish.",
+   "climate": "Slow to germinate, usually 21-28 days to first sprout. Sprouting goes best around 65-70°F."
+  },
+  "goliath-pepper": {
+   "harvest": "Pick at any color once a pepper is firm and 4-5 inches long. Cut each pepper off at its own stem.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures, since each pepper can grow 4-6 inches long and wide.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant or brushing inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "green-beans": {
+   "harvest": "Pick round, fleshy pods about 5 inches long and roughly pencil-thick, while still tender and before full maturity, usually 1-2 weeks after flowering. Snip each pod at its stem. This bush bean sets most of its crop at once, but regular picking keeps it producing.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown.",
+   "support": "The plant stays compact, but a trellis and plant ties up the tower columns help carry the pods.",
+   "pollinate": "White, pink, and purple flowers appear 4-6 weeks after sprouting. Help them set pods by shaking the plant gently or brushing inside each bloom with a fingertip or small brush.",
+   "health": "Watch for aphids and mites."
+  },
+  "green-bok-choy": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "prune": "Cut yellow flower stems as they form to hold off bolting.",
+   "health": "Watch for thrips.",
+   "climate": "Warm conditions can make it bolt and taste bitter."
+  },
+  "green-cabbage": {
+   "harvest": "For repeat picking, cut outer leaves just above the base and let the center keep growing, keeping at least 1/3 of the plant. For a single harvest, let the head mature and cut it at the base.",
+   "prune": "Trim off yellow or brown leaves when they show up.",
+   "support": "Needs no support as a rule. A heavy head can make water drip from the yCube; pick more leaves to lighten it or add a plant belt.",
+   "climate": "A closed head forms best at 55-75°F. Warmer conditions give a looser plant that still yields large, thick, crunchy leaves."
+  },
+  "green-mustard": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "prune": "Its roots grow vigorously, so check and trim them twice a month rather than monthly. Cut yellow flower stems as they form to hold off bolting. Remove leaves that yellow with age.",
+   "health": "Watch for aphids.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "green-salanova": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Warm conditions can make it bolt and taste bitter."
+  },
+  "green-tatsoi": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "holy-basil": {
+   "harvest": "Frequent harvests extend its life. Take single leaves, or cut the stem 1/4 to 1/2 inch above the nodes, the tiny leaf pair or knobs that sit just above a stem's two biggest leaves. Every part is edible, including stems, leaves, flowers and seeds.",
+   "prune": "Pick off leaves with brown or yellow spots. Cutting stems above the nodes on a regular basis makes it bushier. Pruning off the edible flowers also encourages bushiness and holds off bolting.",
+   "health": "Root rot and downy mildew are common. Checking roots regularly and removing brown-spotted leaves early keeps them in check."
+  },
+  "hon-tsai-tai": {
+   "harvest": "Pick outer leaves at 4 inches just above the base for sweet, tender greens, keeping at least 1/3 of the plant to regrow. Take the thin red-purple flower stems at 8-10 inches long, just as the blooms start to open. Ripe stems snap off cleanly; ones that resist are overmature and can be fibrous.",
+   "prune": "Its roots grow vigorously. Regular harvesting means it needs little pruning beyond trimming yellow or brown leaves."
+  },
+  "hungarian-hot-wax-pepper": {
+   "harvest": "Pick once the smooth, waxy peppers reach at least 5 inches long and 1 inch wide. Color moves from yellow to orange and finally red as they ripen. Cut each pepper off at its own stem.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures, since it can get quite tall and carries heavy fruit.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant to mimic wind, or brush inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "iceberg": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. It forms a solid, medium-large head; cut it at the base once mature.",
+   "climate": "Heads up best in direct light with no neighbors shading it. Warm conditions can make it bolt and taste bitter."
+  },
+  "italian-parsley": {
+   "harvest": "Frequent harvests extend its life. Once it reaches 6 inches, start taking the larger outer leaves, either singly or by cutting stems above the nodes. Always leave 1/3 of the plant's height so it keeps growing.",
+   "prune": "Pick off any leaf that develops brown spots.",
+   "health": "Watch for aphids."
+  },
+  "jalapeno": {
+   "harvest": "Pick once a pepper is firm and about 3 inches long. Peppers left on longer get hotter and shift from green to yellow-orange to red. Cut each pepper off at its own stem.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant or brushing inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "kale": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the plant mature and cut it at the base.",
+   "health": "Watch for aphids."
+  },
+  "kale-lacinato": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the plant mature and cut it at the base."
+  },
+  "lavender": {
+   "harvest": "With clean shears, cut stems once about half the flowers on them have opened. The stems turn woody and can be hard to cut.",
+   "prune": "When it first reaches 6-8 inches, cut back 1/3 of the plant so it bushes out instead of growing tall. After that, let it grow and bloom freely, pruning only once a year.",
+   "health": "Watch for aphids and whiteflies."
+  },
+  "lemon-balm": {
+   "harvest": "Frequent harvests extend its life. Once it reaches 10 inches, start taking the larger outer leaves, either singly or by cutting stems above the nodes. Always leave 1/3 of the plant's height so it keeps growing.",
+   "prune": "Pick off any leaf that develops brown spots."
+  },
+  "lemon-hot-pepper": {
+   "harvest": "Peppers grow to about 1 inch long and ½ inch wide and ripen from green to lemon-yellow. Pick once yellow for the most heat. Cut each pepper off at its own stem.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch that first round of buds off from behind so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant to mimic wind, or brush inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "lemongrass": {
+   "harvest": "For cooking, choose stalks at least 1/4 inch thick and cut or snap them off near the yCube, since the base is the most tender and fragrant part. Peel away the foliage and woody layers to reach the soft core. Leaves can be snipped from the outside of the plant at any time and hung to dry.",
+   "prune": "Older outer leaves may brown as the plant shifts energy to new growth. Trim those brown leaves away.",
+   "health": "Watch for spider mites."
+  },
+  "lime-basil": {
+   "harvest": "Frequent harvests extend the plant's life. Take single leaves, or cut the stem 1/4 to 1/2 inch above the nodes, the tiny leaf pair or knobs that sit just above a stem's two biggest leaves. Those small leaves then grow into the next harvest.",
+   "prune": "Pick off any leaf that develops brown spots. Cutting stems back above the nodes on a regular basis makes the plant bushier. Pinch out flower buds as soon as they show to hold off bolting.",
+   "health": "Watch for aphids."
+  },
+  "lollo-rossa": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "mammoth-basil": {
+   "harvest": "Frequent harvests extend the plant's life. Take single leaves, or cut the stem 1/4 to 1/2 inch above the nodes, the tiny leaf pair or knobs that sit just above a stem's two biggest leaves. Those small leaves then grow into the next harvest.",
+   "prune": "Pick off any leaf that develops brown spots. Cutting stems back above the nodes on a regular basis makes the plant bushier. Pinch out flower buds as soon as they show to hold off bolting.",
+   "health": "Watch for aphids. Root rot and downy mildew are common, and inspecting the roots regularly and pulling brown-spotted leaves early keeps them in check."
+  },
+  "marietta-marigold": {
+   "harvest": "The flowers are edible. Cut the stem at a 45° angle just below the bloom and use whole flowers or loose petals.",
+   "prune": "Deadhead spent blooms to push new buds, and snip off yellow or brown leaves. Always keep at least a third of the plant so it can rebloom.",
+   "health": "Watch for spider mites."
+  },
+  "matilda": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "mini-broccoli": {
+   "harvest": "Cut the stem just below the main head once it is 1.5-2 inches across, about large-egg size, before it starts to spread. Side stems follow 15-20 days later; take them at 4-6 inches long and 1-1.5 inches thick, and expect repeat cuts if conditions allow. Leave the edible lower leaves until the stems are finished, then snip them just above the stem.",
+   "prune": "Needs little pruning beyond trimming yellow or brown leaves when they appear.",
+   "support": "Use a plant belt to support it as it matures."
+  },
+  "mini-cauliflower": {
+   "harvest": "Cut the head at its base once it is 2-4 inches wide. It will not grow a second head. The leaves are edible raw or cooked, so take them at the same time.",
+   "prune": "Needs little pruning beyond trimming yellow or brown leaves when they appear."
+  },
+  "mini-eggplant": {
+   "harvest": "Pick once fruit is 2-3 inches long with glossy skin, cutting at each stem with clean shears. Dull skin means the fruit is overripe. Picking often keeps new flowers and fruit coming.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown, and trim back branches that grow out of the light. After flowering starts, remove the suckers that sprout where leaves and side branches meet the main stalk. This sends more energy to the fruit.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "Hand-pollination is needed. Once purple flowers open, shake the whole plant or brush inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "mini-okra": {
+   "harvest": "Pick pods at 3-4 inches long to keep the plant producing, clipping each at its base. Pods left too long grow oversized and tough. Opening flowers are edible too, but a picked flower never becomes a pod.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown.",
+   "support": "Tie the stem up as the plant gets tall.",
+   "health": "Small clear beads on stems and leaves that look like jelly or water drops are natural sap. This is normal.",
+   "climate": "Okra wants full light. Because it grows tall, place it so most of the plant sits in the high light zone, even if its base ends up in a medium or low light spot."
+  },
+  "mini-pumpkin": {
+   "harvest": "Pick when a pumpkin is about 2-3 inches across, 1-2 inches tall, and fully bright orange. Cut it from the vine with clean scissors, leaving 1-2 inches of stem attached. Expect 2-3 pumpkins per plant, depending on care.",
+   "prune": "Cut off any leaves that yellow or brown. Top the main stem once it passes 2 feet so side branches fill in and the vine stays inside the light. As flowers fade, pinch off any without a fruit forming, just below the flower head, so the plant puts energy into its next flush of blooms. Some leaf stress while fruit ripens is normal.",
+   "support": "Once the plant is 6 inches tall, settle it in its permanent spot so you can train the vine up the center column. Use a trellis and plant ties to guide the vine and hold the heavy fruit.",
+   "pollinate": "The plant grows separate male and female flowers, and fruit needs both. Male flowers open first on thin, straight stems, while female flowers open later on a round, swollen base like a tiny fruit. Move pollen between them with a fingertip or small brush, and note that a stressed plant drops its female flowers almost right away. Growing 2 plants at once makes timing easier, and a male flower stripped of petals keeps 1-2 days in a dry, airtight container in the fridge.",
+   "health": "This plant is a heavy feeder. Use the bloom-and-fruit nutrient dose of 1 teaspoon per gallon of tank water. Its roots grow vigorously, so check and trim them twice a month. Grow no more than 2 Mini Pumpkin yCubes on the tower at once, and watch for aphids and spider mites."
+  },
+  "mini-squash": {
+   "harvest": "Pick when a squash is about 2-3 inches across, roughly pool-ball size, with deep green skin and paler green streaks. Cut it from the plant with clean scissors. Expect 2-3 squash at a time per plant, depending on care. Blossoms are edible too, so clip them 1-2 inches below the flower base, taking only male flowers and leaving some to pollinate the females if you want fruit.",
+   "prune": "Cut off any leaves that yellow or brown. Top the main stem once it passes 2 feet so side branches fill in and the vine stays inside the light. As flowers fade, pinch off any without a fruit forming, just below the flower head, so the plant puts energy into its next flush of blooms. Some leaf stress while fruit ripens is normal.",
+   "support": "The plant trails downward on its own. Add a trellis or plant ties once heavy fruit starts forming.",
+   "pollinate": "The plant grows separate male and female flowers, and fruit needs both. Male flowers open first on thin, straight stems, while female flowers open later on a round, swollen base like a tiny fruit. Move pollen between them with a fingertip or small brush, and note that a stressed plant's female flowers shrivel and drop almost right away. A male flower stripped of petals keeps 1-2 days in a dry, airtight container in the fridge.",
+   "health": "This plant is a heavy feeder. Use the bloom-and-fruit nutrient dose of 1 teaspoon per gallon of tank water. Its roots grow vigorously, so check and trim them twice a month. Watch for aphids and spider mites."
+  },
+  "mint": {
+   "harvest": "Frequent harvests extend its life, taking single leaves or cutting stems above the nodes. Though slow to germinate, it grows fast once established. Cut it back to 1/3 of its height each time for repeat harvests.",
+   "prune": "Pick off brown-spotted leaves and red runners, which pull energy away from leaf growth. It regrows fast, so prune hard when needed.",
+   "health": "Watch for spider mites."
+  },
+  "monte-carlo": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "muir-lettuce": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Forms its best head in direct light with no other plants shading it. A medium-light position on the tower gives it enough light while keeping it in its cooler preferred range."
+  },
+  "nasturtium": {
+   "harvest": "Cut flowers at the stem once fully open. Leaves can be picked any time, but wait until the plant is 4-6 inches long with healthy roots so it keeps producing. Past that size, frequent harvesting helps it.",
+   "prune": "The root system is large, so check and trim roots twice a month. Pinch fading flowers off below the head to make way for new blooms. Older foliage browns as new growth comes in, and frequent picking of flowers and leaves keeps it healthy and productive.",
+   "support": "It trails rather than climbs, so it needs no upward support. Place it on an outer column in a moderate or minimum light zone where it has room to hang. To grow it upward instead, guide the vine along a trellis with plant belts."
+  },
+  "night-scented-stock": {
+   "harvest": "For a vase, wait until the flowers are nearly open, cut low on the stalk, and put it in water right away. Single blooms can be pinched off where they join the stem; use them right away.",
+   "prune": "Deadhead spent blooms, and cut the leftover bare stem back too so it does not rot."
+  },
+  "oregano": {
+   "harvest": "Once it is at least 8 inches tall, harvest often to extend its life. Take single leaves or cut stems above the nodes. Leave 1/3 of the plant so it keeps growing.",
+   "prune": "Pick off any leaf that develops brown spots.",
+   "health": "Watch for spider mites."
+  },
+  "peas": {
+   "harvest": "Once pods look plump, pick every few days to keep new pods forming. Cut them from the vine and eat right away, or refrigerate and use within a week. Pulling the string off the back of the pod is optional. If the pods turn tough, shell them and eat the peas inside.",
+   "support": "The vine climbs with 1-inch tendrils that grab any thin support within reach. Guide it up the tower columns with a trellis and plant ties to carry the pods.",
+   "pollinate": "Help flowers set pods by shaking the whole plant gently or brushing inside each bloom with a fingertip or small brush.",
+   "health": "Watch for aphids and thrips. Pods sometimes grow neoplasm, a harmless bumpy growth."
+  },
+  "perpetual-spinach": {
+   "harvest": "Pick outer leaves once they are at least 2-3 inches tall, cutting just above the base, and take no more than 1/3 of the plant if you want regrowth. For a single harvest, let the plant mature and cut it at the base.",
+   "prune": "Trim off yellow or brown leaves when they show up."
+  },
+  "pink-celery": {
+   "harvest": "Cut stalks at the base once they are about 6 inches or taller; longer growth gives thicker stalks. For ongoing harvests, take the larger outer stalks or pick leaves early, always keeping 1/3 of the plant. For a single harvest, let the plant mature and cut it at the base.",
+   "health": "Start plant food as early as 10 days after germination is first seen. Germination and early growth are slow, but an established plant is a heavy producer."
+  },
+  "pink-petunia": {},
+  "poblano-pepper": {
+   "harvest": "Pick while green, once a pepper is 4-5 inches long and 2-3 inches wide. Cut each pepper off at its own stem.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures to carry its large, heavy peppers.",
+   "pollinate": "Flowers show up 5-7 weeks after sprouting. Pollinate them by shaking the whole plant or brushing inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "portulaca-mix": {
+   "harvest": "Start harvesting once it reaches 10 inches tall. Pinch off single leaves or flowers, or cut stems above a growth node with clean shears. For a vase, cut stems at a 45° angle just above a leaf node, at whatever height you want.",
+   "prune": "Deadhead spent blooms to push new buds, and snip off yellow or brown leaves. Always keep at least a third of the plant so it can rebloom.",
+   "health": "It does poorly when kept too wet. Use a lighter watering schedule.",
+   "climate": "Tolerates temperatures down to 60°F."
+  },
+  "purple-basil": {
+   "harvest": "Frequent harvests extend the plant's life. Take single leaves, or cut the stem 1/4 to 1/2 inch above the nodes, the tiny leaf pair or knobs that sit just above a stem's two biggest leaves. Those small leaves then grow into the next harvest.",
+   "prune": "Pick off any leaf that develops brown spots. Cutting stems back above the nodes on a regular basis makes the plant bushier. Pinch out flower buds as soon as they show to hold off bolting.",
+   "health": "Watch for aphids. Root rot and downy mildew are common, and inspecting the roots regularly and pulling brown-spotted leaves early keeps them in check."
+  },
+  "purple-beans": {
+   "harvest": "Pick pods about 5 inches long and roughly pencil-thick, while still tender and before full maturity, usually 1-2 weeks after flowering. Snip each pod at its stem. This bush bean sets most of its crop at once, but regular picking keeps it producing.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown.",
+   "support": "The plant stays compact, but a trellis and plant ties up the tower columns help carry the pods.",
+   "pollinate": "Flowers appear 4-6 weeks after sprouting. Help them set pods by shaking the plant gently or brushing inside each bloom with a fingertip or small brush.",
+   "health": "Watch for aphids and spider mites."
+  },
+  "purple-bok-choy": {
+   "harvest": "Pick outer leaves at 5 inches just above the base and keep at least 1/3 of the plant for regrowth. To take the whole head at once, cut it at the base when it is 6-8 inches tall.",
+   "health": "Watch for aphids.",
+   "climate": "Bolts in heat."
+  },
+  "purple-campanula": {
+   "harvest": "For a vase, cut a stem once 2-3 of its lower buds have opened. Put it straight into water so the remaining buds open slowly.",
+   "prune": "Remove leaves that develop brown spots. Deadhead spent blooms, and cut the leftover bare stem back so energy goes to new buds.",
+   "support": "It trails down the tower on its own. Use a plant belt if you would rather train it upward.",
+   "health": "Watch for spider mites."
+  },
+  "purple-cayenne-pepper": {
+   "harvest": "Pick at around 3 inches long. Take them green for a slightly milder flavor, or wait until they turn purple for the most heat. Cut each pepper off at its own stem.",
+   "prune": "Trim back branches and leaves to keep the plant inside the light. Cut off any leaves that yellow or brown.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "White and purple flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate later flowers by shaking the whole plant or rubbing inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "purple-kohlrabi": {
+   "harvest": "Once the bulb is 3-4 inches across, cut at the stem base to take bulb and leaves in one harvest. Some leaves can be picked earlier, but keep ⅓ of them so the bulb keeps growing."
+  },
+  "purple-petunia": {},
+  "purple-snapdragon": {
+   "harvest": "For a vase, cut stems at a 45° angle just above a leaf node, at whatever height you want. Leave ⅓ of the plant each time so it keeps growing and blooms in waves.",
+   "prune": "Deadhead spent blooms to push new buds.",
+   "health": "Watch for aphids."
+  },
+  "purslane": {
+   "harvest": "Frequent picking extends the plant's life and keeps stems from getting leggy. Pinch single leaves, or cut stems just above a growth node with clean shears. Leave ⅓ of the plant's height each time so it keeps growing.",
+   "prune": "Pull off leaves that develop brown spots."
+  },
+  "radicchio": {
+   "harvest": "Pick outer leaves at 4 inches, just above the base, taking no more than 1/3 of the plant if you want regrowth. For one harvest that lets the inner head develop, cut at the base once the head is about 3-4 inches across and deep burgundy. Outer leaves may loosen from a maturing head but are still good to eat.",
+   "health": "Heading plants are prone to tip burn, though this variety resists it fairly well. If tip burn shows, cool the plant down and refresh the tank. Watch for aphids.",
+   "climate": "A hybrid that copes with warmer conditions."
+  },
+  "radio-calendula": {
+   "harvest": "For a vase, cut long stems when blooms are half open and put them in water right away. Blooms last longest left on the plant.",
+   "prune": "Pinch the tips of growing stalks now and then to keep it compact and under the light. Deadhead spent blooms, and cut the leftover bare stem back too so it does not rot.",
+   "health": "Watch for aphids and spider mites."
+  },
+  "red-amaranth": {
+   "harvest": "Young leaves are good raw, while older leaves are better cooked like spinach. Keep at least 1/3 of the plant for regrowth. For grain, wait until the flowers turn brown on the plant.",
+   "prune": "Trim off yellow or brown leaves when they show up.",
+   "support": "Use a plant belt to hold it up as it gets taller.",
+   "health": "Watch for thrips. It needs good airflow, so keep neighboring slots capped and empty and harvest often."
+  },
+  "red-cherry-tomato": {
+   "harvest": "Pick when fruit is red all the way to the stem and gives slightly when pressed. Ripe tomatoes left on the plant too long can split. Twist each one until it snaps free, or cut its stem with shears or a knife.",
+   "prune": "This dwarf tomato needs very little pruning. Cut off any leaves that yellow or brown.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds just behind the base of each flower head so the plant puts energy into roots and leaves. Pollinate later flowers by shaking the whole plant or swirling a fingertip or small brush inside each bloom."
+  },
+  "red-hibiscus": {
+   "harvest": "Petals and young leaves are edible, and the leaves work raw or cooked. For petals, snip each flower at its stem and pull them off, leaving the center. For a vase, cut a flower just before it opens, when the petals are only starting to show, and stand it in water.",
+   "prune": "Check and trim roots twice a month, since the root system gets large with age. Before flowering, once it has a few sets of leaves, you can top the main stem back to ⅔ of its height for bushier growth, though buds may arrive a few weeks later. Pinch fading flowers off below the head, and once blooming starts, cut it back to size as needed while keeping ⅔ of its height.",
+   "support": "Secure the tall main stem with a plant belt as it grows.",
+   "health": "Yellow or brown patches between the veins or along leaf edges are common and harmless. Discolored leaves do not stop it from flowering in repeated waves."
+  },
+  "red-impatiens": {
+   "harvest": "The flowers are edible. Cut the stem at a 45° angle just below the bloom and use whole flowers or loose petals.",
+   "prune": "Shorten stems by ⅔ when you want a smaller plant. Deadhead spent blooms to push new buds, and snip off yellow or brown leaves. Always keep at least a third of the plant so it can rebloom.",
+   "health": "Red blotches under the leaves are normal for this variety. Pests rarely trouble it.",
+   "climate": "Long stretches of heat stall its growth."
+  },
+  "red-mini-strawberries": {
+   "harvest": "Ripeness shows in color, not size, so wait until the berry is red right up to the stem. Any white or pale red areas mean it needs more time. Leave ripe berries a day or two longer for the best flavor, until they feel soft rather than firm. Pinch them off or snip each stem with clean scissors.",
+   "prune": "Remove no more than ⅓ of the leaves at one time, and cut off any yellow or brown ones. Snip off flowers until the plant has at least 4 fully open leaves. Cut away every runner for the plant's whole life. Trim roots twice a month, removing any that are brown, black, slimy, or past the yPod.",
+   "pollinate": "Pollinate each white flower by hand once it opens. Cradle it between your index and middle fingers and rub your thumb around the whole flower head 2-3 times, covering every part. Patchy pollination gives oddly shaped but still edible berries. A pollinated flower sheds its petals and swells into a berry.",
+   "health": "The roots are sensitive and prone to root rot. Use the bloom-and-fruit nutrient dose of 1 teaspoon per gallon of tank water. Watch for aphids and spider mites.",
+   "climate": "Keep relative humidity at 60-75%. Brown leaf edges mean the air is too dry, so set a humidifier near the tower."
+  },
+  "red-mustard": {
+   "harvest": "Young leaves have better flavor and texture than older ones. Pick outer leaves at 2-3 inches just above the base, keeping at least 1/3 of the plant for regrowth. For a single harvest, let the head mature and cut it at the base.",
+   "prune": "Cut yellow flower stems as they form to hold off bolting.",
+   "health": "Watch for aphids.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "red-oak-leaf-lettuce": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "health": "Watch for aphids and whiteflies.",
+   "climate": "Fairly heat-tolerant, though heat still makes it bolt and turn bitter. Cooler conditions deepen its burgundy color."
+  },
+  "red-romaine": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "health": "Watch for aphids.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "red-sails-lettuce": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "red-salad-bowl": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "health": "Watch for aphids and whiteflies.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "red-sorrel": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the plant mature and cut it at the base.",
+   "prune": "Trim off yellow or brown leaves when they show up.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "red-swiss-chard": {
+   "harvest": "Pick outer leaves at 3 inches or more, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the plant mature and cut it at the base.",
+   "health": "Watch for aphids."
+  },
+  "red-tatsoi": {
+   "harvest": "Pick outer leaves at 2-3 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "prune": "Needs little pruning beyond trimming yellow or brown leaves; older outer leaves yellow over time if left unpicked. Its roots grow vigorously. Cut flower stems as they form to hold off bolting."
+  },
+  "romaine": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "rosemary": {
+   "harvest": "It grows slowly, so wait until it reaches 8 inches tall before harvesting. Cut off the top half of one or more branches, then strip the leaves from the stem if you like.",
+   "prune": "Pick off any leaf that develops brown spots.",
+   "health": "Watch for spider mites."
+  },
+  "rouge-dhiver": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "sage": {
+   "harvest": "Take single leaves, or cut stems back to 4-6 inches tall. To dry, hang whole stems for at least two weeks, then store in an airtight container.",
+   "prune": "Pick off brown-spotted leaves. It grows slowly but tall, so trim stem tops to push it toward a bushier shape.",
+   "health": "Prone to a wide range of common pests."
+  },
+  "savory": {
+   "harvest": "Start harvesting at 6 inches, taking single leaves or cutting above the nodes, and cut often to extend its life. Flavor peaks once flower buds form but before they open. At that point, cut the leafy tops at the base of the stem.",
+   "prune": "Pick off any leaf that develops brown spots. Snip flowers as they appear to extend its life.",
+   "health": "Watch for spider mites."
+  },
+  "scarlet-snapdragon": {
+   "harvest": "For a vase, cut stems at a 45° angle just above a leaf node, at whatever height you want. Leave ⅓ of the plant each time so it keeps growing and blooms in waves.",
+   "prune": "Deadhead spent blooms to push new buds.",
+   "health": "Watch for aphids."
+  },
+  "shishito-pepper": {
+   "harvest": "Pick once a pepper is 3.5-4 inches long. Green peppers taste mild, and red ones are more likely to be hot. Cut each pepper off at its own stem.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch that first round of buds off from behind so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant or brushing inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "shiso": {
+   "harvest": "Frequent harvests extend its life. Take leaves one at a time or by the stem. Harvesting can start while the plant is young, as long as 1/3 of the leaves stay on.",
+   "prune": "Pick off brown-spotted leaves. For bushier rather than taller growth, top each stem by cutting its main growing tip at the height you want. Remove flower buds as they appear to delay bolting and keep leaves coming."
+  },
+  "sorrel": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the plant mature and cut it at the base.",
+   "prune": "Trim off yellow or brown leaves when they show up.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "stevia": {
+   "harvest": "Frequent harvests extend its life. Once it reaches 8 inches tall, start taking the larger outer leaves, either singly or by cutting stems above the nodes. Leave 1/3 of the plant if you want it to keep producing.",
+   "prune": "Pick off any leaf that develops brown spots.",
+   "health": "Watch for spider mites."
+  },
+  "stock-flower": {
+   "harvest": "For a vase, cut long stems as the blooms begin to open and put them in water right away. Blooms last longest left on the plant.",
+   "prune": "Snip off yellow or brown leaves. When the main head starts to fade, remove the whole head at the base of its stalk rather than picking off petals. Smaller side shoots will then flower.",
+   "health": "Watch for spider mites.",
+   "climate": "Too much heat keeps it from blooming."
+  },
+  "sunflower": {
+   "harvest": "For petals, snip each flower at its stem and pull the petals off the head. For a vase, cut just before the bloom opens, when the petals are nearly unfurled, and stand it in water.",
+   "prune": "Deadhead fading blooms at their own stems to prompt new buds.",
+   "health": "Watch for aphids."
+  },
+  "sweet-marjoram": {
+   "harvest": "Frequent harvests extend its life. Only cut stems once they are at least 4-6 inches tall, taking single leaves or cutting above the nodes. Leave 1/3 of the plant for continued growth.",
+   "prune": "Pick off any leaf that develops brown spots. Snip flowers as they appear to extend its life."
+  },
+  "sweet-pepper": {
+   "harvest": "The original variety looks like a mini bell pepper with a lobed bottom and is ready when firm and around 1.5 by 1.5 inches. The newer variety has a pointed shape and is ready when firm and about 3 inches long. Either one keeps ripening, changing color, and sweetening the longer it stays on. Cut each pepper at its own stem once it reaches the color you like.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it and its fruit mature.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds so the plant puts energy into roots and leaves. Pollinate the next flowers by shaking the whole plant or brushing inside each bloom with a fingertip or small brush. Use a separate finger or brush for each pepper variety so they don't cross.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "sweet-thai-basil": {
+   "harvest": "Frequent harvests extend its life. Take single leaves and flower buds, or cut the stem 1/4 to 1/2 inch above the nodes, the small leaf pair or knobs just above a stem's two largest leaves. Leave 4-6 inches of plant so it keeps growing.",
+   "prune": "Pick off brown-spotted leaves. For bushier growth, cut stems above the nodes regularly and pinch off flower buds as they appear.",
+   "health": "Watch for aphids and spider mites."
+  },
+  "tarragon": {
+   "harvest": "Start at 8 inches tall and harvest often, taking larger leaves or cutting stems above the nodes while leaving 1/3 of the plant. Pinch flowers off at their base to harvest them. To dry, hang bundled cut branches until they snap rather than bend, then strip the leaves and flowers.",
+   "prune": "Pick off brown-spotted leaves. Pinch the growing tips to make it bushier. Pinch off flowers as they appear, and note they are edible.",
+   "health": "Watch for aphids."
+  },
+  "thai-eggplant": {
+   "harvest": "Pick once fruit is 1.5-2 inches across, cutting at each stem with clean shears. Skin should still be glossy, since dull skin means overripe. Picking often keeps new fruit coming.",
+   "prune": "Regular pruning is needed. Cut off any leaves that yellow or brown. Trim back branches that grow out of the light.",
+   "support": "Tie the plant up as it matures so the fruit load doesn't pull it over.",
+   "pollinate": "Hand-pollination is needed. Once purple flowers open, shake the whole plant or brush inside each bloom with a fingertip or small brush.",
+   "health": "Mild edema is a harmless disorder and won't stop this plant from producing heavily. Watch for aphids."
+  },
+  "thyme": {
+   "harvest": "Frequent harvests extend its life and keep it rounder. Once stems reach 8-10 inches, snip the green stems from the top. Leave woody sections alone and keep at least 5 inches of plant.",
+   "prune": "Pick off any leaf that develops brown spots.",
+   "health": "Watch for spider mites."
+  },
+  "tokyo-bekana": {
+   "harvest": "Pick outer leaves at 4 inches, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the head mature and cut it at the base.",
+   "prune": "Trim off yellow or brown leaves when they show up."
+  },
+  "torenia": {
+   "harvest": "For garnish, pinch single blooms off just behind the head. For a vase, cut stems just above the last set of healthy leaves and put them in water.",
+   "prune": "Pinch the tips of growing stalks now and then for bushier growth. Deadhead spent blooms at their base, and cut that stem back to just above the first set of full, healthy leaves to keep it tidy and prevent rot.",
+   "health": "Watch for spider mites."
+  },
+  "viola": {
+   "harvest": "Cut flowers at the stem once fully open.",
+   "prune": "Pinch fading flowers off below the head to make way for new blooms.",
+   "health": "Watch for aphids."
+  },
+  "violet-impatiens": {
+   "harvest": "The flowers are edible. Cut the stem at a 45° angle just below the bloom and use whole flowers or loose petals.",
+   "prune": "Shorten stems by ⅔ when you want a smaller plant. Deadhead spent blooms to push new buds, and snip off yellow or brown leaves. Always keep at least a third of the plant so it can rebloom.",
+   "health": "Red blotches under the leaves are normal for this variety. Pests rarely trouble it.",
+   "climate": "Long stretches of heat stall its growth."
+  },
+  "wasabi-greens": {
+   "harvest": "Pick outer leaves at 4 inches just above the base, keeping at least 1/3 of the plant for regrowth. The whole leaf is edible, stalk included. For a single harvest, let the head mature and cut it at the base; the flowers work as an edible garnish.",
+   "climate": "Heat makes it bolt and turn bitter."
+  },
+  "watercress": {
+   "harvest": "Frequent picking extends the plant's life. Pinch single leaves, or cut stems just above a growth node with clean shears. Keep ⅓ of the plant in place for later harvests.",
+   "prune": "Pull off leaves that develop brown spots. If growth turns spindly, cut every branch back by at least ⅓ to make it bushier.",
+   "health": "Watch for spider mites."
+  },
+  "wheatgrass": {
+   "harvest": "Cut once blades are at least 4 inches tall, gathering a bunch in one hand and slicing through it with clean scissors in the other. To regrow, leave at least 2 inches standing."
+  },
+  "white-kohlrabi": {
+   "harvest": "Once the bulb is 3-4 inches across, cut at the stem base to take bulb and leaves in one harvest. Some leaves can be picked earlier, but keep ⅓ of them so the bulb keeps growing."
+  },
+  "white-petunia": {},
+  "yellow-beans": {
+   "harvest": "Pods start green and turn yellow as they ripen. Pick round, fleshy pods 5 inches long and about pencil-thick, while still tender and before full maturity, usually 1-2 weeks after flowering. Snip each pod at its stem. The plant sets most of its crop at once, but regular picking keeps it producing.",
+   "prune": "Little pruning is needed. Cut off any leaves that yellow or brown.",
+   "support": "The plant stays compact, but a trellis and plant ties up the tower columns help carry the pods.",
+   "pollinate": "Flowers appear 4-6 weeks after sprouting. Help them set pods by shaking the plant gently to mimic wind, or swirling a fingertip or small brush inside each bloom.",
+   "health": "Watch for aphids and spider mites."
+  },
+  "yellow-cherry-tomato": {
+   "harvest": "Pick when fruit is soft and evenly yellow. Take them slightly before they look fully ripe, since overripe tomatoes can split on the plant. Twist each one until it snaps free, or cut its stem with shears.",
+   "prune": "This determinate tomato needs only light pruning. Cut off any leaves that yellow or brown.",
+   "support": "Tie the plant up as it and its fruit mature.",
+   "pollinate": "Flowers show up 4-6 weeks after sprouting. Pinch off that first round of buds just behind the base of each flower head so the plant puts energy into roots and leaves. Pollinate later flowers by shaking the whole plant or swirling a fingertip or small brush inside each bloom."
+  },
+  "yellow-mini-strawberry": {
+   "harvest": "These berries never turn red; they go from white-yellow to creamy yellow as they ripen. Ripeness shows in color, not size, so wait until the berry is creamy yellow right up to the stem. Leave ripe berries a day or two longer for the best flavor, until they feel soft rather than firm. Pinch them off or snip each stem with clean scissors.",
+   "prune": "Remove no more than ⅓ of the leaves at one time, and cut off any yellow or brown ones. Cut away every runner for the plant's whole life. Trim roots twice a month, removing any that are brown, black, slimy, or past the yPod.",
+   "pollinate": "Pollinate each white flower by hand once it opens. Cradle it between your index and middle fingers and rub your thumb around the whole flower head 2-3 times, covering every part. Patchy pollination gives oddly shaped but still edible berries. A pollinated flower sheds its petals and swells into a berry.",
+   "health": "The roots are sensitive and prone to root rot. Use the bloom-and-fruit nutrient dose of 1 teaspoon per gallon of tank water. Watch for aphids and spider mites. Seeds can be slow to sprout.",
+   "climate": "Keep relative humidity at 60-75%. Brown leaf edges mean the air is too dry, so set a small humidifier near the tower."
+  },
+  "yellow-snapdragon": {
+   "harvest": "For a vase, cut stems at a 45° angle just above a leaf node, at whatever height you want. Leave ⅓ of the plant each time so it keeps growing and blooms in waves.",
+   "prune": "Deadhead spent blooms to push new buds.",
+   "health": "Watch for aphids."
+  },
+  "yellow-swiss-chard": {
+   "harvest": "Pick outer leaves at 3 inches or more, cutting just above the base, so the center keeps producing. Keep at least 1/3 of the plant in place if you want it to regrow. For a single harvest, let the plant mature and cut it at the base.",
+   "health": "Watch for aphids."
+  },
+  "zinnia": {
+   "harvest": "For petals, snip each flower at its stem and pull the petals, avoiding the bitter center. For a vase, cut just before the bloom opens, when the petals are nearly unfurled, and stand it in water.",
+   "prune": "Snip off yellow or brown leaves, and deadhead spent blooms to push new buds.",
+   "health": "Watch for aphids.",
+   "climate": "Tolerates temperatures down to 60°F. Keep humidity moderate, since too much makes the plant unhealthy."
+  }
+ }
+}

@@ -4,6 +4,8 @@
   "scripts/plants/gardyn-zone-guide.txt",
   "scripts/plants/gardyn-store-ycubes.txt",
   "scripts/plants/gardyn-plant-book-sprout.txt",
+  "scripts/plants/gardyn-help-plants.txt",
+  "scripts/plants/gardyn-thinning.txt",
   "scripts/plants/isu-germination.txt"
  ],
  "sources": {
@@ -12,6 +14,8 @@
   "store": "https://mygardyn.com/collections/ycubes",
   "succession": "https://help.mygardyn.com/en/articles/1782337",
   "sprout": "https://mygardyn.com/plant-book",
+  "plantPages": "https://help.mygardyn.com/en/categories/456897-ycubes",
+  "thinning": "https://help.mygardyn.com/en/articles/1771329",
   "germination": "https://yardandgarden.extension.iastate.edu/how-to/germination-requirements-annuals-and-vegetables"
  },
  "categoryHarvestMedians": {
@@ -50,15 +54,15 @@
    14
   ],
   "fruiting": [
-   7,
-   14
+   10,
+   24
   ],
   "green": [
-   6,
+   7,
    21
   ],
   "herb": [
-   10,
+   7,
    21
   ],
   "legume": [
@@ -67,21 +71,25 @@
   ],
   "lettuce": [
    7,
-   14
+   10
   ],
   "vegetable": [
-   4,
-   7
+   5,
+   10
   ]
  },
  "sproutDays": {
+  "american-mustard": [
+   5,
+   10
+  ],
   "arugula": [
    4,
    21
   ],
   "banana-pepper": [
    7,
-   10
+   14
   ],
   "basil": [
    5,
@@ -92,16 +100,28 @@
    14
   ],
   "black-pearl-pepper": [
-   7,
-   10
+   10,
+   21
   ],
-  "blue-cornflower": [
+  "black-viola": [
    7,
    14
+  ],
+  "blue-cornflower": [
+   5,
+   10
+  ],
+  "blush-hibiscus": [
+   10,
+   20
+  ],
+  "borage": [
+   5,
+   10
   ],
   "breen": [
    7,
-   14
+   21
   ],
   "bronze-arrow": [
    7,
@@ -109,11 +129,11 @@
   ],
   "bulls-blood-beets": [
    5,
-   8
+   10
   ],
   "bunching-onions": [
-   4,
-   20
+   7,
+   21
   ],
   "burrito-pepper": [
    10,
@@ -121,15 +141,23 @@
   ],
   "buttercrunch": [
    7,
-   14
+   21
   ],
   "butterhead": [
    7,
-   14
+   21
   ],
   "candy-cane-pepper": [
-   7,
-   10
+   10,
+   28
+  ],
+  "canna-flower": [
+   10,
+   14
+  ],
+  "cape-gooseberry": [
+   10,
+   28
   ],
   "cardinale": [
    7,
@@ -141,13 +169,17 @@
   ],
   "celery": [
    14,
-   21
+   30
   ],
   "celosia-mix": [
    7,
-   10
+   14
   ],
   "chamomile": [
+   10,
+   14
+  ],
+  "chervil": [
    10,
    14
   ],
@@ -167,25 +199,37 @@
    10,
    14
   ],
+  "dianthus": [
+   5,
+   7
+  ],
   "dill": [
    7,
    24
   ],
   "dragon-beans": [
-   8,
+   10,
+   14
+  ],
+  "endive-lettuce": [
+   5,
    10
   ],
   "fairytale-eggplant": [
-   7,
-   10
+   10,
+   21
+  ],
+  "fiesta-gitana": [
+   14,
+   21
   ],
   "flashy-trout-back": [
-   7,
-   14
+   5,
+   10
   ],
   "fuchsia-snapdragon": [
    7,
-   14
+   20
   ],
   "garlic-chives": [
    10,
@@ -204,15 +248,23 @@
    10
   ],
   "green-cabbage": [
-   4,
-   7
+   7,
+   20
+  ],
+  "green-mustard": [
+   5,
+   21
   ],
   "green-salanova": [
    7,
    14
   ],
+  "green-tatsoi": [
+   5,
+   21
+  ],
   "holy-basil": [
-   10,
+   5,
    14
   ],
   "hon-tsai-tai": [
@@ -224,12 +276,12 @@
    28
   ],
   "iceberg": [
-   7,
+   5,
    14
   ],
   "italian-parsley": [
-   20,
-   25
+   10,
+   30
   ],
   "jalapeno": [
    10,
@@ -240,8 +292,8 @@
    21
   ],
   "kale-lacinato": [
-   4,
-   7
+   7,
+   21
   ],
   "lavender": [
    15,
@@ -253,7 +305,11 @@
   ],
   "lemon-hot-pepper": [
    7,
-   10
+   21
+  ],
+  "lemongrass": [
+   10,
+   21
   ],
   "lime-basil": [
    5,
@@ -265,27 +321,39 @@
   ],
   "mammoth-basil": [
    10,
+   21
+  ],
+  "marietta-marigold": [
+   7,
+   14
+  ],
+  "matilda": [
+   7,
    14
   ],
   "mini-broccoli": [
-   4,
-   7
+   5,
+   10
   ],
   "mini-cauliflower": [
-   4,
-   7
+   5,
+   10
   ],
   "mini-eggplant": [
    7,
    10
   ],
+  "mini-okra": [
+   10,
+   16
+  ],
   "mini-pumpkin": [
-   5,
-   10
+   7,
+   14
   ],
   "mini-squash": [
-   5,
-   10
+   7,
+   14
   ],
   "mint": [
    10,
@@ -296,28 +364,36 @@
    10
   ],
   "muir-lettuce": [
-   7,
+   5,
    14
   ],
   "nasturtium": [
-   10,
-   14
+   7,
+   18
+  ],
+  "night-scented-stock": [
+   5,
+   20
   ],
   "oregano": [
    7,
    21
   ],
   "peas": [
-   9,
+   7,
    14
   ],
+  "perpetual-spinach": [
+   7,
+   10
+  ],
   "pink-celery": [
-   14,
-   21
+   12,
+   20
   ],
   "pink-petunia": [
    7,
-   10
+   12
   ],
   "poblano-pepper": [
    10,
@@ -325,11 +401,11 @@
   ],
   "portulaca-mix": [
    7,
-   10
+   14
   ],
   "purple-basil": [
-   10,
-   14
+   5,
+   10
   ],
   "purple-beans": [
    10,
@@ -339,21 +415,25 @@
    5,
    10
   ],
+  "purple-campanula": [
+   12,
+   21
+  ],
   "purple-cayenne-pepper": [
    10,
    28
   ],
   "purple-kohlrabi": [
-   4,
-   7
+   5,
+   10
   ],
   "purple-petunia": [
    7,
-   10
+   12
   ],
   "purple-snapdragon": [
    7,
-   14
+   20
   ],
   "purslane": [
    7,
@@ -363,17 +443,33 @@
    7,
    10
   ],
+  "radio-calendula": [
+   6,
+   14
+  ],
+  "red-amaranth": [
+   7,
+   10
+  ],
   "red-cherry-tomato": [
    7,
    28
   ],
-  "red-impatiens": [
+  "red-hibiscus": [
    10,
-   14
+   20
+  ],
+  "red-impatiens": [
+   7,
+   10
   ],
   "red-mini-strawberries": [
    10,
    15
+  ],
+  "red-mustard": [
+   5,
+   21
   ],
   "red-oak-leaf-lettuce": [
    7,
@@ -381,19 +477,27 @@
   ],
   "red-romaine": [
    7,
-   14
+   10
   ],
   "red-sails-lettuce": [
    7,
-   14
+   10
   ],
   "red-salad-bowl": [
+   7,
+   10
+  ],
+  "red-sorrel": [
    7,
    14
   ],
   "red-swiss-chard": [
    7,
    21
+  ],
+  "red-tatsoi": [
+   5,
+   12
   ],
   "romaine": [
    7,
@@ -411,20 +515,36 @@
    7,
    21
   ],
-  "scarlet-snapdragon": [
+  "savory": [
    7,
    14
   ],
-  "shishito-pepper": [
+  "scarlet-snapdragon": [
    7,
-   10
+   20
+  ],
+  "shishito-pepper": [
+   10,
+   28
+  ],
+  "shiso": [
+   7,
+   14
   ],
   "stevia": [
    14,
    21
   ],
+  "stock-flower": [
+   5,
+   10
+  ],
   "sunflower": [
    10,
+   14
+  ],
+  "sweet-marjoram": [
+   7,
    14
   ],
   "sweet-pepper": [
@@ -432,20 +552,36 @@
    28
   ],
   "sweet-thai-basil": [
-   10,
+   5,
+   10
+  ],
+  "tarragon": [
+   7,
    14
   ],
   "thai-eggplant": [
-   7,
-   10
+   10,
+   21
   ],
   "thyme": [
    7,
    21
   ],
-  "violet-impatiens": [
-   10,
+  "tokyo-bekana": [
+   7,
    14
+  ],
+  "torenia": [
+   6,
+   20
+  ],
+  "viola": [
+   7,
+   14
+  ],
+  "violet-impatiens": [
+   7,
+   10
   ],
   "wasabi-greens": [
    4,
@@ -460,12 +596,12 @@
    7
   ],
   "white-kohlrabi": [
-   4,
-   7
+   5,
+   10
   ],
   "white-petunia": [
    7,
-   10
+   12
   ],
   "yellow-beans": [
    10,
@@ -481,16 +617,1947 @@
   ],
   "yellow-snapdragon": [
    7,
-   14
+   20
   ],
   "yellow-swiss-chard": [
    7,
    21
   ],
   "zinnia": [
-   5,
-   7
+   7,
+   14
   ]
+ },
+ "facts": {
+  "american-mustard": {
+   "thinTo": 1,
+   "article": "1780033",
+   "latinName": "Brassica juncea",
+   "maturityDays": [
+    21,
+    45
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "arugula": {
+   "thinTo": "all",
+   "article": "1795649",
+   "latinName": "Eruca sativa",
+   "maturityDays": [
+    30,
+    40
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "banana-pepper": {
+   "thinTo": 1,
+   "article": "1785345",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    60,
+    90
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "bare-root-strawberries": {
+   "thinTo": "all",
+   "article": "1786241",
+   "latinName": "Fragaria ananassa",
+   "maturityDays": [
+    60,
+    90
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "basil": {
+   "thinTo": 3,
+   "article": "1783873",
+   "latinName": "Ocimum basilicum",
+   "maturityDays": [
+    68,
+    68
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "bi-color-sunflower": {
+   "thinTo": 1,
+   "article": "1782529",
+   "latinName": "Helianthus annuus",
+   "maturityDays": [
+    70,
+    80
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "black-pearl-pepper": {
+   "thinTo": 1,
+   "article": "14281601",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    90,
+    100
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "black-viola": {
+   "thinTo": 3,
+   "article": "2644289",
+   "latinName": "Viola cornuta",
+   "maturityDays": [
+    50,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    65,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "blue-cornflower": {
+   "thinTo": 1,
+   "article": "1782465",
+   "latinName": "Centaurea cyanus",
+   "maturityDays": [
+    70,
+    70
+   ],
+   "heightFt": "1+",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "blush-hibiscus": {
+   "thinTo": 1,
+   "article": "1782401",
+   "latinName": "Hibiscus moscheutos",
+   "maturityDays": [
+    100,
+    130
+   ],
+   "heightFt": "2-3",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "borage": {
+   "thinTo": 1,
+   "article": "1782657",
+   "latinName": "Borago officinalis",
+   "maturityDays": [
+    50,
+    60
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "breen": {
+   "thinTo": 1,
+   "article": "1796161",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    45,
+    45
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "bronze-arrow": {
+   "thinTo": 1,
+   "article": "2348737",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    45,
+    45
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "bulls-blood-beets": {
+   "thinTo": 1,
+   "article": "1796225",
+   "latinName": "Beta vulgaris",
+   "maturityDays": [
+    35,
+    35
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "bunching-onions": {
+   "thinTo": 3,
+   "article": "1783745",
+   "latinName": "Allium fistulosum",
+   "maturityDays": [
+    60,
+    60
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "roots"
+  },
+  "burrito-pepper": {
+   "thinTo": 1,
+   "article": "1785473",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    80,
+    95
+   ],
+   "heightFt": "1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "buttercrunch": {
+   "thinTo": 1,
+   "article": "1796417",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    45,
+    45
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "butterhead": {
+   "thinTo": 1,
+   "article": "1780481",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    45,
+    45
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "candy-cane-pepper": {
+   "thinTo": 1,
+   "article": "3525697",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    85,
+    100
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "canna-flower": {
+   "thinTo": 1,
+   "article": "1782593",
+   "latinName": "Canna generalis",
+   "maturityDays": [
+    75,
+    85
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "roots"
+  },
+  "cape-gooseberry": {
+   "thinTo": 1,
+   "article": "1785281",
+   "latinName": "Physalis peruviana",
+   "maturityDays": [
+    80,
+    80
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "cardinale": {
+   "thinTo": 1,
+   "article": "1796481",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    60,
+    60
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "catnip": {
+   "thinTo": 3,
+   "article": "1783937",
+   "latinName": "Nepeta cataria",
+   "maturityDays": [
+    40,
+    50
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "celery": {
+   "thinTo": 1,
+   "article": "1796545",
+   "latinName": "Apium graveolens",
+   "maturityDays": [
+    75,
+    100
+   ],
+   "heightFt": "1",
+   "tempF": [
+    70,
+    75
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "celosia-mix": {
+   "thinTo": 3,
+   "article": "2566209",
+   "latinName": "Celosia argentea plumosa",
+   "maturityDays": [
+    75,
+    100
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "chamomile": {
+   "thinTo": "all",
+   "article": "1782721",
+   "latinName": "Matricaria recutita",
+   "maturityDays": [
+    75,
+    120
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "chervil": {
+   "thinTo": 3,
+   "article": "1783809",
+   "latinName": "Anthriscus cerefolium",
+   "maturityDays": [
+    60,
+    70
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    55,
+    65
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "chives": {
+   "thinTo": "all",
+   "article": "1784193",
+   "latinName": "Allium schoenoprasum",
+   "maturityDays": [
+    75,
+    85
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "roots"
+  },
+  "cilantro": {
+   "thinTo": 3,
+   "article": "1784129",
+   "latinName": "Coriandrum sativum",
+   "maturityDays": [
+    50,
+    55
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "collard-greens": {
+   "thinTo": 1,
+   "article": "1796609",
+   "latinName": "Brassica oleracea var. acephala",
+   "maturityDays": [
+    60,
+    70
+   ],
+   "heightFt": "<2",
+   "tempF": [
+    55,
+    75
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "cucumber": {
+   "thinTo": 1,
+   "article": "1785537",
+   "latinName": "Cucumis sativus",
+   "maturityDays": [
+    65,
+    75
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "dianthus": {
+   "thinTo": 3,
+   "article": "2566529",
+   "latinName": "Dianthus chinensis x barbatus",
+   "maturityDays": [
+    50,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "dill": {
+   "thinTo": 3,
+   "article": "1784065",
+   "latinName": "Anethum graveolens",
+   "maturityDays": [
+    40,
+    50
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "dragon-beans": {
+   "thinTo": 1,
+   "article": "1785409",
+   "latinName": "Phaseolus vulgaris",
+   "maturityDays": [
+    55,
+    70
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    90
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "endive-lettuce": {
+   "thinTo": 1,
+   "article": "1796673",
+   "latinName": "Cichorium endivia",
+   "maturityDays": [
+    48,
+    48
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "fairytale-eggplant": {
+   "thinTo": 1,
+   "article": "1785601",
+   "latinName": "Solanum melongena",
+   "maturityDays": [
+    65,
+    85
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "fiesta-gitana": {
+   "thinTo": 3,
+   "article": "1782785",
+   "latinName": "Calendula officinalis",
+   "maturityDays": [
+    50,
+    60
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "flashy-trout-back": {
+   "thinTo": 1,
+   "article": "1796737",
+   "latinName": "Lactuca sativa 'Flashy Trout Back'",
+   "maturityDays": [
+    27,
+    55
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "fuchsia-snapdragon": {
+   "thinTo": 3,
+   "article": "1867009",
+   "latinName": "Antirrhinum majus",
+   "maturityDays": [
+    80,
+    115
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "garlic-chives": {
+   "thinTo": "all",
+   "article": "1784001",
+   "latinName": "Allium tuberosum",
+   "maturityDays": [
+    90,
+    90
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "roots"
+  },
+  "goliath-pepper": {
+   "thinTo": 1,
+   "article": "1785857",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    90,
+    100
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "green-beans": {
+   "thinTo": 1,
+   "article": "1785665",
+   "latinName": "Phaseolus vulgaris",
+   "maturityDays": [
+    50,
+    75
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "roots"
+  },
+  "green-bok-choy": {
+   "thinTo": 1,
+   "article": "1796033",
+   "latinName": "Brassica rapa var. chinensis",
+   "maturityDays": [
+    20,
+    45
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "green-cabbage": {
+   "thinTo": 1,
+   "article": "4256513",
+   "latinName": "Brassica oleracea",
+   "maturityDays": [
+    80,
+    115
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    55,
+    75
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "green-mustard": {
+   "thinTo": 1,
+   "article": "1796801",
+   "latinName": "Brassica rapa var. japonica",
+   "maturityDays": [
+    21,
+    40
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "green-salanova": {
+   "thinTo": 1,
+   "article": "2349057",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    55,
+    55
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "green-tatsoi": {
+   "thinTo": 1,
+   "article": "1796865",
+   "latinName": "Brassica rapa var. narinosa",
+   "maturityDays": [
+    21,
+    45
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "holy-basil": {
+   "thinTo": 3,
+   "article": "1784257",
+   "latinName": "Ocimum tenuiflorum",
+   "maturityDays": [
+    70,
+    70
+   ],
+   "heightFt": "<2",
+   "tempF": [
+    70,
+    75
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "hon-tsai-tai": {
+   "thinTo": 1,
+   "article": "1796929",
+   "latinName": "Brassica rapa",
+   "maturityDays": [
+    40,
+    50
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "hungarian-hot-wax-pepper": {
+   "thinTo": 1,
+   "article": "1785793",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    60,
+    90
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "iceberg": {
+   "thinTo": 1,
+   "article": "2348801",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    80,
+    80
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "italian-parsley": {
+   "thinTo": 3,
+   "article": "1784321",
+   "latinName": "Petroselinum crispum neopolitanum",
+   "maturityDays": [
+    70,
+    90
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "jalapeno": {
+   "thinTo": 1,
+   "article": "1799809",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    60,
+    80
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "kale": {
+   "thinTo": 1,
+   "article": "1796993",
+   "latinName": "Brassica oleracea",
+   "maturityDays": [
+    53,
+    65
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "kale-lacinato": {
+   "thinTo": 1,
+   "article": "1797057",
+   "latinName": "Brassica oleracea 'Lacinato'",
+   "maturityDays": [
+    65,
+    65
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "lavender": {
+   "thinTo": 3,
+   "article": "1782977",
+   "latinName": "Lavandula angustifolia",
+   "maturityDays": [
+    100,
+    110
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "lemon-balm": {
+   "thinTo": 3,
+   "article": "1784385",
+   "latinName": "Melissa officinalis",
+   "maturityDays": [
+    70,
+    70
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "lemon-hot-pepper": {
+   "thinTo": 1,
+   "article": "1786049",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    100,
+    115
+   ],
+   "heightFt": "1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "lemongrass": {
+   "thinTo": 3,
+   "article": "1784449",
+   "latinName": "Cymbopogon citratus",
+   "maturityDays": [
+    100,
+    100
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "roots"
+  },
+  "lime-basil": {
+   "thinTo": 3,
+   "article": "1783681",
+   "latinName": "Ocimum americanum 'Lime'",
+   "maturityDays": [
+    55,
+    65
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "lollo-rossa": {
+   "thinTo": 1,
+   "article": "1797121",
+   "latinName": "Lactuca sativa 'Lollo Rossa'",
+   "maturityDays": [
+    40,
+    40
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "mammoth-basil": {
+   "thinTo": 1,
+   "article": "12832065",
+   "latinName": "Ocimum basilicum",
+   "maturityDays": [
+    55,
+    65
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "marietta-marigold": {
+   "thinTo": 3,
+   "article": "1782849",
+   "latinName": "Tagetes patula",
+   "maturityDays": [
+    60,
+    60
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "matilda": {
+   "thinTo": 1,
+   "article": "1780929",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    52,
+    52
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "mini-broccoli": {
+   "thinTo": 1,
+   "article": "2644225",
+   "latinName": "Brassica oleracea Italica",
+   "maturityDays": [
+    85,
+    100
+   ],
+   "heightFt": "2",
+   "tempF": [
+    65,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "mini-cauliflower": {
+   "thinTo": 1,
+   "article": "1797249",
+   "latinName": "Brassica oleracea botrytis",
+   "maturityDays": [
+    50,
+    60
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    65,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "mini-eggplant": {
+   "thinTo": 1,
+   "article": "1785985",
+   "latinName": "Solanum melongena",
+   "maturityDays": [
+    50,
+    85
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "mini-okra": {
+   "thinTo": 1,
+   "article": "5141633",
+   "latinName": "Abelmoschus esculentus",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "mini-pumpkin": {
+   "thinTo": 1,
+   "article": "1786113",
+   "latinName": "Cucurbita pepo",
+   "maturityDays": [
+    100,
+    130
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "mini-squash": {
+   "thinTo": 1,
+   "article": "2125121",
+   "latinName": "Cucurbita pepo",
+   "maturityDays": [
+    50,
+    75
+   ],
+   "heightFt": "<2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "mint": {
+   "thinTo": 3,
+   "article": "1784513",
+   "latinName": "Mentha",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "monte-carlo": {
+   "thinTo": 1,
+   "article": "1797313",
+   "latinName": "Lactuca sativa 'Monte Carlo'",
+   "maturityDays": [
+    46,
+    46
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "muir-lettuce": {
+   "thinTo": 1,
+   "article": "5249729",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    80,
+    80
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "nasturtium": {
+   "thinTo": 3,
+   "article": "1783169",
+   "latinName": "Tropaeolum majus",
+   "maturityDays": [
+    55,
+    65
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "night-scented-stock": {
+   "thinTo": 3,
+   "article": "1783233",
+   "latinName": "Matthiola longipetala",
+   "maturityDays": [
+    50,
+    70
+   ],
+   "heightFt": "<2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "oregano": {
+   "thinTo": 3,
+   "article": "1784833",
+   "latinName": "Origanum heracleoticum",
+   "maturityDays": [
+    80,
+    90
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "peas": {
+   "thinTo": 1,
+   "article": "1786433",
+   "latinName": "Pisum sativum",
+   "maturityDays": [
+    60,
+    80
+   ],
+   "heightFt": "<2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "perpetual-spinach": {
+   "thinTo": 1,
+   "article": "1797377",
+   "latinName": "Beta vulgaris",
+   "maturityDays": [
+    40,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "pink-celery": {
+   "thinTo": 1,
+   "article": "1797441",
+   "latinName": "Apium graveolens",
+   "maturityDays": [
+    75,
+    100
+   ],
+   "heightFt": "1",
+   "tempF": [
+    70,
+    75
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "pink-petunia": {
+   "thinTo": 3,
+   "article": "1783105",
+   "latinName": "Petunia x hybrida",
+   "maturityDays": [
+    30,
+    40
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "poblano-pepper": {
+   "thinTo": 1,
+   "article": "2125697",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    90,
+    100
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "portulaca-mix": {
+   "thinTo": 3,
+   "article": "2566401",
+   "latinName": null,
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    70,
+    80
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "purple-basil": {
+   "thinTo": 3,
+   "article": "1784769",
+   "latinName": "Ocimum basilicum",
+   "maturityDays": [
+    72,
+    72
+   ],
+   "heightFt": "1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "purple-beans": {
+   "thinTo": 1,
+   "article": "1786369",
+   "latinName": "Phaseolus vulgaris",
+   "maturityDays": [
+    50,
+    75
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "roots"
+  },
+  "purple-bok-choy": {
+   "thinTo": 1,
+   "article": "1797505",
+   "latinName": "Brassica rapa subsp. chinensis",
+   "maturityDays": [
+    40,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    80
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "purple-campanula": {
+   "thinTo": 3,
+   "article": "1782913",
+   "latinName": "Campanula medium",
+   "maturityDays": [
+    70,
+    80
+   ],
+   "heightFt": "2.5-3",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "purple-cayenne-pepper": {
+   "thinTo": 1,
+   "article": "8023489",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    90,
+    100
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "purple-kohlrabi": {
+   "thinTo": 1,
+   "article": "1797569",
+   "latinName": "Brassica oleracea",
+   "maturityDays": [
+    45,
+    55
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "purple-petunia": {
+   "thinTo": 3,
+   "article": "13115585",
+   "latinName": "Petunia x hybrida",
+   "maturityDays": [
+    30,
+    40
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "purple-snapdragon": {
+   "thinTo": 3,
+   "article": "2400513",
+   "latinName": "Antirrhinum majus",
+   "maturityDays": [
+    80,
+    115
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "purslane": {
+   "thinTo": 3,
+   "article": "1797633",
+   "latinName": "Portulaca oleracea",
+   "maturityDays": [
+    50,
+    70
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "radicchio": {
+   "thinTo": 1,
+   "article": "1781761",
+   "latinName": "Cichorium intybus",
+   "maturityDays": [
+    65,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "radio-calendula": {
+   "thinTo": 3,
+   "article": "1783297",
+   "latinName": "Calendula officinalis",
+   "maturityDays": [
+    50,
+    55
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "red-amaranth": {
+   "thinTo": 1,
+   "article": "1797761",
+   "latinName": "Amaranthus cruentus",
+   "maturityDays": [
+    100,
+    120
+   ],
+   "heightFt": "<2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "red-cherry-tomato": {
+   "thinTo": 1,
+   "article": "1786305",
+   "latinName": "Lycopersicum esculentum",
+   "maturityDays": [
+    60,
+    60
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "red-hibiscus": {
+   "thinTo": 1,
+   "article": "1782401",
+   "latinName": "Hibiscus moscheutos",
+   "maturityDays": [
+    100,
+    130
+   ],
+   "heightFt": "2-3",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "red-impatiens": {
+   "thinTo": 3,
+   "article": "3123137",
+   "latinName": "Impatiens walleriana",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    65,
+    75
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-mini-strawberries": {
+   "thinTo": 3,
+   "article": "1786177",
+   "latinName": "Fragaria vesca",
+   "maturityDays": [
+    100,
+    120
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-mustard": {
+   "thinTo": 1,
+   "article": "1797889",
+   "latinName": "Brassica juncea",
+   "maturityDays": [
+    21,
+    45
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-oak-leaf-lettuce": {
+   "thinTo": 1,
+   "article": "1797953",
+   "latinName": "Lactuca sativa 'Oak Leaf Red'",
+   "maturityDays": [
+    40,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-romaine": {
+   "thinTo": 1,
+   "article": "1798017",
+   "latinName": "Lactuca sativa 'cimmaron'",
+   "maturityDays": [
+    68,
+    68
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-sails-lettuce": {
+   "thinTo": 1,
+   "article": "1798081",
+   "latinName": "Lactuca sativa 'Red Sails'",
+   "maturityDays": [
+    40,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-salad-bowl": {
+   "thinTo": 1,
+   "article": "1798145",
+   "latinName": "Lactuca sativa 'Red Salad Bowl'",
+   "maturityDays": [
+    40,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-sorrel": {
+   "thinTo": 1,
+   "article": "1798209",
+   "latinName": "Rumex acetosa",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-swiss-chard": {
+   "thinTo": 1,
+   "article": "1798529",
+   "latinName": "Beta vulgaris var. cicla",
+   "maturityDays": [
+    32,
+    60
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "red-tatsoi": {
+   "thinTo": 1,
+   "article": "1798273",
+   "latinName": "Brassica narinosa",
+   "maturityDays": [
+    45,
+    55
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "romaine": {
+   "thinTo": 1,
+   "article": "1798337",
+   "latinName": "Lactuca sativa 'Paris Island Cos'",
+   "maturityDays": [
+    68,
+    68
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "rosemary": {
+   "thinTo": 3,
+   "article": "1799873",
+   "latinName": "Salvia rosmarinus (Rosmarinus officinalis)",
+   "maturityDays": [
+    42,
+    42
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "rouge-dhiver": {
+   "thinTo": 1,
+   "article": "1798401",
+   "latinName": "Lactuca sativa",
+   "maturityDays": [
+    30,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "sage": {
+   "thinTo": 3,
+   "article": "1784641",
+   "latinName": "Salvia officinalis",
+   "maturityDays": [
+    80,
+    90
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "savory": {
+   "thinTo": 3,
+   "article": "1784897",
+   "latinName": "Satureja hortensis",
+   "maturityDays": [
+    50,
+    60
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    65,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "scarlet-snapdragon": {
+   "thinTo": 3,
+   "article": "1783361",
+   "latinName": "Antirrhinum majus",
+   "maturityDays": [
+    80,
+    115
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "shishito-pepper": {
+   "thinTo": 1,
+   "article": "2644353",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    75,
+    100
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "shiso": {
+   "thinTo": 1,
+   "article": "1785025",
+   "latinName": "Perilla frutescens var. crispa",
+   "maturityDays": [
+    50,
+    60
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "sorrel": {
+   "thinTo": null,
+   "article": "1798465",
+   "latinName": "Rumex acetosa",
+   "maturityDays": null,
+   "heightFt": null,
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "stevia": {
+   "thinTo": 3,
+   "article": "1785153",
+   "latinName": "Stevia rebaudiana",
+   "maturityDays": [
+    40,
+    60
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "stock-flower": {
+   "thinTo": 3,
+   "article": "1783425",
+   "latinName": "Matthiola incana",
+   "maturityDays": [
+    65,
+    80
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    55,
+    75
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "sunflower": {
+   "thinTo": 1,
+   "article": "1783489",
+   "latinName": "Helianthus annuus",
+   "maturityDays": [
+    65,
+    75
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "sweet-marjoram": {
+   "thinTo": 3,
+   "article": "1785217",
+   "latinName": "Origanum syriacum",
+   "maturityDays": [
+    65,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "sweet-pepper": {
+   "thinTo": 1,
+   "article": "1786497",
+   "latinName": "Capsicum annuum",
+   "maturityDays": [
+    75,
+    85
+   ],
+   "heightFt": "1-2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "sweet-thai-basil": {
+   "thinTo": 3,
+   "article": "1785089",
+   "latinName": "Ocimum basilicum var. thyrsiflora",
+   "maturityDays": [
+    64,
+    64
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "tarragon": {
+   "thinTo": 3,
+   "article": "1784577",
+   "latinName": "Tagetes lucida",
+   "maturityDays": [
+    65,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "thai-eggplant": {
+   "thinTo": 1,
+   "article": "1786689",
+   "latinName": "Solanum melongena",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "2",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "thyme": {
+   "thinTo": 3,
+   "article": "1784961",
+   "latinName": "Thymus vulgaris",
+   "maturityDays": [
+    90,
+    95
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "tokyo-bekana": {
+   "thinTo": 1,
+   "article": "1795969",
+   "latinName": "Brassica rapa var. chinensis",
+   "maturityDays": [
+    45,
+    55
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "torenia": {
+   "thinTo": 3,
+   "article": "1783553",
+   "latinName": "Torenia fournieri",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "viola": {
+   "thinTo": 3,
+   "article": "1783617",
+   "latinName": "Viola cornuta",
+   "maturityDays": [
+    50,
+    50
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    65,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "violet-impatiens": {
+   "thinTo": 3,
+   "article": "13614913",
+   "latinName": "Impatiens walleriana",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    65,
+    75
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "wasabi-greens": {
+   "thinTo": 1,
+   "article": "1795905",
+   "latinName": "Brassica juncea",
+   "maturityDays": [
+    45,
+    45
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "watercress": {
+   "thinTo": 3,
+   "article": "1795777",
+   "latinName": "Nasturtium officinale",
+   "maturityDays": [
+    60,
+    60
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "wheatgrass": {
+   "thinTo": "all",
+   "article": "1795713",
+   "latinName": "Triticum aestivum",
+   "maturityDays": [
+    21,
+    21
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "roots"
+  },
+  "white-kohlrabi": {
+   "thinTo": 1,
+   "article": "3519233",
+   "latinName": "Brassica oleracea",
+   "maturityDays": [
+    45,
+    55
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "white-petunia": {
+   "thinTo": 3,
+   "article": "1866945",
+   "latinName": "Petunia x hybrida",
+   "maturityDays": [
+    30,
+    40
+   ],
+   "heightFt": "1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "yellow-beans": {
+   "thinTo": 1,
+   "article": "1786625",
+   "latinName": "Phaseolus vulgaris",
+   "maturityDays": [
+    68,
+    68
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "roots"
+  },
+  "yellow-cherry-tomato": {
+   "thinTo": 1,
+   "article": "1786561",
+   "latinName": "Lycopersicum esculentum",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "2",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "yellow-mini-strawberry": {
+   "thinTo": 3,
+   "article": "4367169",
+   "latinName": "Fragaria vesca",
+   "maturityDays": [
+    100,
+    120
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    65,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "yellow-snapdragon": {
+   "thinTo": 3,
+   "article": "4256001",
+   "latinName": "Antirrhinum majus",
+   "maturityDays": [
+    80,
+    115
+   ],
+   "heightFt": "<1",
+   "tempF": null,
+   "fullDose": "leavesOrRoots"
+  },
+  "yellow-swiss-chard": {
+   "thinTo": 1,
+   "article": "2400321",
+   "latinName": "Beta vulgaris var. cicla",
+   "maturityDays": [
+    32,
+    60
+   ],
+   "heightFt": "1",
+   "tempF": [
+    60,
+    70
+   ],
+   "fullDose": "leavesOrRoots"
+  },
+  "zinnia": {
+   "thinTo": 3,
+   "article": "4367233",
+   "latinName": "Zinnia elegans",
+   "maturityDays": [
+    60,
+    75
+   ],
+   "heightFt": "<1",
+   "tempF": [
+    70,
+    85
+   ],
+   "fullDose": "leavesOrRoots"
+  }
  },
  "plants": [
   {
@@ -503,7 +2570,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": false,
@@ -560,7 +2627,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -598,7 +2665,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -617,7 +2684,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -636,7 +2703,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -655,7 +2722,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -674,7 +2741,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -693,7 +2760,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -731,7 +2798,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -750,7 +2817,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -788,7 +2855,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -845,7 +2912,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -864,7 +2931,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -883,7 +2950,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": true,
@@ -902,7 +2969,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -959,7 +3026,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -978,7 +3045,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -997,7 +3064,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "long-greens-herbs",
    "successionInferred": true,
@@ -1054,7 +3121,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "long-greens-herbs",
    "successionInferred": false,
@@ -1187,7 +3254,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -1225,7 +3292,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": false,
@@ -1244,7 +3311,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "long-greens-herbs",
    "successionInferred": false,
@@ -1263,7 +3330,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -1358,7 +3425,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -1415,7 +3482,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -1434,7 +3501,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -1567,7 +3634,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "long-greens-herbs",
    "successionInferred": true,
@@ -1586,7 +3653,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -1605,7 +3672,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "long-greens-herbs",
    "successionInferred": true,
@@ -1624,7 +3691,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "long-greens-herbs",
    "successionInferred": false,
@@ -1643,7 +3710,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -1662,7 +3729,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "long-greens-herbs",
    "successionInferred": false,
@@ -1700,7 +3767,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -1719,7 +3786,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -1757,7 +3824,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -1776,7 +3843,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "fast-fruiting",
    "successionInferred": true,
@@ -1795,7 +3862,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "fast-fruiting",
    "successionInferred": true,
@@ -1814,7 +3881,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "fast-fruiting",
    "successionInferred": true,
@@ -1852,7 +3919,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -1890,7 +3957,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -1909,7 +3976,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -1985,7 +4052,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -2004,7 +4071,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": false,
@@ -2023,7 +4090,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -2042,7 +4109,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -2080,7 +4147,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "fast-fruiting",
    "successionInferred": false,
@@ -2137,7 +4204,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -2213,7 +4280,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -2232,7 +4299,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -2308,7 +4375,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -2327,7 +4394,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -2384,7 +4451,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -2403,7 +4470,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -2555,7 +4622,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -2612,7 +4679,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": false,
@@ -2631,7 +4698,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -2650,7 +4717,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "long-greens-herbs",
    "successionInferred": true,
@@ -2821,7 +4888,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -2897,7 +4964,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,
@@ -2935,7 +5002,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -2992,7 +5059,7 @@
     2
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-greens",
    "successionInferred": true,
@@ -3011,7 +5078,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "intermediate",
    "yield": null,
    "succession": "flowers",
    "successionInferred": false,
@@ -3030,7 +5097,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "fast-fruiting",
    "successionInferred": false,
@@ -3049,7 +5116,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -3068,7 +5135,7 @@
     4
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "expert",
    "yield": null,
    "succession": "long-fruiting",
    "successionInferred": false,
@@ -3125,7 +5192,7 @@
     3
    ],
    "harvestEstimated": true,
-   "careLevel": null,
+   "careLevel": "beginner",
    "yield": null,
    "succession": "flowers",
    "successionInferred": true,

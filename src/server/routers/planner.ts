@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { BUILTIN, type Catalog, Category, CATALOG_SOURCES, Plant, Zone } from '../../plants/catalog'
+import { CareNotes, careNotes } from '../../plants/care'
+import { BUILTIN, type Catalog, Category, CATALOG_SOURCES, Plant, plantFacts, sproutWindow, ThinTo, Zone } from '../../plants/catalog'
 import { catalogFor, CustomPlantFields, CustomPlantPatch, customToPlant, plantSlug, SUCCESSION_BY_CATEGORY } from '../../plants/custom'
 import { matchOrder } from '../../plants/match'
 import { bestSpots, planLayout, sowingPlan } from '../../plants/planner'
@@ -10,6 +11,23 @@ import type { Context } from '../context'
 import { publicProcedure, router } from '../trpc'
 
 const Model = z.enum(['home', 'studio', 'nursery'])
+const Span = z.tuple([z.number(), z.number()])
+const PlantCare = z.object({
+  plant: Plant,
+  thinTo: ThinTo,
+  /** Gardyn's rule for the plant's kind, not its own count. */
+  thinEstimated: z.boolean(),
+  sproutDays: Span.nullable(),
+  sproutEstimated: z.boolean(),
+  maturityDays: Span.nullable(),
+  heightFt: z.string().nullable(),
+  tempF: Span.nullable(),
+  fullDose: z.enum(['leavesOrRoots', 'roots']).nullable(),
+  latinName: z.string().nullable(),
+  /** The plant's page in Gardyn's help centre. */
+  url: z.string().nullable(),
+  notes: CareNotes.nullable(),
+})
 const Request = z.array(z.object({ plantId: z.string(), count: z.number().int().min(1).max(30) })).max(60)
 const Assignment = z.object({ slot: z.number(), row: z.number(), col: z.number(), slotZone: Zone.nullable(), plantId: z.string(), plantName: z.string(), wantZone: Zone, fallback: z.number(), shift: z.enum(['lower', 'higher']).nullable().optional(), fit: z.enum(['ideal', 'ok', 'outside']).optional(), reason: z.string() })
 /** Caller overrides: pin pods to slots, or let a plant use other zones than its ideal one and those it tolerates. */
@@ -93,6 +111,31 @@ export const plannerRouter = router({
     .input(z.object({ q: z.string().optional(), category: Category.optional(), zone: Zone.optional(), inStore: z.boolean().optional(), custom: z.boolean().optional() }))
     .output(z.object({ plants: z.array(Plant), sources: z.record(z.string(), z.string()) }))
     .query(({ ctx, input }) => ({ plants: catalogFor(ctx.store).search(input), sources: CATALOG_SOURCES })),
+
+  care: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/planner/catalog/{id}/care', tags: ['planner'], summary: 'One plant\'s care: sprouts to keep when thinning, days to sprout and to maturity, size, temperature, and care and harvest notes' } })
+    .input(z.object({ id: z.string() }))
+    .output(PlantCare)
+    .query(({ ctx, input }) => {
+      const plant = catalogFor(ctx.store).find(input.id)
+      if (!plant) throw new TRPCError({ code: 'NOT_FOUND', message: `No plant ${input.id} in the catalog` })
+      const f = plantFacts(plant)
+      const sprout = sproutWindow(plant)
+      return {
+        plant,
+        thinTo: f.thinTo,
+        thinEstimated: f.thinEstimated,
+        sproutDays: sprout?.days ?? null,
+        sproutEstimated: sprout?.estimated ?? true,
+        maturityDays: f.maturityDays,
+        heightFt: f.heightFt,
+        tempF: f.tempF,
+        fullDose: f.fullDose,
+        latinName: f.latinName,
+        url: f.article ? `https://help.mygardyn.com/en/articles/${f.article}` : null,
+        notes: plant.custom ? null : careNotes(plant.id),
+      }
+    }),
 
   zones: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/planner/zones/{model}', tags: ['planner'], summary: 'Light-zone map for a Gardyn model' } })
