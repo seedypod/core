@@ -183,7 +183,7 @@ describe('useLiveEvents', () => {
     expect(invalidated).toEqual([])
   })
 
-  it('refetches the sensors when the first connect only succeeds on a retry', () => {
+  it('refetches everything when the first connect only succeeds on a retry', () => {
     const hook = renderHook(() => useLiveEvents())
     live.error = new Error('stream refused')
     hook.rerender()
@@ -191,20 +191,20 @@ describe('useLiveEvents', () => {
     hook.rerender()
     act(() => live.onStarted())
     vi.advanceTimersByTime(BURST_MS)
-    expect(invalidated).toEqual(['sensors'])
+    expect(invalidated).toEqual(['all'])
     invalidated.length = 0
     act(() => live.onData(mutation('plans')))
     vi.advanceTimersByTime(BURST_MS)
     expect(invalidated).toEqual(['planner', 'vision'])
   })
 
-  it('refetches the sensors on a reconnect, not on the first connect', () => {
+  it('refetches everything on a reconnect, since changes from other devices may have been missed, but not on the first connect', () => {
     renderHook(() => useLiveEvents())
     act(() => live.onStarted())
     vi.advanceTimersByTime(BURST_MS)
     expect(invalidated).toEqual([])
     act(() => live.onStarted())
     vi.advanceTimersByTime(BURST_MS)
-    expect(invalidated).toEqual(['sensors'])
+    expect(invalidated).toEqual(['all'])
   })
 })
