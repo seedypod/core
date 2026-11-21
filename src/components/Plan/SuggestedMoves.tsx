@@ -5,17 +5,19 @@ interface Props {
   moves: { from: number, to: number, text: string }[]
   /** Carry one out: the pods swap, as a drag from `from` onto `to` would. */
   onApply: (from: number, to: number) => void
+  /** The move under the pointer or focus, to pick out its pods on the layout; null when it leaves. */
+  onHover?: (move: { from: number, to: number } | null) => void
 }
 
 /** Moves for planted pods the planner rates clearly better, all optional: after moving the yCubes, one tap moves their records too. */
-export function SuggestedMoves({ moves, onApply }: Props) {
+export function SuggestedMoves({ moves, onApply, onHover }: Props) {
   if (moves.length === 0) return null
   return (
     <Card>
       <CardHeader title="Suggested moves" subtitle="Optional, once you move the yCubes" icon={ArrowLeftRight} />
       <ul aria-label="Suggested moves" className="flex flex-col gap-1.5">
         {moves.map(m => (
-          <li key={`${m.from}-${m.to}`} className="flex items-center gap-2 text-[13px] text-fg-2">
+          <li key={`${m.from}-${m.to}`} className="flex items-center gap-2 text-[13px] text-fg-2" onMouseEnter={() => onHover?.(m)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(m)} onBlur={() => onHover?.(null)}>
             <span className="min-w-0 flex-1">{m.text}</span>
             <Button size="sm" icon={ArrowLeftRight} aria-label={`Moved pod ${m.from} to pod ${m.to}`} onClick={() => onApply(m.from, m.to)}>Moved</Button>
           </li>
