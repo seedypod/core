@@ -39,7 +39,8 @@ have to dig a URL out of Discord's or Slack's settings first.
   with HMAC-SHA256 in `X-Seedypod-Signature: sha256=<hex>`.
 
 **Event groups**, each a switch: Problems (`alerts`), Reminders, Autopilot
-on by default; Watering off by default, since it sends several a day. An alert
+on by default; Watering and Lights off by default, since they send several a
+day. An alert
 kind's group comes from its name (`reminder_*`/`chore_*`, `autopilot_*`, the
 rest are problems).
 
@@ -52,6 +53,11 @@ doesn't notify again for 15 minutes, so a flapping camera sends once. Pump runs
 come from the HAL's `pumpRun` event. That topic is retained, so a run that
 ended more than 5 minutes ago, or one already sent, is the broker's copy and
 is skipped.
+Light changes come from the HAL's `actuator` events for `light`. The first
+state after start-up is the baseline, a change is sent once the light has held
+for 3 minutes (the scheduler steps a ramp each minute, so a sunrise is one
+message), and a move under 5% while the light stays on isn't sent. The light
+arbiter's source at that moment says why: schedule, Autopilot or by hand.
 
 **Delivery.** Delivery happens off the caller's path and sends one request at
 a time, with a 10 s timeout. A 5xx or 429 retries after 10 s, 1 min and 5 min,

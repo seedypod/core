@@ -22,6 +22,7 @@ const GROUPS: ReadonlyArray<{ id: Group, label: string, sub: string }> = [
   { id: 'reminders', label: 'Reminders', sub: 'Thin, feed, top off, check roots, harvest' },
   { id: 'autopilot', label: 'Autopilot', sub: 'When a rule\'s Notify fires' },
   { id: 'watering', label: 'Watering', sub: 'Every pump run. Several a day' },
+  { id: 'lights', label: 'Lights', sub: 'On, off and dimming, and whether the schedule, Autopilot or a person did it' },
 ]
 
 const FORMATS: ReadonlyArray<{ value: Status['webhookFormat'], label: string }> = [

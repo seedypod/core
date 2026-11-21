@@ -89,6 +89,8 @@ describe('Settings → Notifications', () => {
     expect(screen.getByText(/Failed just now: Water low · HTTP 503/)).toBeTruthy()
     fireEvent.click(screen.getByRole('switch', { name: 'Watering' }))
     expect(calls.configure).toHaveBeenLastCalledWith({ groups: ['alerts', 'reminders', 'autopilot', 'watering'] })
+    fireEvent.click(screen.getByRole('switch', { name: 'Lights' }))
+    expect(calls.configure).toHaveBeenLastCalledWith({ groups: ['alerts', 'reminders', 'autopilot', 'lights'] })
     fireEvent.click(screen.getByRole('switch', { name: 'Problems' }))
     expect(calls.configure).toHaveBeenLastCalledWith({ groups: ['reminders', 'autopilot'] })
     fireEvent.click(screen.getByRole('button', { name: 'Send test' }))
