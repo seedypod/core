@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { alertTitle, buildRequest, enabledGroups, groupOf, maskUrl, newTopic, ntfyLink, urlProblem, type NotifyEvent } from '../targets'
+import { alertTitle, buildRequest, enabledGroups, formatFor, formatProblem, groupOf, maskUrl, newTopic, ntfyLink, urlProblem, type NotifyEvent } from '../targets'
 
 const event: NotifyEvent = { group: 'alerts', type: 'raised', title: 'Water low', message: 'Tank at 8%', priority: 'high', at: '2026-11-20T10:00:00.000Z', data: { kind: 'water_low' } }
 
@@ -40,6 +40,19 @@ describe('notification targets', () => {
   it('masks all but the end of a webhook URL', () => {
     expect(maskUrl('https://discord.com/api/webhooks/123/secrettokenabc1')).toBe('https://discord.com/…abc1')
     expect(maskUrl('https://hooks.example.com/')).toBe('https://hooks.example.com')
+  })
+
+  it('knows the format Discord and Slack webhooks take', () => {
+    expect(formatFor('https://discord.com/api/webhooks/1/tok')).toBe('discord')
+    expect(formatFor('https://ptb.discordapp.com/api/webhooks/1/tok')).toBe('discord')
+    expect(formatFor('https://discord.com/api/webhooks/1/tok/slack')).toBe('slack')
+    expect(formatFor('https://hooks.slack.com/services/T/B/x')).toBe('slack')
+    expect(formatFor('https://discord.com/channels/1')).toBeNull()
+    expect(formatFor('http://homeassistant.local:8123/api/webhook/x')).toBeNull()
+    expect(formatFor('nope')).toBeNull()
+    expect(formatProblem('https://discord.com/api/webhooks/1/tok', 'slack')).toBe('That URL only takes Discord messages: pick Discord as the format.')
+    expect(formatProblem('https://discord.com/api/webhooks/1/tok', 'discord')).toBeNull()
+    expect(formatProblem('https://hooks.example.com/x', 'slack')).toBeNull()
     expect(maskUrl('garbage')).toBe('…')
   })
 

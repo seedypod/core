@@ -41,6 +41,9 @@ Pick **Webhook**, paste the URL and pick a format:
 | Slack | `{ "text" }` | A Slack incoming webhook |
 | JSON | `{ "event", "at", "unit", "title", "message", "priority", "data" }` | Home Assistant's webhook trigger, n8n, your own server |
 
+Pasting a Discord or Slack URL picks its format for you; those servers refuse
+any other shape, so the unit won't save one with the wrong format.
+
 `event` is `alerts.raised`, `alerts.cleared`, `reminders.raised`,
 `autopilot.raised`, `watering.ran`, `lights.changed` or `test`. With a **signing secret** set,
 each JSON body carries `X-Seedypod-Signature: sha256=<hex>`, the HMAC-SHA256

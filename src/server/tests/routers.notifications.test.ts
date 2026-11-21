@@ -43,6 +43,9 @@ describe('notifications router', () => {
     expect(JSON.stringify(await c.settings.get())).not.toContain('verysecret')
     expect(store.settings.get().webhookUrl).toBe(url)
     expect((await c.notifications.configure({ webhookSecret: '' })).hasWebhookSecret).toBe(false)
+    await expect(c.notifications.configure({ webhookFormat: 'slack' })).rejects.toThrow('pick Discord as the format')
+    await expect(c.notifications.configure({ webhookUrl: 'https://hooks.slack.com/services/T/B/x' })).rejects.toThrow('pick Slack as the format')
+    expect(store.settings.get()).toMatchObject({ webhookUrl: url, webhookFormat: 'discord' })
   })
 
   it('refuses plain http off the LAN and a webhook target with no URL', async () => {

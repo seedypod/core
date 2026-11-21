@@ -71,6 +71,29 @@ export function urlProblem(raw: string): string | null {
   return isLanHost(u.hostname) ? null : 'Use https:// for a server off your network, so the notifications are encrypted on the way.'
 }
 
+const FORMAT_NAME = { discord: 'Discord', slack: 'Slack' } as const
+
+/** The format a Discord or Slack webhook URL only accepts, or null for any other server. Discord's `/slack` endpoint takes Slack's. */
+export function formatFor(raw: string): 'discord' | 'slack' | null {
+  let u: URL
+  try {
+    u = new URL(raw)
+  }
+  catch {
+    return null
+  }
+  const host = u.hostname.toLowerCase()
+  if (/(^|\.)discord(app)?\.com$/.test(host) && u.pathname.startsWith('/api/webhooks/')) return /\/slack\/?$/.test(u.pathname) ? 'slack' : 'discord'
+  if (host === 'hooks.slack.com') return 'slack'
+  return null
+}
+
+/** Why a URL and format don't go together, or null. */
+export function formatProblem(raw: string, format: 'json' | 'discord' | 'slack'): string | null {
+  const want = formatFor(raw)
+  return want && want !== format ? `That URL only takes ${FORMAT_NAME[want]} messages: pick ${FORMAT_NAME[want]} as the format.` : null
+}
+
 /** Enough of a webhook URL to recognise it; the rest is the secret (Discord and Slack put the token in the path). */
 export function maskUrl(raw: string): string {
   try {
