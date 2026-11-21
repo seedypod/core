@@ -156,7 +156,7 @@ describe('Grow', () => {
     render(<GrowPage />)
     const kinds = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-testid="plant-thumb"]')].map(t => t.dataset.kind)
     // No WebGL in jsdom: a neutral leaf for each planted pod, a ring for the empty one. Pods 1 and 3 share tower A.
-    expect(kinds(screen.getByLabelText('Pods'))).toEqual(['neutral', 'empty', 'neutral'])
+    expect(kinds(screen.getByLabelText('Pod list'))).toEqual(['neutral', 'empty', 'neutral'])
     expect(screen.getByRole('button', { name: '1 Basil' }).querySelector<HTMLElement>('[data-testid="plant-thumb"]')?.style.width).toBe('32px')
     fireEvent.click(screen.getByRole('button', { name: '1 Basil' }))
     const stage = screen.getByRole('slider', { name: 'Growth stage' })
@@ -281,6 +281,27 @@ describe('Grow', () => {
     expect(calls.markHarvested).toHaveBeenCalledWith({ slot: 1 })
   })
 
+  it('splits the protocol and the pods into tabs, remembers the last, and opens on the pods for a linked pod', () => {
+    const { unmount, rerender } = render(<GrowPage />)
+    expect(screen.getByRole('tab', { name: 'Pods' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByLabelText('Pod list')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Protocol' }))
+    expect(screen.queryByLabelText('Pod list')).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Tower' })).toBeNull()
+    expect(screen.getByRole('tabpanel').id).toBe('grow-protocol')
+    // A pod linked while the page is open brings the pods back with it.
+    rerender(<GrowPage pod={2} />)
+    expect(screen.getByLabelText('Pod list')).toBeTruthy()
+    expect(screen.getByText('POD 2 · TOWER B')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Protocol' }))
+    unmount()
+    render(<GrowPage />)
+    expect(screen.getByRole('tab', { name: 'Protocol' }).getAttribute('aria-selected')).toBe('true')
+    cleanup()
+    render(<GrowPage tab="pods" />)
+    expect(screen.getByLabelText('Pod list')).toBeTruthy()
+  })
+
   it('switches to the tower and remembers it', () => {
     const { unmount } = render(<GrowPage />)
     fireEvent.click(screen.getByRole('tab', { name: 'Tower' }))
@@ -288,7 +309,7 @@ describe('Grow', () => {
     unmount()
     render(<GrowPage />)
     expect(screen.getByTestId('tower')).toBeTruthy()
-    fireEvent.click(screen.getByRole('tab', { name: 'Pods' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'List' }))
     expect(screen.queryByTestId('tower')).toBeNull()
   })
 
