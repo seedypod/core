@@ -114,7 +114,32 @@ export function ntfyLink(server: string, topic: string, unitName: string): strin
 }
 
 const NTFY_PRIORITY = { high: 4, default: 3, low: 2 } as const
-const NTFY_TAG: Record<NotifyEvent['group'], string> = { alerts: 'warning', reminders: 'seedling', autopilot: 'robot', watering: 'droplet', lights: 'bulb', test: 'wave' }
+
+type Emoji = readonly [char: string, shortcode: string]
+const WARNING: Emoji = ['⚠️', 'warning']
+const SEEDLING: Emoji = ['🌱', 'seedling']
+const HARVEST: Emoji = ['🧺', 'basket']
+const THIN: Emoji = ['✂️', 'scissors']
+const FEED: Emoji = ['🥄', 'spoon']
+const CAMERA: Emoji = ['📷', 'camera']
+const SETUP: Emoji = ['🛠️', 'hammer_and_wrench']
+const KIND_EMOJI: Record<string, Emoji> = {
+  water_low: ['🚱', 'non-potable_water'], pump_fault: WARNING, dose_fault: ['🧪', 'test_tube'], over_temp: ['🌡️', 'thermometer'], hal_offline: ['🔌', 'electric_plug'], mirror_failed: ['☁️', 'cloud'],
+  camera_missing: CAMERA, camera_link_upper: CAMERA, camera_link_lower: CAMERA, camera_hub_flaky: CAMERA,
+  pump_schedule_missed: ['⏰', 'alarm_clock'], watering_followed: ['💧', 'droplet'], setup_light_schedule: SETUP, setup_pump_schedule: SETUP, setup_water_sensor: SETUP,
+  reminder_thinning: THIN, chore_thin: THIN, reminder_harvest: HARVEST, reminder_first_harvest: HARVEST, reminder_nutrients: FEED, chore_feed: FEED,
+  reminder_root_check: ['🔍', 'mag'], reminder_sow: SEEDLING, reminder_schedule_switch: ['🗓️', 'spiral_calendar'], chore_top_off: ['🚰', 'potable_water'],
+}
+
+/** The one emoji that leads an event's line: the character for Discord, Slack and JSON, the shortcode for ntfy's `tags`, which ntfy shows as that emoji. */
+export function emojiFor(e: NotifyEvent): Emoji {
+  if (e.type === 'cleared') return ['✅', 'white_check_mark']
+  if (e.group === 'test') return ['🔔', 'bell']
+  if (e.group === 'autopilot') return ['🤖', 'robot']
+  if (e.group === 'watering') return e.data.endedBy === 'fault' ? WARNING : ['💧', 'droplet']
+  if (e.group === 'lights') return e.data.to === 0 ? ['🌙', 'crescent_moon'] : Number(e.data.to) < Number(e.data.from) ? ['🔅', 'low_brightness'] : ['💡', 'bulb']
+  return KIND_EMOJI[String(e.data.kind)] ?? (e.group === 'reminders' ? SEEDLING : WARNING)
+}
 
 export interface OutboundRequest {
   url: string
@@ -133,17 +158,17 @@ async function sign(secret: string, body: string): Promise<string> {
 
 export async function buildRequest(c: NotifyConfig, e: NotifyEvent): Promise<OutboundRequest> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const [emoji, shortcode] = emojiFor(e)
   if (c.target === 'ntfy') {
-    const tags = [e.type === 'cleared' ? 'white_check_mark' : NTFY_TAG[e.group]]
-    const body = JSON.stringify({ topic: c.topic, title: `${c.unitName}: ${e.title}`, message: e.message || e.title, priority: NTFY_PRIORITY[e.priority], tags })
+    const body = JSON.stringify({ topic: c.topic, title: `${c.unitName}: ${e.title}`, message: e.message || e.title, priority: NTFY_PRIORITY[e.priority], tags: [shortcode] })
     return { url: `${c.server.replace(/\/$/, '')}/`, headers, body }
   }
-  const line = e.message ? `${e.title}: ${e.message}` : e.title
+  const line = `${emoji} ${e.message ? `${e.title}: ${e.message}` : e.title}`
   const body = c.format === 'discord'
     ? JSON.stringify({ username: c.unitName, content: `**${c.unitName}** · ${line}` })
     : c.format === 'slack'
       ? JSON.stringify({ text: `*${c.unitName}* · ${line}` })
-      : JSON.stringify({ event: e.group === 'test' ? 'test' : `${e.group}.${e.type}`, at: e.at, unit: c.unitName, title: e.title, message: e.message, priority: e.priority, data: e.data })
+      : JSON.stringify({ event: e.group === 'test' ? 'test' : `${e.group}.${e.type}`, at: e.at, unit: c.unitName, title: e.title, emoji, message: e.message, priority: e.priority, data: e.data })
   if (c.secret) headers['x-seedypod-signature'] = await sign(c.secret, body)
   return { url: c.url, headers, body }
 }

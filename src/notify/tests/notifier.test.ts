@@ -165,7 +165,7 @@ describe('Notifier', () => {
     expect(sent).toHaveLength(0)
     light(0)
     await vi.advanceTimersByTimeAsync(3 * 60_000)
-    expect(sent.map(s => s.body)).toEqual([expect.objectContaining({ title: 'Gardyn: Light off', message: 'Turned off.', tags: ['bulb'], priority: 2 })])
+    expect(sent.map(s => s.body)).toEqual([expect.objectContaining({ title: 'Gardyn: Light off', message: 'Turned off.', tags: ['crescent_moon'], priority: 2 })])
   })
 
   it('retries server errors with backoff, gives up after four tries, and never logs the URL', async () => {

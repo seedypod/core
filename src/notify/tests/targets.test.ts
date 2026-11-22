@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { alertTitle, buildRequest, enabledGroups, formatFor, formatProblem, groupOf, maskUrl, newTopic, ntfyLink, urlProblem, type NotifyEvent } from '../targets'
+import { alertTitle, buildRequest, emojiFor, enabledGroups, formatFor, formatProblem, groupOf, maskUrl, newTopic, ntfyLink, urlProblem, type NotifyEvent } from '../targets'
 
 const event: NotifyEvent = { group: 'alerts', type: 'raised', title: 'Water low', message: 'Tank at 8%', priority: 'high', at: '2026-11-20T10:00:00.000Z', data: { kind: 'water_low' } }
 
@@ -61,20 +61,36 @@ describe('notification targets', () => {
     expect(ntfyLink('http://ntfy.local:8080/', 'seedypod-abc', 'G')).toBe('ntfy://ntfy.local:8080/seedypod-abc?display=G&secure=false')
   })
 
+  it('leads each event with one emoji', () => {
+    const of = (e: Partial<NotifyEvent>) => emojiFor({ ...event, ...e })[0]
+    expect(of({})).toBe('🚱')
+    expect(of({ data: { kind: 'camera_link_lower' } })).toBe('📷')
+    expect(of({ data: { kind: 'backup_stale' } })).toBe('⚠️')
+    expect(of({ group: 'reminders', data: { kind: 'reminder_harvest' } })).toBe('🧺')
+    expect(of({ group: 'reminders', data: { kind: 'reminder_new' } })).toBe('🌱')
+    expect(of({ group: 'autopilot', data: { kind: 'autopilot_4' } })).toBe('🤖')
+    expect(of({ type: 'cleared' })).toBe('✅')
+    expect(of({ group: 'test', type: 'test' })).toBe('🔔')
+    expect(of({ group: 'watering', type: 'ran', data: { endedBy: 'schedule' } })).toBe('💧')
+    expect(of({ group: 'watering', type: 'ran', data: { endedBy: 'fault' } })).toBe('⚠️')
+    expect(['0>80', '40>80', '80>40', '80>0'].map(m => of({ group: 'lights', type: 'changed', data: { from: Number(m.split('>')[0]), to: Number(m.split('>')[1]) } }))).toEqual(['💡', '💡', '🔅', '🌙'])
+    expect(emojiFor({ ...event, type: 'cleared' })[1]).toBe('white_check_mark')
+  })
+
   it('publishes to ntfy as JSON at the server root', async () => {
     const r = await buildRequest({ target: 'ntfy', server: 'https://ntfy.sh/', topic: 'seedypod-abc', unitName: 'Gardyn' }, event)
     expect(r.url).toBe('https://ntfy.sh/')
-    expect(JSON.parse(r.body)).toEqual({ topic: 'seedypod-abc', title: 'Gardyn: Water low', message: 'Tank at 8%', priority: 4, tags: ['warning'] })
+    expect(JSON.parse(r.body)).toEqual({ topic: 'seedypod-abc', title: 'Gardyn: Water low', message: 'Tank at 8%', priority: 4, tags: ['non-potable_water'] })
     const cleared = await buildRequest({ target: 'ntfy', server: 'https://ntfy.sh', topic: 't', unitName: 'G' }, { ...event, type: 'cleared', priority: 'low', message: '' })
     expect(JSON.parse(cleared.body)).toMatchObject({ message: 'Water low', priority: 2, tags: ['white_check_mark'] })
   })
 
   it('shapes the webhook body for each format', async () => {
     const hook = { target: 'webhook' as const, url: 'https://x.test/h', secret: null, unitName: 'Gardyn' }
-    expect(JSON.parse((await buildRequest({ ...hook, format: 'discord' }, event)).body)).toEqual({ username: 'Gardyn', content: '**Gardyn** · Water low: Tank at 8%' })
-    expect(JSON.parse((await buildRequest({ ...hook, format: 'slack' }, { ...event, message: '' })).body)).toEqual({ text: '*Gardyn* · Water low' })
+    expect(JSON.parse((await buildRequest({ ...hook, format: 'discord' }, event)).body)).toEqual({ username: 'Gardyn', content: '**Gardyn** · 🚱 Water low: Tank at 8%' })
+    expect(JSON.parse((await buildRequest({ ...hook, format: 'slack' }, { ...event, message: '' })).body)).toEqual({ text: '*Gardyn* · 🚱 Water low' })
     const json = await buildRequest({ ...hook, format: 'json' }, event)
-    expect(JSON.parse(json.body)).toEqual({ event: 'alerts.raised', at: event.at, unit: 'Gardyn', title: 'Water low', message: 'Tank at 8%', priority: 'high', data: { kind: 'water_low' } })
+    expect(JSON.parse(json.body)).toEqual({ event: 'alerts.raised', at: event.at, unit: 'Gardyn', title: 'Water low', emoji: '🚱', message: 'Tank at 8%', priority: 'high', data: { kind: 'water_low' } })
     expect(json.headers['x-seedypod-signature']).toBeUndefined()
     expect(JSON.parse((await buildRequest({ ...hook, format: 'json' }, { ...event, group: 'test', type: 'test' })).body).event).toBe('test')
   })
