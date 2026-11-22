@@ -61,7 +61,8 @@ only masked; paste a new one to replace it.
 
 ## What gets sent
 
-Each notification starts with an emoji: 🚱 water low, ⚠️ a pump fault,
+Each notification starts with an emoji: 🚱 water low, 📡 the tank
+level unreadable, ⚠️ a pump fault,
 🧪 a dosing lockout, 🌡️ the board too hot, 📷 a camera, 🔌 the hardware
 daemon, ☁️ the off-device copy, ⏰ a missed watering, 🛠️ setup left to do,
 🌱 ✂️ 🥄 🚰 🔍 🧺 reminders, 🤖 Autopilot, 💧 a pump run, 💡 the light on or

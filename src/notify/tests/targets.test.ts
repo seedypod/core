@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { UNREADABLE } from '../../lib/waterLow'
 import { alertTitle, buildRequest, emojiFor, enabledGroups, formatFor, formatProblem, groupOf, maskUrl, newTopic, ntfyLink, urlProblem, type NotifyEvent } from '../targets'
 
 const event: NotifyEvent = { group: 'alerts', type: 'raised', title: 'Water low', message: 'Tank at 8%', priority: 'high', at: '2026-11-20T10:00:00.000Z', data: { kind: 'water_low' } }
@@ -65,6 +66,8 @@ describe('notification targets', () => {
     const of = (e: Partial<NotifyEvent>) => emojiFor({ ...event, ...e })[0]
     expect(of({})).toBe('🚱')
     expect(of({ data: { kind: 'camera_link_lower' } })).toBe('📷')
+    expect(of({ data: { kind: 'water_low', detail: UNREADABLE } })).toBe('📡')
+    expect(of({ type: 'cleared', data: { kind: 'water_low', detail: UNREADABLE } })).toBe('✅')
     expect(of({ data: { kind: 'backup_stale' } })).toBe('⚠️')
     expect(of({ group: 'reminders', data: { kind: 'reminder_harvest' } })).toBe('🧺')
     expect(of({ group: 'reminders', data: { kind: 'reminder_new' } })).toBe('🌱')

@@ -3,6 +3,7 @@
  * each target expects, and the rules a target URL must pass.
  */
 import { ALERT_LABEL } from '../lib/alertLabels'
+import { UNREADABLE } from '../lib/waterLow'
 
 export const NOTIFY_GROUPS = ['alerts', 'reminders', 'autopilot', 'watering', 'lights'] as const
 export type NotifyGroup = typeof NOTIFY_GROUPS[number]
@@ -137,6 +138,7 @@ export function emojiFor(e: NotifyEvent): Emoji {
   if (e.group === 'test') return ['🔔', 'bell']
   if (e.group === 'autopilot') return ['🤖', 'robot']
   if (e.group === 'watering') return e.data.endedBy === 'fault' ? WARNING : ['💧', 'droplet']
+  if (e.data.kind === 'water_low' && e.data.detail === UNREADABLE) return ['📡', 'satellite']
   if (e.group === 'lights') return e.data.to === 0 ? ['🌙', 'crescent_moon'] : Number(e.data.to) < Number(e.data.from) ? ['🔅', 'low_brightness'] : ['💡', 'bulb']
   return KIND_EMOJI[String(e.data.kind)] ?? (e.group === 'reminders' ? SEEDLING : WARNING)
 }
