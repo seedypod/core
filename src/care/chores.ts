@@ -10,6 +10,7 @@
  */
 import type { Reading, SensorId } from '../hardware/contract'
 import type { HalSnapshot } from '../hardware/types'
+import { systemFor, toDisplay } from '../lib/units'
 import { type Catalog, findPlant, plantFacts } from '../plants/catalog'
 import { catalogFor } from '../plants/custom'
 import type { Pod, Store, TankActionKind } from '../store/types'
@@ -55,6 +56,7 @@ export const CLEAN_DAYS = 3 * REFRESH_DAYS
 const TOP_UP_PCT = 8
 /** "Soon" is within this many days of due, on a calendar or a projection. */
 const SOON_DAYS = 2
+const L_PER_GAL = 3.785411784
 /** After a logged top-off or feed, how long the reading gets to catch up before it is believed again. */
 export const SETTLE_MS = 60 * 60_000
 
@@ -151,6 +153,26 @@ function settle(c: Chore, done: { at: number, kind: TankActionKind } | null, now
   return { ...c, state: 'ok', dueAt: null, reason: `${c.reason.split(':')[0]}, but a ${DONE_LABEL[done.kind]} was logged ${Math.max(1, Math.round(ago / 60_000))} min ago: waiting for the reading to settle.` }
 }
 
+/** Litres in the owner's units: "10.8 L", or "2.9 gal" with °F picked. */
+function volume(store: Store, litres: number): string {
+  const v = toDisplay(Math.round(litres * 10) / 10, 'L', systemFor(store.settings.get().temperatureUnit))
+  return `${v.value} ${v.unit}`
+}
+
+/** Teaspoons to the nearest quarter, as a recipe writes them: 1.25 is "1 1/4 tsp". */
+export function tsp(n: number): string {
+  const q = Math.max(1, Math.round(n * 4))
+  const whole = Math.floor(q / 4)
+  const frac = ['', '1/4', '1/2', '3/4'][q % 4]
+  return `${[whole || '', frac].filter(Boolean).join(' ')} tsp`
+}
+
+/** A per-gallon Gardyn Plant Food rate for the whole tank: "2 1/2 tsp for a full 19 L tank". */
+function fullTank(store: Store, perGallon: number): string {
+  const litres = store.settings.get().tankCapacityL
+  return `${tsp(perGallon * litres / L_PER_GAL)} for a full ${volume(store, litres)} tank`
+}
+
 function topOff(store: Store, snap: HalSnapshot, now: Date, planted: Pod[]): Chore {
   const kinds: TankActionKind[] = ['top_off', 'refresh']
   const done = lastDone(store, kinds)
@@ -163,7 +185,7 @@ function topOff(store: Store, snap: HalSnapshot, now: Date, planted: Pod[]): Cho
   const drop = tankDropPerDay(store, now)
   const falling = drop ? `, falling ${drop}% a day` : ''
   const base = { ...c, basis: 'reading' as const, readings: [asReading('water_level_pct', reading)], citations: [CITE.tankHalfFull] }
-  if (level < TANK_MIN_PCT) return settle({ ...base, state: 'due', dueAt: now.toISOString(), reason: `Tank at ${Math.round(level)}%${falling}: below half, so top it off. Keep it at least half full.` }, done, now)
+  if (level < TANK_MIN_PCT) return settle({ ...base, state: 'due', dueAt: now.toISOString(), reason: `Tank at ${Math.round(level)}%${falling}: below half. Add about ${volume(store, store.settings.get().tankCapacityL * (100 - level) / 100)} of water to fill it, and keep it at least half full.` }, done, now)
   const toHalf = drop ? (level - TANK_MIN_PCT) / drop : null
   if (toHalf !== null && toHalf <= SOON_DAYS) return { ...base, state: 'soon', dueAt: iso(now.getTime() + toHalf * DAY_MS), reason: `Tank at ${Math.round(level)}%${falling}: below half in about ${round1(toHalf)} d.` }
   return { ...base, state: 'ok', dueAt: toHalf === null ? null : iso(now.getTime() + toHalf * DAY_MS), reason: `Tank at ${Math.round(level)}%${falling}${toHalf === null ? '' : `: half full in about ${Math.round(toHalf)} d`}.` }
@@ -180,8 +202,8 @@ function feed(store: Store, snap: HalSnapshot, now: Date, planted: Pod[]): Chore
     if (weekly <= 0) return { ...c, citations: [CITE.plantFood, CITE.dosesByProduct], state: 'ok', basis: 'timeline', dueAt: null, readings: [], reason: `Feed reminders are off in Settings → Grow reminders (${why}).` }
     const every = done ? weekly : SPROUT_DOSE_DAYS
     const rule = done
-      ? `Gardyn adds plant food with the weekly top-off: 1/2 tsp per gallon of Gardyn Plant Food in early growth, 1 tsp once mature. Other products dose differently.`
-      : `The first feed, Gardyn's sprout dose of 1/4 tsp Gardyn Plant Food per gallon, goes in once most yCubes have sprouted, usually within ${SPROUT_DOSE_DAYS} d.`
+      ? `Gardyn adds plant food with the weekly top-off: 1/2 tsp per gallon of Gardyn Plant Food in early growth (${fullTank(store, 0.5)}), 1 tsp once mature (${fullTank(store, 1)}). Other products dose differently.`
+      : `The first feed, Gardyn's sprout dose of 1/4 tsp Gardyn Plant Food per gallon (${fullTank(store, 0.25)}), goes in once most yCubes have sprouted, usually within ${SPROUT_DOSE_DAYS} d.`
     return onCalendar({ ...c, citations: [CITE.plantFood, CITE.dosesByProduct] }, { every, from: anchor(store, kinds, planted), now, why: `Calendar guess, ${why}`, rule, none: 'nothing logged or planted to count from.' })
   }
   const raw = reading.value
@@ -189,7 +211,7 @@ function feed(store: Store, snap: HalSnapshot, now: Date, planted: Pod[]): Chore
   const t = EC_TARGETS[group]
   const band = `${t.min.toFixed(1)}–${t.max.toFixed(1)} mS/cm for ${group}`
   const base = { ...c, basis: 'reading' as const, dueAt: null, readings: [asReading('ec', reading)], citations: [CITE.phEc, CITE.dosesByProduct] }
-  if (raw < t.min) return settle({ ...base, state: 'due', dueAt: now.toISOString(), reason: `EC ${ec} mS/cm, below the ${band}: feed until it reads about ${t.min}. Dose to the reading; teaspoons differ between products.` }, done, now)
+  if (raw < t.min) return settle({ ...base, state: 'due', dueAt: now.toISOString(), reason: `EC ${ec} mS/cm, below the ${band}: feed until it reads about ${t.min}. With Gardyn Plant Food, start with ${fullTank(store, 0.5)} (1/2 tsp per gallon) and read again; other products differ.` }, done, now)
   if (raw > t.max) return { ...base, state: 'ok', reason: `EC ${ec} mS/cm, above the ${band}: don't feed. Topping off with plain water brings it down.` }
   if (raw < t.min + 0.1) return { ...base, state: 'soon', reason: `EC ${ec} mS/cm, at the low end of the ${band}: feed in the next few days.` }
   return { ...base, state: 'ok', reason: `EC ${ec} mS/cm, within the ${band}.` }
