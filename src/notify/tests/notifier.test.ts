@@ -80,6 +80,45 @@ describe('Notifier', () => {
     await vi.waitFor(() => expect(sent).toHaveLength(4))
   })
 
+  it('holds an unreadable tank level for 10 minutes, saying nothing if it reads again by then', async () => {
+    vi.useFakeTimers({ now: T0 })
+    const { store, sent, n } = setup()
+    const ts = T0.toISOString()
+    store.alerts.raise('water_low', 'water level sensor unavailable', ts)
+    await vi.advanceTimersByTimeAsync(9 * 60_000)
+    store.alerts.clear('water_low', ts)
+    await vi.advanceTimersByTimeAsync(20 * 60_000)
+    expect(sent).toHaveLength(0)
+
+    store.alerts.raise('water_low', 'water level sensor unavailable', ts)
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(sent.map(s => s.body)).toEqual([expect.objectContaining({ title: 'Gardyn: Tank level unreadable', message: 'No trusted tank reading for 10 minutes. Check the sensor under the lid.' })])
+    store.alerts.clear('water_low', ts)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sent[1]?.body).toMatchObject({ title: 'Gardyn: Tank level unreadable: resolved', message: 'The tank reads again.' })
+
+    // Held, then dismissed or stopped: nothing goes out later.
+    const held = store.alerts.raise('water_low', 'water level sensor unavailable', ts)
+    store.alerts.dismiss(held.id, ts)
+    store.alerts.raise('water_low', 'water level sensor unavailable', ts)
+    n.stop()
+    await vi.advanceTimersByTimeAsync(20 * 60_000)
+    expect(sent).toHaveLength(2)
+  })
+
+  it('sends a held unreadable tank level at once when it turns into a low reading', async () => {
+    vi.useFakeTimers({ now: T0 })
+    const { store, sent } = setup()
+    const ts = T0.toISOString()
+    store.alerts.raise('water_low', 'water level sensor unavailable', ts)
+    await vi.advanceTimersByTimeAsync(60_000)
+    store.alerts.raise('water_low', 'water distance 19.0 cm ≥ 16.0 cm', ts)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sent.map(s => s.body)).toEqual([expect.objectContaining({ title: 'Gardyn: Water low', message: 'water distance 19.0 cm ≥ 16.0 cm' })])
+    await vi.advanceTimersByTimeAsync(20 * 60_000)
+    expect(sent).toHaveLength(1)
+  })
+
   it('sends only the groups the owner picked, and nothing when off', async () => {
     const { store, sent, events } = setup({ notifyTarget: 'webhook', webhookUrl: 'https://x.test/h', notifyGroups: ['watering', 'autopilot'] })
     store.alerts.raise('water_low', 'low', T0.toISOString())

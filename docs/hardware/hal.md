@@ -171,7 +171,10 @@ Semantics worth knowing:
   `water_low_cm` raises it at once, no reading raises it on the third such round
   of the 6 (or on the first after boot), and it clears after 6 good rounds in a row,
   so the hold scales with `telemetry_interval_s`. A reading flagged `suspect`, with
-  fewer than half the pings answering, counts as no reading.
+  fewer than half the pings answering, counts as no reading. A round with no reading
+  taken while a camera still was being captured is skipped instead: on the Pi
+  Zero's one core, `fswebcam` starves the ranger's wait on its echo, so those
+  rounds say nothing about the water. A low reading in one still counts.
 - **Light**: `level` 0–100, no interlock; `{"on":true}` without a level
   restores the last on-level. The level is persisted and restored on boot.
   Every change fades, from any source, even in perceived brightness rather than
