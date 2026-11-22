@@ -3,6 +3,7 @@ import { ArrowLeftRight, Box, EyeOff, LayoutGrid, LoaderCircle, Minus, Pencil, P
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
+import { thinText } from '@/src/components/Grow/PlantCare'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
 import { SwapBanner, SwapProgress } from '@/src/components/Grow/SwapBanner'
 import { PLANNED_FORM, podSide, type PodStatus } from '@/src/components/Grow/towerLayout'
@@ -12,6 +13,7 @@ import { useSwapPods } from '@/src/components/Grow/useSwapPods'
 import { Button, Card, CardHeader, GhostIcon, InlineError, SectionLabel } from '@/src/components/ds/core'
 import { SegmentedControl, TextField } from '@/src/components/ds/forms'
 import { PageHeader } from '@/src/components/ds/layout'
+import { plantFacts } from '@/src/plants/catalog'
 import { trpc } from '@/src/utils/trpc'
 import { CustomPlantDialog, type EditablePlant } from '@/src/components/Plan/CustomPlantDialog'
 import { PodPanel } from '@/src/components/Plan/PodPanel'
@@ -335,6 +337,7 @@ export function PlanPage() {
   const shownMove = hovered ?? openMove
   const highlight = shownMove ? [shownMove.from, shownMove.to] : []
   const openPlantId = openSlot ? bySlot.get(openSlot.slot)?.plantId ?? everything.data?.plants.find(p => p.name === planted.get(openSlot.slot)?.plant)?.id ?? null : null
+  const openPlant = openPlantId ? everything.data?.plants.find(p => p.id === openPlantId) : undefined
 
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-4">
@@ -421,6 +424,7 @@ export function PlanPage() {
               zone={(openSlot.zone ?? 'medium') as Zone}
               plant={bySlot.get(openSlot.slot)?.plantName ?? planted.get(openSlot.slot)?.plant ?? null}
               plantId={openPlantId}
+              thin={openPlant && thinText(plantFacts(openPlant))}
               reason={bySlot.get(openSlot.slot)?.reason}
               planted={planted.has(openSlot.slot)}
               move={openMove?.text}

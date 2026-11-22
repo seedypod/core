@@ -12,6 +12,8 @@ interface Props {
   /** The plant in the pod, planned or in the tower now, by name and catalog id (null when the catalog doesn't know it). */
   plant: string | null
   plantId: string | null
+  /** How many sprouts of it to keep when thinning, as the Grow page words it; none when the catalog doesn't know it. */
+  thin?: string
   /** Why the plan put it here; none for a pod in the tower now. */
   reason?: string
   planted: boolean
@@ -34,7 +36,7 @@ interface Props {
  * instead (those suited to its light first), the zones the plan may use for
  * that plant, and Swap. Planned, planted and empty pods all edit the same way.
  */
-export function PodPanel({ slot, zone, plant, plantId, reason, planted, move, plants, zones, onZones, onPlant, onSwap, onClose }: Props) {
+export function PodPanel({ slot, zone, plant, plantId, thin, reason, planted, move, plants, zones, onZones, onPlant, onSwap, onClose }: Props) {
   const suited = plants.filter(p => p.zone === zone)
   const others = plants.filter(p => p.zone !== zone)
   const about = reason ? `Planned: ${reason}.` : planted ? 'In the tower now.' : 'Nothing planned here.'
@@ -82,6 +84,12 @@ export function PodPanel({ slot, zone, plant, plantId, reason, planted, move, pl
           <ChevronDown size={16} className="pointer-events-none shrink-0 text-fg-2" />
         </span>
       </label>
+      {thin && (
+        <div className="-mt-3 flex items-center justify-between gap-3 border-b border-line/70 py-2.5 text-[13px]">
+          <span className="shrink-0 text-fg-2">Thinning</span>
+          <span className="font-mono">{thin}</span>
+        </div>
+      )}
       {zones && (
         <div className="flex flex-col gap-1.5 text-[13px]">
           <div className="flex items-center justify-between gap-3">

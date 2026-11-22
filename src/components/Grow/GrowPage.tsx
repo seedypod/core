@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowLeftRight, Box, Camera, ChevronDown, List, Trash2, X } from 'lucide-react'
+import { ArrowLeftRight, Box, Camera, ChevronDown, List, Scissors, Trash2, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button, InlineError } from '@/src/components/ds/core'
 import { Modal } from '@/src/components/ds/feedback'
@@ -8,8 +8,10 @@ import { cn } from '@/lib/utils'
 import { apiBase, trpc } from '@/src/utils/trpc'
 import { LineChart } from '@/src/components/ds/charts'
 import { cameraOf, podRegions, type RegionCalibration } from '@/src/vision/regions'
+import { thinCounts } from '@/src/care/chores'
+import { makeCatalog, plantFacts } from '@/src/plants/catalog'
 import { CATALOG } from './plants/catalog'
-import { PlantCare } from './PlantCare'
+import { PlantCare, thinShort, thinText } from './PlantCare'
 import { PlantModel } from './PlantModel'
 import { ProtocolCard } from './ProtocolCard'
 import { SwapBanner, SwapProgress } from './SwapBanner'
@@ -120,6 +122,8 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
   const trends = trpc.vision.podTrends.useQuery()
   const sensors = trpc.sensors.latest.useQuery()
   const light = trpc.light.get.useQuery()
+  // The unit's own plants, so a custom plant's pod gets its thinning count too.
+  const custom = trpc.planner.catalog.useQuery({ custom: true })
   // `?pod=N` (from Home, the sidebar and search) opens that pod until another is picked.
   const [selected, setSelected] = useState<number | null>(() => {
     const n = Number(new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('pod'))
@@ -186,6 +190,14 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
   const shown: View = noWebGL ? 'pods' : view
   const cycle = grow.data?.cycle
   const length = settings.data?.harvestReminderDays ?? 0
+  // While the seedlings are young each planted pod says how many sprouts to keep, so none needs opening to find out.
+  const plants = makeCatalog(custom.data?.plants ?? [])
+  const toThin = cycle?.stage === 'germination' || cycle?.stage === 'seedling' ? all.filter(p => p.plant && p.status !== 'empty' && p.status !== 'harvest') : []
+  const thinBySlot = new Map(toThin.flatMap((p) => {
+    const plant = plants.find(p.plant as string)
+    return plant ? [[p.slot, plantFacts(plant)] as const] : []
+  }))
+  const thinLine = toThin.length ? thinCounts(toThin, plants) : ''
   const count = (s: PodShown) => towerPods.filter(p => shownOf.get(p.slot) === s).length
   const counts = [
     { label: 'growing', n: towerPods.length - count('ready') - count('attention') - count('empty'), token: SHOWN_TOKEN.growing },
@@ -260,6 +272,12 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
           <div className="min-w-0 flex-1 basis-[480px]">
             {swapping !== null && <SwapBanner slot={swapping} plant={all.find(p => p.slot === swapping)?.plant} onCancel={() => setSwapping(null)} />}
             {busy.length > 0 && <SwapProgress a={busy[0] as number} b={busy[1] as number} />}
+            {thinLine && (
+              <p data-testid="thin-counts" className="mb-2.5 flex gap-2 text-[13px] leading-normal text-fg-2">
+                <Scissors size={14} className="mt-[3px] shrink-0" aria-hidden="true" />
+                {`Thin ${thinLine}.`}
+              </p>
+            )}
             {swapPods.error && <InlineError>{swapPods.error.message}</InlineError>}
             {shown === 'tower' && (
               <TowerView
@@ -283,6 +301,7 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
                       const s = shownOf.get(p.slot) ?? 'empty'
                       const cover = p.harvest?.cover ?? p.green ?? null
                       const picked = selected === p.slot
+                      const thin = thinBySlot.get(p.slot)
                       return (
                         <button
                           key={p.slot}
@@ -304,6 +323,7 @@ export function GrowPage({ tab: asked, pod }: { tab?: GrowTab, pod?: number } = 
                           <span className="size-[7px] shrink-0 rounded-full" style={{ background: s === 'empty' ? 'var(--border-2)' : SHOWN_TOKEN[s] }} />
                           <PlantThumb plant={p.plant} stage={podForm(p)} size={32} fill={podFill(p)} />
                           <span className={cn('min-w-0 flex-1 truncate text-[13px]', s === 'empty' ? 'text-pod-empty' : 'text-fg')}>{p.plant ?? (s === 'empty' ? 'Empty · plant' : '')}</span>
+                          {thin && <span data-testid="pod-thin" className="shrink-0 font-mono text-[11px] text-fg-2" title={thin.thinEstimated ? `${thinText(thin)}, Gardyn’s rule for its kind` : thinText(thin)}>{thinShort(thin)}</span>}
                           {s !== 'empty' && cover !== null && <span className="font-mono text-[11px] text-fg-3" title={cover < GREEN_SEEN ? 'Too small for the cameras to read yet' : undefined}>{coverText(cover)}</span>}
                         </button>
                       )

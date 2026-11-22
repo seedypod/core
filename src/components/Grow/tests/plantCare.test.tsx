@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { careRows, PlantCare, thinText } from '../PlantCare'
+import { careRows, PlantCare, thinShort, thinText } from '../PlantCare'
 
 const state: { data: unknown } = { data: undefined }
 vi.mock('@/src/utils/trpc', () => ({ trpc: { planner: { care: { useQuery: () => ({ data: state.data }) } } } }))
@@ -19,6 +19,7 @@ afterEach(cleanup)
 describe('PlantCare', () => {
   it('words the thinning count, marking a rule for the kind', () => {
     expect([thinText({ thinTo: 3, thinEstimated: false }), thinText({ thinTo: 1, thinEstimated: true }), thinText({ thinTo: 'all', thinEstimated: false })]).toEqual(['Keep 3 sprouts', '~Keep 1 sprout', 'Don’t thin'])
+    expect([thinShort({ thinTo: 3, thinEstimated: false }), thinShort({ thinTo: 1, thinEstimated: true }), thinShort({ thinTo: 'all', thinEstimated: false })]).toEqual(['Keep 3', '~Keep 1', 'Don’t thin'])
   })
 
   it('lists only the facts Gardyn gives', () => {

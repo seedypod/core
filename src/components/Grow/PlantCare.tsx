@@ -13,6 +13,11 @@ export function thinText(c: Pick<Care, 'thinTo' | 'thinEstimated'>): string {
   return `${c.thinEstimated ? '~' : ''}Keep ${c.thinTo} sprout${c.thinTo === 1 ? '' : 's'}`
 }
 
+/** `thinText` without the noun, for a pod's row: "Keep 3", "~Keep 1", "Don't thin". */
+export function thinShort(c: Pick<Care, 'thinTo' | 'thinEstimated'>): string {
+  return c.thinTo === 'all' ? 'Don’t thin' : `${c.thinEstimated ? '~' : ''}Keep ${c.thinTo}`
+}
+
 /** The facts as rows, each only when Gardyn gives it. */
 export function careRows(c: Care): [string, string][] {
   const rows: [string, string | null][] = [

@@ -593,6 +593,24 @@ describe('PlanPage', () => {
     expect(cell(one).getAttribute('aria-pressed')).toBe('false')
   })
 
+  it('says how many sprouts to keep of the pod’s plant, a custom one by the rule for its kind', () => {
+    state.pods = [{ slot: 4, plant: 'Arugula', status: 'growing' }, { slot: 5, plant: 'Okra', status: 'seeded' }]
+    state.custom = [{ id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [2, 3], harvestEstimated: false, careLevel: null, size: 'large', inStore: false, custom: true, tolerates: [] }]
+    const { rerender } = render(<PlanPage />)
+    flat()
+    const cell = (slot: number) => screen.getByTestId('plan-grid').querySelector(`[data-slot="${slot}"]`) as HTMLElement
+    const thinning = () => panel().queryByText('Thinning')?.nextElementSibling?.textContent
+    fireEvent.click(cell(4))
+    expect(thinning()).toBe('Don’t thin')
+    fireEvent.change(panel().getByLabelText('Plant'), { target: { value: 'basil' } })
+    rerender(<PlanPage />)
+    expect(thinning()).toBe('Keep 3 sprouts')
+    fireEvent.click(cell(5))
+    expect(thinning()).toBe('~Keep 1 sprout')
+    fireEvent.click(cell(30))
+    expect(thinning()).toBeUndefined()
+  })
+
   it('lets a pod’s plant use other zones for this plan, and go back to its usual ones', () => {
     state.pods = [{ slot: 1, plant: 'Arugula', status: 'growing' }]
     render(<PlanPage />)

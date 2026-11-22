@@ -32,7 +32,7 @@ vi.mock('@/src/utils/trpc', () => {
       vision: { podTrends: query('trends'), regions: query('regions') },
       sensors: { latest: query('sensors') },
       light: { get: query('light') },
-      planner: { care: query('plantCare') },
+      planner: { care: query('plantCare'), catalog: query('catalog') },
     },
   }
 })
@@ -161,6 +161,52 @@ describe('Grow', () => {
     const care = within(screen.getByRole('complementary', { name: 'Pod 1' })).getByTestId('plant-care')
     expect(care.textContent).toContain('Keep 3 sprouts')
     expect(care.textContent).toContain('Cut above the nodes.')
+  })
+
+  it('gives each planted pod its sprouts to keep while the seedlings are young, custom plants by the rule for their kind', () => {
+    data.set('grow', { cycle: { id: 'c1', startedAt: '2026-11-18T00:00:00Z', endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 4 })
+    data.set('catalog', { plants: [{ id: 'lovage', name: 'Lovage', category: 'herb', size: 'normal', custom: true }], sources: {} })
+    data.set('pods', [
+      pod(1, { plant: 'Basil', status: 'seeded' }),
+      pod(2, { plant: 'Kale', status: 'seeded' }),
+      pod(3, { plant: 'Chives', status: 'seeded' }),
+      pod(4, { plant: 'Lovage', status: 'growing' }),
+      pod(5, { plant: 'Sorrel', status: 'seeded' }),
+      pod(6, { plant: 'Mystery', status: 'seeded' }),
+      pod(7, { plant: 'Romaine', status: 'harvest' }),
+      pod(8),
+    ])
+    const { rerender } = render(<GrowPage />)
+    const marker = (slot: number) => within(screen.getByRole('button', { name: new RegExp(`^${slot} `) })).queryByTestId('pod-thin')
+    expect([1, 2, 3, 4, 5, 6, 7, 8].map(s => marker(s)?.textContent ?? null)).toEqual(['Keep 3', 'Keep 1', 'Don’t thin', '~Keep 3', '~Keep 1', null, null, null])
+    expect(marker(1)?.getAttribute('title')).toBe('Keep 3 sprouts')
+    expect(marker(4)?.getAttribute('title')).toBe('~Keep 3 sprouts, Gardyn’s rule for its kind')
+    expect(screen.getByTestId('thin-counts').textContent).toBe('Thin pods 2 and 5 to 1 sprout, pods 1 and 4 to 3 and pod 6 to its plant\'s count.')
+
+    // Said on the 3D tower's tab too, through the seedling stage, and gone once the plants are past it.
+    fireEvent.click(screen.getByRole('tab', { name: 'Tower' }))
+    expect(screen.getByTestId('thin-counts')).toBeTruthy()
+    data.set('grow', { cycle: { id: 'c1', startedAt: '2026-11-10T00:00:00Z', endedAt: null, stage: 'seedling', notes: '', issued: [] }, day: 12 })
+    rerender(<GrowPage />)
+    expect(screen.getByTestId('thin-counts')).toBeTruthy()
+    data.set('grow', { cycle: { id: 'c1', startedAt: '2026-11-01T00:00:00Z', endedAt: null, stage: 'vegetative', notes: '', issued: [] }, day: 21 })
+    rerender(<GrowPage />)
+    expect(screen.queryByTestId('thin-counts')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'List' }))
+    expect(screen.queryAllByTestId('pod-thin')).toEqual([])
+  })
+
+  it('says nothing about thinning without a cycle, or when no pod is to be thinned', () => {
+    data.set('grow', { cycle: null, day: null })
+    data.set('pods', [pod(1, { plant: 'Basil', status: 'seeded' })])
+    const { rerender } = render(<GrowPage />)
+    expect(screen.queryByTestId('pod-thin')).toBeNull()
+    expect(screen.queryByTestId('thin-counts')).toBeNull()
+    data.set('grow', { cycle: { id: 'c1', startedAt: '2026-11-18T00:00:00Z', endedAt: null, stage: 'germination', notes: '', issued: [] }, day: 4 })
+    data.set('pods', [pod(1, { plant: 'Chives', status: 'seeded' }), pod(2)])
+    rerender(<GrowPage />)
+    expect(screen.getByTestId('pod-thin').textContent).toBe('Don’t thin')
+    expect(screen.queryByTestId('thin-counts')).toBeNull()
   })
 
   it('pictures each pod\'s plant in its row, and the picked one as a model to scrub from seedling to harvest', () => {
