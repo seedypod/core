@@ -39,10 +39,15 @@ Pick **Webhook**, paste the URL and pick a format:
 |---|---|---|
 | Discord | `{ "username", "content" }` | A Discord channel's webhook (Channel settings → Integrations → Webhooks) |
 | Slack | `{ "text" }` | A Slack incoming webhook |
-| JSON | `{ "event", "at", "unit", "title", "message", "priority", "data" }` | Home Assistant's webhook trigger, n8n, your own server |
+| JSON | `{ "event", "at", "unit", "title", "emoji", "message", "priority", "data" }` | Home Assistant's webhook trigger, n8n, your own server |
 
 A Discord or Slack URL sets its format for you, and the format picker only
 appears for other servers: Discord and Slack refuse any other shape.
+
+Each message leads with one emoji for what happened, like
+`**Gardyn** · 💧 Watering: Watered for 10 min, tank 83% full.` on Discord.
+JSON keeps `title` plain and puts the emoji in its own `emoji` field, so an
+automation matching on the title keeps working.
 
 `event` is `alerts.raised`, `alerts.cleared`, `reminders.raised`,
 `autopilot.raised`, `watering.ran`, `lights.changed` or `test`. With a **signing secret** set,
@@ -55,6 +60,14 @@ The URL must start with `https://`, except for a server on your own network
 only masked; paste a new one to replace it.
 
 ## What gets sent
+
+Each notification starts with an emoji: 🚱 water low, 📡 the tank
+level unreadable, ⚠️ a pump fault,
+🧪 a dosing lockout, 🌡️ the board too hot, 📷 a camera, 🔌 the hardware
+daemon, ☁️ the off-device copy, ⏰ a missed watering, 🛠️ setup left to do,
+🌱 ✂️ 🥄 🚰 🔍 🧺 reminders, 🤖 Autopilot, 💧 a pump run, 💡 the light on or
+brighter, 🔅 dimmer, 🌙 off, ✅ anything resolved and 🔔 a test. On a phone,
+ntfy shows it in front of the title.
 
 | Switch | Default | Sends |
 |---|---|---|

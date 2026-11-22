@@ -1,5 +1,9 @@
 # Docs update log
 
+## 2026-11-22
+
+- **Update**: [ADR 0032](adr/0032-outbound-notifications.md) and [Notifications](NOTIFICATIONS.md): each notification leads with one emoji for what happened; JSON webhooks get it in a new `emoji` field and keep `title` plain.
+
 ## 2026-11-20
 
 - **Update**: [ADR 0032](adr/0032-outbound-notifications.md) and [Notifications](NOTIFICATIONS.md) add a Lights group (off by default): on, off, dimmed or brightened once the light holds for 3 minutes, with who changed it.

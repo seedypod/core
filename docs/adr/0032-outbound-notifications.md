@@ -35,8 +35,13 @@ have to dig a URL out of Discord's or Slack's settings first.
   which has no such link, the owner types the topic. Core publishes JSON to
   the server root, `https://ntfy.sh` unless the owner runs their own.
 - **Webhook.** A URL and a format: plain JSON (`{ event, at, unit, title,
-  message, priority, data }`), Discord or Slack. A JSON body can be signed
+  emoji, message, priority, data }`), Discord or Slack. A JSON body can be signed
   with HMAC-SHA256 in `X-Seedypod-Signature: sha256=<hex>`.
+
+Each event leads with **one emoji** for what happened (`emojiFor` in
+`targets.ts`): inline before the title on Discord and Slack, as an ntfy
+shortcode tag, which the app shows in front of the title, and in its own
+`emoji` field in JSON, so `title` stays the plain string automations match on.
 
 **Event groups**, each a switch: Problems (`alerts`), Reminders, Autopilot
 on by default; Watering and Lights off by default, since they send several a
