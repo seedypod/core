@@ -27,6 +27,15 @@ describe('grow reminders', () => {
     expect(store.alerts.list({ activeOnly: true }).map(a => a.kind)).not.toContain('reminder_thinning')
   })
 
+  it('words the thinning reminder with each planted pod\'s count', () => {
+    const store = new MemoryStore()
+    store.grow.start('2026-01-01T00:00:00Z')
+    const at = '2026-01-01T00:00:00Z'
+    for (const [slot, plant] of [[1, 'Basil'], [2, 'Romaine'], [3, 'Arugula'], [4, 'Kale']] as const) store.pods.update(slot, { plant, status: 'seeded', plantedAt: at }, at)
+    new GrowEngine({ store, events: createEventBus(), now: () => new Date('2026-01-15T00:00:00Z') }).tick()
+    expect(store.alerts.list({ activeOnly: true }).find(a => a.kind === 'reminder_thinning')?.detail).toBe('Thin seedlings, cutting the extras at the base: pods 2 and 4 to 1 sprout and pod 1 to 3.')
+  })
+
   it('disabled reminders (0 days) never fire', () => {
     const store = new MemoryStore()
     store.settings.update({ thinningReminderDays: 0, rootCheckReminderDays: 0, harvestReminderDays: 0, nutrientReminderDays: 0 })

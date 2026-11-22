@@ -3,7 +3,7 @@ import type { Reading, SensorId } from '../../hardware/contract'
 import type { HalSnapshot } from '../../hardware/types'
 import { MemoryStore } from '../../store/memory'
 import type { TankActionKind } from '../../store/types'
-import { CHORE_IDS, chores, cropGroup, tankDropPerDay, trusted, type Chore, type ChoreId } from '../chores'
+import { CHORE_IDS, chores, cropGroup, tankDropPerDay, trusted, tsp, type Chore, type ChoreId } from '../chores'
 import { CITE } from '../knowledge'
 
 const NOW = new Date('2026-11-09T12:00:00Z')
@@ -53,8 +53,15 @@ describe('top off', () => {
     tankSeries(store, 56, 8)
     const c = one(store, snap({ water_level_pct: read(40, '%') }), 'top_off')
     expect(c).toMatchObject({ state: 'due', basis: 'reading', dueAt: NOW.toISOString(), citations: [CITE.tankHalfFull], doneKind: 'top_off' })
-    expect(c.reason).toBe('Tank at 40%, falling 8% a day: below half, so top it off. Keep it at least half full.')
+    expect(c.reason).toBe('Tank at 40%, falling 8% a day: below half. Add about 11.4 L of water to fill it, and keep it at least half full.')
     expect(c.readings).toEqual([{ sensor: 'water_level_pct', value: 40, unit: '%', quality: 'good', ts: NOW.toISOString() }])
+  })
+
+  it('says how much to add in the owner\'s units, and plant food for their tank', () => {
+    const store = garden()
+    store.settings.update({ temperatureUnit: 'F', tankCapacityL: 15.14 })
+    expect(one(store, snap({ water_level_pct: read(40, '%') }), 'top_off').reason).toBe('Tank at 40%: below half. Add about 2.4 gal of water to fill it, and keep it at least half full.')
+    expect(one(store, snap({}), 'feed').reason).toContain('(1 tsp for a full 4 gal tank)')
   })
 
   it('is soon when the fall will take it below half within 2 days, and ok otherwise', () => {
@@ -118,7 +125,7 @@ describe('feed', () => {
     const store = garden([['Arugula', 20], ['Buttercrunch', 20]])
     const c = one(store, snap({ ec: read(0.94, 'mS/cm') }), 'feed')
     expect(c).toMatchObject({ state: 'due', basis: 'reading', citations: [CITE.phEc, CITE.dosesByProduct] })
-    expect(c.reason).toBe('EC 0.9 mS/cm, below the 1.2–2.0 mS/cm for leafy greens: feed until it reads about 1.2. Dose to the reading; teaspoons differ between products.')
+    expect(c.reason).toBe('EC 0.9 mS/cm, below the 1.2–2.0 mS/cm for leafy greens: feed until it reads about 1.2. With Gardyn Plant Food, start with 2 1/2 tsp for a full 19 L tank (1/2 tsp per gallon) and read again; other products differ.')
   })
 
   it('holds off above the target, warns at its low end, and is ok inside it', () => {
@@ -138,7 +145,7 @@ describe('feed', () => {
     const store = garden([['Arugula', 10]])
     const first = one(store, snap({}, { caps: ['water_level_pct'] }), 'feed')
     expect(first).toMatchObject({ state: 'ok', basis: 'timeline', dueAt: ago(-4), citations: [CITE.plantFood, CITE.dosesByProduct] })
-    expect(first.reason).toBe('Calendar guess, no EC probe: 10 d since the first pod was planted. The first feed, Gardyn\'s sprout dose of 1/4 tsp Gardyn Plant Food per gallon, goes in once most yCubes have sprouted, usually within 14 d.')
+    expect(first.reason).toBe('Calendar guess, no EC probe: 10 d since the first pod was planted. The first feed, Gardyn\'s sprout dose of 1/4 tsp Gardyn Plant Food per gallon (1 1/4 tsp for a full 19 L tank), goes in once most yCubes have sprouted, usually within 14 d.')
     log(store, 'feed', 8)
     const weekly = one(store, snap({ ec: read(0.5, 'mS/cm', 'suspect') }), 'feed')
     expect(weekly).toMatchObject({ state: 'due', basis: 'timeline', lastDoneAt: ago(8) })
@@ -255,5 +262,11 @@ describe('chores', () => {
     const list = chores(store, snap({ water_level_pct: read(10, '%'), ec: read(0.1, 'mS/cm') }), NOW)
     expect(list.filter(c => c.id !== 'clean').every(c => c.state === 'ok' && c.reason === 'Nothing planted.')).toBe(true)
     expect(list.find(c => c.id === 'clean')?.state).toBe('due')
+  })
+})
+
+describe('tsp', () => {
+  it('rounds to the nearest quarter teaspoon, never below one', () => {
+    expect([0.1, 1.25, 2.51, 2, 5.02].map(tsp)).toEqual(['1/4 tsp', '1 1/4 tsp', '2 1/2 tsp', '2 tsp', '5 tsp'])
   })
 })

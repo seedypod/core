@@ -4,7 +4,9 @@
  * all see and acknowledge the same thing. Feeding is the Feed chore's job
  * (ADR-0029): it counts from the last logged feed, so it resets when one is.
  */
+import { thinCounts } from '../care/chores'
 import type { EventBus } from '../lib/eventBus'
+import { catalogFor } from '../plants/custom'
 import type { DeviceSettings, GrowCycle, GrowStage, Store } from '../store/types'
 
 export type ReminderKind = 'reminder_thinning' | 'reminder_root_check' | 'reminder_harvest' | 'reminder_sow'
@@ -99,11 +101,19 @@ export class GrowEngine {
     if (!cycle) return []
     const due = dueReminders(cycle, store.settings.get(), now)
     for (const r of due) {
-      store.alerts.raise(r.kind, r.detail, now.toISOString())
+      store.alerts.raise(r.kind, r.kind === 'reminder_thinning' ? this.thinDetail(r.detail) : r.detail, now.toISOString())
       store.grow.markIssued(r.kind)
       events.emit({ kind: 'mutation', path: `alerts.${r.kind}` })
     }
     return due
+  }
+
+  /** The thinning reminder with each planted pod's count, as the thin chore words it; the general rule with nothing planted. */
+  private thinDetail(rule: string): string {
+    const { store } = this.deps
+    const pods = store.pods.list().filter(p => p.plant && (p.status === 'seeded' || p.status === 'growing'))
+    const counts = thinCounts(pods, catalogFor(store))
+    return counts ? `Thin seedlings, cutting the extras at the base: ${counts}.` : rule
   }
 
   /** Acknowledging a reminder clears its alert (the chore is done). */
