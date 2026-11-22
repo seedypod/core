@@ -332,6 +332,7 @@ async fn main() -> anyhow::Result<()> {
     info!(unit = %unit_id, model = %system.model, sensors = ?system.caps.sensors, actuators = ?system.caps.actuators, "hald starting");
 
     let snapshot: SharedSnapshot = Arc::default();
+    let captures = engine::Captures::default();
     let engine = Engine::new(
         system.clone(),
         EngineConfig {
@@ -362,7 +363,8 @@ async fn main() -> anyhow::Result<()> {
         user: cfg.extra_sensors.clone(),
         factory: Some(built.factory),
         overlay: Some(overlay),
-    });
+    })
+    .with_captures(captures.clone());
 
     let (inbound_tx, inbound_rx) = std::sync::mpsc::channel::<Inbound>();
     let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Outbound>();
@@ -406,6 +408,7 @@ async fn main() -> anyhow::Result<()> {
         snapshot,
         cameras: Arc::new(built.cameras),
         camera_health: http::CameraHealth::default(),
+        captures,
         state_dir: state_dir.clone(),
         started: Instant::now(),
         mqtt_connected: mqtt_connected.clone(),

@@ -9,6 +9,7 @@
 //! decision. Dosing pumps likewise only through their `DoseGuard`.
 
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -288,6 +289,41 @@ pub struct Engine {
     water: WaterAlert,
     snapshot: SharedSnapshot,
     devices: Devices,
+    captures: Captures,
+}
+
+/// Camera stills in flight and started, shared with the HTTP server. On the Pi
+/// Zero's one core a capture starves the ranger's busy-wait on the echo, so a
+/// reading lost while one ran says nothing about the water.
+#[derive(Clone, Debug, Default)]
+pub struct Captures(Arc<(AtomicUsize, AtomicU64)>);
+
+/// Held for the length of one capture.
+pub struct Capturing(Captures);
+
+impl Captures {
+    pub fn begin(&self) -> Capturing {
+        self.0 .1.fetch_add(1, Ordering::SeqCst);
+        self.0 .0.fetch_add(1, Ordering::SeqCst);
+        Capturing(self.clone())
+    }
+
+    /// How many are running, and how many have started.
+    pub(crate) fn mark(&self) -> (usize, u64) {
+        (self.0 .0.load(Ordering::SeqCst), self.0 .1.load(Ordering::SeqCst))
+    }
+
+    /// Whether a capture ran at any point since `before`.
+    fn since(&self, before: (usize, u64)) -> bool {
+        let after = self.mark();
+        before.0 > 0 || after.0 > 0 || after.1 != before.1
+    }
+}
+
+impl Drop for Capturing {
+    fn drop(&mut self) {
+        self.0 .0 .0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Telemetry rounds the water alert looks back over: a minute at the default 10 s.
@@ -298,7 +334,8 @@ const WATER_RAISE_AT: usize = 3;
 /// The `water_low` alert, debounced. A tank lifted out leaves the ranger on stray
 /// echoes that alternate with no reading at all, and each raise is an alert row
 /// in core. So a reading at the limit raises at once, a lost reading only when
-/// lost ones pile up, and it clears after a whole window of good readings.
+/// lost ones pile up, and it clears after a whole window of good readings. A
+/// reading lost during a camera capture is skipped rather than counted.
 #[derive(Debug, Default)]
 struct WaterAlert {
     /// Newest last; `true` for a round that read low or read nothing.
@@ -313,7 +350,10 @@ impl WaterAlert {
         self.rounds.len() == WATER_WINDOW && self.rounds.iter().all(|b| !*b)
     }
 
-    fn observe(&mut self, distance: Option<f64>, low: f64) {
+    fn observe(&mut self, distance: Option<f64>, low: f64, capturing: bool) {
+        if distance.is_none() && capturing && !self.rounds.is_empty() {
+            return;
+        }
         let is_low = distance.is_some_and(|d| d >= low);
         let bad = is_low || distance.is_none();
         // With no history the first round decides: nothing says a silent ranger is a blip.
@@ -500,6 +540,7 @@ impl Engine {
             water: WaterAlert::default(),
             snapshot,
             devices: Devices::default(),
+            captures: Captures::default(),
         };
         let guard = engine.apply_guard();
         if guard.warn {
@@ -519,6 +560,13 @@ impl Engine {
 
     pub fn with_devices(mut self, devices: Devices) -> Self {
         self.devices = devices;
+        self
+    }
+
+    /// The camera captures the HTTP server runs, so the water alert can tell a
+    /// starved ranger from a silent one.
+    pub fn with_captures(mut self, captures: Captures) -> Self {
+        self.captures = captures;
         self
     }
 
@@ -860,6 +908,7 @@ impl Engine {
         let mut pump_a = None;
         let mut pump_v = None;
         let mut readings = Vec::new();
+        let before = self.captures.mark();
         for s in self.registry.sensors_mut() {
             has_ranger |= s.id() == SensorId::WaterDistance;
             match s.read() {
@@ -894,7 +943,8 @@ impl Engine {
         self.env.pump_current_a = pump_a;
         self.env.supply_v = pump_v;
         if let Some(low) = self.cfg.pump.water_low_cm {
-            self.water.observe(trusted_distance, low);
+            let capturing = self.captures.since(before);
+            self.water.observe(trusted_distance, low, capturing);
         }
         self.env.over_temp_signal = self.read_over_temp_signal();
         for (id, r) in readings {
@@ -3006,7 +3056,7 @@ mod tests {
         rounds
             .iter()
             .map(|d| {
-                a.observe(*d, 16.0);
+                a.observe(*d, 16.0, false);
                 a.active
             })
             .collect()
@@ -3101,6 +3151,89 @@ mod tests {
         assert!(e.water.active);
         assert_eq!(e.water.detail, "water level sensor unavailable");
         assert_eq!(e.env.water_distance_cm, Some(9.0));
+    }
+
+    #[test]
+    fn a_reading_lost_during_a_camera_capture_is_skipped_but_a_low_one_still_counts() {
+        let mut a = WaterAlert::default();
+        water_rounds(&mut a, &[Some(7.0); WATER_WINDOW]);
+        for _ in 0..WATER_WINDOW * 2 {
+            a.observe(None, 16.0, true);
+        }
+        assert!(!a.active, "a starved ranger is not low water");
+        assert!(a.all_good(), "skipped rounds leave the window as it was");
+        a.observe(Some(150.0), 16.0, true);
+        assert!(a.active);
+        assert_eq!(a.detail, "water distance 150.0 cm ≥ 16.0 cm");
+        // At boot there is nothing to hold: the first round still decides.
+        let mut fresh = WaterAlert::default();
+        fresh.observe(None, 16.0, true);
+        assert!(fresh.active);
+    }
+
+    #[test]
+    fn captures_tell_whether_one_ran_since_a_mark() {
+        let c = Captures::default();
+        let before = c.mark();
+        assert!(!c.since(before));
+        drop(c.begin());
+        assert!(c.since(before), "one that started and ended in between");
+        let idle = c.mark();
+        assert!(!c.since(idle));
+        let busy = c.begin();
+        assert!(c.since(idle), "one that started since");
+        assert!(c.since(c.mark()), "one still running");
+        drop(busy);
+        assert_eq!(c.mark(), (0, 2));
+    }
+
+    /// A ranger that answers, or times out while `None`.
+    struct Ranger(Arc<std::sync::Mutex<Option<f64>>>);
+
+    impl hal_core::device::Sensor for Ranger {
+        fn id(&self) -> SensorId {
+            SensorId::WaterDistance
+        }
+        fn probe(&mut self) -> Result<(), hal_core::device::DeviceError> {
+            Ok(())
+        }
+        fn read(&mut self) -> Result<Reading, hal_core::device::DeviceError> {
+            match *self.0.lock().unwrap() {
+                Some(cm) => Ok(Reading::new(cm, "cm")),
+                None => Err(hal_core::device::DeviceError::Timeout),
+            }
+        }
+    }
+
+    #[test]
+    fn a_ranger_silent_only_while_a_camera_captures_leaves_the_water_alert_down() {
+        let cm = Arc::new(std::sync::Mutex::new(Some(7.0)));
+        let mut registry = Registry::default();
+        registry.add_sensor(Box::new(Ranger(cm.clone())));
+        let captures = Captures::default();
+        let mut e = Engine::new(system(vec![]), cfg(false), registry, None, None, Arc::default())
+            .with_captures(captures.clone());
+        let mut now = Now {
+            instant: Instant::now(),
+            epoch_s: 1_793_419_043,
+            frac: Duration::ZERO,
+        };
+        e.boot(now);
+        let mut rounds = |e: &mut Engine, n: usize| {
+            for _ in 0..n {
+                now.advance(Duration::from_secs(10));
+                e.tick(now);
+            }
+        };
+        rounds(&mut e, WATER_WINDOW);
+        *cm.lock().unwrap() = None;
+        let busy = captures.begin();
+        rounds(&mut e, WATER_WINDOW * 2);
+        assert!(!e.water.active);
+        drop(busy);
+        rounds(&mut e, WATER_RAISE_AT);
+        assert!(e.water.active, "silent with no capture running is a lost sensor");
+        assert_eq!(e.water.detail, "water level sensor unavailable");
     }
 
     #[test]

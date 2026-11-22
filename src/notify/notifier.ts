@@ -8,6 +8,7 @@
 import type { LightSource } from '../control/light'
 import type { ActuatorState, PumpRun } from '../hardware/contract'
 import type { EventBus } from '../lib/eventBus'
+import { UNREADABLE } from '../lib/waterLow'
 import type { AlertRow, Store } from '../store/types'
 import { alertTitle, buildRequest, enabledGroups, groupOf, type NotifyConfig, type NotifyEvent } from './targets'
 
@@ -27,6 +28,11 @@ const MAX_QUEUE = 20
 const REPEAT_MS = 15 * 60_000
 /** A pump run that ended longer ago than this is the broker's retained copy, not a new run. */
 const STALE_RUN_MS = 5 * 60_000
+/**
+ * An unreadable tank level waits this long before it notifies: a camera capture
+ * or a busy minute can starve the ranger, and that clears by itself.
+ */
+const UNREADABLE_HOLD_MS = 10 * 60_000
 /** A light change waits this long for the next one, so a fade or a curve's ramp (a step a minute) sends one message. */
 const LIGHT_SETTLE_MS = 3 * 60_000
 /** A smaller move while the light stays on isn't worth a message. */
@@ -55,6 +61,8 @@ export class Notifier {
   private lightSent: number | null = null
   private lightNow = 0
   private lightTimer: ReturnType<typeof setTimeout> | null = null
+  /** Alerts raised but not yet sent, by row id: an unreadable tank level waiting out its hold. */
+  private held = new Map<number, ReturnType<typeof setTimeout>>()
   private undo: Array<() => void> = []
 
   constructor(private o: NotifierOptions) {}
@@ -72,18 +80,27 @@ export class Notifier {
       const row = raise(kind, detail, ts, opts)
       if (!this.active.has(row.id)) {
         this.active.add(row.id)
+        if (unreadable(row)) this.hold(row)
+        else this.alert(row, 'raised')
+      }
+      else if (this.held.has(row.id) && !unreadable(row)) {
+        this.release(row.id)
         this.alert(row, 'raised')
       }
       return row
     }
     a.clear = (kind, ts) => {
       const row = clear(kind, ts)
-      if (row && this.active.delete(row.id) && !row.acknowledgedAt) this.alert(row, 'cleared')
+      // One still on hold was never sent, so its clearing isn't either.
+      if (row && this.active.delete(row.id) && !this.release(row.id) && !row.acknowledgedAt) this.alert(row, 'cleared')
       return row
     }
     a.dismiss = (id, ts) => {
       const row = dismiss(id, ts)
-      if (row) this.active.delete(row.id)
+      if (row) {
+        this.active.delete(row.id)
+        this.release(row.id)
+      }
       return row
     }
     const unsub = this.o.events.subscribe((e) => {
@@ -97,6 +114,7 @@ export class Notifier {
     for (const u of this.undo.splice(0)) u()
     if (this.timer) clearTimeout(this.timer)
     if (this.lightTimer) clearTimeout(this.lightTimer)
+    for (const id of [...this.held.keys()]) this.release(id)
     this.timer = null
     this.lightTimer = null
     this.queue = []
@@ -128,17 +146,38 @@ export class Notifier {
     const now = this.now().getTime()
     const prev = this.sentAt.get(key)
     if (prev !== undefined && now - prev < REPEAT_MS) return
-    const title = group === 'autopilot' ? 'Autopilot' : alertTitle(row.kind)
+    const lost = unreadable(row)
+    const title = group === 'autopilot' ? 'Autopilot' : lost ? 'Tank level unreadable' : alertTitle(row.kind)
+    const message = type === 'cleared'
+      ? lost ? 'The tank reads again.' : 'Cleared by itself.'
+      : lost ? `No trusted tank reading for ${UNREADABLE_HOLD_MS / 60_000} minutes. Check the sensor under the lid.` : row.detail
     const sent = this.send({
       group,
       type,
       title: type === 'cleared' ? `${title}: resolved` : title,
-      message: type === 'cleared' ? 'Cleared by itself.' : row.detail,
+      message,
       priority: type === 'cleared' ? 'low' : group === 'alerts' ? 'high' : 'default',
       at: (type === 'cleared' ? row.clearedAt : row.raisedAt) ?? this.now().toISOString(),
       data: { kind: row.kind, id: row.id, detail: row.detail },
     })
     if (sent) this.sentAt.set(key, now)
+  }
+
+  /** Sends `row` once it has stayed up through the hold, unless it clears first. */
+  private hold(row: AlertRow): void {
+    this.held.set(row.id, setTimeout(() => {
+      this.held.delete(row.id)
+      this.alert(row, 'raised')
+    }, UNREADABLE_HOLD_MS))
+  }
+
+  /** Drops a held alert; false when `id` wasn't held. */
+  private release(id: number): boolean {
+    const t = this.held.get(id)
+    if (t === undefined) return false
+    clearTimeout(t)
+    this.held.delete(id)
+    return true
   }
 
   private pumpRun(run: PumpRun): void {
@@ -251,3 +290,6 @@ function fmtDuration(ms: number): string {
   const m = Math.floor(s / 60)
   return s % 60 ? `${m} min ${s % 60} s` : `${m} min`
 }
+
+/** hald's `water_low` for a ranger that didn't answer, rather than low water. */
+const unreadable = (row: AlertRow): boolean => row.kind === 'water_low' && row.detail === UNREADABLE

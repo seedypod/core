@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tracing::info;
 
-use crate::engine::{Inbound, SharedSnapshot};
+use crate::engine::{Captures, Inbound, SharedSnapshot};
 
 pub type SharedCamera = Arc<Mutex<Box<dyn Camera>>>;
 
@@ -71,6 +71,8 @@ pub struct AppState {
     pub snapshot: SharedSnapshot,
     pub cameras: Arc<BTreeMap<String, SharedCamera>>,
     pub camera_health: CameraHealth,
+    /// Shared with the engine: a capture starves the water ranger.
+    pub captures: Captures,
     /// Where `usb::record_boot` keeps its record.
     pub state_dir: PathBuf,
     pub started: Instant,
@@ -183,10 +185,12 @@ async fn camera(State(s): State<AppState>, Path(file): Path<String>) -> Response
         return (StatusCode::NOT_FOUND, format!("no camera {name:?}")).into_response();
     };
     let name = name.to_owned();
-    let (health, engine) = (s.camera_health.clone(), s.inbound.clone());
+    let (health, engine, captures) = (s.camera_health.clone(), s.inbound.clone(), s.captures.clone());
     let captured = tokio::task::spawn_blocking(move || {
         let mut c = cam.lock().unwrap_or_else(|e| e.into_inner());
+        let busy = captures.begin();
         let result = c.capture();
+        drop(busy);
         // Here, not after the await: a client that hangs up drops the handler, not this task.
         health.report(&name, result.as_ref().err().map(ToString::to_string), &engine);
         (result, c.damaged_frames())
@@ -224,9 +228,13 @@ async fn camera_full(State(s): State<AppState>, Path(file): Path<String>) -> Res
     let Some(cam) = s.cameras.get(name).cloned() else {
         return (StatusCode::NOT_FOUND, format!("no camera {name:?}")).into_response();
     };
-    let captured =
-        tokio::task::spawn_blocking(move || cam.lock().unwrap_or_else(|e| e.into_inner()).capture_full())
-            .await;
+    let captures = s.captures.clone();
+    let captured = tokio::task::spawn_blocking(move || {
+        let mut c = cam.lock().unwrap_or_else(|e| e.into_inner());
+        let _busy = captures.begin();
+        c.capture_full()
+    })
+    .await;
     match captured {
         Ok(Ok(bytes)) => (
             [
@@ -269,6 +277,21 @@ mod tests {
         fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
             std::thread::sleep(Duration::from_millis(100));
             Err(DeviceError::NotPresent)
+        }
+    }
+
+    /// Notes whether hald counted it as a capture in flight.
+    struct Watched(Captures, Arc<AtomicBool>);
+    impl Camera for Watched {
+        fn name(&self) -> &str {
+            "watched"
+        }
+        fn capture(&mut self) -> Result<Vec<u8>, DeviceError> {
+            self.1.store(self.0.mark().0 == 1, Ordering::SeqCst);
+            Ok(vec![0xFF, 0xD8, 0xFF, 0xD9])
+        }
+        fn capture_full(&mut self) -> Result<Vec<u8>, DeviceError> {
+            self.capture()
         }
     }
 
@@ -325,6 +348,7 @@ mod tests {
             snapshot,
             cameras: Arc::new(cameras),
             camera_health: CameraHealth::default(),
+            captures: Captures::default(),
             state_dir: std::env::temp_dir().join("hald-http-no-such-state"),
             started: Instant::now(),
             mqtt_connected: connected.clone(),
@@ -427,6 +451,24 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["unitId"], "u1");
         assert!(v["sensors"].is_object());
+    }
+
+    #[tokio::test]
+    async fn a_capture_counts_as_in_flight_for_the_water_alert_until_it_ends() {
+        let seen = Arc::new(AtomicBool::new(false));
+        let captures = Captures::default();
+        let (state, _rx) = state_with("watched", Box::new(Watched(captures.clone(), seen.clone())));
+        let app = router(AppState {
+            captures: captures.clone(),
+            ..state
+        });
+        let (st, _, _) = get_path(&app, "/camera/watched.jpg").await;
+        assert_eq!(st, StatusCode::OK);
+        assert!(seen.swap(false, Ordering::SeqCst));
+        let (st, _, _) = get_path(&app, "/camera/full/watched.jpg").await;
+        assert_eq!(st, StatusCode::OK);
+        assert!(seen.load(Ordering::SeqCst));
+        assert_eq!(captures.mark(), (0, 2));
     }
 
     #[tokio::test]

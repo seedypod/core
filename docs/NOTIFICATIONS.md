@@ -65,7 +65,10 @@ only masked; paste a new one to replace it.
 | Lights | off | The light turning on, off, dimming or brightening, and whether the schedule, Autopilot or a person did it |
 
 Each alert notifies once when it opens, not while it stays open. An alert
-that keeps coming and going notifies at most once every 15 minutes.
+that keeps coming and going notifies at most once every 15 minutes. A tank
+level the unit can't read waits 10 minutes before it notifies, as **Tank
+level unreadable**, and says nothing at all if the sensor reads again by then;
+a low reading in the meantime is sent straight away as **Water low**.
 
 A light change is sent once the light has held for three minutes, so a
 sunrise ramp or a fade is one message with where it ended up, not one a
