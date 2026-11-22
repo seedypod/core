@@ -1,3 +1,4 @@
+import type { SensorQuality } from './quality'
 import type { ActuatorCommand, ActuatorId, ActuatorState, Alert, AlertKind, ButtonPress, CalibrationCommand, CalibrationResult, DeviceInventory, DeviceResult, Limits, PumpGuardCommand, PumpRun, Reading, SensorId, SystemInfo } from './contract'
 
 export interface HalSnapshot {
@@ -10,6 +11,8 @@ export interface HalSnapshot {
   devices: DeviceInventory | null
   /** The pump's last run as hald recorded it; absent until one ends, and from an older hald. */
   lastRun?: PumpRun | null
+  /** Each sensor's flaky readings over the last hour and its last good one; absent where nothing counts them (the simulator). */
+  quality?: Partial<Record<SensorId, SensorQuality>>
 }
 
 export type HalEvent

@@ -12,7 +12,7 @@ import { appRouter } from '../../server/routers/app'
 import { createCallerFactory } from '../../server/trpc'
 import { MemoryStore } from '../../store/memory'
 import type { Schedule } from '../../store/types'
-import { CareEngine, SUSPECT_HOLD_MS } from '../engine'
+import { CareEngine } from '../engine'
 import { setupReport } from '../setup'
 
 const NOW = new Date('2026-11-09T12:00:00Z')
@@ -20,6 +20,8 @@ const T = NOW.toISOString()
 const light: Omit<Schedule, 'createdAt' | 'updatedAt'> = { id: 'day', kind: 'light', name: 'Day', enabled: true, days: 127, spec: { setpoints: [{ minute: 360, level: 80 }, { minute: 1200, level: 0 }] } }
 const pump: Omit<Schedule, 'createdAt' | 'updatedAt'> = { id: 'cycle', kind: 'pump', name: 'Cycle', enabled: true, days: 127, spec: { minute: 480, durationS: 300 } }
 const level = (quality: Reading['quality']): Reading => ({ ts: T, value: 62, unit: '%', quality })
+/** The tank level now, with `flaky` of the hour's `total` readings flaky. */
+const counted = (quality: Reading['quality'], flaky: number, total: number) => (s: HalSnapshot): HalSnapshot => ({ ...s, sensors: { ...s.sensors, water_level_pct: level(quality) }, quality: { water_level_pct: { flaky, total, lastGood: level('good') } } })
 
 function rig(snap: (s: HalSnapshot) => HalSnapshot = s => s, now: () => Date = () => NOW) {
   const hal = new SimHal({ tickMs: 0, now: () => NOW })
@@ -92,10 +94,24 @@ describe('setupReport', () => {
     expect(setupReport(store, hal.snapshot()).issues).toEqual([])
     reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('good') } }))
     expect(setupReport(store, hal.snapshot()).issues).toEqual([])
-    // Read suspect lately: still warned, until the engine lets it go.
-    expect(setupReport(store, hal.snapshot(), { suspectLately: true }).issues).toMatchObject([{ id: 'water_sensor_suspect', detail: expect.stringContaining('clears after 2 h of good readings') }])
-    reshape(s => ({ ...s, sensors: {} }))
-    expect(setupReport(store, hal.snapshot(), { suspectLately: true }).issues).toEqual([])
+  })
+
+  it('counts flaky tank readings: warns once half an hour\'s are, ignores the odd one, and holds through a restart', () => {
+    const { store, hal, reshape } = rig(counted('suspect', 20, 60))
+    expect(setupReport(store, hal.snapshot()).issues).toEqual([])
+    reshape(counted('good', 30, 60))
+    expect(setupReport(store, hal.snapshot()).issues).toMatchObject([{ id: 'water_sensor_suspect', detail: 'The tank level read flaky in 30 of 60 readings in the last hour: its pings disagree or too few come back. Top-offs go by its good readings only while most are good. This clears once fewer than 1 in 4 are flaky.' }])
+    store.alerts.raise('setup_water_sensor', 'up', T)
+    // Up, it stays until fewer than a quarter are flaky.
+    reshape(counted('good', 20, 60))
+    expect(setupReport(store, hal.snapshot()).issues).toHaveLength(1)
+    reshape(counted('good', 14, 60))
+    expect(setupReport(store, hal.snapshot()).issues).toEqual([])
+    // Too few readings to say, as after a restart: it stays as it was.
+    reshape(counted('good', 0, 5))
+    expect(setupReport(store, hal.snapshot()).issues).toMatchObject([{ detail: expect.stringContaining('keeps reading flaky') }])
+    store.alerts.clear('setup_water_sensor', T)
+    expect(setupReport(store, hal.snapshot()).issues).toEqual([])
   })
 })
 
@@ -170,28 +186,22 @@ describe('CareEngine', () => {
     events.emit({ kind: 'mutation', path: 'devices' })
     expect(active(store)).toEqual([])
 
-    reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('suspect') } }))
-    events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: level('suspect') } })
+    // The odd flaky reading says nothing; most of the hour's flaky raises it once, and the count updates in place.
+    const reading = (shape: (s: HalSnapshot) => HalSnapshot) => {
+      reshape(shape)
+      events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: level('suspect') } })
+    }
+    reading(counted('suspect', 5, 60))
+    expect(active(store)).toEqual([])
+    reading(counted('suspect', 31, 60))
     expect(active(store)).toEqual(['setup_water_sensor'])
     const first = store.alerts.list({ activeOnly: true })[0]?.id
-    // Back to good doesn't clear it on the reading, nor on the next tick: a flapping sensor would raise it again.
-    const good = () => {
-      reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('good') } }))
-      events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: level('good') } })
-    }
-    good()
-    expect(active(store)).toEqual(['setup_water_sensor'])
+    reading(counted('suspect', 40, 60))
     vi.advanceTimersByTime(15 * 60_000)
-    expect(active(store)).toEqual(['setup_water_sensor'])
-    // Suspect again within the hold: the same alert, and the hold starts over.
-    vi.advanceTimersByTime(30 * 60_000)
-    reshape(s => ({ ...s, sensors: { ...s.sensors, water_level_pct: level('suspect') } }))
-    events.emit({ kind: 'hal', event: { type: 'sensor', id: 'water_level_pct', reading: level('suspect') } })
-    good()
-    vi.advanceTimersByTime(SUSPECT_HOLD_MS - 15 * 60_000)
     expect(store.alerts.list({ activeOnly: true }).map(a => a.id)).toEqual([first])
-    // Good for the whole hold: it clears on the tick.
-    vi.advanceTimersByTime(15 * 60_000)
+    expect(store.alerts.list({ activeOnly: true })[0]?.detail).toContain('40 of 60')
+    // Under a quarter: it clears.
+    reading(counted('good', 10, 60))
     expect(active(store)).toEqual([])
     expect(store.alerts.list().filter(a => a.kind === 'setup_water_sensor')).toHaveLength(1)
   })

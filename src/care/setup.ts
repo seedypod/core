@@ -4,6 +4,7 @@
  * or reading `suspect`. Each problem is its own alert kind, so the app, MCP
  * `status` and Home Assistant see it, and it clears when the setup is fixed.
  */
+import type { SensorQuality } from '../hardware/quality'
 import type { HalSnapshot } from '../hardware/types'
 import type { LightSpec, Schedule, Store } from '../store/types'
 
@@ -39,12 +40,23 @@ function runs(s: Schedule): boolean {
 
 const pods = (n: number) => `${n} pod${n === 1 ? '' : 's'}`
 
+/** Readings the last hour needs before its share of flaky ones says anything: 5 min at hald's 10 s. */
+export const MIN_QUALITY_READINGS = 30
+/** Half or more flaky raises the warning, and it clears under a quarter, so a sensor near the line doesn't flap. */
+const FLAKY_RAISE = 0.5
+const FLAKY_CLEAR = 0.25
+
 /**
- * `suspectLately`: the tank level read suspect recently, though not now. The
- * care engine holds the warning up through good spells this way, since a
- * flapping sensor would otherwise raise it again every few minutes.
+ * Whether the tank level reads too flaky to go by, given whether the warning
+ * is up now. Null when the hour has too few readings to say, as just after a
+ * restart: the warning then stays as it was.
  */
-export function setupReport(store: Store, snap: HalSnapshot, opts: { suspectLately?: boolean } = {}): SetupReport {
+export function tankFlaky(q: SensorQuality | undefined, up: boolean): boolean | null {
+  if (!q || q.total < MIN_QUALITY_READINGS) return null
+  return q.flaky / q.total >= (up ? FLAKY_CLEAR : FLAKY_RAISE)
+}
+
+export function setupReport(store: Store, snap: HalSnapshot): SetupReport {
   const planted = store.pods.list().filter(p => p.status !== 'empty').length
   const schedules = store.schedules.list().filter(runs)
   const issues: SetupIssue[] = []
@@ -61,8 +73,17 @@ export function setupReport(store: Store, snap: HalSnapshot, opts: { suspectLate
     if (!snap.system.caps.sensors.includes('water_level_pct') || device?.status === 'absent') {
       issues.push({ id: 'water_sensor_absent', alert: 'setup_water_sensor', title: 'Tank sensor not answering', detail: `No tank level sensor is answering${device?.detail ? ` (${device.detail})` : ''}, so the unit can't tell when the tank runs low.`, fix: 'Check the level sensor\'s cable; Sensors lists it.' })
     }
-    else if (reading?.quality === 'suspect' || (reading && opts.suspectLately)) {
-      issues.push({ id: 'water_sensor_suspect', alert: 'setup_water_sensor', title: 'Tank level suspect', detail: 'The tank level keeps reading suspect: its pings disagree or too few come back, so top-offs aren\'t advised from it. This clears after 2 h of good readings.', fix: 'Check nothing blocks the level sensor and its cable is seated; Sensors shows the reading.' })
+    else if (reading) {
+      // Without counts (the simulator), the reading now decides.
+      const q = snap.quality?.water_level_pct
+      const up = store.alerts.list({ activeOnly: true }).some(a => a.kind === 'setup_water_sensor')
+      const flaky = snap.quality ? tankFlaky(q, up) ?? up : reading.quality === 'suspect'
+      if (flaky) {
+        const detail = q && q.total >= MIN_QUALITY_READINGS
+          ? `The tank level read flaky in ${q.flaky} of ${q.total} readings in the last hour: its pings disagree or too few come back. Top-offs go by its good readings only while most are good. This clears once fewer than 1 in 4 are flaky.`
+          : 'The tank level keeps reading flaky: its pings disagree or too few come back. This clears once fewer than 1 in 4 of an hour\'s readings are flaky.'
+        issues.push({ id: 'water_sensor_suspect', alert: 'setup_water_sensor', title: 'Tank level suspect', detail, fix: 'Check nothing blocks the level sensor and its cable is seated; Sensors shows the reading.' })
+      }
     }
   }
   const summary = issues.length

@@ -74,6 +74,14 @@ describe('top off', () => {
     expect(one(garden(), snap({ water_level_pct: read(90, '%') }), 'top_off')).toMatchObject({ state: 'ok', dueAt: null, reason: 'Tank at 90%.' })
   })
 
+  it('goes by the last good level through a flaky reading while most of the hour\'s are good', () => {
+    const store = garden()
+    const flaky = (n: number, good = read(40, '%', 'good', ago(5 / 1440))) => ({ ...snap({ water_level_pct: read(12, '%', 'suspect') }), quality: { water_level_pct: { flaky: n, total: 60, lastGood: good } } })
+    expect(one(store, flaky(10), 'top_off')).toMatchObject({ state: 'due', basis: 'reading', reason: expect.stringMatching(/^Tank at 40%/) })
+    expect(one(store, flaky(30), 'top_off')).toMatchObject({ basis: 'timeline', reason: expect.stringContaining('tank level reading suspect') })
+    expect(one(store, flaky(10, read(40, '%', 'good', ago(1 / 24))), 'top_off')).toMatchObject({ basis: 'timeline' })
+  })
+
   it('never advises a top-off from a suspect level: it falls back to the calendar and says why', () => {
     const store = garden()
     log(store, 'top_off', 2)

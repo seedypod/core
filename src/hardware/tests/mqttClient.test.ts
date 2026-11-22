@@ -52,6 +52,15 @@ describe('MqttHalClient', () => {
     expect(s.alerts.water_low?.active).toBe(true)
   })
 
+  it('counts each sensor\'s flaky readings and keeps its last good one', () => {
+    const { mqtt, client } = make()
+    const level = (value: number, quality: string) => mqtt.msg(`seedypod/${U}/sensor/water_level_pct`, { ts: '2026-10-31T00:00:00Z', value, unit: '%', quality })
+    level(62, 'good')
+    level(10, 'suspect')
+    level(12, 'suspect')
+    expect(client.snapshot().quality?.water_level_pct).toMatchObject({ flaky: 2, total: 3, lastGood: { value: 62 } })
+  })
+
   it('publishes a command and resolves when hald echoes the new state', async () => {
     const { mqtt, client } = make()
     const p = client.setActuator('light', { on: true, level: 60 })

@@ -75,7 +75,13 @@ export function trusted(snap: HalSnapshot, id: SensorId, now: Date): { reading: 
   if (!snap.online) return { reading: null, why: `${label} unknown while the hardware daemon is offline` }
   if (!snap.system?.caps.sensors.includes(id) && !r) return { reading: null, why: id === 'water_level_pct' ? 'no tank level sensor' : `no ${label} probe` }
   if (!r) return { reading: null, why: `${label} not reporting` }
-  if (r.quality === 'suspect') return { reading: null, why: `${label} reading suspect` }
+  if (r.quality === 'suspect') {
+    // A sensor that mostly reads goes by its last good reading through a flaky one.
+    const q = snap.quality?.[id]
+    const good = q?.lastGood
+    if (good && q.flaky * 2 < q.total && now.getTime() - Date.parse(good.ts) <= READING_MAX_AGE_MS) return { reading: good, why: null }
+    return { reading: null, why: `${label} reading suspect` }
+  }
   const age = now.getTime() - Date.parse(r.ts)
   if (r.quality === 'stale' || age > READING_MAX_AGE_MS) return { reading: null, why: `${label} reading stale` }
   return { reading: r, why: null }

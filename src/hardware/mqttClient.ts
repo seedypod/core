@@ -11,6 +11,7 @@
 import type { AlertKind, CalibrationCommand, Limits } from './contract'
 import { ActuatorCommand, ActuatorId, ActuatorState, Alert, ButtonPress, CalibrationCommand as CalibrationCommandSchema, CalibrationResult, DeviceInventory, DeviceResult, PumpGuardCommand, PumpRun, Reading, SensorId, SystemInfo, topics } from './contract'
 import type { HalClient, HalEvent, HalSnapshot, Unsubscribe } from './types'
+import { QualityTracker } from './quality'
 import { HalRefused } from './sim'
 
 export interface MqttLike {
@@ -41,6 +42,7 @@ export interface MqttHalClientOptions {
 export class MqttHalClient implements HalClient {
   private readonly listeners = new Set<(e: HalEvent) => void>()
   private readonly snap: HalSnapshot = { system: null, online: false, sensors: {}, actuators: {}, alerts: {}, devices: null }
+  private readonly quality = new QualityTracker()
   private readonly pending = new Map<ActuatorId, { resolve: (s: ActuatorState) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
   private readonly pendingDevices = new Map<string, { resolve: (r: DeviceResult) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
   private readonly pendingCal = new Map<SensorId, { point: CalibrationCommand['point'], resolve: (r: CalibrationResult) => void, reject: (e: Error) => void, timer: ReturnType<typeof setTimeout> }>()
@@ -67,7 +69,7 @@ export class MqttHalClient implements HalClient {
   }
 
   snapshot(): HalSnapshot {
-    return { ...this.snap, sensors: { ...this.snap.sensors }, actuators: this.liveActuators(), alerts: { ...this.snap.alerts } }
+    return { ...this.snap, sensors: { ...this.snap.sensors }, actuators: this.liveActuators(), alerts: { ...this.snap.alerts }, quality: this.quality.get((this.o.now?.() ?? new Date()).getTime()) }
   }
 
   /** Each actuator's state with its seconds left counted down to now, not left at what they were when it changed. */
@@ -240,6 +242,7 @@ export class MqttHalClient implements HalClient {
         const id = SensorId.parse(parts[1])
         const reading = Reading.parse(JSON.parse(payload))
         this.snap.sensors[id] = reading
+        this.quality.record(id, reading, (this.o.now?.() ?? new Date()).getTime())
         return this.emit({ type: 'sensor', id, reading })
       }
       if (parts[0] === 'actuator' && parts[1] && parts[2] === 'state') {
