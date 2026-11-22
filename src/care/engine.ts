@@ -15,11 +15,9 @@ import type { Store, TankActionKind } from '../store/types'
 import { chores, type Chore, type ChoreId } from './chores'
 import { FOLLOW_ALERT, type FollowChange } from './follow'
 import { runProtocol } from './protocol'
-import { SETUP_ALERTS, setupReport, type SetupReport } from './setup'
+import { SETUP_ALERTS, setupReport, tankFlaky, type SetupReport } from './setup'
 
 const TICK_MS = 15 * 60_000
-/** How long the tank level must read good before its suspect warning clears: the unit's flaps every 15–40 min, and each raise was a new alert. */
-export const SUSPECT_HOLD_MS = 2 * 3_600_000
 
 /** The chores a reading can make due, and the alert each raises. */
 export const CHORE_ALERTS = { top_off: 'chore_top_off', feed: 'chore_feed', thin: 'chore_thin' } as const satisfies Partial<Record<ChoreId, string>>
@@ -36,9 +34,8 @@ export function choreDoneKind(alert: string): TankActionKind | null {
 export class CareEngine {
   private timer: ReturnType<typeof setInterval> | null = null
   private unsub: (() => void) | null = null
-  private lastQuality: string | undefined
-  /** When the tank level last read suspect (ms). */
-  private suspectAt: number | null = null
+  /** The tank level's last verdict on flakiness, to check again only when it turns. */
+  private lastFlaky: boolean | null = null
   /** A tick is running, and whether something asked for another while it did. */
   private ticking = false
   private again = false
@@ -66,11 +63,11 @@ export class CareEngine {
     }
     // The runner has written its needs-you items already, before marking each Then done.
     for (const n of notices) events.emit({ kind: 'mutation', path: `alerts.${n.kind}` })
-    if (snap.sensors.water_level_pct?.quality === 'suspect') this.suspectAt = now.getTime()
-    const setup = setupReport(store, snap, { suspectLately: this.suspectAt !== null && now.getTime() - this.suspectAt < SUSPECT_HOLD_MS })
+    const setup = setupReport(store, snap)
     const list = chores(store, snap, now)
     const rows = store.alerts.list()
-    for (const kind of SETUP_ALERTS) this.sync(rows, kind, setup.issues.find(i => i.alert === kind)?.detail ?? null, false)
+    // The tank sensor's detail counts its flaky readings, so it changes as they come in: held in memory.
+    for (const kind of SETUP_ALERTS) this.sync(rows, kind, setup.issues.find(i => i.alert === kind)?.detail ?? null, kind === 'setup_water_sensor')
     for (const [id, kind] of Object.entries(CHORE_ALERTS)) {
       const c = list.find(x => x.id === id)
       // A chore's detail carries the reading, so it changes every sample: held in memory, and dismissal goes by kind.
@@ -108,18 +105,22 @@ export class CareEngine {
       const relevant = (e.kind === 'schedule' && e.action === 'changed')
         || (e.kind === 'mutation' && (e.path === 'pods' || e.path === 'grow' || e.path === 'devices' || e.path === 'tank' || e.path === 'captures'))
         || (e.kind === 'hal' && (e.event.type === 'availability' || e.event.type === 'system' || e.event.type === 'devices'))
-        // Turning suspect warns at once; it clears on a tick once the level has read good for SUSPECT_HOLD_MS, so a flapping sensor can't churn the card.
-        || (e.kind === 'hal' && e.event.type === 'sensor' && e.event.id === 'water_level_pct' && e.event.reading.quality === 'suspect' && this.lastQuality !== 'suspect')
-      if (e.kind === 'hal' && e.event.type === 'sensor' && e.event.id === 'water_level_pct') {
-        this.lastQuality = e.event.reading.quality
-        if (e.event.reading.quality === 'suspect') this.suspectAt = this.now().getTime()
-      }
+        // The tank level turning too flaky to go by, or back: an hour's share of flaky readings crossing its line.
+        || (e.kind === 'hal' && e.event.type === 'sensor' && e.event.id === 'water_level_pct' && this.flakyTurned())
       // A pod edit's tick waits for its request to answer; the rest run now, since some actions answer with what the tick did.
       if (relevant && e.kind === 'mutation' && e.path === 'pods') this.tickSoon()
       else if (relevant) this.safeTick()
     })
     this.safeTick()
     this.timer = setInterval(() => this.safeTick(), TICK_MS)
+  }
+
+  private flakyTurned(): boolean {
+    const up = this.deps.store.alerts.list({ activeOnly: true }).some(a => a.kind === 'setup_water_sensor')
+    const flaky = tankFlaky(this.deps.hal.snapshot().quality?.water_level_pct, up)
+    if (flaky === null || flaky === this.lastFlaky) return false
+    this.lastFlaky = flaky
+    return true
   }
 
   /**

@@ -68,7 +68,10 @@ A reading counts only when its `quality` is `good` and it is no older than
 `suspect` reading is never used. The chore falls back to its timeline and says
 which reading it couldn't trust. In particular, a top-off is never advised from
 a `suspect` water level. hald marks a reading `suspect` when fewer than half
-of its samples answered (`hal/crates/hal-core/src/derived.rs`).
+of its samples answered (`hal/crates/hal-core/src/derived.rs`). The one exception is a
+sensor that mostly reads: when fewer than half of the last hour's readings
+were `suspect`, a `suspect` one is passed over for the last `good` reading, if
+that is still under 15 minutes old (`src/hardware/quality.ts` counts them).
 
 Chores that no fitted sensor can see (trimming roots, cleaning) are always
 `timeline`, and say so.
