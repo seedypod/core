@@ -14,6 +14,8 @@ export const ZONES: LightZone[] = ['high', 'medium', 'low']
 export const ZONE_LABEL: Record<LightZone, string> = { high: 'High light', medium: 'Medium light', low: 'Low light' }
 /** Gardyn's own zone colours, so the overlay reads like their diagram in either theme. */
 export const ZONE_COLOR: Record<LightZone, string> = { high: '#c8472d', medium: '#f2ae7c', low: '#f0cd52' }
+/** A zone's chip: its colour, tinted so the text stays readable in either theme. */
+export const zoneChipStyle = (z: LightZone) => ({ background: `color-mix(in oklab, ${ZONE_COLOR[z]} 20%, transparent)`, borderColor: `color-mix(in oklab, ${ZONE_COLOR[z]} 65%, transparent)` })
 
 export const MODEL_NAME: Record<TowerModel, string> = { home: 'Gardyn Home', studio: 'Gardyn Studio' }
 /** Where each zone sits, in the words of Gardyn's diagram for that model. */

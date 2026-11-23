@@ -110,7 +110,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`
  * side has room, clear of the `reserve` pixels a panel covers. `hint` replaces
  * the hovered card's offer of a click.
  */
-export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned = true, onClose, action, now, light, hint = 'Click to pin' }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, pinned?: boolean, onClose?: () => void, action?: ReactNode, now?: Date, light?: PodLight | null, hint?: string }) {
+export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned = true, onClose, action, now, light, thin, hint = 'Click to pin' }: { pod: PodState, at: { x: number, y: number }, width: number, height: number, reserve?: number, pinned?: boolean, onClose?: () => void, action?: ReactNode, now?: Date, light?: PodLight | null, thin?: string, hint?: string }) {
   const shown = podShown(pod)
   const color = SHOWN_TOKEN[shown]
   const flagged = isFlagged(pod)
@@ -178,6 +178,12 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
             {ZONE_LABEL[light.zone]}
           </div>
         )}
+        {thin && (
+          <div data-testid="callout-thin" className="flex items-center gap-2 text-xs text-fg-2">
+            <Scissors size={12} className="-mx-[2.5px] shrink-0" aria-hidden="true" />
+            {thin}
+          </div>
+        )}
         {details && (
           <div className="flex flex-col gap-3 border-t border-line pt-3">
             {timeline && age !== null && <HarvestTimeline window={timeline} age={age} />}
@@ -208,7 +214,7 @@ export function PodCallout({ pod, at: collar, width, height, reserve = 0, pinned
  * tower, the pod under it ringed with its callout, and letting go over another
  * pod swaps them.
  */
-export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onClose, onPart, onSwap, partLabels, controls, status, podAction, aside, legend = true, zones: fixedZones, onUnavailable }: {
+export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected = null, onSelect, onClose, onPart, onSwap, partLabels, controls, status, podAction, aside, legend = true, zones: fixedZones, thin, onUnavailable }: {
   pods: PodState[]
   waterPct: number | null
   lightLevel: number
@@ -229,6 +235,8 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
   legend?: boolean
   /** Colour by light zone (true) or status (false) throughout, with no toggle. */
   zones?: boolean
+  /** How many sprouts to keep in a pod ("Keep 3 sprouts"), for its callout. */
+  thin?: (slot: number) => string | undefined
   onUnavailable: () => void
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -345,7 +353,7 @@ export function TowerView({ pods, waterPct, lightLevel, pumpOn = false, selected
         const at = anchors.at.get(p.slot)
         return at && <PodFlag key={p.slot} pod={p} at={at} picked={p.slot === selected} onSelect={onSelect} />
       })}
-      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} pinned={!carry && shownPod.slot === selected} onClose={onClose} action={shownPod.slot === selected ? podAction : undefined} light={zones ? podLight(pods, shownPod.slot) : null} hint={carry ? `Drop to swap with pod ${carry.from}` : undefined} />}
+      {shownPod && ready && shownAt && anchors && <PodCallout pod={shownPod} at={shownAt} width={anchors.width} height={anchors.height} reserve={aside != null && anchors.width >= ASIDE_MIN ? ASIDE_RESERVE : 0} pinned={!carry && shownPod.slot === selected} onClose={onClose} action={shownPod.slot === selected ? podAction : undefined} light={zones ? podLight(pods, shownPod.slot) : null} thin={thin?.(shownPod.slot)} hint={carry ? `Drop to swap with pod ${carry.from}` : undefined} />}
       {aside != null && <div className="absolute bottom-10 right-3 top-16 z-10 hidden flex-col @min-[900px]:flex" style={{ width: ASIDE_W }}>{aside}</div>}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
         {status && <div className="pointer-events-auto flex flex-wrap items-start justify-end gap-2">{status}</div>}

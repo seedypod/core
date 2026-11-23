@@ -1,7 +1,7 @@
 import { ArrowLeftRight, ChevronDown, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
-import { ZONE_COLOR, ZONE_LABEL, ZONES, type LightZone } from '@/src/components/Grow/lightZones'
+import { ZONE_COLOR, ZONE_LABEL, ZONES, zoneChipStyle, type LightZone } from '@/src/components/Grow/lightZones'
 import { Button } from '@/src/components/ds/core'
 
 const SHORT: Record<LightZone, string> = { high: 'High', medium: 'Medium', low: 'Low' }
@@ -105,7 +105,8 @@ export function PodPanel({ slot, zone, plant, plantId, thin, reason, planted, mo
                     // A plant needs one zone at least.
                     disabled={on && zones.allowed.length === 1}
                     onClick={() => onZones(on ? zones.allowed.filter(x => x !== z) : [...zones.allowed, z])}
-                    className={cn('rounded-full border px-2 py-0.5 text-[11px] disabled:cursor-not-allowed', on ? 'border-fg-2 text-fg' : 'border-line text-fg-3')}
+                    className={cn('rounded-full border px-2 py-0.5 text-[11px] disabled:cursor-not-allowed', on ? 'text-fg' : 'border-line text-fg-3')}
+                    style={on ? zoneChipStyle(z) : undefined}
                   >
                     {SHORT[z]}
                   </button>

@@ -611,6 +611,18 @@ describe('PlanPage', () => {
     expect(thinning()).toBeUndefined()
   })
 
+  it('gives the 3D tower each pod’s sprouts to keep, planned or planted', () => {
+    state.pods = [{ slot: 4, plant: 'Arugula', status: 'growing' }, { slot: 5, plant: 'Okra', status: 'seeded' }]
+    state.custom = [{ id: 'okra', name: 'Okra', category: 'fruiting', zone: 'high', harvestMonths: [2, 3], harvestEstimated: false, careLevel: null, size: 'large', inStore: false, custom: true, tolerates: [] }]
+    render(<PlanPage />)
+    search('basil')
+    add('Basil')
+    const thin = tower.props?.thin as (slot: number) => string | undefined
+    const basil = towerPods().find(p => p.plant === 'Basil')?.slot as number
+    expect([thin(4), thin(5), thin(basil)]).toEqual(['Don’t thin', '~Keep 1 sprout', 'Keep 3 sprouts'])
+    expect(thin(towerPods().find(p => !p.plant)?.slot as number)).toBeUndefined()
+  })
+
   it('lets a pod’s plant use other zones for this plan, and go back to its usual ones', () => {
     state.pods = [{ slot: 1, plant: 'Arugula', status: 'growing' }]
     render(<PlanPage />)
@@ -624,6 +636,8 @@ describe('PlanPage', () => {
     const pressed = () => group().getAllByRole('button').map(b => [b.textContent, b.getAttribute('aria-pressed')])
     // Basil tolerates one zone either way.
     expect(pressed()).toEqual([['High', 'true'], ['Medium', 'true'], ['Low', 'true']])
+    // A zone it does ok in takes the zone's colour, as on the layout.
+    expect(group().getByRole('button', { name: 'Low' }).getAttribute('style')).toContain('rgb(240, 205, 82)')
     expect(panel().getByText('Its usual zones; change them for this plan.')).toBeTruthy()
 
     fireEvent.click(group().getByRole('button', { name: 'High' }))
@@ -642,6 +656,7 @@ describe('PlanPage', () => {
     // A planted pod's plant too; an empty pod has none to set.
     fireEvent.click(cell(1))
     expect(pressed()).toEqual([['High', 'false'], ['Medium', 'false'], ['Low', 'true']])
+    expect(group().getByRole('button', { name: 'High' }).getAttribute('style') ?? '').toBe('')
     fireEvent.click(cell(2))
     expect(panel().queryByRole('group', { name: 'Zones for this plan' })).toBeNull()
   })

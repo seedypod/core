@@ -112,6 +112,19 @@ describe('TowerView', () => {
     expect(callout.textContent).not.toContain('Seeded')
   })
 
+  it('says how many sprouts to keep on a pod’s callout when given it', async () => {
+    const pods = [{ slot: 1, status: 'seeded' as const, plant: 'Basil' }, { slot: 2, status: 'empty' as const, plant: null }]
+    const thin = (slot: number) => slot === 1 ? 'Keep 3 sprouts' : undefined
+    const { rerender } = render(<TowerView pods={pods} waterPct={null} lightLevel={100} thin={thin} selected={1} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    await waitFor(() => expect(screen.queryByText('Loading the tower…')).toBeNull())
+    mounted.at = { x: 120, y: 300 }
+    act(() => mounted.opts?.onRender?.())
+    expect(screen.getByTestId('callout-thin').textContent).toBe('Keep 3 sprouts')
+    rerender(<TowerView pods={pods} waterPct={null} lightLevel={100} thin={thin} selected={2} onSelect={vi.fn()} onUnavailable={vi.fn()} />)
+    act(() => mounted.opts?.onRender?.())
+    expect(screen.queryByTestId('callout-thin')).toBeNull()
+  })
+
   it('toggles the light zones, remembering the choice, with the model\'s legend and the pinned pod\'s zone and placement advice', async () => {
     localStorage.clear()
     const mint = [{ slot: 1, status: 'growing' as const, plant: 'Mint' }, { slot: 2, status: 'empty' as const, plant: null }]
