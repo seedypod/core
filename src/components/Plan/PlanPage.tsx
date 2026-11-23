@@ -2,7 +2,7 @@ import { keepPreviousData } from '@tanstack/react-query'
 import { ArrowLeftRight, Box, EyeOff, LayoutGrid, LoaderCircle, Minus, Pencil, Plus, Sprout } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { ZONE_COLOR } from '@/src/components/Grow/lightZones'
+import { ZONE_COLOR, zoneChipStyle } from '@/src/components/Grow/lightZones'
 import { thinText } from '@/src/components/Grow/PlantCare'
 import { PlantThumb, podForm } from '@/src/components/Grow/PlantThumb'
 import { SwapBanner, SwapProgress } from '@/src/components/Grow/SwapBanner'
@@ -27,8 +27,6 @@ interface Overrides { pins?: { slot: number, plantId: string }[], allowedZones?:
 type Zone = 'high' | 'medium' | 'low'
 type Category = 'fruiting' | 'vegetable' | 'legume' | 'flower' | 'herb' | 'green' | 'lettuce'
 
-/** Gardyn's zone colours (as on the 3D tower), tinted so pod text stays readable in either theme. */
-const zoneStyle = (z: Zone) => ({ background: `color-mix(in oklab, ${ZONE_COLOR[z]} 20%, transparent)`, borderColor: `color-mix(in oklab, ${ZONE_COLOR[z]} 65%, transparent)` })
 const ZONE_LABEL: Record<Zone, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 const CATS: { value: Category | 'all', label: string }[] = [
   { value: 'all', label: 'All' }, { value: 'lettuce', label: 'Lettuce' }, { value: 'green', label: 'Greens' }, { value: 'herb', label: 'Herbs' },
@@ -169,7 +167,7 @@ function PlanGrid({ cols, slots, bySlot, planted, moves, highlight, open, swappi
               }
             }}
             className={cn('flex min-h-[58px] w-[85%] flex-col justify-center gap-0.5 rounded-[var(--radius-ctl)] border px-2 py-1', podSide(s.row) === 1 ? 'justify-self-end' : 'justify-self-start', off ? SHIFT_OUTLINE[off] : '', a || ex ? 'cursor-grab' : 'cursor-pointer', (open === s.slot || swapping === s.slot) && 'ring-2 ring-fg', over === s.slot && open !== s.slot && 'ring-2 ring-fg-3', highlight.includes(s.slot) && 'outline-2 outline-offset-2 outline-fg-2 outline-dashed', moving && 'animate-pulse motion-reduce:animate-none')}
-            style={zoneStyle(z)}
+            style={zoneChipStyle(z)}
             title={a?.reason ?? ex?.plant ?? `${ZONE_LABEL[z]} light`}
           >
             <div className="flex items-center justify-between font-mono text-[10px] text-fg-3">
@@ -338,6 +336,12 @@ export function PlanPage() {
   const highlight = shownMove ? [shownMove.from, shownMove.to] : []
   const openPlantId = openSlot ? bySlot.get(openSlot.slot)?.plantId ?? everything.data?.plants.find(p => p.name === planted.get(openSlot.slot)?.plant)?.id ?? null : null
   const openPlant = openPlantId ? everything.data?.plants.find(p => p.id === openPlantId) : undefined
+  // How many sprouts to keep in a pod's plant, planned or planted, for its card on the tower.
+  const thinAt = (slot: number) => {
+    const id = bySlot.get(slot)?.plantId
+    const plant = everything.data?.plants.find(p => id ? p.id === id : p.name === planted.get(slot)?.plant)
+    return plant && thinText(plantFacts(plant))
+  }
 
   return (
     <div className="mx-auto flex max-w-[1100px] flex-col gap-4">
@@ -371,7 +375,7 @@ export function PlanPage() {
             right={(
               <div className="flex gap-2 text-[11px]">
                 {(['high', 'medium', 'low'] as Zone[]).map(z => (
-                  <span key={z} className="rounded-[var(--radius-tag)] border px-1.5 py-0.5" style={zoneStyle(z)}>
+                  <span key={z} className="rounded-[var(--radius-tag)] border px-1.5 py-0.5" style={zoneChipStyle(z)}>
                     {ZONE_LABEL[z]}
                     {' '}
                     {zones.data?.counts[z]}
@@ -397,6 +401,7 @@ export function PlanPage() {
                 // Lit, so the zones read, whatever the light is doing now.
                 lightLevel={100}
                 zones
+                thin={thinAt}
                 selected={selected}
                 onSelect={setSelected}
                 onSwap={exchange}

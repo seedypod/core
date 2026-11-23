@@ -1,6 +1,7 @@
 import { Sprout } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
+import { zoneChipStyle } from '@/src/components/Grow/lightZones'
 import { Button, InlineError } from '@/src/components/ds/core'
 import { Modal } from '@/src/components/ds/feedback'
 import { SegmentedControl, SelectValue, TextField } from '@/src/components/ds/forms'
@@ -103,7 +104,7 @@ function PlantForm({ plant, onClose }: { plant: EditablePlant | null, onClose: (
           <span className="text-xs text-fg-2">Also does ok in</span>
           <div className="flex flex-wrap items-center gap-1">
             {others.map(z => (
-              <button key={z.value} type="button" aria-pressed={shown.includes(z.value)} onClick={() => toggle(z.value)} className={cn('rounded-full border px-2 py-0.5 text-[11px]', shown.includes(z.value) ? 'border-fg-2 text-fg' : 'border-line text-fg-3')}>{z.label}</button>
+              <button key={z.value} type="button" aria-pressed={shown.includes(z.value)} onClick={() => toggle(z.value)} className={cn('rounded-full border px-2 py-0.5 text-[11px]', shown.includes(z.value) ? 'text-fg' : 'border-line text-fg-3')} style={shown.includes(z.value) ? zoneChipStyle(z.value) : undefined}>{z.label}</button>
             ))}
             {tolerates && <button type="button" onClick={() => setTolerates(null)} className="ml-1 text-[11px] text-fg-3 underline">Category default</button>}
           </div>

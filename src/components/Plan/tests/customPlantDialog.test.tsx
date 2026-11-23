@@ -83,6 +83,7 @@ describe('CustomPlantDialog', () => {
     expect([zone('High').getAttribute('aria-pressed'), zone('Low').getAttribute('aria-pressed')]).toEqual(['true', 'true'])
     fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'lettuce' } })
     expect([zone('High').getAttribute('aria-pressed'), zone('Low').getAttribute('aria-pressed')]).toEqual(['false', 'true'])
+    expect([zone('High').getAttribute('style') ?? '', zone('Low').getAttribute('style')]).toEqual(['', expect.stringContaining('rgb(240, 205, 82)')])
     expect(screen.queryByRole('button', { name: 'Category default' })).toBeNull()
 
     fireEvent.click(zone('High'))
