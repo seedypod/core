@@ -13,7 +13,7 @@ import type { HalClient } from '../hardware/types'
 import type { EventBus } from '../lib/eventBus'
 import type { Store, TankActionKind } from '../store/types'
 import { chores, type Chore, type ChoreId } from './chores'
-import { FOLLOW_ALERT, type FollowChange } from './follow'
+import { FOLLOW_ALERT, noteFollow, type FollowChange } from './follow'
 import { runProtocol } from './protocol'
 import { SETUP_ALERTS, setupReport, tankFlaky, type SetupReport } from './setup'
 
@@ -57,7 +57,7 @@ export class CareEngine {
     const now = this.now()
     const { followed, notices } = runProtocol(store, now)
     if (followed) {
-      store.alerts.raise(FOLLOW_ALERT, followed.detail, now.toISOString())
+      noteFollow(store, followed.detail, now.toISOString())
       events.emit({ kind: 'schedule', action: 'changed', id: followed.schedule ? `follow:schedule:${followed.schedule.name}` : `follow:${followed.to}` })
       events.emit({ kind: 'mutation', path: `alerts.${FOLLOW_ALERT}` })
     }

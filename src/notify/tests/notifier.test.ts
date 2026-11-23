@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LightSource } from '../../control/light'
 import type { ActuatorState, PumpRun } from '../../hardware/contract'
+import { FOLLOW_ALERT, noteFollow } from '../../care/follow'
 import { createEventBus } from '../../lib/eventBus'
 import { MemoryStore } from '../../store/memory'
 import type { DeviceSettings } from '../../store/types'
@@ -42,6 +43,18 @@ describe('Notifier', () => {
     await vi.waitFor(() => expect(sent).toHaveLength(2))
     expect(sent[1]?.body).toMatchObject({ title: 'Gardyn: Water low: resolved', priority: 2 })
     expect(store.alerts.clear('water_low', ts)).toBeNull()
+  })
+
+  it('sends each watering move, though the last one\'s notice is still open', async () => {
+    const { store, sent, at } = setup()
+    noteFollow(store, 'Watering moved to Seedlings: 1 × 6 min (08:00), day 8 since sowing.', T0.toISOString())
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    const later = at(6 * 86_400_000)
+    noteFollow(store, 'Watering moved to Young plants: 2 × 6 min (08:00, 16:00), day 14 since sowing.', later.toISOString())
+    await vi.waitFor(() => expect(sent).toHaveLength(2))
+    expect(sent[1]?.body).toMatchObject({ title: 'Gardyn: Watering moved to the next stage', message: 'Watering moved to Young plants: 2 × 6 min (08:00, 16:00), day 14 since sowing.' })
+    // One open notice, the latest; the older one closed without a "resolved".
+    expect(store.alerts.list({ activeOnly: true }).filter(a => a.kind === FOLLOW_ALERT).map(a => a.raisedAt)).toEqual([later.toISOString()])
   })
 
   it('stays quiet about alerts already open at start, reminders closing, and faults the owner cleared', async () => {
