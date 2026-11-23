@@ -26,6 +26,16 @@ export interface FollowChange {
 
 const EVERY_DAY = 127
 
+/**
+ * Writes a watering move as a notice of its own. The last move's notice stays
+ * open until someone dismisses it, and raising onto an open alert only rewords
+ * it, which notifies nobody (ADR-0032): so the old one is closed first.
+ */
+export function noteFollow(store: Store, detail: string, ts: string): void {
+  for (const a of store.alerts.list({ activeOnly: true })) if (a.kind === FOLLOW_ALERT) store.alerts.dismiss(a.id, ts)
+  store.alerts.raise(FOLLOW_ALERT, detail, ts)
+}
+
 /** The pump cycles among the schedules. */
 export const pumpCycles = (schedules: readonly Schedule[]) => schedules.filter((s): s is Schedule & { spec: PumpSpec } => s.kind === 'pump')
 

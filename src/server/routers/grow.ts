@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { FOLLOW_ALERT, redateGermination } from '../../care/follow'
+import { FOLLOW_ALERT, noteFollow, redateGermination } from '../../care/follow'
 import { cycleDay, MAX_BACKDATE_DAYS, restarted } from '../../grow/grow'
 import { harvestOutlook } from '../../grow/harvest'
 import { presetSchedules, PUMP_PRESETS, type PumpPreset } from '../../scheduler/pumpPlan'
@@ -102,7 +102,7 @@ export const growRouter = router({
       // Germination's weekly run goes with it, while watering follows the cycle.
       const moved = redateGermination(store, now)
       if (moved) {
-        store.alerts.raise(FOLLOW_ALERT, moved.detail, now.toISOString())
+        noteFollow(store, moved.detail, now.toISOString())
         events.emit({ kind: 'schedule', action: 'changed', id: 'follow:germination' })
         events.emit({ kind: 'mutation', path: `alerts.${FOLLOW_ALERT}` })
       }

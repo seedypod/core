@@ -71,7 +71,7 @@ ntfy shows it in front of the title.
 
 | Switch | Default | Sends |
 |---|---|---|
-| Problems | on | Water low, pump faults, a camera or the hardware daemon down, a missed watering, a failed backup; and a "resolved" message when one clears by itself |
+| Problems | on | Water low, pump faults, a camera or the hardware daemon down, a missed watering, a failed backup, the watering moving to the grow's next stage (each move, with the new run times); and a "resolved" message when one clears by itself |
 | Reminders | on | Thin, feed, top off, check roots, harvest |
 | Autopilot | on | A rule's **Notify** action |
 | Watering | off | Every pump run, with how long it ran and how full the tank is. Several a day |
